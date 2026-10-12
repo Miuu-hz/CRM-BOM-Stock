@@ -5,6 +5,7 @@ import { createSalesJournal, reverseSalesJournal, voidReceipt } from './shared'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../../utils/receiptToken'
 import { createInvoiceFromSO, SalesBillingError } from '../../services/salesBilling.service'
 import { canHandleBilling } from '../../services/rbac.service'
+import { creditNoteCreditableRemaining } from './creditNotes'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -91,7 +92,11 @@ router.get('/:id', async (req: Request, res: Response) => {
     const receipt_url = buildReceiptUrl(receiptToken)
     const receipt_qr = await buildReceiptQr(receiptToken)
 
-    res.json({ success: true, data: { ...invoice, items, receipts, withholdingTax, attachments, receipt_url, receipt_qr } })
+    // ยอดลดหนี้ที่ยังออกได้อีก (มูลค่าใบแจ้งหนี้ − ใบลดหนี้ที่ไม่ถูกยกเลิกทั้งหมด) — ให้หน้าสร้างใบลดหนี้
+    // ใช้เป็น max ของช่องกรอกยอด แทนการเพิ่ม endpoint ใหม่ (ตรรกะเดียวกับ creditNotes.ts ที่ใช้ตรวจจริง)
+    const creditable_remaining = creditNoteCreditableRemaining(tenantId, req.params.id)
+
+    res.json({ success: true, data: { ...invoice, items, receipts, withholdingTax, attachments, receipt_url, receipt_qr, creditable_remaining } })
   } catch (error) {
     console.error('Get invoice error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch invoice' })

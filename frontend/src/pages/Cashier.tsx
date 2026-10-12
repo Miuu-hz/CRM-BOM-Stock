@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
-import posService from '../services/pos.service'
+import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
+import { useTranslation } from 'react-i18next'
 import posBillService from '../services/pos-bill.service'
 import kdsService from '../services/kds.service'
 import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyConfig, loadShopConfig } from './Settings'
@@ -102,6 +103,7 @@ interface POSShift {
   status: 'OPEN' | 'CLOSED'
   opened_at: string
   opening_cash: number
+  stale?: boolean
   live?: { total_revenue: number; cash_revenue: number; bank_revenue: number; cash_in?: number; paid_out?: number }
 }
 
@@ -117,6 +119,7 @@ interface CashMovement {
 // ==================== Components ====================
 
 export default function Cashier() {
+  const { t } = useTranslation()
   // State
   const [view, setView] = useState<'bills' | 'menu'>('bills')
   const [openBills, setOpenBills] = useState<OpenBill[]>([])
@@ -140,6 +143,8 @@ export default function Cashier() {
   const [currentShift, setCurrentShift] = useState<POSShift | null | undefined>(undefined)
   const [showShiftModal, setShowShiftModal] = useState<'open' | 'close' | null>(null)
   const [showCashMovementModal, setShowCashMovementModal] = useState(false)
+  // กะค้างข้ามวันที่ยังมีบิลค้าง: ปล่อยให้ชำระ/ยกเลิกบิลเดิมได้ แต่ห้ามเปิดบิลใหม่
+  const [managingStaleBills, setManagingStaleBills] = useState(false)
   // Discount & extra charge (local, per-session)
   const [discount, setDiscount] = useState<{ type: 'pct' | 'fixed'; value: number }>({ type: 'pct', value: 0 })
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
@@ -224,7 +229,42 @@ export default function Cashier() {
 
   useEffect(() => {
     fetchShift()
+    // กะอาจถูกเปิด/ปิดจากเครื่องอื่นหรือข้ามวันระหว่างที่จอค้างไว้ — เช็กใหม่ทุกครั้งที่กลับมาที่หน้าจอ
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchShift() }
+    window.addEventListener('focus', fetchShift)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', fetchShift)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [fetchShift])
+
+  // backend ปฏิเสธการขายเพราะไม่มีกะ/กะค้างข้ามวัน → แจ้งชัด ๆ แล้วดึงกะใหม่ให้ overlay บังคับขึ้นมา
+  const handleShiftGuardError = (e: any): boolean => {
+    const code = shiftErrorCode(e)
+    if (code !== 'SHIFT_NOT_OPEN' && code !== 'SHIFT_STALE') return false
+    toast.error(t(code === 'SHIFT_STALE' ? 'sales.pos.toastShiftStale' : 'sales.pos.toastShiftNotOpen'), { id: 'pos-shift-guard' })
+    setShowPaymentModal(false)
+    setShowCreateModal(false)
+    fetchShift()
+    return true
+  }
+
+  // ไม่มีกะ = บังคับเปิดกะ, กะค้างข้ามวัน = บังคับปิดกะเก่า — ปิด overlay ไม่ได้จนกว่าจะทำเสร็จ
+  // ยกเว้นโหมด "จัดการบิลค้าง": ซ่อน overlay ไว้จนกว่าบิลค้างหมด แล้วเด้งกลับมาบังคับปิดกะเอง
+  const isStaleShift = !!currentShift?.stale
+  const inStaleBillsMode = isStaleShift && managingStaleBills && openBills.length > 0
+  const blockingShiftMode: 'open' | 'close' | null = currentShift === null ? 'open' : isStaleShift && !inStaleBillsMode ? 'close' : null
+  const shiftModalMode = blockingShiftMode || showShiftModal
+
+  useEffect(() => {
+    if (!isStaleShift) setManagingStaleBills(false)
+  }, [isStaleShift])
+
+  const openCreateBill = () => {
+    if (isStaleShift) { toast.error(t('sales.pos.toastShiftStale'), { id: 'pos-shift-guard' }); return }
+    setShowCreateModal(true)
+  }
 
   // Filter menus
   const filteredMenus = menus.filter(item => {
@@ -305,6 +345,7 @@ export default function Cashier() {
 
   // Create new bill
   const createBill = async (displayName?: string, customerId?: string) => {
+    if (isStaleShift) { toast.error(t('sales.pos.toastShiftStale'), { id: 'pos-shift-guard' }); return }
     try {
       const res = await posBillService.createBill({
         display_name: displayName || undefined,
@@ -318,6 +359,7 @@ export default function Cashier() {
         await openBill(res.data.id)
       }
     } catch (error) {
+      if (handleShiftGuardError(error)) return
       toast.error('Failed to create bill')
     }
   }
@@ -475,6 +517,7 @@ export default function Cashier() {
         await fetchData()
       }
     } catch (error: any) {
+      if (handleShiftGuardError(error)) return
       toast.error(error.response?.data?.message || 'Failed to process payment')
     }
   }
@@ -603,6 +646,17 @@ export default function Cashier() {
         </div>
       </div>
 
+      {inStaleBillsMode && (
+        <div className="mx-6 mt-4 flex items-center gap-3 p-3 rounded-xl bg-[var(--warning-soft)] border border-warning/30 text-warning text-sm">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <span className="flex-1 font-medium">{t('sales.pos.staleBillsBanner', { count: openBills.length })}</span>
+          <button onClick={() => setShowShiftModal('close')}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-danger/10 text-danger font-medium border border-danger/30 hover:bg-danger/20">
+            {t('sales.actions.closeShift')}
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:h-[calc(100vh-80px)]">
         {/* Left Panel */}
         <div className="flex-1 p-6 overflow-auto">
@@ -643,8 +697,9 @@ export default function Cashier() {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90"
+                    onClick={openCreateBill}
+                    disabled={isStaleShift}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Plus className="w-4 h-4" />
                     สร้างบิลใหม่
@@ -1168,8 +1223,9 @@ export default function Cashier() {
               <Receipt className="w-16 h-16 mb-4 opacity-30" />
               <p className="text-lg font-medium">เลือกบิลหรือสร้างบิลใหม่</p>
               <button
-                onClick={() => setShowCreateModal(true)}
-                className="mt-6 px-6 py-3 rounded-xl bg-[var(--primary-soft)] text-[var(--primary)] hover:bg-phopy-indigo/30 transition-all flex items-center gap-2"
+                onClick={openCreateBill}
+                disabled={isStaleShift}
+                className="mt-6 px-6 py-3 rounded-xl bg-[var(--primary-soft)] text-[var(--primary)] hover:bg-phopy-indigo/30 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
                 สร้างบิลใหม่
@@ -1322,12 +1378,16 @@ export default function Cashier() {
       />
 
       {/* Open/Close Shift Modal */}
-      {showShiftModal && (
+      {shiftModalMode && (
         <ShiftModal
-          mode={showShiftModal}
+          key={shiftModalMode}
+          mode={shiftModalMode}
           shift={currentShift || null}
+          blocking={!!blockingShiftMode}
+          hasOpenBills={openBills.length > 0}
+          onManageBills={blockingShiftMode === 'close' ? () => { setManagingStaleBills(true); setView('bills'); setBillsMode('OPEN'); fetchData() } : undefined}
           onClose={() => setShowShiftModal(null)}
-          onDone={fetchShift}
+          onDone={() => { setShowShiftModal(null); fetchShift() }}
         />
       )}
 
@@ -2327,19 +2387,25 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
 }
 
 // เปิดกะ / ปิดกะ จากหน้า POS โดยตรง (คู่ขนานกับหน้า ขาย > POS ที่มีอยู่แล้ว)
-function ShiftModal({ mode, shift, onClose, onDone }: {
+function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onManageBills, onClose: requestClose, onDone }: {
   mode: 'open' | 'close'
   shift: POSShift | null
+  blocking?: boolean // true = ห้ามปิด (ESC/คลิกพื้นหลัง/ยกเลิก) จนกว่าจะเปิด/ปิดกะสำเร็จ
+  hasOpenBills?: boolean
+  onManageBills?: () => void // กะค้าง: ออกไปชำระ/ยกเลิกบิลค้างก่อน แล้วค่อยกลับมาปิดกะ
   onClose: () => void
   onDone: () => void
 }) {
+  const { t } = useTranslation()
+  const onClose = blocking ? () => {} : requestClose
   useModalClose(onClose)
   const [openingCash, setOpeningCash] = useState('0')
+  const [openBillsError, setOpenBillsError] = useState<{ message: string; bills: string[] } | null>(null)
   const live = shift?.live
   const cashRevenue = live?.cash_revenue || 0
   const cashIn = live?.cash_in || 0
   const paidOut = live?.paid_out || 0
-  const expectedCash = (shift?.opening_cash || 0) + cashRevenue + cashIn - paidOut
+  const expectedCash = expectedShiftCash(shift)
   const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -2366,16 +2432,44 @@ function ShiftModal({ mode, shift, onClose, onDone }: {
         toast.success('ปิดกะสำเร็จ')
         onDone(); onClose()
       }
-    } catch (e: any) { toast.error(e.response?.data?.message || 'ปิดกะไม่สำเร็จ') }
+    } catch (e: any) {
+      const message = e.response?.data?.message || 'ปิดกะไม่สำเร็จ'
+      // ยังมีบิลค้างชำระ → ค้างโมดัลไว้ พร้อมบอกเลขบิลที่ต้องจัดการก่อน
+      if (shiftErrorCode(e) === 'SHIFT_HAS_OPEN_BILLS') setOpenBillsError({ message, bills: openBillNumbers(e) })
+      toast.error(message)
+    }
     finally { setSaving(false) }
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className={`fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center p-4 ${blocking ? 'z-[60]' : 'z-50'}`} onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm p-6 max-h-[80vh] overflow-y-auto">
         <h2 className="text-xl font-bold text-[var(--fg-1)] mb-4">{mode === 'open' ? 'เปิดกะ' : `ปิดกะ — ${shift?.shift_number}`}</h2>
+        {blocking && (
+          <div className="p-3 mb-4 rounded-lg bg-[var(--warning-soft)] border border-warning/30 text-sm text-warning flex gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">{t(mode === 'open' ? 'sales.pos.shiftRequiredTitle' : 'sales.pos.staleShiftTitle')}</p>
+              <p className="text-xs mt-0.5">{mode === 'open'
+                ? t('sales.pos.shiftRequiredHint')
+                : t('sales.pos.staleShiftHint', { number: shift?.shift_number || '', date: shift?.opened_at ? new Date(shift.opened_at).toLocaleString('th-TH') : '' })}</p>
+            </div>
+          </div>
+        )}
+        {openBillsError && (
+          <div className="p-3 mb-4 rounded-lg bg-[var(--danger-soft)] border border-danger/30 text-sm text-danger">
+            <p className="font-semibold">{openBillsError.message}</p>
+            {openBillsError.bills.length > 0 && <p className="text-xs mt-1">{t('sales.pos.openBillsList', { bills: openBillsError.bills.join(', ') })}</p>}
+          </div>
+        )}
+        {onManageBills && (openBillsError || hasOpenBills) && (
+          <button onClick={onManageBills}
+            className="w-full mb-4 py-2.5 rounded-lg bg-[var(--warning-soft)] border border-warning/30 text-warning text-sm font-semibold hover:opacity-80">
+            {t('sales.pos.manageOpenBills')}
+          </button>
+        )}
 
         {mode === 'open' ? (
           <>
@@ -2419,7 +2513,7 @@ function ShiftModal({ mode, shift, onClose, onDone }: {
           className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none mb-4" />
 
         <div className="flex gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>
+          {!blocking && <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>}
           <button onClick={mode === 'open' ? handleOpen : handleClose} disabled={saving}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 font-semibold rounded-lg disabled:opacity-50 text-white ${mode === 'open' ? 'bg-phopy-indigo hover:bg-phopy-indigo/80' : 'bg-red-500/80 hover:bg-red-500'}`}>
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Check className="w-4 h-4" />}

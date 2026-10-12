@@ -1333,6 +1333,7 @@
       "overdue": "Overdue",
       "pending": "Pending",
       "partialPaid": "Partial paid",
+      "pendingApproval": "Pending approval",
       "delivered": "Delivered",
       "shipped": "Shipped"
     },
@@ -1362,6 +1363,7 @@
       "creditNoteCreateFailed": "Failed to create credit note",
       "creditNoteIssued": "Credit note issued",
       "creditNoteIssueFailed": "Failed to issue credit note",
+      "creditNoteRefundDue": "Customer already paid — ฿{{amount}} must be refunded or credited back",
       "uploadSuccess": "Upload successful",
       "uploadFailed": "Upload failed",
       "deleteSuccess": "File deleted",
@@ -1572,7 +1574,17 @@
       "cashMovementsInShift": "Cash movements this shift",
       "cashMovementsEmpty": "No cash movements in this shift yet",
       "cashMovementsTotal": "Cash movements total",
-      "shiftNotOpenError": "Please open a shift before accepting payment"
+      "shiftNotOpenError": "Please open a shift before accepting payment",
+      "shiftRequiredTitle": "Open a shift before selling",
+      "shiftRequiredHint": "No shift is open. Please open a shift to start selling.",
+      "staleShiftTitle": "Shift left open from a previous day",
+      "staleShiftHint": "Shift {{number}} has been open since {{date}}. Close the old shift before continuing to sell.",
+      "closeOldShift": "Close old shift",
+      "toastShiftNotOpen": "No shift is open — please open a shift before selling",
+      "toastShiftStale": "The previous day's shift is still open — please close it before selling",
+      "openBillsList": "Unpaid bills: {{bills}}",
+      "manageOpenBills": "Handle unpaid bills",
+      "staleBillsBanner": "Stale shift — pay/cancel the unpaid bills, then close the shift ({{count}} bills)"
     },
     "validation": {
       "cancelReason": "Please specify cancellation reason",
@@ -1740,7 +1752,9 @@
       "returnQty": "Return qty",
       "soldQty": "Sold",
       "noReturnItems": "No items found on this invoice",
-      "selectReturnItems": "Please select at least 1 returned item"
+      "selectReturnItems": "Please select at least 1 returned item",
+      "remainingHint": "Remaining creditable amount: ฿{{amount}}",
+      "exceedsRemaining": "Amount exceeds the invoice's remaining creditable value"
     },
     "creditNoteStatus": {
       "draft": "Draft",

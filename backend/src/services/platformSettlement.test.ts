@@ -61,7 +61,7 @@ describe('บัญชีขายผ่านแพลตฟอร์ม (platf
     expect(balanceOf(user.tenantId, ACC.REVENUE_PRODUCT), 'รายได้ต้องลงยอดเต็มหลังหัก VAT ไม่ใช่ยอดสุทธิหลังหักค่าธรรมเนียม').toBe(-(1000 - 65.42))
     expect(balanceOf(user.tenantId, ACC.OUTPUT_VAT)).toBe(-65.42)
     expect(balanceOf(user.tenantId, ACC.COGS_PRODUCT)).toBe(610)
-    expect(balanceOf(user.tenantId, ACC.INVENTORY)).toBe(-610)
+    expect(balanceOf(user.tenantId, ACC.RAW_MATERIAL)).toBe(-610)
     expect(balanceOf(user.tenantId, ACC.BANK)).toBe(780)
     expect(balanceOf(user.tenantId, '5203'), 'ค่าคอมมิชชั่นต้องลงบัญชี 5203').toBe(120)
     expect(balanceOf(user.tenantId, ACC.CASH_OVER_SHORT), 'โอนมาตรงเป๊ะ ไม่ควรมีส่วนต่างเข้า 5901').toBe(0)

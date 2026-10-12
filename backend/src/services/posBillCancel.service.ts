@@ -30,29 +30,30 @@ export async function cancelPosBill(
     console.warn(`[pos-cancel] stock return warnings for bill ${billId}:`, stockResult.errors)
   }
 
-  // 2. กลับรายการบัญชี (มี guard กันลงซ้ำในตัว service เอง)
-  const accountingResult = await posAccountingService.recordCancelledSale(bill, tenantId, userId, reason)
+  // 2-3. กลับรายการบัญชี+VAT (sync, โยนถ้าพัง) → คืนแต้ม → ปิดสถานะบิล ใน transaction เดียว
+  // บัญชีพัง = ไม่มีอะไรถูกเขียน บิลยังเป็นสถานะเดิม retry ได้ (ทุกขั้นมี guard กันลงซ้ำในตัวเอง)
+  const { accountingResult, pointsResult } = db.transaction(() => {
+    const accountingResult = posAccountingService.recordCancelledSale(bill, tenantId, userId, reason)
+    const pointsResult = reverseLoyaltyPoints(bill, tenantId, userId)
 
-  // 2.5 คืนแต้มสะสม (มี guard กันคืนซ้ำในตัวเอง เหมือนสองขั้นด้านบน)
-  const pointsResult = reverseLoyaltyPoints(bill, tenantId, userId)
-
-  // 3. ปิดสถานะบิล — ทำเป็นขั้นสุดท้ายเสมอ ถ้าขั้นบนพังกลางคันจะยัง retry ได้
-  const now = new Date().toISOString()
-  if (finalStatus === 'VOID') {
-    const voidNote = reason ? `[VOID] ${reason}` : '[VOID]'
-    db.prepare(`
-      UPDATE pos_running_bills
-      SET status = 'VOID', notes = TRIM(COALESCE(notes, '') || ' ' || ?)
-      WHERE id = ? AND tenant_id = ?
-    `).run(voidNote, billId, tenantId)
-  } else {
-    db.prepare(`
-      UPDATE pos_running_bills
-      SET status = 'CANCELLED', closed_at = ?, closed_by = ?,
-          notes = COALESCE(?, notes) || ' [CANCELLED: ' || ? || ']'
-      WHERE id = ? AND tenant_id = ?
-    `).run(now, userId, bill.notes, reason || 'No reason', billId, tenantId)
-  }
+    const now = new Date().toISOString()
+    if (finalStatus === 'VOID') {
+      const voidNote = reason ? `[VOID] ${reason}` : '[VOID]'
+      db.prepare(`
+        UPDATE pos_running_bills
+        SET status = 'VOID', notes = TRIM(COALESCE(notes, '') || ' ' || ?)
+        WHERE id = ? AND tenant_id = ?
+      `).run(voidNote, billId, tenantId)
+    } else {
+      db.prepare(`
+        UPDATE pos_running_bills
+        SET status = 'CANCELLED', closed_at = ?, closed_by = ?,
+            notes = COALESCE(?, notes) || ' [CANCELLED: ' || ? || ']'
+        WHERE id = ? AND tenant_id = ?
+      `).run(now, userId, bill.notes, reason || 'No reason', billId, tenantId)
+    }
+    return { accountingResult, pointsResult }
+  })()
 
   return { bill, stockResult, accountingResult, pointsResult }
 }

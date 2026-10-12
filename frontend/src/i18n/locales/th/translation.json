@@ -1334,6 +1334,7 @@
       "overdue": "เกินกำหนด",
       "pending": "รอดำเนินการ",
       "partialPaid": "ชำระบางส่วน",
+      "pendingApproval": "รออนุมัติ",
       "delivered": "ส่งของแล้ว",
       "shipped": "กำลังจัดส่ง"
     },
@@ -1363,6 +1364,7 @@
       "creditNoteCreateFailed": "สร้างใบลดหนี้ไม่สำเร็จ",
       "creditNoteIssued": "ออกใบลดหนี้สำเร็จ",
       "creditNoteIssueFailed": "ออกใบลดหนี้ไม่สำเร็จ",
+      "creditNoteRefundDue": "ลูกค้าจ่ายเงินไปแล้ว ต้องคืนเงิน/เป็นเครดิตให้ลูกค้า ฿{{amount}}",
       "uploadSuccess": "อัปโหลดไฟล์สำเร็จ",
       "uploadFailed": "อัปโหลดไฟล์ไม่สำเร็จ",
       "deleteSuccess": "ลบไฟล์สำเร็จ",
@@ -1573,7 +1575,17 @@
       "cashMovementsInShift": "รายการเงินเข้า/ออกในกะนี้",
       "cashMovementsEmpty": "ยังไม่มีรายการเงินเข้า/ออกในกะนี้",
       "cashMovementsTotal": "รวมเงินเข้า/ออก",
-      "shiftNotOpenError": "กรุณาเปิดกะก่อนรับชำระเงิน"
+      "shiftNotOpenError": "กรุณาเปิดกะก่อนรับชำระเงิน",
+      "shiftRequiredTitle": "ต้องเปิดกะก่อนขาย",
+      "shiftRequiredHint": "ยังไม่มีกะที่เปิดอยู่ กรุณาเปิดกะก่อนเริ่มขาย",
+      "staleShiftTitle": "กะค้างจากวันก่อน",
+      "staleShiftHint": "กะ {{number}} เปิดไว้ตั้งแต่ {{date}} ต้องปิดกะเก่าก่อนจึงจะขายต่อได้",
+      "closeOldShift": "ปิดกะเก่า",
+      "toastShiftNotOpen": "ยังไม่ได้เปิดกะ — กรุณาเปิดกะก่อนขาย",
+      "toastShiftStale": "กะของวันก่อนยังไม่ได้ปิด — กรุณาปิดกะเก่าก่อนขายต่อ",
+      "openBillsList": "บิลที่ยังไม่ชำระ: {{bills}}",
+      "manageOpenBills": "จัดการบิลค้าง",
+      "staleBillsBanner": "กะค้าง — ชำระ/ยกเลิกบิลค้างแล้วปิดกะ ({{count}} บิล)"
     },
     "validation": {
       "cancelReason": "กรุณาระบุสาเหตุการยกเลิก",
@@ -1741,7 +1753,9 @@
       "returnQty": "จำนวนที่คืน",
       "soldQty": "ขายไป",
       "noReturnItems": "ไม่พบรายการสินค้าในใบแจ้งหนี้นี้",
-      "selectReturnItems": "กรุณาเลือกสินค้าที่รับคืนอย่างน้อย 1 รายการ"
+      "selectReturnItems": "กรุณาเลือกสินค้าที่รับคืนอย่างน้อย 1 รายการ",
+      "remainingHint": "ลดได้อีกไม่เกิน ฿{{amount}}",
+      "exceedsRemaining": "ยอดลดหนี้เกินมูลค่าใบแจ้งหนี้ที่เหลือ"
     },
     "creditNoteStatus": {
       "draft": "ร่าง",

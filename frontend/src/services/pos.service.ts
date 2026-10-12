@@ -171,3 +171,19 @@ const posService = {
 }
 
 export default posService
+
+// ── Shift guard errors (backend: SHIFT_NOT_OPEN 403 / SHIFT_STALE 409 / SHIFT_HAS_OPEN_BILLS 409) ──
+export const shiftErrorCode = (e: any): string | undefined => e?.response?.data?.code
+
+// ponytail: backend field name for the open-bill list isn't pinned yet — accept the likely shapes
+export const openBillNumbers = (e: any): string[] => {
+  const d = e?.response?.data || {}
+  const list = d.open_bills ?? d.bills ?? d.data?.open_bills ?? d.data?.bills ?? []
+  return Array.isArray(list)
+    ? list.map((b: any) => (typeof b === 'string' ? b : b?.bill_number || b?.display_name || b?.id)).filter(Boolean)
+    : []
+}
+
+// ยอดเงินสดที่ควรมี — ปัด 2 ตำแหน่งให้ตรงกับ backend
+export const expectedShiftCash = (shift?: { opening_cash?: number; live?: { cash_revenue?: number; cash_in?: number; paid_out?: number } } | null) =>
+  Math.round(((shift?.opening_cash || 0) + (shift?.live?.cash_revenue || 0) + (shift?.live?.cash_in || 0) - (shift?.live?.paid_out || 0)) * 100) / 100

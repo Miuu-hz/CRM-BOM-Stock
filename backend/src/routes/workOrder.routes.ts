@@ -8,7 +8,7 @@ import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from 
 import { roundQty, isPositiveQty } from '../utils/qty'
 import {
   restockCancelledWorkOrderMaterials, workOrderStatusError,
-  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion,
+  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion, settleWorkOrderCost,
 } from '../services/stockMovement.service'
 import { resolveStockItemId, StockItemRefError } from '../services/stockItem.service'
 
@@ -359,6 +359,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           .run(status, now, finalCompletedQty, now, req.params.id, tenantId)
 
         // Add finished product to stock
+        let finished: { id: string; addQty: number } | null = null
         if (wo.bom_id) {
           const bom = db.prepare('SELECT product_id FROM boms WHERE id = ? AND tenant_id = ?').get(wo.bom_id, tenantId) as any
           if (bom?.product_id) {
@@ -391,9 +392,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
                 INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
                 VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?, 'system')
               `).run(generateId(), tenantId, finishedStock.id, addQty, movementUnit, movementQuantity, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
+              finished = { id: finishedStock.id, addQty }
             }
           }
         }
+        // ต้นทุนวัตถุดิบที่เบิกไป → ต้นทุนสินค้าสำเร็จรูป (หรือค่าใช้จ่ายถ้าไม่มีของออกมา)
+        settleWorkOrderCost(tenantId, req.user!.email, { id: req.params.id, wo_number: wo.wo_number }, finished)
       })
       try {
         completeTransaction()

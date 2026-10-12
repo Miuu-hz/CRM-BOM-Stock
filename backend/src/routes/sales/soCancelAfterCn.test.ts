@@ -46,7 +46,9 @@ function seed(t: string, soQty: number, soUnit: string) {
 
 async function issueCreditNote(t: string, token: string, s: ReturnType<typeof seed>, qty: number) {
   const invoiceId = generateId()
-  db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
+  // total_amount = 2000 (10 หน่วย @200 ตาม invoice_items ด้านล่าง) — จำเป็นสำหรับเพดานใบลดหนี้ใหม่
+  // (ผลรวมใบลดหนี้ต้องไม่เกิน total_amount ของใบแจ้งหนี้)
+  db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, total_amount) VALUES (?, ?, ?, ?, ?, 2000)`)
     .run(invoiceId, t, 'INV-' + invoiceId.slice(0, 6), s.soId, s.customerId)
   const invoiceItemId = generateId()
   db.prepare(`INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_name, quantity, unit_price, total_price)
@@ -69,18 +71,18 @@ describe('ยกเลิก SO หลังใบลดหนี้รับค
     deductStockForSO(t, s.soId, s.soNumber)
     await issueCreditNote(t, token, s, 4)
     expect(stockQty(s.stockId)).toBe(94)
-    expect(balanceOf(t, ACC.INVENTORY)).toBe(-600)
+    expect(balanceOf(t, ACC.RAW_MATERIAL)).toBe(-600)
 
     restoreStockForSO(t, s.soId, s.soNumber)
     expect(stockQty(s.stockId), 'ยกเลิกคืนแค่ 6 ที่ยังไม่ได้คืน').toBe(100)
     const cancel = db.prepare(`SELECT total_debit FROM journal_entries WHERE tenant_id = ? AND reference_type = 'SO_COGS_CANCEL'`).get(t) as any
     expect(cancel.total_debit, 'กลับรายการต้นทุนเฉพาะ 6 หน่วย').toBe(600)
-    expect(balanceOf(t, ACC.INVENTORY), 'สต็อกในงบตรงกับสต็อกจริง (กลับครบ)').toBe(0)
+    expect(balanceOf(t, ACC.RAW_MATERIAL), 'สต็อกในงบตรงกับสต็อกจริง (กลับครบ)').toBe(0)
     expect(balanceOf(t, ACC.COGS_PRODUCT), 'ต้นทุนขายสุทธิ ขาย/CN/ยกเลิก = 0').toBe(0)
 
     restoreStockForSO(t, s.soId, s.soNumber) // ยกเลิกซ้ำไม่ลงซ้ำ
     expect(stockQty(s.stockId)).toBe(100)
-    expect(balanceOf(t, ACC.INVENTORY)).toBe(0)
+    expect(balanceOf(t, ACC.RAW_MATERIAL)).toBe(0)
   })
 
   it('ยืนยัน→ยกเลิก→ยืนยันใหม่ แล้ว CN คืน 1 แพ็ค = 12 ชิ้น ไม่ใช่ 24', async () => {
@@ -106,7 +108,7 @@ describe('ยืนยัน→ยกเลิก→ยืนยันใหม�
     // สต็อกในงบ (ส่วนที่ขยับจาก SO นี้) ต้องเท่ากับ (สต็อกจริง − 100) × ต้นทุน 100 เสมอ
     const check = (qty: number, label: string) => {
       expect(stockQty(s.stockId), label).toBe(qty)
-      expect(balanceOf(t, ACC.INVENTORY), label).toBe((qty - 100) * 100)
+      expect(balanceOf(t, ACC.RAW_MATERIAL), label).toBe((qty - 100) * 100)
       expect(balanceOf(t, ACC.COGS_PRODUCT), label).toBe((100 - qty) * 100)
     }
     deductStockForSO(t, s.soId, s.soNumber); check(90, 'ยืนยัน')

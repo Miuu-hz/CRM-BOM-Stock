@@ -66,14 +66,14 @@ function setupSO(qty = 5, unitPrice = 200, unitCost = 120) {
 }
 
 describe('ต้นทุนขายลงตอนตัดสต็อก (SO_COGS)', () => {
-  it('ยืนยัน SO แล้ว 5101 เดบิต / 1106 เครดิต เท่าต้นทุนจริง และเขียน issued_unit_cost', () => {
+  it('ยืนยัน SO แล้ว 5101 เดบิต / 1107 เครดิต เท่าต้นทุนจริง และเขียน issued_unit_cost', () => {
     const { tenantId, soId, soNumber, soItemId, qty, unitCost } = setupSO()
     const expectedCogs = qty * unitCost
 
     deductStockForSO(tenantId, soId, soNumber)
 
     expect(balanceOf(tenantId, ACC.COGS_PRODUCT), 'ต้นทุนขายต้องลงทันทีตอนตัดสต็อก').toBe(expectedCogs)
-    expect(balanceOf(tenantId, ACC.INVENTORY), 'สต็อกในงบต้องลดตามมูลค่าที่ตัดจริง').toBe(-expectedCogs)
+    expect(balanceOf(tenantId, ACC.RAW_MATERIAL), 'สต็อกในงบต้องลดตามมูลค่าที่ตัดจริง').toBe(-expectedCogs)
 
     const item = db.prepare('SELECT issued_unit_cost FROM sales_order_items WHERE id = ?').get(soItemId) as any
     expect(item.issued_unit_cost, 'ต้องบันทึกต้นทุนต่อหน่วยฐาน ณ วินาทีตัดสต็อกไว้ที่บรรทัด SO').toBe(unitCost)
@@ -104,7 +104,7 @@ describe('ต้นทุนขายลงตอนตัดสต็อก (SO
     restoreStockForSO(tenantId, soId, soNumber)
 
     expect(balanceOf(tenantId, ACC.COGS_PRODUCT), 'ยกเลิกแล้วต้นทุนขายต้องกลับเป็นศูนย์').toBe(0)
-    expect(balanceOf(tenantId, ACC.INVENTORY), 'สต็อกในงบต้องกลับเป็นศูนย์ตามที่คืนของ').toBe(0)
+    expect(balanceOf(tenantId, ACC.RAW_MATERIAL), 'สต็อกในงบต้องกลับเป็นศูนย์ตามที่คืนของ').toBe(0)
 
     const cancelEntry = db.prepare("SELECT id FROM journal_entries WHERE tenant_id = ? AND reference_type = 'SO_COGS_CANCEL'").get(tenantId)
     expect(cancelEntry, 'ต้องมี journal กลับรายการต้นทุนขาย').toBeTruthy()

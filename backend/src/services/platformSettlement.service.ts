@@ -250,7 +250,7 @@ export function postPlatformSettlement(input: PostSettlementInput): PostSettleme
         { code: ACC.REVENUE_PRODUCT,   description: 'รายได้ขายสินค้า', credit: revenue },
         { code: ACC.OUTPUT_VAT,        description: 'ภาษีขาย', credit: vat },
         { code: ACC.COGS_PRODUCT,      description: 'ต้นทุนสินค้าขาย', debit: cogs },
-        { code: ACC.INVENTORY,         description: 'สต็อกสินค้า', credit: cogs },
+        { code: ACC.RAW_MATERIAL,      description: 'สต็อกสินค้า', credit: cogs },
       ],
     })
 

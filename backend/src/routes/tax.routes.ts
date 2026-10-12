@@ -57,7 +57,7 @@ function whtDueDate(year: number, month: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-07`
 }
 
-function ensurePeriod(tenantId: string, dateValue: string | null | undefined): string | null {
+export function ensurePeriod(tenantId: string, dateValue: string | null | undefined): string | null {
   const dateStr = toYMD(dateValue)
   if (!dateStr) return null
   const { year, month } = parseYMD(dateStr)
@@ -149,7 +149,8 @@ function syncVatOutputFromPosBills(tenantId: string) {
       bill.customer_name || bill.display_name || 'ลูกค้าเงินสด',
       bill.customer_tax_id ?? null,
       `ภาษีขายจากบิล POS ${bill.bill_number}`,
-      bill.subtotal ?? 0, bill.tax_amount ?? 0, bill.total_amount ?? 0, bill.tax_rate || 7,
+      // ฐานภาษี = ยอดสุทธิ − ภาษี (subtotal ไม่รวมค่าบริการ/ค่าขนส่ง และยังไม่หักส่วนลดท้ายบิล)
+      (bill.total_amount ?? 0) - (bill.tax_amount ?? 0), bill.tax_amount ?? 0, bill.total_amount ?? 0, bill.tax_rate || 7,
       // ออกใบกำกับเต็มรูปให้บิลนี้แล้ว เลขที่ยื่นภาษีต้องเป็นเลขใบกำกับ ไม่ใช่เลขบิลหน้าร้าน
       bill.invoice_number ?? null
     )
@@ -281,6 +282,7 @@ function computeCitForPeriod(tenantId: string, startDate: string, endDate: strin
      JOIN accounts a ON jl.account_id = a.id
      JOIN journal_entries je ON jl.journal_entry_id = je.id
      WHERE jl.tenant_id = ? AND je.tenant_id = ? AND je.is_posted = 1
+       AND (je.is_closing_entry = 0 OR je.is_closing_entry IS NULL)
        AND je.date >= ? AND je.date <= ?`
   ).get(tenantId, tenantId, startDate, endDate) as any
 

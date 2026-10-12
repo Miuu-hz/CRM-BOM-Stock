@@ -121,7 +121,7 @@ describe('ใบลดหนี้คืนตามตัวคูณที่�
     const rets = db.prepare(`SELECT source_line_id, quantity FROM stock_movements WHERE tenant_id = ? AND type = 'RETURN' AND reference = ?`)
       .all(s.t, 'SO: ' + so.soNumber) as any[]
     expect(rets).toEqual([{ source_line_id: so.lineIds[0], quantity: 15 }])
-    expect(balanceOf(s.t, ACC.INVENTORY), 'สต็อกในงบกลับครบ (ขาย 210 / CN 135 / ยกเลิก 75)').toBe(0)
+    expect(balanceOf(s.t, ACC.RAW_MATERIAL), 'สต็อกในงบกลับครบ (ขาย 210 / CN 135 / ยกเลิก 75)').toBe(0)
     expect(balanceOf(s.t, ACC.COGS_PRODUCT)).toBe(0)
   })
 
@@ -147,7 +147,7 @@ describe('ใบส่งของตัดสต็อก (SO ยังไม�
     const s = setup()
     const so = soWith(s, [{ name: 'น้ำดื่มสิงห์', qty: 2, unit: 'pack' }], 'DRAFT')
     const gl = (inv: number, label: string) => {
-      expect(balanceOf(s.t, ACC.INVENTORY) + inv, label).toBe(0)
+      expect(balanceOf(s.t, ACC.RAW_MATERIAL) + inv, label).toBe(0)
       expect(balanceOf(s.t, ACC.COGS_PRODUCT), label).toBe(inv)
     }
     expect((await setDoStatus(s.user.token, doFor(s.t, so.soId, { [so.lineIds[0]]: 1 }), 'DELIVERED')).status).toBe(200)
@@ -172,18 +172,18 @@ describe('ใบส่งของตัดสต็อก (SO ยังไม�
 
     deductStockForSO(s.t, so.soId, so.soNumber)
     expect(stockQty(s.stockId), 'ไม่ตัด 30 ซ้ำ — ตัดแค่ 15 ที่เหลือ').toBe(970)
-    expect(balanceOf(s.t, ACC.INVENTORY)).toBe(-150)
+    expect(balanceOf(s.t, ACC.RAW_MATERIAL)).toBe(-150)
     expect(balanceOf(s.t, ACC.COGS_PRODUCT)).toBe(150)
     deductStockForSO(s.t, so.soId, so.soNumber) // เรียกซ้ำ: ของออกครบแล้ว ไม่ตัด ไม่ลงต้นทุน
     expect(stockQty(s.stockId)).toBe(970)
-    expect(balanceOf(s.t, ACC.INVENTORY)).toBe(-150)
+    expect(balanceOf(s.t, ACC.RAW_MATERIAL)).toBe(-150)
 
     expect((await setDoStatus(s.user.token, doFor(s.t, so.soId, { [so.lineIds[0]]: 1 }), 'DELIVERED')).status).toBe(200)
     expect(stockQty(s.stockId), 'SO ตัดแล้ว DO ไม่ตัด').toBe(970)
 
     restoreStockForSO(s.t, so.soId, so.soNumber)
     expect(stockQty(s.stockId)).toBe(1000)
-    expect(balanceOf(s.t, ACC.INVENTORY)).toBe(0)
+    expect(balanceOf(s.t, ACC.RAW_MATERIAL)).toBe(0)
     expect(balanceOf(s.t, ACC.COGS_PRODUCT)).toBe(0)
   })
 })
@@ -202,7 +202,9 @@ describe('ออกใบลดหนี้รับคืนแต่คืน�
       .run(generateId(), s.t, so.soId, s.stockId) // บรรทัดพี่น้อง → ทางสำรองหาตัวคูณจาก SO ไม่ได้
 
     const invoiceId = generateId()
-    db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
+    // total_amount = 200 (ตรงกับ invoice_items ด้านล่าง) — ต้องตั้งให้พอ ไม่งั้นเพดานใบลดหนี้ใหม่
+    // (ต้องไม่เกิน total_amount ของใบแจ้งหนี้) จะดีด 409 ก่อนถึงจุดที่ทดสอบ (422 คืนสต็อกไม่ได้)
+    db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, total_amount) VALUES (?, ?, ?, ?, ?, 200)`)
       .run(invoiceId, s.t, 'INV-' + invoiceId.slice(0, 6), so.soId, s.customerId)
     const invItemId = generateId()
     db.prepare(`INSERT INTO invoice_items (id, tenant_id, invoice_id, sales_order_item_id, stock_item_id, product_name, quantity, unit_price, total_price)
@@ -237,7 +239,7 @@ describe('ยกเลิก SO เอกสารเก่า (ไม่มี 
     expect(stockQty(s.stockId), 'ไม่คืนซ้ำ 4 ที่ CN คืนแล้ว').toBe(100)
     const cancel = db.prepare(`SELECT total_debit FROM journal_entries WHERE tenant_id = ? AND reference_type = 'SO_COGS_CANCEL'`).all(s.t) as any[]
     expect(cancel.map(c => c.total_debit)).toEqual([600])
-    expect(balanceOf(s.t, ACC.INVENTORY)).toBe(0)
+    expect(balanceOf(s.t, ACC.RAW_MATERIAL)).toBe(0)
     expect(balanceOf(s.t, ACC.COGS_PRODUCT)).toBe(0)
   })
 })

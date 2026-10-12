@@ -94,7 +94,7 @@ describe('ปรับสต็อก — ตีมูลค่าและล�
     expect(lines[1].credit).toBeCloseTo(2, 6)   // Cr สินค้าคงเหลือ
   })
 
-  it('ปรับเพิ่มของเกิน ต้อง Dr สินค้าคงเหลือ / Cr รายได้อื่น', () => {
+  it('ปรับเพิ่มของเกิน ต้อง Dr สินค้าคงเหลือ / Cr บัญชีตามเหตุผล', () => {
     const user = createTestUser({ role: 'ADMIN' })
     const id = seedItem(user.tenantId, 1000, 0, 'g')
     seedReceipt(user.tenantId, id, 1, 'kg', 20, 1000)
@@ -107,7 +107,7 @@ describe('ปรับสต็อก — ตีมูลค่าและล�
     expect(je.total_debit).toBeCloseTo(2, 6)
     const lines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY line_number').all(je.id) as any[]
     expect(lines[0].debit).toBeCloseTo(2, 6)    // Dr สินค้าคงเหลือ
-    expect(lines[1].credit).toBeCloseTo(2, 6)   // Cr รายได้อื่น
+    expect(lines[1].credit).toBeCloseTo(2, 6)   // Cr เจ้าหนี้อื่น
   })
 
   it('ไม่มีประวัติรับเข้าเลย ต้องไม่พัง — ใช้ต้นทุนที่บันทึกไว้แทน', () => {
@@ -234,13 +234,17 @@ describe('ปรับสต็อก — เหตุผลพาเงิน�
     expect(creditCodeOf(user.tenantId, id)?.code).toBe('5902')
   })
 
-  it('ปรับเพิ่มเพราะรับเพิ่มไม่ผ่านใบ เข้าค่าปรับปรุงสต็อก ไม่ใช่รายได้อื่น', () => {
+  // ของเข้าร้านโดยไม่ผ่านใบ = มีคนออกเงินซื้อมา ไม่ใช่กำไร ถ้าลง Cr บัญชีค่าใช้จ่าย
+  // ค่าใช้จ่ายจะติดลบแล้วกำไรสุทธิบวมเท่ามูลค่าของ (เคยเกิดจริง: เมล็ดกาแฟ 2,737 บาท)
+  it('ปรับเพิ่มเพราะรับเพิ่มไม่ผ่านใบ พักไว้ที่เจ้าหนี้อื่น ไม่แตะงบกำไรขาดทุน', () => {
     const user = createTestUser({ role: 'ADMIN' })
     const id = seedItem(user.tenantId, 100, 10, 'ชิ้น')
     applyStockMovement(user.tenantId, user.email, {
       stockItemId: id, type: 'ADJUST', quantity: 110, unit: 'ชิ้น', adjustReason: 'รับเพิ่มไม่ผ่านใบ',
     })
-    expect(creditCodeOf(user.tenantId, id)?.code).toBe('5902')
+    const credit = creditCodeOf(user.tenantId, id)
+    expect(credit?.code).toBe('2102')
+    expect(credit?.type).toBe('LIABILITY')
   })
 
   // ปรับสต็อกขึ้นไม่ใช่การขาย ถ้าขาปลายทางหลุดไปอยู่กลุ่ม REVENUE ยอดขายบน
@@ -254,5 +258,25 @@ describe('ปรับสต็อก — เหตุผลพาเงิน�
     const credit = creditCodeOf(user.tenantId, id)
     expect(credit?.code).toBe('5902')
     expect(credit?.type).not.toBe('REVENUE')
+  })
+})
+
+// เบิกออกเคยตัดแค่จำนวนในคลัง ไม่มี journal — ของหายจากคลังแต่ต้นทุนไม่ขึ้น กำไรเกินจริง
+describe('เบิกออก (OUT) ต้องลงต้นทุนวัตถุดิบใช้ไป', () => {
+  it('Dr 5102 ต้นทุนวัตถุดิบใช้ไป / Cr 1107 สต็อกวัตถุดิบ ตามทุนเฉลี่ย', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const id = seedItem(user.tenantId, 1000, 0, 'g')
+    seedReceipt(user.tenantId, id, 1, 'kg', 20, 1000)     // ฿0.02 ต่อกรัม
+
+    applyStockMovement(user.tenantId, user.email, {
+      stockItemId: id, type: 'OUT', quantity: 250, unit: 'g',
+    })
+
+    const je = db.prepare("SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = 'STOCK_OUT' ORDER BY created_at DESC")
+      .get(user.tenantId) as any
+    expect(je.total_debit).toBeCloseTo(5, 6)
+    const lines = db.prepare(`SELECT jl.debit, jl.credit, a.code FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+      WHERE jl.journal_entry_id = ? ORDER BY jl.line_number`).all(je.id) as any[]
+    expect(lines.map(l => [l.code, l.debit, l.credit])).toEqual([['5102', 5, 0], ['1107', 0, 5]])
   })
 })

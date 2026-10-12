@@ -174,7 +174,7 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
   restore()
 
   // รับคืนสินค้าเข้าสต็อก → กลับรายการต้นทุนขายด้วย Dr สต็อก / Cr ต้นทุนขาย เดียวกับที่
-  // deductStockForSO ลงไว้ตอนขาย (shared.ts, ACC.COGS_PRODUCT / ACC.INVENTORY) มูลค่าตาม
+  // deductStockForSO ลงไว้ตอนขาย (shared.ts, ACC.COGS_PRODUCT / ACC.RAW_MATERIAL) มูลค่าตาม
   // ต้นทุน ณ ตอนขายจริง (issued_unit_cost) ไม่ใช่ unit_cost ปัจจุบันของสต็อก
   if (totalReturnCost > 0.005) {
     postJournal({
@@ -184,7 +184,7 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
       referenceId: cn.id,
       description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`,
       lines: [
-        { code: ACC.INVENTORY, description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`, debit: totalReturnCost },
+        { code: ACC.RAW_MATERIAL, description: `รับคืนสินค้าเข้าสต็อก - CN ${cn.cn_number}`, debit: totalReturnCost },
         { code: ACC.COGS_PRODUCT, description: `กลับรายการต้นทุนขาย - CN ${cn.cn_number}`, credit: totalReturnCost },
       ],
       createdBy: userId,
@@ -192,6 +192,51 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
       sourceNumber: cn.cn_number,
     })
   }
+}
+
+// ─── Invoice balance: หักยอดค้างเฉพาะตอน ISSUED · คืนเมื่อยกเลิกใบที่หักไปแล้ว ─────
+// credit_notes.balance_applied = ยอดที่หักจาก invoices.balance_amount ไปแล้วจริง (หลัง clamp ที่ 0)
+// NULL = ใบเก่าก่อนมีคอลัมน์ — โค้ดเดิมหักตั้งแต่ตอนสร้าง (แม้ยัง DRAFT) จึงถือว่าหักไปแล้วเต็ม total_amount
+const appliedOf = (cn: any) => Number(cn.balance_applied ?? cn.total_amount ?? 0)
+
+// ─── ยอดลดหนี้รวม ต้องไม่เกินมูลค่าใบแจ้งหนี้เอง (ป.รัษฎากร ม.82/10 / ม.86/10) ──────────────
+// ใบลดหนี้ลดมูลค่าใบแจ้งหนี้ ไม่ใช่ยอดค้างชำระ — ลูกค้าจ่ายครบแล้วก็ยังออกได้ (กลายเป็นเงินคืน)
+// แต่ผลรวมใบลดหนี้ที่ไม่ถูกยกเลิกทั้งหมดของใบแจ้งหนี้ใบเดียวกัน (รวม DRAFT เพราะจะถูกออกจริง)
+// ต้องไม่เกิน invoices.total_amount ใช้ helper เดียวกันทั้งตอนสร้าง (POST /) และตอน DRAFT→ISSUED
+export function creditNoteCreditableRemaining(tenantId: string, invoiceId: string, excludeCnId?: string): number {
+  const inv = db.prepare('SELECT total_amount FROM invoices WHERE id = ? AND tenant_id = ?').get(invoiceId, tenantId) as any
+  const invoiceTotal = Number(inv?.total_amount || 0)
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(total_amount), 0) as sum FROM credit_notes
+     WHERE invoice_id = ? AND tenant_id = ? AND status != 'CANCELLED'` + (excludeCnId ? ' AND id != ?' : '')
+  ).get(...(excludeCnId ? [invoiceId, tenantId, excludeCnId] : [invoiceId, tenantId])) as any
+  return Math.round((invoiceTotal - Number(row?.sum || 0)) * 100) / 100
+}
+
+function applyCreditNoteBalance(tenantId: string, cn: any, now: string): number {
+  if (appliedOf(cn) > 0) return 0 // หักไปแล้ว (รวมใบเก่า NULL)
+  const inv = db.prepare('SELECT balance_amount FROM invoices WHERE id = ? AND tenant_id = ?').get(cn.invoice_id, tenantId) as any
+  if (!inv) return 0
+  const before = Number(inv.balance_amount || 0)
+  const total = Number(cn.total_amount || 0)
+  const after = Math.max(0, Math.round((before - total) * 100) / 100)
+  db.prepare('UPDATE invoices SET balance_amount = ?, updated_at = ? WHERE id = ? AND tenant_id = ?').run(after, now, cn.invoice_id, tenantId)
+  db.prepare('UPDATE credit_notes SET balance_applied = ? WHERE id = ? AND tenant_id = ?')
+    .run(Math.round((before - after) * 100) / 100, cn.id, tenantId)
+  // ponytail: ส่วนที่เกินยอดค้าง (ลูกค้าจ่ายไปแล้วบางส่วน/ทั้งหมด) แค่ส่งค่ากลับให้ caller แจ้งเตือน
+  // ไม่ได้บันทึกเป็นเครดิตลูกค้า/ใบคืนเงินจริงในระบบ — อัปเกรด: สร้างเอกสารเครดิตลูกค้า/ใบคืนเงินแยก
+  // เมื่อมี flow การเงินจริงมารองรับ (ตอนนี้ยังต้องติดตามเองนอกระบบ)
+  return Math.max(0, Math.round((total - before) * 100) / 100)
+}
+
+function restoreCreditNoteBalance(tenantId: string, cn: any, now: string) {
+  const applied = appliedOf(cn)
+  if (applied > 0 && cn.invoice_id) {
+    // คืนไม่เกินยอดรวมใบแจ้งหนี้ — แบบเดียวกับ voidReceipt
+    db.prepare('UPDATE invoices SET balance_amount = MIN(total_amount, ROUND(balance_amount + ?, 2)), updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(applied, now, cn.invoice_id, tenantId)
+  }
+  db.prepare('UPDATE credit_notes SET balance_applied = 0 WHERE id = ? AND tenant_id = ?').run(cn.id, tenantId)
 }
 
 // GET all credit notes
@@ -259,10 +304,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { invoiceId, customerId, reason, notes, items, taxRate } = req.body
+    const { invoiceId, reason, notes, items, creditDate, amount } = req.body
     
     if (!invoiceId || !reason) {
       return res.status(400).json({ success: false, message: 'Invoice and reason are required' })
+    }
+    // ลูกค้า/อัตรา VAT/โหมดรวม VAT ยึดตามใบแจ้งหนี้ต้นทาง — เดิมอ่าน customerId จาก body
+    // ที่หน้าเว็บไม่เคยส่งมา (bind undefined → 500) และ taxRate 0 กลายเป็น 7 เพราะ `|| 7`
+    const srcInvoice = db.prepare('SELECT customer_id, tax_rate, vat_inclusive FROM invoices WHERE id = ? AND tenant_id = ?')
+      .get(invoiceId, tenantId) as any
+    if (!srcInvoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' })
+    }
+    const hasItems = Array.isArray(items) && items.length > 0
+    // โหมด "ลดราคา" ไม่มีรายการ → ต้องระบุยอด (ฐานเดียวกับราคาบนใบแจ้งหนี้) ไม่งั้นได้ใบลดหนี้ ฿0
+    const discountBase = Math.round((Number(amount) || 0) * 100) / 100
+    if (!hasItems && !(discountBase > 0)) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุยอดลดหนี้' })
     }
 
     // ─── Validate return items don't exceed what was actually sold ────────────
@@ -296,24 +354,33 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    // Calculate totals
+    const lineTotal = hasItems
+      ? items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
+      : discountBase
+    const tax = Number(srcInvoice.tax_rate ?? 7)
+    const { subtotal, taxAmount, totalAmount } = calcVat(lineTotal, { rate: tax, inclusive: srcInvoice.vat_inclusive === 1 })
+    const customerId = srcInvoice.customer_id
+
+    // ยอดลดหนี้รวม (รวมใบนี้) ต้องไม่เกินมูลค่าใบแจ้งหนี้ — เช็คก่อนกันเลขเอกสาร (formatDocumentNumber
+    // ต้องมาหลังการตรวจทุกอย่าง) ไม่ให้คำขอที่ถูกปฏิเสธเผาเลขทิ้ง ครอบคลุมทั้งโหมดลดราคาและคืนสินค้า
+    // (โหมดคืนสินค้ากันด้วยจำนวนอยู่แล้ว อันนี้กันซ้ำด้วยมูลค่า)
+    const remaining = creditNoteCreditableRemaining(tenantId, invoiceId)
+    if (totalAmount > remaining + 0.005) {
+      return res.status(400).json({ success: false, message: `ยอดลดหนี้รวมเกินมูลค่าใบแจ้งหนี้ — ลดได้อีกไม่เกิน ฿${remaining.toFixed(2)}` })
+    }
+
     const id = generateId()
     const cnNumber = formatDocumentNumber('CN', tenantId, 'CREDIT_NOTE', new Date().getFullYear(), 5)
     const now = new Date().toISOString()
-
-    // Calculate totals
-    let subtotal = 0
-    if (items && items.length > 0) {
-      subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
-    }
-    const tax = taxRate || 7
-    const { taxAmount, totalAmount } = calcVat(subtotal, { rate: tax })
+    const creditDateValue = typeof creditDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(creditDate) ? creditDate : now
 
     const transaction = db.transaction(() => {
       db.prepare(`
         INSERT INTO credit_notes (id, tenant_id, cn_number, invoice_id, customer_id, credit_date, reason,
-          subtotal, tax_rate, tax_amount, total_amount, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
-      `).run(id, tenantId, cnNumber, invoiceId, customerId, now, reason,
+          subtotal, tax_rate, tax_amount, total_amount, status, notes, created_at, updated_at, balance_applied)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, 0)
+      `).run(id, tenantId, cnNumber, invoiceId, customerId, creditDateValue, reason,
         subtotal, tax, taxAmount, totalAmount, notes || '', now, now)
 
       if (items && items.length > 0) {
@@ -336,14 +403,7 @@ router.post('/', async (req: Request, res: Response) => {
             item.quantity, item.unitPrice, item.reason || '', total)
         }
       }
-
-      // Update invoice balance if credit note issued
-      const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(invoiceId, tenantId) as any
-      if (invoice) {
-        const newBalance = Math.max(0, invoice.balance_amount - totalAmount)
-        db.prepare('UPDATE invoices SET balance_amount = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-          .run(newBalance, now, invoiceId, tenantId)
-      }
+      // ยอดค้างของใบแจ้งหนี้ยังไม่ถูกหักตอน DRAFT — หักตอน ISSUED (applyCreditNoteBalance)
     })
 
     transaction()
@@ -374,7 +434,26 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Credit note not found' })
     }
 
+    // ออกใบได้จาก DRAFT เท่านั้น — กันออกซ้ำ (ลงบัญชี/คืนสต็อก/หักยอดค้างซ้ำ)
+    if (status === 'ISSUED' && cn.status !== 'DRAFT') {
+      return res.status(409).json({ success: false, message: `ออกใบลดหนี้ได้เฉพาะสถานะ DRAFT (ตอนนี้: ${cn.status})` })
+    }
+    // ใบที่ออกแล้วลงบัญชี/คืนสต็อกไปแล้ว — ยังไม่มีขั้นกลับรายการ journal+สต็อก ถ้ายอมให้ยกเลิก/ถอยสถานะ
+    // ยอดค้างในใบแจ้งหนี้จะไม่ตรงกับบัญชีลูกหนี้ จึงยอมแค่ DRAFT → ISSUED / CANCELLED
+    if (cn.status !== 'DRAFT' || !['ISSUED', 'CANCELLED'].includes(status)) {
+      return res.status(409).json({ success: false, message: `เปลี่ยนสถานะใบลดหนี้จาก ${cn.status} เป็น ${status} ไม่ได้ (ใบที่ออกแล้วต้องออกใบเพิ่มหนี้แทนการยกเลิก)` })
+    }
+    // อีกใบ DRAFT บนใบแจ้งหนี้เดียวกันอาจถูกออก (ISSUED) แซงไปก่อนระหว่างที่ใบนี้ยังเป็น DRAFT —
+    // เช็คซ้ำด้วย helper เดียวกับตอนสร้าง ไม่ใช่เชื่อผลเช็คตอน POST เพียงครั้งเดียว
+    if (status === 'ISSUED') {
+      const remaining = creditNoteCreditableRemaining(tenantId, cn.invoice_id, cn.id)
+      if (Number(cn.total_amount || 0) > remaining + 0.005) {
+        return res.status(409).json({ success: false, message: `ยอดลดหนี้รวมเกินมูลค่าใบแจ้งหนี้ — ลดได้อีกไม่เกิน ฿${remaining.toFixed(2)}` })
+      }
+    }
+
     const now = new Date().toISOString()
+    let refundDue = 0
     // เปลี่ยนสถานะ + ลงบัญชีลดหนี้ + คืนสต็อก/กลับต้นทุน ในทรานแซกชันเดียว — ส่วนไหนล้ม ใบยังเป็นสถานะเดิม ไม่มีอะไรค้างครึ่งทาง
     db.transaction(() => {
       db.prepare('UPDATE credit_notes SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
@@ -384,11 +463,13 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         const updated = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
         postCreditNoteJournal(tenantId, updated)
         restoreCreditNoteStock(tenantId, updated, req.user!.userId, now)
+        refundDue = applyCreditNoteBalance(tenantId, updated, now)
       }
+      if (status === 'CANCELLED' && cn.status !== 'CANCELLED') restoreCreditNoteBalance(tenantId, cn, now)
     })()
 
     const creditNote = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    res.json({ success: true, data: creditNote })
+    res.json({ success: true, data: creditNote, refundDue })
   } catch (error) {
     if (error instanceof CreditNoteIssueError || error instanceof JournalError) {
       return res.status(422).json({ success: false, message: error.message })
@@ -407,13 +488,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
     if (cn.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบลดหนี้สถานะ DRAFT เท่านั้น' })
     // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
     db.transaction(() => {
+      const now = new Date().toISOString()
       db.prepare("UPDATE credit_notes SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
-        .run(new Date().toISOString(), req.params.id, tenantId)
-      // Restore the invoice balance that was reduced when this credit note was created
-      if (cn.invoice_id && cn.total_amount) {
-        db.prepare('UPDATE invoices SET balance_amount = balance_amount + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-          .run(cn.total_amount, new Date().toISOString(), cn.invoice_id, tenantId)
-      }
+        .run(now, req.params.id, tenantId)
+      // ใบ DRAFT ใหม่ไม่เคยหักยอด (balance_applied = 0) → ไม่คืนอะไร · ใบเก่า (NULL) หักไปแล้วตอนสร้าง → คืน
+      restoreCreditNoteBalance(tenantId, cn, now)
     })()
     res.json({ success: true })
   } catch (error) {

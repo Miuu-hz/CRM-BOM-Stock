@@ -192,16 +192,20 @@ router.get('/profit-loss', async (req: Request, res: Response) => {
     const businessUnit = (req.query.businessUnit as string) || null
 
     // Get revenue and expense accounts with balances
+    // เครื่องหมายต้องคิดตาม type ไม่ใช่ normal_balance: บัญชีหักรายได้ (4301 ส่วนลดขาย / 4302 รับคืน)
+    // เป็น REVENUE ที่ normal_balance=DEBIT ถ้าคิดตาม normal_balance ยอดจะออกบวกแล้วถูก "บวก" เข้ารายได้
+    // แทนที่จะหักออก · ไม่นับรายการปิดงวด ไม่งั้นงบทั้งปีที่ปิดแล้วจะเหลือ 0 (ตรงกับ phopy-board/dashboard)
     const accounts = db.prepare(`
       SELECT a.*,
              COALESCE((
                SELECT SUM(CASE 
-                 WHEN a.normal_balance = 'DEBIT' THEN jl.debit - jl.credit
+                 WHEN a.type = 'EXPENSE' THEN jl.debit - jl.credit
                  ELSE jl.credit - jl.debit
                END)
                FROM journal_lines jl
                JOIN journal_entries je ON jl.journal_entry_id = je.id
                WHERE jl.account_id = a.id AND je.is_posted = 1 
+               AND (je.is_closing_entry = 0 OR je.is_closing_entry IS NULL)
                AND je.date >= ? AND je.date <= ?
                AND (? IS NULL OR je.business_unit = ?)
              ), 0) as balance

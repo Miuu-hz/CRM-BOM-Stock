@@ -6,7 +6,7 @@ import posAccountingService from '../services/pos-accounting.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { authenticate } from '../middleware/auth.middleware'
-import { generateId, formatDocumentNumber } from '../utils/id'
+import { generateId, formatDocumentNumber, thaiDateStr } from '../utils/id'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../utils/receiptToken'
 import { createInvoiceFromPosBill, findActiveInvoiceForPosBill, SalesBillingError } from '../services/salesBilling.service'
 import { canHandleBilling } from '../services/rbac.service'
@@ -21,6 +21,30 @@ const now = () => new Date().toISOString()
 // Helper: Generate bill number (POS-2024-00001)
 const generateBillNumber = (tenantId: string) => {
   return formatDocumentNumber('POS', tenantId, 'POS_BILL', new Date().getFullYear(), 5)
+}
+
+// ==================== SHIFT GATE ====================
+
+// ขายได้เฉพาะตอนมีกะเปิดอยู่ (บังคับทุก tenant ไม่ขึ้นกับ company_settings.require_pos_shift)
+export function getOpenShift(tenantId: string) {
+  return db.prepare(`SELECT id, opened_at FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN' ORDER BY opened_at DESC LIMIT 1`)
+    .get(tenantId) as { id: string; opened_at: string } | undefined
+}
+
+/** คืนกะที่เปิดอยู่ หรือส่ง 403/409 แล้วคืน null
+ *  กะค้างจากวันก่อน (เวลาไทย) ห้ามเปิดบิลใหม่ แต่ยังรับเงินบิลเดิมได้ (allowStale)
+ *  ไม่งั้นแคชเชียร์เคลียร์บิลค้างไม่ได้ → ปิดกะเดิมไม่ได้ (ติดล็อก) */
+function requireSellableShift(tenantId: string, res: any, allowStale = false) {
+  const shift = getOpenShift(tenantId)
+  if (!shift) {
+    res.status(403).json({ success: false, code: 'SHIFT_NOT_OPEN', message: 'กรุณาเปิดกะก่อนขาย/รับชำระเงิน' })
+    return null
+  }
+  if (!allowStale && thaiDateStr(shift.opened_at) < thaiDateStr()) {
+    res.status(409).json({ success: false, code: 'SHIFT_STALE', message: 'กะที่เปิดอยู่เป็นของวันก่อน กรุณาปิดกะเดิมแล้วเปิดกะใหม่ก่อนขาย' })
+    return null
+  }
+  return shift
 }
 
 // ==================== BILLS ====================
@@ -152,6 +176,9 @@ router.post('/bills', (req, res) => {
     const userId = (req as any).user!.userId
     const { display_name, customer_name, customer_phone, customer_id, notes } = req.body
 
+    const openShift = requireSellableShift(tenantId, res)
+    if (!openShift) return
+
     // If customer_id provided, pull name/phone from CRM
     let resolvedCustomerName = customer_name || null
     let resolvedCustomerPhone = customer_phone || null
@@ -167,10 +194,7 @@ router.post('/bills', (req, res) => {
     const billNumber = generateBillNumber(tenantId)
     const defaultDisplayName = display_name || `บิล ${billNumber.split('-')[2]}`
 
-    // Tag the bill with the currently open shift (if any) so shift-close can sum
-    // sales by shift_id instead of guessing from a time range. NULL if no shift open.
-    const openShift = db.prepare(`SELECT id FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN' LIMIT 1`).get(tenantId) as any
-
+    // Tag the bill with the open shift so shift-close can sum sales by shift_id
     db.prepare(`
       INSERT INTO pos_running_bills (
         id, tenant_id, bill_number, display_name, customer_name, customer_phone,
@@ -179,7 +203,7 @@ router.post('/bills', (req, res) => {
     `).run(
       id, tenantId, billNumber, defaultDisplayName,
       resolvedCustomerName, resolvedCustomerPhone, customer_id || null,
-      now(), notes || null, userId, openShift?.id || null
+      now(), notes || null, userId, openShift.id
     )
     
     res.json({ 
@@ -467,6 +491,8 @@ router.delete('/bills/:billId/items/:itemId', (req, res) => {
 
 // ==================== PAYMENT & STOCK ====================
 
+class BillAlreadyPaidError extends Error {}
+
 // Process payment (deduct stock + record payment + accounting)
 router.post('/bills/:id/pay', async (req, res) => {
   try {
@@ -480,16 +506,8 @@ router.post('/bills/:id/pay', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Payment method required' })
     }
 
-    // Guard: บังคับเปิดกะก่อนรับชำระเงิน — ปิดโดย default (require_pos_shift = 0)
-    // เพื่อไม่ให้ร้านที่ขายโดยไม่เปิดกะมาตลอดขายไม่ได้ทันที (ดู company_settings.allow_negative_stock
-    // สำหรับแพทเทิร์น toggle เดียวกัน)
-    const posSetting = db.prepare(`SELECT require_pos_shift FROM company_settings WHERE tenant_id = ?`).get(tenantId) as any
-    if (posSetting && posSetting.require_pos_shift === 1) {
-      const openShift = db.prepare(`SELECT id FROM pos_shifts WHERE tenant_id = ? AND status = 'OPEN' LIMIT 1`).get(tenantId)
-      if (!openShift) {
-        return res.status(403).json({ success: false, code: 'SHIFT_NOT_OPEN', message: 'กรุณาเปิดกะก่อนรับชำระเงิน' })
-      }
-    }
+    const openShift = requireSellableShift(tenantId, res, true)
+    if (!openShift) return
 
     // Get bill with items
     const billStmt = db.prepare(`
@@ -523,8 +541,18 @@ router.post('/bills/:id/pay', async (req, res) => {
     recalculateBillTotals(id)
     const refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
     
-    // 1. Deduct stock using service
-    const stockResult = await posStockService.deductStockOnPayment(id, tenantId, userId)
+    // 1. Deduct stock using service — ข้ามถ้าบิลนี้เคยตัดสต็อกไปแล้ว (จ่ายรอบก่อนล้มหลังตัดสต็อก)
+    // กด/ยิงซ้ำจะได้ไม่ตัดสองรอบ
+    // ponytail: deductStockOnPayment เป็น async (มี transaction ของตัวเอง) จึงอยู่นอก transaction
+    // การจ่ายด้านล่าง — idempotent ต่อบิลแทน ถ้า service กลายเป็น sync ค่อยย้ายเข้าไปรวม
+    const alreadyDeducted = db.prepare(`
+      SELECT 1 FROM pos_stock_deductions psd
+      JOIN pos_bill_items bi ON bi.id = psd.bill_item_id AND bi.tenant_id = psd.tenant_id
+      WHERE bi.bill_id = ? AND psd.tenant_id = ? LIMIT 1
+    `).get(id, tenantId)
+    const stockResult = alreadyDeducted
+      ? { success: true, deductions: [] as any[], errors: [] as string[], issues: undefined as any[] | undefined }
+      : await posStockService.deductStockOnPayment(id, tenantId, userId)
     
     if (!stockResult.success) {
       return res.json({ 
@@ -544,83 +572,88 @@ router.post('/bills/:id/pay', async (req, res) => {
       })
     }
     
-    // 2. Record payment
+    // 2–5. Payment + PAID + accounting + loyalty ต้องสำเร็จหรือล้มไปด้วยกัน
+    // (recordSale เป็น sync และ throw เมื่อพัง → rollback ทั้งก้อน)
     const paymentId = generateId()
     const totalAmount = (refreshedBill as any).total_amount
     const changeAmount = received_amount ? received_amount - totalAmount : 0
     
-    const paymentStmt = db.prepare(`
-      INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_amount, change_amount, reference, received_by, bank_account_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    paymentStmt.run(
-      paymentId, tenantId, id, payment_method, totalAmount,
-      received_amount || totalAmount, changeAmount > 0 ? changeAmount : 0,
-      reference || null, userId, bank_account_id || null
-    )
+    const payTx = db.transaction(() => {
+      const paymentStmt = db.prepare(`
+        INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_amount, change_amount, reference, received_by, bank_account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      paymentStmt.run(
+        paymentId, tenantId, id, payment_method, totalAmount,
+        received_amount || totalAmount, changeAmount > 0 ? changeAmount : 0,
+        reference || null, userId, bank_account_id || null
+      )
     
-    // 3. Update bill status
-    const updateBill = db.prepare(`
-      UPDATE pos_running_bills 
-      SET status = 'PAID', closed_at = ?, closed_by = ?
-      WHERE id = ? AND tenant_id = ?
-    `)
-    updateBill.run(now(), userId, id, tenantId)
+      // 3. Update bill status — ผูกบิลเข้ากะที่รับเงินจริง (บิลที่เปิดค้างจากกะก่อนต้องนับเข้ากะนี้)
+      const updated = db.prepare(`
+        UPDATE pos_running_bills 
+        SET status = 'PAID', closed_at = ?, closed_by = ?, shift_id = ?
+        WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
+      `).run(now(), userId, openShift.id, id, tenantId)
+      if (updated.changes !== 1) throw new BillAlreadyPaidError()
     
-    // 4. Record accounting entry
-    const payment = { payment_method, amount: totalAmount, bank_account_id: bank_account_id || null }
-    const accountingResult = await posAccountingService.recordSale(
-      refreshedBill as any, payment, tenantId, userId
-    )
+      // 4. Record accounting entry
+      const payment = { payment_method, amount: totalAmount, bank_account_id: bank_account_id || null }
+      const accountingResult = posAccountingService.recordSale(
+        refreshedBill as any, payment, tenantId, userId
+      )
 
-    // 5. Earn loyalty points (if bill has a CRM customer linked)
-    let pointsEarned = 0
-    let pointsRedeemed = 0
-    if ((refreshedBill as any).customer_id) {
-      const customerId = (refreshedBill as any).customer_id
-      const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
-      if (customer) {
-        // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
-        const rate = earn_rate && earn_rate > 0 ? earn_rate : 1
-        pointsEarned = Math.floor(totalAmount / rate)
-        pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
+      // 5. Earn loyalty points (if bill has a CRM customer linked)
+      let pointsEarned = 0
+      let pointsRedeemed = 0
+      if ((refreshedBill as any).customer_id) {
+        const customerId = (refreshedBill as any).customer_id
+        const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
+        if (customer) {
+          // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
+          const rate = earn_rate && earn_rate > 0 ? earn_rate : 1
+          pointsEarned = Math.floor(totalAmount / rate)
+          pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
 
-        const balanceBefore = customer.loyalty_points || 0
-        const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
+          const balanceBefore = customer.loyalty_points || 0
+          const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
 
-        db.prepare(`
-          UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ? AND tenant_id = ?
-        `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId, tenantId)
+          db.prepare(`
+            UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ? AND tenant_id = ?
+          `).run(balanceAfter, (customer.total_spent || 0) + totalAmount, customerId, tenantId)
 
-        // แต้มจาก POS เคยลงตาราง crm_points_transactions ซึ่งไม่มีหน้าไหนอ่านเลยสักที่
-        // (write-only 0 แถวในฐานจริง) ส่วนแท็บแต้มสะสมในหน้า CRM อ่าน loyalty_transactions
-        // คนละตาราง ผลคือแต้มที่ลูกค้าได้จากการซื้อหน้าร้านไม่เคยโผล่ในประวัติของตัวเอง
-        // ย้ายมาเขียนตารางเดียวกับที่ UI อ่าน · ธรรมเนียมของตารางนี้: REDEEM เก็บเป็นเลขติดลบ
-        const logPoints = db.prepare(`
-          INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'POS_BILL', ?, ?, ?, ?)
-        `)
-        const pointsBy = (req.user as any)?.email || userId
+          // แต้มจาก POS เคยลงตาราง crm_points_transactions ซึ่งไม่มีหน้าไหนอ่านเลยสักที่
+          // (write-only 0 แถวในฐานจริง) ส่วนแท็บแต้มสะสมในหน้า CRM อ่าน loyalty_transactions
+          // คนละตาราง ผลคือแต้มที่ลูกค้าได้จากการซื้อหน้าร้านไม่เคยโผล่ในประวัติของตัวเอง
+          // ย้ายมาเขียนตารางเดียวกับที่ UI อ่าน · ธรรมเนียมของตารางนี้: REDEEM เก็บเป็นเลขติดลบ
+          const logPoints = db.prepare(`
+            INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'POS_BILL', ?, ?, ?, ?)
+          `)
+          const pointsBy = (req.user as any)?.email || userId
 
-        if (pointsRedeemed > 0) {
-          logPoints.run(
-            generateId(), tenantId, customerId, 'REDEEM',
-            -pointsRedeemed, Math.max(0, balanceBefore - pointsRedeemed), id,
-            `แลกแต้มลดราคาจากบิล ${(refreshedBill as any).bill_number}`,
-            pointsBy, now()
-          )
-        }
+          if (pointsRedeemed > 0) {
+            logPoints.run(
+              generateId(), tenantId, customerId, 'REDEEM',
+              -pointsRedeemed, Math.max(0, balanceBefore - pointsRedeemed), id,
+              `แลกแต้มลดราคาจากบิล ${(refreshedBill as any).bill_number}`,
+              pointsBy, now()
+            )
+          }
 
-        if (pointsEarned > 0) {
-          logPoints.run(
-            generateId(), tenantId, customerId, 'EARN',
-            pointsEarned, balanceAfter, id,
-            `สะสมแต้มจากบิล ${(bill as any).bill_number}`,
-            pointsBy, now()
-          )
+          if (pointsEarned > 0) {
+            logPoints.run(
+              generateId(), tenantId, customerId, 'EARN',
+              pointsEarned, balanceAfter, id,
+              `สะสมแต้มจากบิล ${(bill as any).bill_number}`,
+              pointsBy, now()
+            )
+          }
         }
       }
-    }
+      return { accountingResult, pointsEarned, pointsRedeemed }
+    })
+    const { accountingResult, pointsEarned, pointsRedeemed } = payTx()
 
     res.json({
       success: true,
@@ -636,6 +669,9 @@ router.post('/bills/:id/pay', async (req, res) => {
       }
     })
   } catch (error) {
+    if (error instanceof BillAlreadyPaidError) {
+      return res.status(409).json({ success: false, message: 'บิลนี้ถูกชำระ/ปิดไปแล้ว' })
+    }
     console.error('Error processing payment:', error)
     res.status(500).json({ success: false, message: 'Failed to process payment' })
   }

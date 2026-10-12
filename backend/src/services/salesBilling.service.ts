@@ -333,7 +333,7 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
     throw new SalesBillingError('INVOICE_CANCELLED', 'ใบแจ้งหนี้นี้ถูกยกเลิกไปแล้ว รับชำระไม่ได้')
   }
 
-  if (amount > invoice.balance_amount) {
+  if (amount > invoice.balance_amount + 0.005) {
     throw new SalesBillingError('OVER_BALANCE', `ยอดชำระ (${amount}) เกินยอดค้าง (${invoice.balance_amount})`)
   }
 
@@ -342,8 +342,10 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
   const now = new Date().toISOString()
   const date = receiptDate || now
 
-  const newPaid = invoice.paid_amount + amount
-  const newBalance = invoice.total_amount - newPaid
+  // ปัดเป็นสตางค์ + ตัดจาก balance_amount (ไม่ใช่ total − paid) เพราะใบลดหนี้ลด balance ไปแล้ว
+  // เดิม total − paid ทำให้ยอดลดหนี้เด้งกลับมาเป็นหนี้ และเศษทศนิยมทำให้ค้าง PARTIAL ตลอด
+  const newPaid = Math.round((invoice.paid_amount + amount) * 100) / 100
+  const newBalance = Math.max(0, Math.round((invoice.balance_amount - amount) * 100) / 100)
   // สถานะจริงในระบบนี้คือ DRAFT/ISSUED/PAID/PARTIAL/OVERDUE/CANCELLED — ไม่มี PARTIALLY_PAID
   let paymentStatus = 'PARTIAL'
   let invoiceStatus = 'PARTIAL'

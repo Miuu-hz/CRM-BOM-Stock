@@ -59,7 +59,9 @@ export class StockMovementError extends Error {
  * เหตุผลที่เลือกตอนปรับสต็อก = ตัวบอกว่าเงินก้อนนี้ควรลงบัญชีตัวไหน
  * ของเสียเป็นผลขาดทุนจริง · ของหายเป็นสินค้าสูญหาย · เบิกไปใช้เป็นต้นทุนวัตถุดิบ ·
  * "นับผิดรอบก่อน" ของไม่เคยหาย แค่ตัวเลขเคยผิด จึงเข้าค่าปรับปรุงสต็อกตามเดิม
- * "รับเพิ่มไม่ผ่านใบ" ของเกินที่เพิ่งเจอ ไม่ใช่รายได้ — ร้านไม่ได้ขายอะไรเพิ่ม
+ * "รับเพิ่มไม่ผ่านใบ" ของเข้าร้านจริงแต่ไม่ได้ผ่าน PO/ใบรับ (ซื้อสด/เจ้าของซื้อมาเอง) — ไม่ใช่รายได้
+ *   และไม่ใช่การกลับรายการค่าใช้จ่าย จึงพักไว้ที่เจ้าหนี้อื่น (2102) รอบัญชีเคลียร์กับคนที่ออกเงิน
+ *   เคยลง Cr 5902 แล้วค่าใช้จ่ายติดลบ กำไรบวมเท่ามูลค่าของ (เคสจริง Kids House: เมล็ดกาแฟ 2,737 บาท)
  * เหตุผลที่ไม่รู้จัก/ไม่ได้กรอก ตกมาที่ 5902 เหมือนพฤติกรรมเดิม
  * ต้องตรงกับชุดเหตุผลใน AdjustModal (frontend/src/pages/Stock.tsx) — ที่นั่นโชว์ชื่อบัญชีให้ดูก่อนกด
  */
@@ -69,7 +71,7 @@ export const ADJUST_REASON_ACCOUNT: Record<string, string> = {
   'ของหาย': ACC.STOCK_SHRINKAGE,
   'เบิกใช้ไม่ได้บันทึก': ACC.COGS_RAW_MATERIAL,
   'นับผิดรอบก่อน': ACC.STOCK_ADJUSTMENT,
-  'รับเพิ่มไม่ผ่านใบ': ACC.STOCK_ADJUSTMENT,
+  'รับเพิ่มไม่ผ่านใบ': ACC.OTHER_PAYABLE,
 }
 
 /**
@@ -101,7 +103,7 @@ export function movementGateAmount(
 }
 
 /**
- * ขยับสต็อก + บันทึก stock_movements + ลง journal (เฉพาะ ADJUST) ในทรานแซกชันเดียว
+ * ขยับสต็อก + บันทึก stock_movements + ลง journal (ADJUST และเบิกออก OUT) ในทรานแซกชันเดียว
  * คืน stock_items แถวที่อัปเดตแล้ว (ยังไม่ enrich — ผู้เรียกจัดการเอง)
  */
 export function applyStockMovement(
@@ -203,6 +205,28 @@ export function applyStockMovement(
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(movementId, tenantId, stockItemId, type, convertedQuantity, movementUnit, Number(quantity), reference || '', notes || '', now, createdBy)
 
+    // เบิกออก (OUT) = ของถูกใช้ไปจริง ต้องเป็นต้นทุนวัตถุดิบใช้ไป ไม่งั้นของหายจากคลังแต่กำไรไม่ลด
+    // เคยลงแค่ stock_movements ไม่มี journal เลย · ตีมูลค่าด้วยทุนเฉลี่ยถ่วงน้ำหนักชุดเดียวกับ ADJUST
+    // อยู่ในทรานแซกชันเดียวกับการตัดสต็อก ลงบัญชีพัง = ไม่ตัดสต็อก (ไม่กลืน error แบบขา ADJUST)
+    if (type === 'OUT') {
+      const outCost = getCostBasis(tenantId, stockItemId).weightedAvg || Number(currentItem.unit_cost || 0)
+      const outValue = Math.round(convertedQuantity * outCost * 100) / 100
+      if (outValue > 0.01) {
+        const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL)
+        const useAccId = getOrCreateAccount(tenantId, ACC.COGS_RAW_MATERIAL)
+        const entryId = generateId()
+        const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5)
+        const desc = `เบิกใช้ ${currentItem.name}${reference ? ` (${reference})` : ''}`
+        db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'STOCK_OUT', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+          .run(entryId, tenantId, jvNumber, now.substring(0, 10), movementId, desc, outValue, outValue, createdBy, now, now)
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, 1, ?, ?, 0)`)
+          .run(generateId(), tenantId, entryId, useAccId, desc, outValue)
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, 2, ?, 0, ?)`)
+          .run(generateId(), tenantId, entryId, invAccId, desc, outValue)
+      }
+    }
+
     // Auto-journal + ทะเบียนการปรับสต็อก
     if (type === 'ADJUST') {
       const oldQty = currentItem.quantity || 0
@@ -241,43 +265,41 @@ export function applyStockMovement(
       }
 
       if (Math.abs(diffValue) > 0.01) {
-        try {
-          const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
-          const yr = new Date().getFullYear()
-          const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
-          const entryId = generateId()
+        // ไม่กลืน error: ลงบัญชีไม่ได้ต้องให้ทั้งทรานแซกชัน rollback (สต็อกไม่ขยับ)
+        // เคย catch แล้ว log เฉย ๆ — จำนวนในคลังเปลี่ยนไปแล้วแต่บัญชีไม่มีรายการรองรับ ตามหาทีหลังไม่ได้
+        const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
+        const yr = new Date().getFullYear()
+        const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+        const entryId = generateId()
 
-          // ปรับขึ้นด้วยเหตุผลที่ map ได้ = กลับรายการค่าใช้จ่ายตัวนั้น ไม่ใช่รายได้อื่น
-          // (นับผิดรอบก่อนแล้วของเกิน ไม่ใช่ร้านมีรายได้เพิ่ม)
-          const reasonAcc = ADJUST_REASON_ACCOUNT[String(adjustReason || '').trim()]
+        // ปรับขึ้นด้วยเหตุผลที่ map ได้ = กลับรายการค่าใช้จ่ายตัวนั้น ไม่ใช่รายได้อื่น
+        // (นับผิดรอบก่อนแล้วของเกิน ไม่ใช่ร้านมีรายได้เพิ่ม)
+        const reasonAcc = ADJUST_REASON_ACCOUNT[String(adjustReason || '').trim()]
 
-          if (diffValue > 0) {
-            // Adjust up: Dr Inventory / Cr บัญชีตามเหตุผล (ไม่มีเหตุผล -> ค่าปรับปรุงสต็อก)
-            // ห้าม fallback ไปบัญชีกลุ่ม REVENUE: dashboard กับงบกำไรขาดทุนกวาดทุกบัญชี
-            // type=REVENUE มารวมเป็น "ยอดขาย" การปรับสต็อกจึงโผล่เป็นยอดขายที่ไม่มีอยู่จริง
-            // (เคสจริง Kids House: ยอดขายปีนี้อ่านได้ 120,745 บาท แต่ขายจริง 126 บาท)
-            const incomeAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.STOCK_ADJUSTMENT)
-            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-              .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-              .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
-          } else {
-            // Adjust down: Dr บัญชีตามเหตุผล (ไม่มีเหตุผล -> ค่าปรับปรุงสต็อก) / Cr Inventory
-            const adjExpAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.STOCK_ADJUSTMENT)
-            const absValue = Math.abs(diffValue)
-            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-              VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-              .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${currentItem.name}`, absValue, absValue, createdBy, now, now)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-              .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${currentItem.name}`, absValue)
-            db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-              .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${currentItem.name}`, absValue)
-          }
-        } catch (journalErr) {
-          console.error('⚠️ Stock adjust journal error:', journalErr)
+        if (diffValue > 0) {
+          // Adjust up: Dr Inventory / Cr บัญชีตามเหตุผล (ไม่มีเหตุผล -> ค่าปรับปรุงสต็อก)
+          // ห้าม fallback ไปบัญชีกลุ่ม REVENUE: dashboard กับงบกำไรขาดทุนกวาดทุกบัญชี
+          // type=REVENUE มารวมเป็น "ยอดขาย" การปรับสต็อกจึงโผล่เป็นยอดขายที่ไม่มีอยู่จริง
+          // (เคสจริง Kids House: ยอดขายปีนี้อ่านได้ 120,745 บาท แต่ขายจริง 126 บาท)
+          const incomeAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.STOCK_ADJUSTMENT)
+          db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+            .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue, diffValue, createdBy, now, now)
+          db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+            .run(generateId(), tenantId, entryId, invAccId, 1, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
+          db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+            .run(generateId(), tenantId, entryId, incomeAccId, 2, `ปรับเพิ่มสต็อก ${currentItem.name}`, diffValue)
+        } else {
+          // Adjust down: Dr บัญชีตามเหตุผล (ไม่มีเหตุผล -> ค่าปรับปรุงสต็อก) / Cr Inventory
+          const adjExpAccId = getOrCreateAccount(tenantId, reasonAcc || ACC.STOCK_ADJUSTMENT)
+          const absValue = Math.abs(diffValue)
+          db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'STOCK_ADJUST', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+            .run(entryId, tenantId, jvNumber, now.substring(0, 10), stockItemId, `ปรับลดสต็อก ${currentItem.name}`, absValue, absValue, createdBy, now, now)
+          db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+            .run(generateId(), tenantId, entryId, adjExpAccId, 1, `ปรับลดสต็อก ${currentItem.name}`, absValue)
+          db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+            .run(generateId(), tenantId, entryId, invAccId, 2, `ปรับลดสต็อก ${currentItem.name}`, absValue)
         }
       }
     }
@@ -458,6 +480,68 @@ export function restockCancelledWorkOrderMaterials(
     }
   })
   restock()
+}
+
+/**
+ * ปิดใบสั่งผลิตแล้วต้นทุนวัตถุดิบต้องไปอยู่ที่ไหนสักที่ — เดิมเบิกวัตถุดิบออก (OUT) แล้วรับสินค้า
+ * สำเร็จรูปเข้า (IN) โดยไม่มีมูลค่าตามไปเลย: สินค้าสำเร็จรูปต้นทุน 0 ขายไปก็ไม่มีต้นทุนขาย
+ * และถ้าไม่มีสินค้าออกมา วัตถุดิบหายจากคลังแต่ไม่เป็นค่าใช้จ่าย กำไรเกินจริงทั้งสองกรณี
+ *
+ * วัตถุดิบและสินค้าสำเร็จรูปอยู่บัญชีเดียวกัน (1107) การเบิกไปผลิตจึงเป็นการย้ายมูลค่าภายในบัญชี
+ * ไม่ต้องมี journal — แค่ยก unit_cost ของสินค้าสำเร็จรูปให้รับต้นทุนวัตถุดิบ (ถัวเฉลี่ยกับของเดิม)
+ * ไม่มีสินค้าออกมา (ไม่ผูก BOM/ผลิตได้ 0) = วัตถุดิบถูกใช้ทิ้ง → Dr 5102 / Cr 1107
+ * มูลค่าวัตถุดิบ = ยอดเบิกสุทธิ (หักที่คืน) × ทุนเฉลี่ยถ่วงน้ำหนักชุดเดียวกับปรับสต็อก
+ * ต้องเรียกในทรานแซกชันเดียวกับการรับสินค้าสำเร็จรูป หลังบวกจำนวนเข้าสต็อกแล้ว
+ */
+export function settleWorkOrderCost(
+  tenantId: string,
+  createdBy: string,
+  wo: { id: string; wo_number: string },
+  finished: { id: string; addQty: number } | null
+): number {
+  const net = db.prepare(`
+    SELECT stock_item_id,
+           SUM(CASE WHEN type = 'OUT' AND reference = ? THEN quantity ELSE 0 END)
+         - SUM(CASE WHEN type = 'IN'  AND reference = ? THEN quantity ELSE 0 END) AS qty
+      FROM stock_movements
+     WHERE tenant_id = ? AND reference IN (?, ?)
+     GROUP BY stock_item_id
+  `).all(`WO: ${wo.wo_number}`, `WO-CANCEL: ${wo.wo_number}`, tenantId, `WO: ${wo.wo_number}`, `WO-CANCEL: ${wo.wo_number}`) as { stock_item_id: string; qty: number }[]
+
+  let materialCost = 0
+  for (const r of net) {
+    // แถว IN ของสินค้าสำเร็จรูปเองก็อ้าง "WO: x" — ไม่ใช่วัตถุดิบ ข้าม
+    if (finished && r.stock_item_id === finished.id) continue
+    if (!(Number(r.qty) > 0)) continue
+    const it = db.prepare('SELECT unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(r.stock_item_id, tenantId) as any
+    const cost = getCostBasis(tenantId, r.stock_item_id).weightedAvg || Number(it?.unit_cost || 0)
+    materialCost += Number(r.qty) * cost
+  }
+  materialCost = Math.round(materialCost * 100) / 100
+  if (materialCost <= 0) return 0
+
+  if (finished && finished.addQty > 0) {
+    const fg = db.prepare('SELECT quantity, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(finished.id, tenantId) as any
+    const newQty = Number(fg?.quantity || 0)                       // บวกของที่เพิ่งผลิตเข้าไปแล้ว
+    const oldQty = Math.max(0, newQty - finished.addQty)
+    const unitCost = (oldQty * Number(fg?.unit_cost || 0) + materialCost) / (oldQty + finished.addQty)
+    db.prepare('UPDATE stock_items SET unit_cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(unitCost, new Date().toISOString(), finished.id, tenantId)
+    return materialCost
+  }
+
+  const now = new Date().toISOString()
+  const entryId = generateId()
+  const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5)
+  const desc = `วัตถุดิบใช้ไปในการผลิต ${wo.wo_number} (ไม่มีสินค้าสำเร็จรูปเข้าคลัง)`
+  db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'WO_MATERIAL', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
+    .run(entryId, tenantId, jvNumber, now.substring(0, 10), wo.id, desc, materialCost, materialCost, createdBy, now, now)
+  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, 1, ?, ?, 0)`)
+    .run(generateId(), tenantId, entryId, getOrCreateAccount(tenantId, ACC.COGS_RAW_MATERIAL), desc, materialCost)
+  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, 2, ?, 0, ?)`)
+    .run(generateId(), tenantId, entryId, getOrCreateAccount(tenantId, ACC.RAW_MATERIAL), desc, materialCost)
+  return materialCost
 }
 
 /**

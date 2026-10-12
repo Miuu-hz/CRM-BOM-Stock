@@ -275,7 +275,8 @@ export function postSoCogs(tenantId: string, soId: string, soNumber: string, amo
     description,
     lines: [
       { code: ACC.COGS_PRODUCT, description: `ต้นทุนขาย - ${sourceNumber}`, debit: amount },
-      { code: ACC.INVENTORY, description: `ลดสต็อก - ${sourceNumber}`, credit: amount },
+      // ตัดจาก 1107 ให้ตรงกับขาที่รับของเข้า (goodsReceipt/purchaseBilling ลง 1107)
+      { code: ACC.RAW_MATERIAL, description: `ลดสต็อก - ${sourceNumber}`, credit: amount },
     ],
     createdBy: 'system',
     businessUnit: 'WHOLESALE',
@@ -380,7 +381,7 @@ function reverseSoCogsForRestored(tenantId: string, soId: string, soNumber: stri
     referenceId: soId,
     description: `กลับรายการต้นทุนขาย (ยกเลิก SO) - ${soNumber}`,
     lines: [
-      { code: ACC.INVENTORY, description: `คืนสต็อก (ยกเลิก SO) - ${soNumber}`, debit: amount },
+      { code: ACC.RAW_MATERIAL, description: `คืนสต็อก (ยกเลิก SO) - ${soNumber}`, debit: amount },
       { code: ACC.COGS_PRODUCT, description: `กลับรายการต้นทุนขาย - ${soNumber}`, credit: amount },
     ],
     createdBy: 'system',
@@ -586,8 +587,9 @@ export function voidReceipt(tenantId: string, receipt: any): void {
   const now = new Date().toISOString()
   const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(receipt.invoice_id, tenantId) as any
   if (invoice) {
-    const newPaid = Math.max(0, (invoice.paid_amount || 0) - receipt.amount)
-    const newBalance = invoice.total_amount - newPaid
+    const newPaid = Math.max(0, Math.round(((invoice.paid_amount || 0) - receipt.amount) * 100) / 100)
+    // คืนยอดเข้า balance เดิม (ไม่ใช่ total − paid) เพื่อไม่ลบล้างยอดใบลดหนี้ที่หักไปแล้ว
+    const newBalance = Math.min(invoice.total_amount, Math.round(((invoice.balance_amount || 0) + receipt.amount) * 100) / 100)
     const paymentStatus = newPaid <= 0 ? 'UNPAID' : 'PARTIAL'
     const newStatus = invoice.status === 'CANCELLED' ? 'CANCELLED' : (newPaid <= 0 ? 'ISSUED' : 'PARTIAL')
     db.prepare('UPDATE invoices SET paid_amount = ?, balance_amount = ?, payment_status = ?, status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')

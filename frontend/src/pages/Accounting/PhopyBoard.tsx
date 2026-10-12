@@ -228,7 +228,7 @@ export default function PhopyBoard() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-[var(--border)]">
-                    {['เดือน', 'รายได้', 'ต้นทุน', 'กำไร', '%'].map(h => (
+                    {['เดือน', 'รายได้', 'ต้นทุน', 'กำไรขั้นต้น', '%'].map(h => (
                       <th key={h} className="pb-2 text-right first:text-left font-semibold text-[var(--fg-3)]">{h}</th>
                     ))}
                   </tr>

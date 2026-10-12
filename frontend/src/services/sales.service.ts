@@ -105,6 +105,11 @@ export interface CreateSOPayload {
 
 const salesService = {
   // Customers
+  getCustomer: async (id: string): Promise<Customer | null> => {
+    const { data } = await api.get(`/customers/${encodeURIComponent(id)}`)
+    return data.data || null
+  },
+
   searchCustomers: async (q: string): Promise<Customer[]> => {
     const { data } = await api.get(`/customers/search?q=${encodeURIComponent(q)}&limit=20`)
     return data.data || []
@@ -215,6 +220,8 @@ const salesService = {
   // Credit Notes
   createCreditNote: async (payload: {
     invoiceId: string; reason: string; creditDate?: string
+    /** โหมด "ลดราคา": ยอดลดหนี้ (ฐานเดียวกับราคาบนใบแจ้งหนี้) */
+    amount?: number
     /** ระบุเมื่อโหมด "รับคืนสินค้า" เท่านั้น — ไม่ส่ง = โหมด "ลดราคา/ส่วนลด" (ไม่แตะสต็อก) */
     items?: { invoiceItemId: string; productId?: string; quantity: number; unitPrice: number; reason?: string }[]
   }) => {

@@ -7,7 +7,7 @@ import { roundQty, isPositiveQty } from '../../utils/qty'
 import { formatDocumentNumber } from '../../utils/id'
 import {
   restockCancelledWorkOrderMaterials, workOrderStatusError,
-  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion,
+  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion, settleWorkOrderCost,
 } from '../../services/stockMovement.service'
 import { ok } from './shared'
 
@@ -273,6 +273,9 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
               .run(randomUUID().replace(/-/g, '').substring(0, 25), tenantId, finishedStock.id, addQty, movementUnit, movementQuantity,
                 `WO: ${wo.wo_number}`, 'Finished goods from production', now, userId)
           }
+          // ต้นทุนวัตถุดิบที่เบิกไป → ต้นทุนสินค้าสำเร็จรูป (ฟังก์ชันร่วมกับ REST)
+          settleWorkOrderCost(tenantId, userId, { id: wo.id, wo_number: wo.wo_number },
+            finishedStock ? { id: finishedStock.id, addQty } : null)
         })()
       } else if (status === 'CANCELLED') {
         // เดิมยกเลิก WO ที่เบิกวัตถุดิบไปแล้ว (IN_PROGRESS) ตกเข้า else ท้ายสุด ไม่คืนสต็อกเลย

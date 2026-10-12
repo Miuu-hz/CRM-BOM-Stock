@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp, Package, RotateCcw, LayoutTemplate, LayoutList, LayoutGrid, ChevronRight, ArrowRight, X, Store, ShoppingBag, Ban, ChevronDown, ChevronUp, Banknote, QrCode, Printer, Trash2, Pencil, AlertTriangle, Check} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
-import posService from '../services/pos.service'
+import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
 import salesService, { type Customer, type Product } from '../services/sales.service'
 import { stockService } from '../services/stock'
 import { printBill } from '../utils/printBill'
@@ -240,12 +240,16 @@ const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string
   UNPAID:     { labelKey: 'sales.status.unpaid',       bg: 'bg-[var(--danger-soft)]',     text: 'text-red-300' },
   OVERDUE:    { labelKey: 'sales.status.overdue',      bg: 'bg-red-600/15',     text: 'text-danger' },
   PENDING:    { labelKey: 'sales.status.pending',      bg: 'bg-yellow-500/15',  text: 'text-yellow-300' },
+  PARTIAL_PAID: { labelKey: 'sales.status.partialPaid', bg: 'bg-orange-500/15', text: 'text-orange-300' },
   PENDING_APPROVAL: { labelKey: 'sales.status.pendingApproval', bg: 'bg-amber-500/20', text: 'text-amber-400' },
 }
 
-const StatusBadge = ({ status }: { status: string }) => {
+/** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — เทียบวันหมดอายุ/วันส่งแบบรายวัน ไม่ใช่รายมิลลิวินาที */
+const todayStr = () => new Date().toLocaleDateString('sv-SE')
+
+const StatusBadge = ({ status, payment }: { status: string; payment?: boolean }) => {
   const { t } = useTranslation()
-  const cfg = STATUS_CONFIG[status] || { labelKey: status, bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]' }
+  const cfg = (payment && status === 'PARTIAL' ? STATUS_CONFIG.PARTIAL_PAID : STATUS_CONFIG[status]) || { labelKey: status, bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]' }
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
       {t(cfg.labelKey as any)}
@@ -359,8 +363,6 @@ const Sales = () => {
       console.error('Fetch sales badge counts error:', error)
     }
   }
-  useEffect(() => { fetchBadgeCounts() }, [])
-
   useEffect(() => {
     setCurrentPage(1)
     fetchBadgeCounts()
@@ -370,10 +372,13 @@ const Sales = () => {
       fetchQuotations()
     } else if (activeTab === 'orders') {
       fetchSalesOrders()
+      fetchDeliveryOrders()
+      fetchInvoices()
     } else if (activeTab === 'delivery-orders') {
       fetchDeliveryOrders()
     } else if (activeTab === 'invoices') {
       fetchInvoices()
+      fetchSalesOrders()
     } else if (activeTab === 'credit-notes') {
       fetchCreditNotes()
     } else if (activeTab === 'backorders') {
@@ -411,6 +416,7 @@ const Sales = () => {
     try {
       const { data } = await api.get('/sales/quotations')
       if (data.success) setQuotations(data.data)
+      fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadQuotations'))
     } finally { setLoading(false) }
@@ -421,6 +427,7 @@ const Sales = () => {
     try {
       const { data } = await api.get('/sales/sales-orders')
       if (data.success) setSalesOrders(data.data)
+      fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadOrders'))
     } finally { setLoading(false) }
@@ -431,6 +438,7 @@ const Sales = () => {
     try {
       const { data } = await api.get('/sales/invoices')
       if (data.success) setInvoices(data.data)
+      fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadInvoices'))
     } finally { setLoading(false) }
@@ -451,6 +459,7 @@ const Sales = () => {
     try {
       const { data } = await api.get('/sales/backorders')
       if (data.success) setBackorders(data.data)
+      fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadBackorders'))
     } finally { setLoading(false) }
@@ -461,6 +470,7 @@ const Sales = () => {
     try {
       const { data } = await api.get('/sales/delivery-orders')
       if (data.success) setDeliveryOrders(data.data)
+      fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadDeliveries'))
     } finally { setLoading(false) }
@@ -513,7 +523,7 @@ const Sales = () => {
       toast.success(t('sales.toast.invoiceCreated'))
       fetchInvoices()
       setActiveTab('invoices')
-    } catch { toast.error(t('sales.toast.invoiceCreateFailed')) }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.invoiceCreateFailed')) }
   }
   const handleCreateCreditNote = () => setShowCreateCN(true)
   const handleCreateBackorder  = () => toast(t('sales.info.backorderAutoCreated'))
@@ -569,8 +579,9 @@ const Sales = () => {
   }
   const handleUpdateSOStatus = async (id: string, status: string) => {
     try {
-      await salesService.updateSOStatus(id, status)
-      toast.success(t('sales.toast.statusUpdated'))
+      const result = await salesService.updateSOStatus(id, status)
+      if (result?.pending_approval) toast.success(result.message || t('sales.status.pendingApproval'))
+      else toast.success(t('sales.toast.statusUpdated'))
       fetchSalesOrders()
       // กด "ส่งของแล้ว" แล้ว backend ออกใบส่งของให้อัตโนมัติ ต้องโหลดมาใหม่
       // ไม่งั้นป้าย "DO ×n" ในแถวคำสั่งขายจะยังไม่ขึ้นจนกว่าจะเข้าแท็บใบส่งของ
@@ -649,8 +660,10 @@ const Sales = () => {
   // ── Search filter ──────────────────────────────────────────────────────────
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo,   setDateTo]   = useState('')
-  const [listLimit, setListLimit] = useState<25 | 50 | 100>(50)
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
+  const [filterStatus, setFilterStatus] = useState<string>('')
+  // เปลี่ยนคำค้น/ช่วงวันที่/ตัวกรองสถานะ → กลับหน้า 1 ไม่งั้นค้างหน้าที่ไม่มีแถวแล้ว
+  useEffect(() => { setCurrentPage(1) }, [searchQuery, dateFrom, dateTo, filterStatus])
 
   const filterItems = <T extends Record<string, any>>(items: T[], keys: (keyof T)[], dateKey?: keyof T) => {
     let result = items.filter(item => !searchQuery || keys.some(k => String(item[k] || '').toLowerCase().includes(searchQuery.toLowerCase())))
@@ -662,7 +675,8 @@ const Sales = () => {
   }
 
   const paginate = <T,>(items: T[]) => {
-    return items.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const page = Math.min(currentPage, Math.max(1, Math.ceil(items.length / pageSize)))
+    return items.slice((page - 1) * pageSize, page * pageSize)
   }
 
   const Pagination = ({ total }: { total: number }) => {
@@ -778,7 +792,7 @@ const Sales = () => {
           </h3>
           <div className="space-y-2">
             {[
-              { label: t('sales.stats.draftSentQuotations'), count: summary?.salesOrders.draft || 0,          color: 'text-warning', tab: 'quotations' as const },
+              { label: t('sales.stats.draftSentQuotations'), count: badgeCounts.quotations,          color: 'text-warning', tab: 'quotations' as const },
               { label: t('sales.stats.processingOrders'),     count: summary?.salesOrders.processing || 0,    color: 'text-blue-400',   tab: 'orders' as const },
               { label: t('sales.stats.unpaidInvoices'),          count: summary?.invoices.unpaid || 0,           color: 'text-danger',    tab: 'invoices' as const },
               { label: t('sales.stats.partialDelivery'),         count: summary?.salesOrders.partial || 0,       color: 'text-warning', tab: 'orders' as const },
@@ -804,7 +818,7 @@ const Sales = () => {
           </h3>
           <div className="flex items-center gap-1 flex-wrap">
             {[
-              { label: t('sales.docType.quotation'), sub: t('sales.common.itemCount', { count: summary?.salesOrders.total || 0 }), icon: FileText,   color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-info/30',   tab: 'quotations' as const },
+              { label: t('sales.docType.quotation'), sub: t('sales.common.itemCount', { count: badgeCounts.quotations }), icon: FileText,   color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-info/30',   tab: 'quotations' as const },
               { label: t('sales.docType.salesOrder'),  sub: `${summary?.salesOrders.total || 0} ${t('sales.common.itemNumberPrefix')}`, icon: ShoppingCart, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', tab: 'orders' as const },
               { label: t('sales.docType.invoice'), sub: `${t('sales.common.itemCount', { count: summary?.invoices.total || 0 })}`,    icon: Receipt,    color: 'text-warning', bg: 'bg-[var(--warning-soft)]', border: 'border-warning/30', tab: 'invoices' as const },
               { label: t('sales.actions.collect'),    sub: t('sales.common.itemCount', { count: summary?.invoices.paid || 0 }),   icon: DollarSign, color: 'text-success',  bg: 'bg-[var(--success-soft)]',  border: 'border-green-500/30',  tab: 'invoices' as const },
@@ -866,8 +880,8 @@ const Sales = () => {
           {/* Limit */}
           <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-1 py-1">
             {([25, 50, 100] as const).map(n => (
-              <button key={n} onClick={() => setListLimit(n)}
-                className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${listLimit === n ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+              <button key={n} onClick={() => { setPageSize(n); setCurrentPage(1) }}
+                className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${pageSize === n ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
                 {n}
               </button>
             ))}
@@ -899,9 +913,9 @@ const Sales = () => {
     }
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder={t('sales.searchQuotation')} action={
+        {ListToolbar({ placeholder: t('sales.searchQuotation'), action: (
           <>
-            <PageSizeSelect />
+            {PageSizeSelect()}
             <button onClick={() => setActiveTab('templates')}
               className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm">
               <LayoutTemplate className="w-4 h-4" /> {t('sales.common.template')}
@@ -911,7 +925,7 @@ const Sales = () => {
               <Plus className="w-4 h-4" /> {t('sales.createQuotation')}
             </button>
           </>
-        } />
+        ) })}
 
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyQuotation')}</p></div>
@@ -943,7 +957,7 @@ const Sales = () => {
                     </td>
                     <td className="px-4 py-3 text-[var(--fg-3)] text-xs hidden sm:table-cell">{formatDate(q.quotation_date)}</td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={`text-xs font-medium ${q.expiry_date && new Date(q.expiry_date) < new Date() ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
+                      <span className={`text-xs font-medium ${q.expiry_date && q.expiry_date.slice(0, 10) < todayStr() ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
                         {formatDate(q.expiry_date)}
                       </span>
                     </td>
@@ -983,12 +997,12 @@ const Sales = () => {
                 )})}
               </tbody>
             </table>
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((q, i) => {
-              const isExpired = q.expiry_date && new Date(q.expiry_date) < new Date()
+              const isExpired = q.expiry_date && q.expiry_date.slice(0, 10) < todayStr()
               const next = qtNextStatus[q.status]
               return (
                 <motion.div key={q.id}
@@ -1041,7 +1055,7 @@ const Sales = () => {
                 </motion.div>
               )
             })}
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         )}
       </div>
@@ -1059,7 +1073,6 @@ const Sales = () => {
   ]
 
   const OrdersContent = () => {
-    const [filterStatus, setFilterStatus] = useState<string>('')
     const filtered = filterItems(salesOrders, ['so_number', 'customer_name'], 'order_date')
       .filter(o => !filterStatus || o.status === filterStatus)
     const items = paginate(filtered)
@@ -1075,15 +1088,15 @@ const Sales = () => {
 
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder={t('sales.searchOrder')} action={
+        {ListToolbar({ placeholder: t('sales.searchOrder'), action: (
           <>
-            <PageSizeSelect />
+            {PageSizeSelect()}
             <button onClick={handleCreateSalesOrder}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> {t('sales.createOrder')}
             </button>
           </>
-        } />
+        ) })}
 
         {/* Delivery status filter pills */}
         <div className="flex flex-wrap gap-1.5">
@@ -1120,9 +1133,9 @@ const Sales = () => {
                 {items.map(order => {
                   const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
                   const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
-                  const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+                  const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
                   const next = soNextStatus[order.status]
-                  const hasDO = deliveryOrders.some(d => d.so_number === order.so_number)
+                  const hasDO = deliveryOrders.some(d => d.so_number === order.so_number && d.status !== 'CANCELLED')
                   return (
                     <tr key={order.id} className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3">
@@ -1165,13 +1178,13 @@ const Sales = () => {
                             <div key={s.status} className={`h-1.5 rounded-full flex-1 ${i <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} style={{ minWidth: 12 }} />
                           ))}
                         </div>
-                        <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}</p>
+                        <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label ?? t((STATUS_CONFIG[order.status]?.labelKey ?? order.status) as any)}</p>
                         {(order.pending_qty ?? 0) > 0 && (
                           <p className="text-xs text-center text-warning">{t('sales.statusBadge.pendingDelivery')} {order.pending_qty}</p>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center hidden lg:table-cell">
-                        <StatusBadge status={order.payment_status} />
+                        <StatusBadge payment status={order.payment_status} />
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
@@ -1215,16 +1228,16 @@ const Sales = () => {
                 })}
               </tbody>
             </table>
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((order, i) => {
               const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
               const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
-              const isLate = order.delivery_date && new Date(order.delivery_date) < new Date() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+              const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
               const next = soNextStatus[order.status]
-              const hasDO = deliveryOrders.some(d => d.so_number === order.so_number)
+              const hasDO = deliveryOrders.some(d => d.so_number === order.so_number && d.status !== 'CANCELLED')
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -1256,7 +1269,7 @@ const Sales = () => {
                       <p className="text-[var(--fg-1)] font-medium mt-0.5">{order.customer_name}</p>
                       <p className="text-xs text-[var(--fg-4)]">{order.customer_code}</p>
                     </div>
-                    <StatusBadge status={order.payment_status} />
+                    <StatusBadge payment status={order.payment_status} />
                   </div>
                   {/* Delivery progress bar */}
                   <div className="flex items-center gap-0.5 my-2">
@@ -1264,7 +1277,7 @@ const Sales = () => {
                       <div key={s.status} className={`h-1.5 rounded-full flex-1 ${idx <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} />
                     ))}
                   </div>
-                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label}{(order.pending_qty ?? 0) > 0 ? ` · {t('sales.statusBadge.pendingDelivery')} ${order.pending_qty}` : ''}</p>
+                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label ?? t((STATUS_CONFIG[order.status]?.labelKey ?? order.status) as any)}{(order.pending_qty ?? 0) > 0 ? ` · ${t('sales.statusBadge.pendingDelivery')} ${order.pending_qty}` : ''}</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.orderDate')} <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
                     <span>{t('sales.common.deliveryDate')} <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}</span></span>
@@ -1310,7 +1323,7 @@ const Sales = () => {
                 </motion.div>
               )
             })}
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         )}
       </div>
@@ -1323,15 +1336,15 @@ const Sales = () => {
     const items = paginate(filtered)
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder={t('sales.searchInvoice')} action={
+        {ListToolbar({ placeholder: t('sales.searchInvoice'), action: (
           <>
-            <PageSizeSelect />
+            {PageSizeSelect()}
             <button onClick={handleCreateInvoice}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> {t('sales.createInvoice')}
             </button>
           </>
-        } />
+        ) })}
 
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
@@ -1386,7 +1399,7 @@ const Sales = () => {
                           {formatDate(inv.due_date)}{isOverdue ? <AlertTriangle className="w-3 h-3 inline" /> : ''}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center"><StatusBadge status={inv.payment_status} /></td>
+                      <td className="px-4 py-3 text-center"><StatusBadge payment status={inv.payment_status} /></td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(inv.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
                         <span className={`text-xs font-semibold ${inv.balance_amount > 0 ? 'text-danger' : 'text-success'}`}>
@@ -1410,7 +1423,7 @@ const Sales = () => {
                 })}
               </tbody>
             </table>
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1440,7 +1453,7 @@ const Sales = () => {
                       <p className="text-[var(--fg-1)] font-medium mt-0.5">{inv.customer_name}</p>
                       <p className="text-xs text-[var(--fg-4)]">{inv.customer_code}</p>
                     </div>
-                    <StatusBadge status={inv.status === 'CANCELLED' ? 'CANCELLED' : inv.payment_status} />
+                    <StatusBadge payment status={inv.status === 'CANCELLED' ? 'CANCELLED' : inv.payment_status} />
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(inv.invoice_date)}</span></span>
@@ -1467,7 +1480,7 @@ const Sales = () => {
                 </motion.div>
               )
             })}
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         )}
       </div>
@@ -1479,12 +1492,12 @@ const Sales = () => {
     const items = filterItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date')
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder={t('sales.searchCreditNote')} action={
+        {ListToolbar({ placeholder: t('sales.searchCreditNote'), action: (
           <button onClick={handleCreateCreditNote}
             className="flex items-center gap-1.5 px-4 py-2 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 text-sm">
             <Plus className="w-4 h-4" /> {t('sales.createCreditNote')}
           </button>
-        } />
+        ) })}
 
         {items.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
@@ -1586,12 +1599,12 @@ const Sales = () => {
     const items = filterItems(backorders, ['bo_number', 'customer_name'])
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder={t('sales.search.backorder')} action={
+        {ListToolbar({ placeholder: t('sales.search.backorder'), action: (
           <button onClick={handleCreateBackorder}
             className="flex items-center gap-1.5 px-4 py-2 bg-orange-500/80 text-white font-semibold rounded-lg hover:bg-orange-500 text-sm">
             <Plus className="w-4 h-4" /> {t('sales.createBackorder')}
           </button>
-        } />
+        ) })}
 
         {items.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
@@ -1679,15 +1692,15 @@ const Sales = () => {
     }
     return (
       <div className="space-y-3">
-        <ListToolbar placeholder={t('sales.searchDelivery')} action={
+        {ListToolbar({ placeholder: t('sales.searchDelivery'), action: (
           <>
-            <PageSizeSelect />
+            {PageSizeSelect()}
             <button onClick={() => toast(t('sales.actions.createDeliveryFromSO'))}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> {t('sales.createDelivery')}
             </button>
           </>
-        } />
+        ) })}
 
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyDelivery')}</p></div>
@@ -1742,7 +1755,7 @@ const Sales = () => {
                 })}
               </tbody>
             </table>
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1786,7 +1799,7 @@ const Sales = () => {
                 </motion.div>
               )
             })}
-            <Pagination total={filtered.length} />
+            {Pagination({ total: filtered.length })}
           </div>
         )}
       </div>
@@ -1955,10 +1968,11 @@ const Sales = () => {
     const cashRevenue = live?.cash_revenue || 0
     const cashIn = live?.cash_in || 0
     const paidOut = live?.paid_out || 0
-    const expectedCash = (shift.opening_cash || 0) + cashRevenue + cashIn - paidOut
+    const expectedCash = expectedShiftCash(shift)
     const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
     const [notes, setNotes] = useState('')
     const [saving, setSaving] = useState(false)
+    const [openBillsError, setOpenBillsError] = useState<{ message: string; bills: string[] } | null>(null)
     const [movements, setMovements] = useState<Array<{ id: string; type: 'PAID_OUT' | 'CASH_IN'; amount: number; reason?: string; created_at: string }>>([])
     const diff = (parseFloat(closingCash) || 0) - expectedCash
     useEffect(() => {
@@ -1977,7 +1991,12 @@ const Sales = () => {
           fetchPOSShifts()
           onClose()
         }
-      } catch (e: any) { toast.error(e.response?.data?.message || t('sales.error.closeShiftFailed')) }
+      } catch (e: any) {
+        const message = e.response?.data?.message || t('sales.error.closeShiftFailed')
+        // ยังมีบิลค้างชำระ → ค้างโมดัลไว้ พร้อมบอกเลขบิลที่ต้องจัดการก่อน
+        if (shiftErrorCode(e) === 'SHIFT_HAS_OPEN_BILLS') setOpenBillsError({ message, bills: openBillNumbers(e) })
+        toast.error(message)
+      }
       finally { setSaving(false) }
     }
     return (
@@ -1991,6 +2010,12 @@ const Sales = () => {
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
           </div>
           <div className="overflow-y-auto p-5 space-y-4">
+            {openBillsError && (
+              <div className="p-3 rounded-lg bg-[var(--danger-soft)] border border-danger/30 text-sm text-danger">
+                <p className="font-semibold">{openBillsError.message}</p>
+                {openBillsError.bills.length > 0 && <p className="text-xs mt-1">{t('sales.pos.openBillsList', { bills: openBillsError.bills.join(', ') })}</p>}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
                 <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.common.total')}</p>
@@ -2172,6 +2197,21 @@ const Sales = () => {
           </button>
         </motion.div>
       ) : (
+        <>
+        {/* กะค้างจากวันก่อน — POS ขายต่อไม่ได้จนกว่าจะปิดกะนี้ */}
+        {(posCurrentShift as POSShift & { stale?: boolean }).stale && (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-[var(--warning-soft)] border border-warning/30 text-warning">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <div className="flex-1 text-sm">
+              <p className="font-semibold">{t('sales.pos.staleShiftTitle')}</p>
+              <p className="text-xs mt-0.5">{t('sales.pos.staleShiftHint', { number: posCurrentShift.shift_number, date: fmtDT(posCurrentShift.opened_at) })}</p>
+            </div>
+            <button onClick={() => setShowCloseShift(true)}
+              className="shrink-0 px-3 py-2 rounded-lg bg-danger/10 text-danger text-sm font-medium border border-danger/30 hover:bg-danger/20">
+              {t('sales.pos.closeOldShift')}
+            </button>
+          </div>
+        )}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
           className="bg-[var(--surface)] border border-success/40 rounded-xl overflow-hidden">
           <div className="px-5 py-3 bg-success/10 border-b border-success/30 flex items-center gap-2">
@@ -2205,6 +2245,7 @@ const Sales = () => {
             </button>
           </div>
         </motion.div>
+        </>
       )}
 
       {posShifts.filter(s => s.status === 'CLOSED').length > 0 && (
@@ -2303,15 +2344,15 @@ const Sales = () => {
       ) : (
         <motion.div key={activeTab}
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
-          {activeTab === 'overview'     && <OverviewContent />}
-          {activeTab === 'quotations'   && <QuotationsContent />}
-          {activeTab === 'orders'          && <OrdersContent />}
-          {activeTab === 'delivery-orders' && <DeliveryOrdersContent />}
-          {activeTab === 'invoices'        && <InvoicesContent />}
-          {activeTab === 'credit-notes'    && <CreditNotesContent />}
-          {activeTab === 'backorders'      && <BackordersContent />}
-          {activeTab === 'templates'       && <TemplatesContent />}
-          {activeTab === 'pos-daily'       && <POSDailyContent />}
+          {activeTab === 'overview'     && OverviewContent()}
+          {activeTab === 'quotations'   && QuotationsContent()}
+          {activeTab === 'orders'          && OrdersContent()}
+          {activeTab === 'delivery-orders' && DeliveryOrdersContent()}
+          {activeTab === 'invoices'        && InvoicesContent()}
+          {activeTab === 'credit-notes'    && CreditNotesContent()}
+          {activeTab === 'backorders'      && BackordersContent()}
+          {activeTab === 'templates'       && TemplatesContent()}
+          {activeTab === 'pos-daily'       && POSDailyContent()}
         </motion.div>
       )}
 
@@ -2365,7 +2406,7 @@ const Sales = () => {
           onRefresh={() => fetchSalesOrders()}
           onCreateInvoice={() => { setDetailSO(null); fetchInvoices(); setActiveTab('invoices') }}
           companyName={tenant?.name}
-          hasDeliveryOrder={deliveryOrders.some(d => d.so_number === detailSO.so_number)}
+          hasDeliveryOrder={deliveryOrders.some(d => d.so_number === detailSO.so_number && d.status !== 'CANCELLED')}
           onIssueDO={() => handleIssueDeliveryOrder(detailSO.id)}
         />
       )}
@@ -2532,13 +2573,17 @@ function CustomerSearch({ value, onChange }: {
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); setSearched(false); return }
-    const t = setTimeout(async () => {
-      const r = await salesService.searchCustomers(query)
-      setResults(r)
-      setSearched(true)
-      setOpen(true)
+    let live = true
+    const tm = setTimeout(async () => {
+      try {
+        const r = await salesService.searchCustomers(query)
+        if (!live) return
+        setResults(r)
+        setSearched(true)
+        setOpen(true)
+      } catch { /* คงผลเดิมไว้ */ }
     }, 300)
-    return () => clearTimeout(t)
+    return () => { live = false; clearTimeout(tm) }
   }, [query])
 
   if (value) {
@@ -2731,7 +2776,7 @@ function LineItemsEditor({
       const res = await api.post('/materials/unit-conversions/convert', {
         quantity: 1, from_unit: unit, to_unit: baseUnit, material_id: productId,
       })
-      const next = applyRepricedRow(itemsRef.current, i, { productId, unit }, priceForSaleUnit(basePrice, res.data?.data?.converted))
+      const next = applyRepricedRow(itemsRef.current, i, { productId, unit }, Math.round(priceForSaleUnit(basePrice, res.data?.data?.converted) * 10000) / 10000)
       if (next) onChange(next)
     } catch { /* แปลงไม่ได้ก็คงราคาต่อหน่วยฐานเดิมไว้ */ }
   }
@@ -2773,7 +2818,7 @@ function LineItemsEditor({
                   })
                   if (p.id) repriceRow(i, p.id, base, unit, p.sell_price || 0)
                 }}
-onClear={() => update(i, { productId: undefined, productName: '' })}
+onClear={() => update(i, { productId: undefined, productName: '', unit: '', unitPrice: 0, priceEdited: false })}
               />
               {/* ชื่อบนเอกสาร — ต่างจากชื่อ SKU ได้ (เหมือนฝั่งซื้อ) ยืนยันใบสั่งขายแล้วระบบจำเป็นชื่อเรียกแทนของ SKU นี้
                   ปิดฟีเจอร์ที่ ตั้งค่า แล้วช่องนี้หายไป */}
@@ -2803,12 +2848,13 @@ onClear={() => update(i, { productId: undefined, productName: '' })}
                     update(i, { unit: u, unitPrice: aliasPrice(aliasRow) })
                     return
                   }
-                  update(i, { unit: u })
                   // ไม่ทับราคาที่ผู้ใช้พิมพ์เองในแถวนี้ — รีไพรซ์เฉพาะตอนราคายังมาจากค่าเริ่มต้น
                   if (!item.priceEdited && item.productId && selectedProduct) {
                     const base = normalizeUnit(selectedProduct.base_unit || selectedProduct.unit || '')
+                    // ตั้งกลับเป็นราคาหน่วยฐานก่อน — repriceRow ไม่ทำอะไรเมื่อเลือกหน่วยฐาน ราคาแพ็คเดิมจะค้าง
+                    update(i, { unit: u, unitPrice: selectedProduct.sell_price || 0 })
                     repriceRow(i, item.productId, base, u, selectedProduct.sell_price || 0)
-                  }
+                  } else update(i, { unit: u })
                 }}
                 baseUnit={selectedProduct?.base_unit || selectedProduct?.unit}
               />
@@ -2851,6 +2897,12 @@ const vatRegisteredCo = () => {
   const v = (getCachedCompanySettings() as any)?.vat_registered
   return v !== 0 && v !== false
 }
+
+/** จำนวน > 0, ราคา/ส่วนลด/ค่าขนส่งไม่ติดลบ, ส่วนลด % อยู่ใน 0–100 — backend ไม่ตรวจให้ */
+const invalidLineValues = (items: LineItem[], discountAmount: number, extraAmount: number) =>
+  items.filter(it => it.productName || it.productId).some(it =>
+    !(it.quantity > 0) || !(it.unitPrice >= 0) || !((it.discountPercent || 0) >= 0) || (it.discountPercent || 0) > 100)
+  || !((discountAmount || 0) >= 0) || !((extraAmount || 0) >= 0)
 
 function TotalsSummary({ items, mode, discountAmount, setDiscountAmount, extraCharge, setExtraCharge, onEditVat }: {
   items: LineItem[]
@@ -2939,6 +2991,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
           unit: it.unit || '',
           unitPrice: it.unit_price,
           discountPercent: it.discount_percent || 0,
+          priceEdited: true,
         }))
       : [{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }]
   )
@@ -2964,8 +3017,8 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
 
   useEffect(() => {
     salesService.getProducts().then(setProducts).catch(() => {})
-    if (isEdit && editData?.customer_name) {
-      salesService.searchCustomers(editData.customer_name).then(r => { if (r.length) setCustomer(r[0]) }).catch(() => {})
+    if (isEdit && editData?.customer_id) {
+      salesService.getCustomer(editData.customer_id).then(c => { if (c) setCustomer(c) }).catch(() => {})
     }
     api.get('/customers/meta/attribution-options').then(res => setCampaignOptions(res.data.data.campaigns)).catch(() => {})
   }, [])
@@ -2973,6 +3026,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const handleSave = async () => {
     if (!customer) { toast.error(t('sales.validation.selectCustomer')); return }
     if (items.every(it => !it.productName && !it.productId)) { toast.error(t('sales.validation.addItem')); return }
+    if (invalidLineValues(items, discountAmount, extraCharge.amount)) { toast.error(t('sales.validation.itemValues', { defaultValue: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })); return }
     setSaving(true)
     try {
       const { rate, inclusive } = vatModeToFields(effectiveVatMode)
@@ -2985,7 +3039,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
         extraChargeLabel: extraCharge.label,
         discountAmount,
         notes,
-        campaign: campaign || undefined,
+        campaign: isEdit ? campaign : (campaign || undefined),
         items: items.filter(it => it.productName || it.productId).map(it => ({
           productId: it.productId,
           productName: it.productName,
@@ -3003,8 +3057,8 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
         toast.success(t('sales.toast.quotationCreated'))
       }
       onSaved()
-    } catch {
-      toast.error(isEdit ? t('sales.toast.quotationSaveFailed') : t('sales.toast.quotationSaveFailed'))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.quotationSaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -3096,7 +3150,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
-    salesService.getQuotation(quotation.id).then(r => { setDetail(r.data); setLoading(false) })
+    salesService.getQuotation(quotation.id).then(r => setDetail(r.data)).catch(() => toast.error(t('sales.error.loadQuotations'))).finally(() => setLoading(false))
   }, [quotation.id])
 
   const handlePrint = (format: 'a4' | 'thermal') => {
@@ -3149,7 +3203,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
                 </div>
                 <div className="bg-[var(--bg)] rounded-lg p-3">
                   <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.expiryDate')}</p>
-                  <p className={`font-medium ${detail?.expiry_date && new Date(detail.expiry_date) < new Date() ? 'text-danger' : 'text-[var(--fg-1)]'}`}>
+                  <p className={`font-medium ${detail?.expiry_date && detail.expiry_date.slice(0, 10) < todayStr() ? 'text-danger' : 'text-[var(--fg-1)]'}`}>
                     {formatDate(detail?.expiry_date)}
                   </p>
                 </div>
@@ -3175,6 +3229,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
               <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{formatCurrency(detail?.subtotal)}</span></div>
                 {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{formatCurrency(detail?.discount_amount)}</span></div>}
+                {(detail?.extra_charge_amount || 0) > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{detail.extra_charge_label || t('common.extraCharge')}</span><span>+{formatCurrency(detail.extra_charge_amount)}</span></div>}
                 {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate}%)</span><span>+{formatCurrency(detail?.tax_amount)}</span></div>}
                 <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
                   <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span><span className="text-success">{formatCurrency(detail?.total_amount)}</span>
@@ -3257,6 +3312,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           unit: it.unit || '',
           unitPrice: it.unit_price,
           discountPercent: it.discount_percent || 0,
+          priceEdited: true,
         }))
       : [{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }]
   )
@@ -3288,6 +3344,9 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           if (qt) {
             setVatMode(vatModeOf(qt.tax_rate, qt.vat_inclusive === 1))
             setDiscountAmount(qt.discount_amount || 0)
+            setExtraCharge({ label: qt.extra_charge_label || '', amount: qt.extra_charge_amount || 0 })
+            if (qt.notes) setNotes(qt.notes)
+            if (qt.customer_id) salesService.getCustomer(qt.customer_id).then(c => { if (c) setCustomer(c) }).catch(() => {})
             if (qt.items?.length) {
               setItems(qt.items.map((it: any) => {
                 const pid = it.stock_item_id || it.product_id || undefined
@@ -3304,20 +3363,12 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
             }
           }
         }).catch(() => {})
-        // Pre-load customer
-        if (sourceQuotation.customer_code) {
-          salesService.searchCustomers(sourceQuotation.customer_name).then(r => {
-            if (r.length) setCustomer(r[0])
-          }).catch(() => {})
-        }
       }
       // Edit mode: load existing customer
-      if (isEdit && editData?.customer_name) {
-        salesService.searchCustomers(editData.customer_name).then(r => {
-          if (r.length) setCustomer(r[0])
-        }).catch(() => {})
+      if (isEdit && editData?.customer_id) {
+        salesService.getCustomer(editData.customer_id).then(c => { if (c) setCustomer(c) }).catch(() => {})
       }
-    }).catch(() => {})
+    }).catch(() => toast.error(t('sales.toast.loadProductsFailed', { defaultValue: 'โหลดรายการสินค้าไม่สำเร็จ' })))
   }, [])
 
   const handleSave = async () => {
@@ -3461,9 +3512,9 @@ function DealTimeline({ soId }: { soId: string }) {
           </div>
         ))}
       </div>
-      {data.summary.outstanding > 0 && (
+      {data.summary.outstandingAmount > 0 && (
         <p className="text-[11px] text-danger mt-2">
-          {t('sales.dealTimeline.outstanding', { amount: fmtB(data.summary.outstanding) })}
+          {t('sales.dealTimeline.outstanding', { amount: fmtB(data.summary.outstandingAmount) })}
         </p>
       )}
     </div>
@@ -3490,7 +3541,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   const [showSourceDoc, setShowSourceDoc] = useState(false)
 
   useEffect(() => {
-    salesService.getSalesOrder(salesOrder.id).then(r => { setDetail(r.data); setLoading(false) })
+    salesService.getSalesOrder(salesOrder.id).then(r => setDetail(r.data)).catch(() => toast.error(t('sales.error.loadOrders'))).finally(() => setLoading(false))
   }, [salesOrder.id])
 
   const handlePrint = () => {
@@ -3522,7 +3573,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
       await salesService.createInvoice(salesOrder.id)
       toast.success(t('sales.toast.invoiceCreated'))
       onCreateInvoice()
-    } catch { toast.error(t('sales.toast.invoiceCreateFailed')) }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.invoiceCreateFailed')) }
     finally { setCreatingInv(false) }
   }
 
@@ -3552,7 +3603,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={salesOrder.status} />
-            <StatusBadge status={salesOrder.payment_status} />
+            <StatusBadge payment status={salesOrder.payment_status} />
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
           </div>
         </div>
@@ -3612,6 +3663,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
               <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{fmt(detail?.subtotal)}</span></div>
                 {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{fmt(detail?.discount_amount)}</span></div>}
+                {(detail?.extra_charge_amount || 0) > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{detail.extra_charge_label || t('common.extraCharge')}</span><span>+{fmt(detail.extra_charge_amount)}</span></div>}
                 {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate}%)</span><span>+{fmt(detail?.tax_amount)}</span></div>}
                 <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
                   <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span><span className="text-success">{fmt(detail?.total_amount)}</span>
@@ -3693,9 +3745,12 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const [sourceDocModal, setSourceDocModal] = useState<{ kind: string; refId: string; title: string } | null>(null)
 
   const loadDetail = () => {
-    salesService.getInvoice(invoice.id).then(r => { setDetail(r.data); setLoading(false) })
+    salesService.getInvoice(invoice.id).then(r => setDetail(r.data)).catch(() => toast.error(t('sales.error.loadInvoices'))).finally(() => setLoading(false))
   }
   useEffect(() => { loadDetail() }, [invoice.id])
+  // ยอด/สถานะล่าสุดจาก detail (โหลดใหม่หลังยกเลิกใบเสร็จ) — props เป็นแค่ snapshot จากตาราง
+  const balance: number = detail?.balance_amount ?? invoice.balance_amount
+  const payStatus: string = detail?.payment_status ?? invoice.payment_status
 
   const handlePrintInv = (format: 'a4' | 'thermal') => {
     if (!detail) return
@@ -3724,9 +3779,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   }
 
   const handleRecordPayment = async () => {
-    const amount = parseFloat(payAmount)
-    if (!amount || amount <= 0) { toast.error(t('sales.validation.amountRequired')); return }
-    if (amount > invoice.balance_amount) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
+    // ปัดเป็นสตางค์ก่อนส่ง — 0.1 + 0.2 ทิ้งเศษ 1e-14 ทำให้ใบค้าง PARTIAL ยอด ฿0.00
+    const amount = Math.round(parseFloat(payAmount) * 100) / 100
+    if (!Number.isFinite(amount) || amount <= 0) { toast.error(t('sales.validation.amountRequired')); return }
+    if (amount > Math.round(balance * 100) / 100) { toast.error(t('sales.validation.amountExceedsBalance', { defaultValue: 'จำนวนเงินเกินยอดคงเหลือ' })); return }
     setSaving(true)
     try {
       await salesService.recordPayment(invoice.id, {
@@ -3772,7 +3828,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
-  const isUnpaid = (invoice.payment_status === 'UNPAID' || invoice.payment_status === 'OVERDUE' || invoice.payment_status === 'PARTIAL')
+  const isUnpaid = (payStatus === 'UNPAID' || payStatus === 'OVERDUE' || payStatus === 'PARTIAL')
     && (detail?.status || invoice.status) !== 'CANCELLED'
 
   return (
@@ -3797,7 +3853,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
             {invoice.customer_code && <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.customer_code}</p>}
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge status={(detail?.status || invoice.status) === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} />
+            <StatusBadge payment status={(detail?.status || invoice.status) === 'CANCELLED' ? 'CANCELLED' : payStatus} />
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
           </div>
         </div>
@@ -3823,7 +3879,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                 </div>
                 <div className="bg-[var(--bg)] rounded-xl p-3">
                   <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.balance')}</p>
-                  <p className={invoice.balance_amount > 0 ? 'text-danger font-bold' : 'text-success font-bold'}>{fmt(invoice.balance_amount)}</p>
+                  <p className={balance > 0 ? 'text-danger font-bold' : 'text-success font-bold'}>{fmt(balance)}</p>
                 </div>
               </div>
 
@@ -3878,7 +3934,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                   {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-success"><span>{t('sales.invoiceDetail.paidAmount')}</span><span>-{fmt(detail?.paid_amount)}</span></div>}
                   <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
                     <span className="text-[var(--fg-1)]">{t('sales.common.balance')}</span>
-                    <span className={invoice.balance_amount > 0 ? 'text-danger' : 'text-success'}>{fmt(invoice.balance_amount)}</span>
+                    <span className={balance > 0 ? 'text-danger' : 'text-success'}>{fmt(balance)}</span>
                   </div>
                 </div>
 
@@ -3946,7 +4002,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                     <div>
                       <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.amountLabel')}</label>
                       <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)}
-                        placeholder={t('sales.paymentModal.maxAmountPlaceholder', { amount: fmt(invoice.balance_amount) })}
+                        placeholder={t('sales.paymentModal.maxAmountPlaceholder', { amount: fmt(balance) })}
                         onFocus={e => e.target.select()}
                         className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
                     </div>
@@ -4067,6 +4123,11 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   const [mode, setMode] = useState<'DISCOUNT' | 'RETURN'>('DISCOUNT')
   const [returnLines, setReturnLines] = useState<CNReturnLine[]>([])
   const [loadingLines, setLoadingLines] = useState(false)
+  const [invVat, setInvVat] = useState<{ rate: number; inclusive: boolean }>({ rate: 7, inclusive: false })
+  // โหมด "ลดราคา" — ยอดลดหนี้ (ฐานเดียวกับราคาบนใบแจ้งหนี้) เดิมไม่มีช่องให้กรอก ได้ใบลดหนี้ ฿0
+  const [discountAmt, setDiscountAmt] = useState('')
+  // ยอดลดหนี้รวมที่ยังออกได้อีก (จาก GET /sales/invoices/:id ที่ backend คำนวณไว้แล้ว) — null = ยังไม่รู้/โหลดไม่ทัน ไม่บล็อก
+  const [creditableRemaining, setCreditableRemaining] = useState<number | null>(null)
 
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
 
@@ -4081,9 +4142,19 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   // ที่มีอยู่แล้ว แทนที่จะสร้าง endpoint ใหม่) จำนวนสูงสุดที่คืนได้ผูกกับ quantity ที่ขายจริง
   // ส่วนกันคืนเกินยอดที่เคยออกใบลดหนี้ไปแล้ว backend เป็นผู้ตัดสินสุดท้าย (มี alreadyCredited อยู่แล้ว)
   useEffect(() => {
-    if (mode !== 'RETURN' || !invoiceId) { setReturnLines([]); return }
+    if (!invoiceId) { setReturnLines([]); setCreditableRemaining(null); return }
+    if (mode !== 'RETURN') {
+      setReturnLines([])
+      salesService.getInvoice(invoiceId).then(r => {
+        setInvVat({ rate: Number(r.data?.tax_rate ?? 7), inclusive: r.data?.vat_inclusive === 1 })
+        setCreditableRemaining(r.data?.creditable_remaining != null ? Number(r.data.creditable_remaining) : null)
+      }).catch(() => {})
+      return
+    }
     setLoadingLines(true)
     salesService.getInvoice(invoiceId).then(r => {
+      setInvVat({ rate: Number(r.data?.tax_rate ?? 7), inclusive: r.data?.vat_inclusive === 1 })
+      setCreditableRemaining(r.data?.creditable_remaining != null ? Number(r.data.creditable_remaining) : null)
       const items = (r.data?.items || []) as any[]
       setReturnLines(items.map(it => ({
         invoiceItemId: it.id,
@@ -4091,7 +4162,8 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
         productName: it.product_name || t('sales.common.itemNumberPrefix'),
         productCode: it.product_code,
         maxQty: Number(it.quantity) || 0,
-        unitPrice: Number(it.unit_price) || 0,
+        // ราคาสุทธิหลังส่วนลดรายการ — unit_price ดิบทำให้ลดหนี้เกินยอดที่ขายจริง
+        unitPrice: Math.round(((Number(it.total_price) || 0) / (Number(it.quantity) || 1)) * 10000) / 10000,
         checked: false,
         qty: Number(it.quantity) || 0,
       })))
@@ -4106,18 +4178,38 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   }
 
   const selectedLines = returnLines.filter(l => l.checked && l.qty > 0)
-  const returnSubtotal = selectedLines.reduce((s, l) => s + l.qty * l.unitPrice, 0)
-  // ponytail: อัตรา 7% ยังฝังอยู่เหมือนเดิม — จะย้ายไปอ่านจาก company_settings ใน Phase 5
-  const { taxAmount: returnTax, totalAmount: returnTotal } = calcVat(returnSubtotal, { rate: 7 })
+  const discountValue = Math.round((parseFloat(discountAmt) || 0) * 100) / 100
+  const lineBase = mode === 'RETURN' ? selectedLines.reduce((s, l) => s + l.qty * l.unitPrice, 0) : discountValue
+  // อัตรา/โหมด VAT ตามใบแจ้งหนี้ต้นทาง (backend คิดแบบเดียวกัน)
+  const { subtotal: returnSubtotal, taxAmount: returnTax, totalAmount: returnTotal } = calcVat(lineBase, invVat)
+  // ยอดลดหนี้รวม (ใบนี้ + ที่ออกไปแล้ว) ต้องไม่เกินมูลค่าใบแจ้งหนี้ — backend เป็นผู้ตัดสินสุดท้าย
+  // (tolerance 0.005 เดียวกับฝั่ง backend) อันนี้แค่กันพลาดตั้งแต่หน้าจอ/ปิดปุ่มบันทึก
+  const exceedsRemaining = creditableRemaining != null && returnTotal > creditableRemaining + 0.005
+  // ช่องกรอกยอด (โหมดลดราคา) กรอกเป็นฐานก่อน/รวม VAT ตาม invVat.inclusive — max ต้องแปลงกลับจาก
+  // ยอดรวมที่เหลือให้ได้ (ตรงกันข้ามกับ calcVat ที่ใช้คำนวณ returnTotal ด้านบน)
+  const maxDiscountAmt = creditableRemaining == null ? undefined
+    : invVat.inclusive ? creditableRemaining : creditableRemaining / (1 + invVat.rate / 100)
+
+  const cnTotals = (
+    <div className="mt-3 bg-[var(--surface-2)] rounded-xl p-3 space-y-1 text-sm">
+      <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.subtotal')}</span><span>{fmt(returnSubtotal)}</span></div>
+      <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.tax')} {invVat.rate}%</span><span>{fmt(returnTax)}</span></div>
+      <div className="flex justify-between text-[var(--fg-1)] font-bold border-t border-[var(--border)]/50 pt-1"><span>{t('sales.common.total')}</span><span className="text-warning">{fmt(returnTotal)}</span></div>
+      {exceedsRemaining && <p className="text-danger text-xs pt-1">{t('sales.creditNoteModal.exceedsRemaining')}</p>}
+    </div>
+  )
 
   const handleSave = async () => {
     if (!invoiceId) { toast.error(t('sales.validation.selectInvoice')); return }
     if (!reason.trim()) { toast.error(t('sales.validation.creditReason')); return }
     if (mode === 'RETURN' && selectedLines.length === 0) { toast.error(t('sales.creditNoteModal.selectReturnItems')); return }
+    if (mode === 'DISCOUNT' && !(discountValue > 0)) { toast.error(t('sales.validation.amountRequired')); return }
+    if (exceedsRemaining) { toast.error(t('sales.creditNoteModal.exceedsRemaining')); return }
     setSaving(true)
     try {
       await salesService.createCreditNote({
         invoiceId, reason, creditDate,
+        amount: mode === 'DISCOUNT' ? discountValue : undefined,
         items: mode === 'RETURN'
           ? selectedLines.map(l => ({ invoiceItemId: l.invoiceItemId, productId: l.productId, quantity: l.qty, unitPrice: l.unitPrice }))
           : undefined,
@@ -4213,13 +4305,22 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
                   ))}
                 </div>
               )}
-              {selectedLines.length > 0 && (
-                <div className="mt-3 bg-[var(--surface-2)] rounded-xl p-3 space-y-1 text-sm">
-                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.subtotal')}</span><span>{fmt(returnSubtotal)}</span></div>
-                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.tax')} 7%</span><span>{fmt(returnTax)}</span></div>
-                  <div className="flex justify-between text-[var(--fg-1)] font-bold border-t border-[var(--border)]/50 pt-1"><span>{t('sales.common.total')}</span><span className="text-warning">{fmt(returnTotal)}</span></div>
-                </div>
+              {selectedLines.length > 0 && cnTotals}
+            </div>
+          )}
+
+          {mode === 'DISCOUNT' && invoiceId && (
+            <div>
+              <label className="text-xs text-[var(--fg-4)] mb-1.5 block">
+                {t('sales.creditNoteModal.discountAmountLabel', { defaultValue: invVat.inclusive ? 'ยอดลดหนี้ (รวม VAT)' : 'ยอดลดหนี้ (ก่อน VAT)' })}
+              </label>
+              <input type="number" min={0} step="0.01" value={discountAmt} onChange={e => setDiscountAmt(e.target.value)}
+                max={maxDiscountAmt}
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
+              {creditableRemaining != null && (
+                <p className="text-xs text-[var(--fg-4)] mt-1">{t('sales.creditNoteModal.remainingHint', { amount: fmt(creditableRemaining) })}</p>
               )}
+              {discountValue > 0 && cnTotals}
             </div>
           )}
 
@@ -4239,7 +4340,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
 
         <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-3">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving || exceedsRemaining}
             className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-1">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
             {t('sales.createCreditNote')}
@@ -4282,8 +4383,10 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   const handleIssue = async () => {
     setSaving(true)
     try {
-      await api.put(`/sales/credit-notes/${creditNote.id}/status`, { status: 'ISSUED' })
+      const { data } = await api.put(`/sales/credit-notes/${creditNote.id}/status`, { status: 'ISSUED' })
       toast.success(t('sales.toast.creditNoteIssued'))
+      // ลูกค้าจ่ายไปแล้วบางส่วน/ทั้งหมด → ใบลดหนี้นี้เกินยอดค้างที่เหลือ กลายเป็นเงินที่ต้องคืน/เป็นเครดิตให้ลูกค้า
+      if (data?.refundDue > 0) toast(t('sales.toast.creditNoteRefundDue', { amount: fmt(data.refundDue) }), { icon: '⚠️', duration: 6000 })
       onRefresh()
       onClose()
     } catch {

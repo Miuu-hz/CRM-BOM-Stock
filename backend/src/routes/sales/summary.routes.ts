@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
+import { thaiDateStr } from '../../utils/id'
 
 const router = Router()
 
@@ -34,12 +35,15 @@ router.get('/', async (req: Request, res: Response) => {
       WHERE tenant_id = ?
     `).get(tenantId) as any
 
-    // Today's receipts
+    // Today's receipts — "วันนี้" ตามเวลาไทย (เดิม DATE('now') = UTC → 00:00–06:59 นับผิดวัน)
+    // receipt_date มีทั้ง 'YYYY-MM-DD' (วันที่ไทยจากหน้าจอ) และ timestamp UTC (ISO …Z / CURRENT_TIMESTAMP)
+    // → แบบวันที่ล้วนเทียบตรง ๆ · แบบมีเวลาแปลงเป็นเวลาไทย (+7) ก่อนตัดวัน
     const todayReceipts = db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as today_received
       FROM receipts
-      WHERE tenant_id = ? AND DATE(receipt_date) = DATE('now')
-    `).get(tenantId) as any
+      WHERE tenant_id = ?
+        AND (CASE WHEN length(receipt_date) = 10 THEN receipt_date ELSE DATE(receipt_date, '+7 hours') END) = ?
+    `).get(tenantId, thaiDateStr()) as any
 
     // Credit notes
     const cnStats = db.prepare(`

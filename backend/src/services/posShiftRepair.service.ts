@@ -3,18 +3,58 @@
 // พอ postJournal โยน (เช่น "เดบิต 27.65 ไม่เท่ากับเครดิต 27.66") กะก็ปิดไปแล้ว บัญชีพัก 1180 ไม่ถูกเคลียร์
 // ใช้โดย scripts/repair-stuck-pos-shifts-2026-10-06.ts
 import db from '../db/sqlite'
-import { ACC } from '../config/accountCodes'
+import { ACC, resolveBankAccountGL } from '../config/accountCodes'
 import { postJournal, type JournalLineInput } from './accounting.service'
 import { closedPeriodLabel } from '../routes/journal.routes'
 import { thaiDateStr } from '../utils/id'
 
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 
+type ShiftRef = { tenant_id: string; id: string; opened_at: string; closed_at?: string | null }
+
+/**
+ * ยอดรับไม่ใช่เงินสดของกะ แยกตามบัญชี GL ของ bank_account_id ที่เลือกตอนรับชำระ (Settings > บัญชีธนาคาร)
+ * ไม่ได้เลือก/บัญชีถูกปิด = 1102 · บัตรเครดิตเข้าธนาคารด้วย (ผังบัญชียังไม่มีบัญชีพักบัตร)
+ * แบ่งยอดบิลตามสัดส่วนที่จ่าย (สูตรเดียวกับ getShiftSalesSummary) → บิลจ่ายหลายแถวไม่นับซ้ำ
+ * ปัดเศษรายบัญชีแล้วโยนเศษที่เหลือเข้าบรรทัดสุดท้าย ให้รวมได้ = bankRevenue เป๊ะ
+ * ยอดรวมห่างจาก bankRevenue เกิน 0.01 (บิลเปลี่ยนหลังปิดกะ — ทางซ่อม) = ลง 1102 ก้อนเดียวแบบเดิม
+ */
+export function getShiftBankLines(shift: ShiftRef, bankRevenue: number): JournalLineInput[] {
+  const description = 'ยอดรับผ่านโอน/QR/บัตร'
+  const rows = db.prepare(`
+    SELECT p.bank_account_id, SUM(b.total_amount * p.amount / t.paid) AS amount
+    FROM pos_running_bills b
+    JOIN (SELECT bill_id, SUM(amount) AS paid FROM pos_payments WHERE tenant_id = ? GROUP BY bill_id) t ON t.bill_id = b.id
+    JOIN pos_payments p ON p.bill_id = b.id AND p.tenant_id = b.tenant_id
+    WHERE b.tenant_id = ? AND b.status = 'PAID' AND t.paid > 0 AND p.payment_method <> 'CASH'
+      AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at >= ?${shift.closed_at ? ' AND b.closed_at <= ?' : ''}))
+    GROUP BY p.bank_account_id
+  `).all(shift.tenant_id, shift.tenant_id, shift.id, shift.opened_at, ...(shift.closed_at ? [shift.closed_at] : [])) as
+    { bank_account_id: string | null; amount: number }[]
+
+  const byAccount = new Map<string | null, number>()
+  for (const r of rows) {
+    const accountId = resolveBankAccountGL(shift.tenant_id, r.bank_account_id)
+    byAccount.set(accountId, (byAccount.get(accountId) || 0) + r.amount)
+  }
+  const raw = [...byAccount.values()].reduce((a, b) => a + b, 0)
+  if (byAccount.size === 0 || Math.abs(raw - bankRevenue) > 0.01) return [{ code: ACC.BANK, description, debit: bankRevenue }]
+
+  const entries = [...byAccount.entries()]
+  let left = bankRevenue
+  return entries.map(([accountId, amt], i) => {
+    const debit = i === entries.length - 1 ? r2(left) : r2(amt)
+    left = r2(left - debit)
+    return accountId ? { accountId, description, debit } : { code: ACC.BANK, description, debit }
+  })
+}
+
 /**
  * บรรทัด journal ปิดกะ — ใช้ร่วมกันทั้ง POST /pos-shifts/:id/close (routes/sales/pos.routes.ts) และสคริปต์ซ่อมกะค้าง
  * (ปัดที่ยอดรวม ขาเงินสด = ส่วนที่เหลือของยอดบิล → ดุลเป๊ะเสมอ)
+ * ขาธนาคารแยกตามบัญชีธนาคารที่รับเงินจริง (getShiftBankLines)
  */
-export function buildShiftCloseJournal(shift: {
+export function buildShiftCloseJournal(shift: ShiftRef & {
   shift_number: string; total_revenue: number; bank_revenue: number; cash_difference: number
 }): { description: string; lines: JournalLineInput[] } | null {
   const billsTotal = r2(shift.total_revenue)
@@ -23,13 +63,14 @@ export function buildShiftCloseJournal(shift: {
   const cashNet = r2(billsTotal - bankRevenue + cashDifference)
   if (billsTotal <= 0.005 && Math.abs(cashDifference) <= 0.005) return null // ไม่มีอะไรต้องลง (กะว่าง นับตรง)
   const diffLabel = cashDifference < 0 ? 'เงินขาด' : 'เงินเกิน'
+  const bankLines = bankRevenue > 0.005 ? getShiftBankLines(shift, bankRevenue) : []
   return {
     description: Math.abs(cashDifference) > 0.005
       ? `ปิดกะ ${shift.shift_number} — ${diffLabel} ${Math.abs(cashDifference).toFixed(2)} บาท`
       : `ปิดกะ ${shift.shift_number} — นำยอดขายเข้าบัญชี`,
     lines: [
       { code: ACC.CASH, description: 'เงินสดจากการขายหน้าร้าน', debit: Math.max(cashNet, 0), credit: Math.max(-cashNet, 0) },
-      { code: ACC.BANK, description: 'ยอดรับผ่านโอน/QR', debit: bankRevenue },
+      ...bankLines,
       { code: ACC.CASH_OVER_SHORT, description: 'เงินขาดจากการนับ', debit: cashDifference < 0 ? Math.abs(cashDifference) : 0 },
       { code: ACC.POS_CLEARING, description: `ปิดยอดบิลทั้งกะ ${shift.shift_number}`, credit: billsTotal },
       { code: ACC.CASH_OVER_SHORT, description: 'เงินเกินจากการนับ', credit: cashDifference > 0 ? cashDifference : 0 },

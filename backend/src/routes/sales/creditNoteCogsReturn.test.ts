@@ -47,8 +47,10 @@ function seedReturnScenario(tenantId: string, issuedUnitCost: number) {
   `).run(soItemId, tenantId, soId, productId, issuedUnitCost)
 
   const invoiceId = generateId()
-  db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
-    .run(invoiceId, tenantId, 'INV-' + invoiceId.slice(0, 6), soId, customerId)
+  // total_amount ต้องตั้งให้พอ (250 = 5 × 50) ไม่งั้นเช็คเพดานใบลดหนี้ใหม่ (ต้องไม่เกิน
+  // total_amount ของใบแจ้งหนี้) จะถือว่าใบแจ้งหนี้มีมูลค่า 0 แล้วปัดใบลดหนี้ตกไปก่อนถึงจุดที่ทดสอบ
+  db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, total_amount) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(invoiceId, tenantId, 'INV-' + invoiceId.slice(0, 6), soId, customerId, 250)
 
   const invoiceItemId = generateId()
   db.prepare(`
@@ -93,7 +95,7 @@ describe('PUT /credit-notes/:id/status ISSUED — กลับรายการ
       JOIN accounts a ON a.id = jl.account_id
       WHERE jl.journal_entry_id = ?
     `).all(je.id) as any[]
-    const inv = lines.find(l => l.code === ACC.INVENTORY)
+    const inv = lines.find(l => l.code === ACC.RAW_MATERIAL)
     const cogs = lines.find(l => l.code === ACC.COGS_PRODUCT)
     expect(inv?.debit).toBe(60)
     expect(cogs?.credit).toBe(60)
@@ -113,8 +115,8 @@ describe('PUT /credit-notes/:id/status ISSUED — กลับรายการ
     db.prepare(`INSERT INTO sales_orders (id, tenant_id, so_number, customer_id) VALUES (?, ?, ?, ?)`)
       .run(soId, tenantId, 'SO-' + soId.slice(0, 6), customerId)
     const invoiceId = generateId()
-    db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id) VALUES (?, ?, ?, ?, ?)`)
-      .run(invoiceId, tenantId, 'INV-' + invoiceId.slice(0, 6), soId, customerId)
+    db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, total_amount) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(invoiceId, tenantId, 'INV-' + invoiceId.slice(0, 6), soId, customerId, 100)
     const cnId = generateId()
     db.prepare(`
       INSERT INTO credit_notes (id, tenant_id, cn_number, invoice_id, customer_id, credit_date, reason, subtotal, tax_rate, tax_amount, total_amount, status)

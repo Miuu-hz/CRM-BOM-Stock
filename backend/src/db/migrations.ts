@@ -147,17 +147,19 @@ export function runMigrations(db: any): void {
     console.error('⚠️ supplier_payments.status migration error:', e)
   }
 
-  // Migration: add unit to purchase_return_items — หน้าคืนสินค้าให้ผู้ใช้เลือกหน่วยผ่าน
-  // UnitPicker ได้ (คืนเป็น "ลัง"/"กล่อง" ไม่ใช่หน่วยฐานของสต็อกเสมอไป) แต่ตารางนี้ไม่มีคอลัมน์
-  // เก็บหน่วยเลย ตอนยืนยันคืนของ (confirm) จึงตัด stock_items.quantity ด้วยเลขดิบที่ผู้ใช้กรอก
-  // โดยไม่แปลงหน่วย — คืน 1 ลัง (12 ขวด) หักสต็อกออกไปแค่ 1 ขวด สต็อกเพี้ยนทันที
+  // credit_notes.balance_applied — ยอดที่ใบลดหนี้นี้หักออกจาก invoices.balance_amount ไปแล้วจริง
+  // ใบใหม่: 0 ตอนสร้าง (DRAFT) → ตั้งเป็นยอดที่หักตอน ISSUED → กลับเป็น 0 ตอนยกเลิก (คืนยอด)
+  // NULL = แถวเก่าก่อนมีคอลัมน์นี้ — โค้ดเดิมหักยอดตั้งแต่ตอนสร้าง จึงถือว่าหักไปแล้ว = total_amount
+  // (ไม่ต้อง backfill: ใบเก่าทุกสถานะหักไปแล้วทั้งนั้น)
   try {
-    const cols = db.prepare(`PRAGMA table_info(purchase_return_items)`).all() as any[]
-    if (!cols.some((c: any) => c.name === 'unit')) {
-      db.exec(`ALTER TABLE purchase_return_items ADD COLUMN unit TEXT`)
-      console.log('✅ Migration: added unit to purchase_return_items')
+    const cnCols = db.prepare(`PRAGMA table_info(credit_notes)`).all() as any[]
+    if (cnCols.length > 0 && !cnCols.some((c: any) => c.name === 'balance_applied')) {
+      db.exec(`ALTER TABLE credit_notes ADD COLUMN balance_applied REAL`)
+      console.log('✅ Migration: credit_notes.balance_applied ready')
     }
-  } catch (e) { console.error('⚠️ purchase_return_items unit migration error:', e) }
+  } catch (e) {
+    console.error('⚠️ credit_notes.balance_applied migration error:', e)
+  }
 
   // ==================== MIGRATIONS ====================
   // Add bom_id column to pos_menu_configs (for existing databases)
@@ -1856,6 +1858,18 @@ export function runMigrations(db: any): void {
     try { db.exec(`PRAGMA foreign_keys=ON`) } catch {}
   }
 
+  // Migration: add unit to purchase_return_items — หน้าคืนสินค้าให้ผู้ใช้เลือกหน่วยผ่าน
+  // UnitPicker ได้ (คืนเป็น "ลัง"/"กล่อง" ไม่ใช่หน่วยฐานของสต็อกเสมอไป) แต่ตารางนี้ไม่มีคอลัมน์
+  // เก็บหน่วยเลย ตอนยืนยันคืนของ (confirm) จึงตัด stock_items.quantity ด้วยเลขดิบที่ผู้ใช้กรอก
+  // โดยไม่แปลงหน่วย — คืน 1 ลัง (12 ขวด) หักสต็อกออกไปแค่ 1 ขวด สต็อกเพี้ยนทันที
+  try {
+    const cols = db.prepare(`PRAGMA table_info(purchase_return_items)`).all() as any[]
+    if (!cols.some((c: any) => c.name === 'unit')) {
+      db.exec(`ALTER TABLE purchase_return_items ADD COLUMN unit TEXT`)
+      console.log('✅ Migration: added unit to purchase_return_items')
+    }
+  } catch (e) { console.error('⚠️ purchase_return_items unit migration error:', e) }
+
   // Migration: credit_note_items.product_id NOT NULL + FK rebuild — same defect
   // class as purchase_return_items.material_id above. product_id was declared
   // NOT NULL REFERENCES products(id), but nothing in the real sales pipeline ever
@@ -2491,6 +2505,17 @@ export function runMigrations(db: any): void {
       console.log('✅ Migration: users.mcp_scope added')
     }
   } catch (e) { console.error('⚠️ users.mcp_scope migration error:', e) }
+
+  // กันเปิดกะซ้อนระดับฐานข้อมูล: 1 tenant มีกะ OPEN ได้ครั้งละกะเดียว (คู่กับเช็คใน /pos-shifts/open)
+  // ข้ามถ้ามี tenant ที่มีกะ OPEN ค้างเกิน 1 อยู่แล้ว — ต้องเคลียร์ข้อมูลก่อน index ถึงจะสร้างได้
+  try {
+    const dup = db.prepare(`SELECT tenant_id, COUNT(*) c FROM pos_shifts WHERE status = 'OPEN' GROUP BY tenant_id HAVING c > 1`).all() as any[]
+    if (dup.length > 0) {
+      console.warn(`⚠️ ข้าม idx_pos_shifts_one_open: มี ${dup.length} tenant ที่มีกะ OPEN มากกว่า 1 กะ (${dup.map(d => d.tenant_id).join(', ')})`)
+    } else {
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pos_shifts_one_open ON pos_shifts(tenant_id) WHERE status = 'OPEN'`)
+    }
+  } catch (e) { console.error('⚠️ idx_pos_shifts_one_open migration error:', e) }
 }
 
 /**

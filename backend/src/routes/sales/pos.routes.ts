@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { getLimits } from '../../services/subscription.service'
 import { generateId, formatDocumentNumber, thaiDateStr } from '../../utils/id'
-import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
+import posAccountingService from '../../services/pos-accounting.service'
 import { ACC } from '../../config/accountCodes'
 import { postJournal, getOrCreateAccount, JournalError } from '../../services/accounting.service'
 import { cancelPosBill } from '../../services/posBillCancel.service'
@@ -77,49 +77,86 @@ function getShiftSalesSummary(tenantId: string, shift: { id: string; opened_at: 
   `).get(tenantId, shift.id, shift.opened_at) as any
 }
 
-// แปลงจำนวนตามสูตร (BOM/เมนู) ให้เป็นหน่วยฐาน (base_unit) ของวัตถุดิบก่อนคูณกับ
-// unit_cost (unit_cost เก็บเป็น "ต่อ 1 หน่วยฐาน" เสมอ) — ใช้ตอนคำนวณ estimated COGS
-// ปิดกะ ห้าม throw เพราะเส้นทางนี้ต้องปิดกะได้เสมอ ถ้าแปลงไม่ได้ให้ warn แล้วใช้เลขเดิม
-// (pattern เดียวกับ bom.routes.ts:calculateBOMCost และ pos-accounting.service.ts:toBaseQty)
-function posCogsToBaseQty(
-  qty: number,
-  recipeUnit: string | null | undefined,
-  stockBaseUnit: string | null | undefined,
-  tenantId: string,
-  materialId: string | null | undefined,
-  context: string
-): number {
-  const fromUnit = recipeUnit || stockBaseUnit || ''
-  const toUnit = stockBaseUnit || fromUnit
-  if (!fromUnit || !toUnit || normalizeUnit(fromUnit) === normalizeUnit(toUnit)) {
-    return qty
-  }
-  const result = convertQuantityBidirectional(qty, fromUnit, toUnit, tenantId, materialId || undefined)
-  if (result) {
-    return result.converted
-  }
-  console.warn(`[qty] POS daily-sales COGS: no conversion ${fromUnit} → ${toUnit} for stock item ${materialId}; ${context} cost uses the unconverted quantity and is unreliable`)
-  return qty
-}
-
 // ============================================
 // POS DAILY SALES SUMMARY (Z-Report)
 // ============================================
 
+const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+const BANK_METHODS = new Set(['QR_CODE', 'TRANSFER'])
+
+interface ZBill {
+  id: string
+  total_amount: number
+  tax_amount: number | null
+  service_charge_amount: number | null
+  discount_amount: number | null
+}
+
+// ยอดรวม Z-report จากบิลชุดหนึ่ง — ใช้ทั้งตอนสร้างสรุป (POST) และตอนคำนวณใหม่เมื่อบิลถูก void ทีหลัง (GET :id)
+// ช่องทางชำระ: แบ่งยอดบิลตามสัดส่วนที่จ่ายแต่ละช่องทาง (แบบ getShiftSalesSummary) ให้ cash+bank+other = total เสมอ
+// CASH = เงินสด · QR_CODE/TRANSFER = ธนาคาร · อื่น ๆ (บัตร ฯลฯ) และบิลที่ไม่มีแถว payment = other
+// COGS ใช้ calculateCOGS ตัวเดียวกับที่ลงบัญชี POS_COGS ตอนปิดบิล (มีสาขาเมนูไม่มีสูตร + กรอง tenant ครบ)
+function summariseZBills(tenantId: string, bills: ZBill[]) {
+  const paymentsStmt = db.prepare(`
+    SELECT payment_method, SUM(amount) as amount FROM pos_payments
+    WHERE bill_id = ? AND tenant_id = ? GROUP BY payment_method
+  `)
+  const t = { revenue: 0, tax: 0, service: 0, discount: 0, cogs: 0, cash: 0, bank: 0, other: 0 }
+  for (const bill of bills) {
+    const total = bill.total_amount || 0
+    t.revenue += total
+    t.tax += bill.tax_amount || 0
+    t.service += bill.service_charge_amount || 0
+    t.discount += bill.discount_amount || 0
+    t.cogs += posAccountingService.calculateCOGS(bill.id, tenantId).totalCost
+
+    const pays = paymentsStmt.all(bill.id, tenantId) as { payment_method: string; amount: number }[]
+    const paid = pays.reduce((s, p) => s + (p.amount || 0), 0)
+    if (paid <= 0) { t.other += total; continue }
+    for (const p of pays) {
+      const share = total * (p.amount || 0) / paid
+      if (p.payment_method === 'CASH') t.cash += share
+      else if (BANK_METHODS.has(p.payment_method)) t.bank += share
+      else t.other += share
+    }
+  }
+  const revenue = r2(t.revenue)
+  const cash = r2(t.cash)
+  const bank = r2(t.bank)
+  const cogs = r2(t.cogs)
+  return {
+    total_revenue: revenue,
+    total_tax: r2(t.tax),
+    total_service_charge: r2(t.service),
+    total_discount: r2(t.discount),
+    estimated_cogs: cogs,
+    // ช่องนี้ชื่อ net_profit แต่ไม่มีค่าใช้จ่ายอื่นให้หักในระดับวัน = กำไรขั้นต้น
+    // ยอดบิลรวม VAT ที่ต้องส่งสรรพากร ต้องหัก VAT ออกก่อน ไม่งั้นกำไรเกินจริงเท่ายอดภาษี
+    net_profit: r2(revenue - t.tax - cogs),
+    cash_amount: cash,
+    bank_amount: bank,
+    other_amount: r2(revenue - cash - bank), // ปัดเศษแล้วยังรวมได้เท่ายอดพอดี
+    bill_count: bills.length,
+  }
+}
+
 // GET all POS daily sales summaries
+// bill_count นับเฉพาะบิลที่ยัง PAID · voided_bill_count = บิลที่ถูก void/cancel หลังสรุป (ยอดสดดูที่ GET :id)
 router.get('/pos-daily-sales', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { date_from, date_to, limit = 50 } = req.query
 
     let query = `
-      SELECT 
+      SELECT
         ds.*,
         u.name as closed_by_name,
-        COUNT(dsb.id) as bill_count
+        COUNT(CASE WHEN b.status = 'PAID' THEN 1 END) as bill_count,
+        COUNT(CASE WHEN b.status != 'PAID' THEN 1 END) as voided_bill_count
       FROM pos_daily_sales ds
-      LEFT JOIN users u ON ds.closed_by = u.id
-      LEFT JOIN pos_daily_sales_bills dsb ON ds.id = dsb.daily_sales_id
+      LEFT JOIN users u ON ds.closed_by = u.id AND u.tenant_id = ds.tenant_id
+      LEFT JOIN pos_daily_sales_bills dsb ON ds.id = dsb.daily_sales_id AND dsb.tenant_id = ds.tenant_id
+      LEFT JOIN pos_running_bills b ON b.id = dsb.bill_id AND b.tenant_id = ds.tenant_id
       WHERE ds.tenant_id = ?
     `
     const params: any[] = [tenantId]
@@ -135,7 +172,7 @@ router.get('/pos-daily-sales', async (req: Request, res: Response) => {
     }
 
     query += ' GROUP BY ds.id ORDER BY ds.sales_date DESC LIMIT ?'
-    params.push(parseInt(limit as string))
+    params.push(Math.min(Math.max(parseInt(limit as string) || 50, 1), 500))
 
     const summaries = db.prepare(query).all(...params)
 
@@ -152,6 +189,7 @@ router.get('/pos-daily-sales/pending-bills', async (req: Request, res: Response)
   try {
     const tenantId = req.user!.tenantId
 
+    // บิลจ่ายหลายช่องทางเคยออกมาซ้ำหลายแถว (JOIN pos_payments) — รวมเป็นแถวเดียว
     const bills = (db.prepare(`
       SELECT
         b.id,
@@ -159,17 +197,17 @@ router.get('/pos-daily-sales/pending-bills', async (req: Request, res: Response)
         b.display_name,
         b.total_amount,
         b.closed_at,
-        p.payment_method
+        (SELECT GROUP_CONCAT(DISTINCT p.payment_method) FROM pos_payments p
+          WHERE p.bill_id = b.id AND p.tenant_id = b.tenant_id) as payment_method
       FROM pos_running_bills b
-      JOIN pos_payments p ON b.id = p.bill_id
       WHERE b.tenant_id = ?
         AND b.status = 'PAID'
         AND b.id NOT IN (
-          SELECT bill_id FROM pos_daily_sales_bills
+          SELECT bill_id FROM pos_daily_sales_bills WHERE tenant_id = ?
         )
       ORDER BY b.closed_at DESC
       LIMIT 100
-    `).all(tenantId) as any[])
+    `).all(tenantId, tenantId) as any[])
 
     res.json({ success: true, data: bills })
   } catch (error) {
@@ -179,6 +217,8 @@ router.get('/pos-daily-sales/pending-bills', async (req: Request, res: Response)
 })
 
 // GET single POS daily sales summary with details
+// บิลที่ถูก void/cancel หลังสรุปแล้วไม่นับ: ถ้ามี ยอดทั้งหมดคำนวณใหม่จากบิลที่ยัง PAID
+// (excluded_bills บอกว่าบิลไหนหลุดไป) · ถ้าไม่มี คืนค่าที่บันทึกไว้ตอนปิดวันตามเดิม
 router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -188,64 +228,78 @@ router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
     const summary = db.prepare(`
       SELECT ds.*, u.name as closed_by_name
       FROM pos_daily_sales ds
-      LEFT JOIN users u ON ds.closed_by = u.id
+      LEFT JOIN users u ON ds.closed_by = u.id AND u.tenant_id = ds.tenant_id
       WHERE ds.id = ? AND ds.tenant_id = ?
-    `).get(id, tenantId)
+    `).get(id, tenantId) as any
 
     if (!summary) {
       return res.status(404).json({ success: false, message: 'Daily sales summary not found' })
     }
 
-    // Get linked bills
+    const linked = db.prepare(`
+      SELECT b.id, b.bill_number, b.status, b.total_amount, b.tax_amount,
+             b.service_charge_amount, b.discount_amount
+      FROM pos_daily_sales_bills dsb
+      JOIN pos_running_bills b ON dsb.bill_id = b.id AND b.tenant_id = dsb.tenant_id
+      WHERE dsb.daily_sales_id = ? AND dsb.tenant_id = ?
+    `).all(id, tenantId) as any[]
+    const excluded = linked.filter(b => b.status !== 'PAID')
+    const totals = excluded.length > 0
+      ? summariseZBills(tenantId, linked.filter(b => b.status === 'PAID'))
+      : {}
+
+    // Get linked bills (one row per bill; split payments joined into one string)
     const bills = db.prepare(`
-      SELECT 
+      SELECT
         b.bill_number,
         b.display_name,
         b.total_amount,
         b.closed_at,
-        p.payment_method
+        (SELECT GROUP_CONCAT(DISTINCT p.payment_method) FROM pos_payments p
+          WHERE p.bill_id = b.id AND p.tenant_id = b.tenant_id) as payment_method
       FROM pos_daily_sales_bills dsb
-      JOIN pos_running_bills b ON dsb.bill_id = b.id
-      LEFT JOIN pos_payments p ON b.id = p.bill_id
-      WHERE dsb.daily_sales_id = ?
+      JOIN pos_running_bills b ON dsb.bill_id = b.id AND b.tenant_id = dsb.tenant_id
+      WHERE dsb.daily_sales_id = ? AND dsb.tenant_id = ? AND b.status = 'PAID'
       ORDER BY b.closed_at ASC
-    `).all(id)
+    `).all(id, tenantId)
 
     // Get sales by product
     const products = db.prepare(`
-      SELECT 
+      SELECT
         bi.product_name,
         SUM(bi.quantity) as total_qty,
         SUM(bi.total_price) as total_amount,
         p.category as product_category
       FROM pos_daily_sales_bills dsb
-      JOIN pos_running_bills b ON dsb.bill_id = b.id
-      JOIN pos_bill_items bi ON b.id = bi.bill_id
-      LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
+      JOIN pos_running_bills b ON dsb.bill_id = b.id AND b.tenant_id = dsb.tenant_id
+      JOIN pos_bill_items bi ON b.id = bi.bill_id AND bi.tenant_id = dsb.tenant_id
+      LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id AND pmc.tenant_id = dsb.tenant_id
       -- เมนู POS ผูกกับ stock_items (pmc.product_id = stock_items.id) ไม่ใช่ products ที่เลิกใช้แล้ว
       LEFT JOIN stock_items p ON pmc.product_id = p.id AND p.tenant_id = pmc.tenant_id
-      WHERE dsb.daily_sales_id = ?
+      WHERE dsb.daily_sales_id = ? AND dsb.tenant_id = ? AND b.status = 'PAID'
       GROUP BY bi.product_name
       ORDER BY total_amount DESC
-    `).all(id)
+    `).all(id, tenantId)
 
     // Get payment breakdown
     const payments = db.prepare(`
-      SELECT 
+      SELECT
         p.payment_method,
         COUNT(*) as count,
         SUM(p.amount) as total_amount
       FROM pos_daily_sales_bills dsb
-      JOIN pos_running_bills b ON dsb.bill_id = b.id
-      JOIN pos_payments p ON b.id = p.bill_id
-      WHERE dsb.daily_sales_id = ?
+      JOIN pos_running_bills b ON dsb.bill_id = b.id AND b.tenant_id = dsb.tenant_id
+      JOIN pos_payments p ON b.id = p.bill_id AND p.tenant_id = dsb.tenant_id
+      WHERE dsb.daily_sales_id = ? AND dsb.tenant_id = ? AND b.status = 'PAID'
       GROUP BY p.payment_method
-    `).all(id)
+    `).all(id, tenantId)
 
     res.json({
       success: true,
       data: {
         ...summary,
+        ...totals,
+        excluded_bills: excluded.map(b => ({ id: b.id, bill_number: b.bill_number, status: b.status })),
         bills,
         products,
         payments
@@ -257,189 +311,85 @@ router.get('/pos-daily-sales/:id', async (req: Request, res: Response) => {
   }
 })
 
+class ZReportError extends Error {}
+
 // POST create daily sales summary (Close Day)
+// เอาเฉพาะบิล PAID ที่ยังไม่เคยสรุป และปิดบิล (closed_at) ในวันที่ sales_date ตามปฏิทินไทย
+// เดิมกวาดบิลค้างทุกวันมารวมในวันเดียว — บิลวันก่อนที่ยังไม่ปิดวัน ให้ส่ง sales_date ของวันนั้นมาปิดแยก
 router.post('/pos-daily-sales', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const userId = req.user!.userId
     const { sales_date, notes } = req.body
 
-    const targetDate = sales_date || thaiDateStr()
-
-    // Check if already closed for this date
-    const existingCheck = db.prepare(`
-      SELECT id FROM pos_daily_sales 
-      WHERE tenant_id = ? AND sales_date = ?
-    `).get(tenantId, targetDate)
-
-    if (existingCheck) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'This date has already been closed. Please use a different date.' 
-      })
+    if (sales_date !== undefined && sales_date !== null && sales_date !== ''
+        && !(typeof sales_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sales_date))) {
+      return res.status(400).json({ success: false, message: 'sales_date ต้องเป็นรูปแบบ YYYY-MM-DD' })
     }
+    const targetDate: string = sales_date || thaiDateStr()
 
-    // Get all paid bills not yet included in any summary (regardless of date)
-    // User selects the sales_date for the shift — don't filter by closed_at date
-    const bills = db.prepare(`
-      SELECT
-        b.*,
-        p.payment_method,
-        p.amount as payment_amount
-      FROM pos_running_bills b
-      JOIN pos_payments p ON b.id = p.bill_id
-      WHERE b.tenant_id = ?
-        AND b.status = 'PAID'
-        AND b.id NOT IN (
-          SELECT bill_id FROM pos_daily_sales_bills
-        )
-    `).all(tenantId) as any[]
-
-    if (bills.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'ไม่มีบิลที่ชำระแล้วที่รอปิดกะ'
-      })
-    }
-
-    // Calculate totals
-    let totalRevenue = 0
-    let totalTax = 0
-    let totalServiceCharge = 0
-    let totalDiscount = 0
-    let estimatedCOGS = 0
-
-    // Payment method breakdown
-    const paymentBreakdown: Record<string, number> = {}
-
-    for (const bill of bills) {
-      totalRevenue += bill.total_amount
-      totalTax += bill.tax_amount || 0
-      totalServiceCharge += bill.service_charge_amount || 0
-      totalDiscount += bill.discount_amount || 0
-
-      // Calculate estimated COGS from bill items
-      const items = db.prepare(`
-        SELECT bi.*, pmc.bom_id
-        FROM pos_bill_items bi
-        LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
-        WHERE bi.bill_id = ?
-      `).all(bill.id) as any[]
-
-      for (const item of items) {
-        let itemCost = 0
-
-        if (item.bom_id) {
-          const bomItems = db.prepare(`
-            SELECT bi.quantity, bi.unit as ingredient_unit, bi.material_id, si.unit_cost,
-                   si.base_unit as stock_base_unit, si.unit as stock_unit
-            FROM bom_items bi
-            JOIN stock_items si ON bi.material_id = si.id
-            WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'
-          `).all(item.bom_id) as any[]
-
-          for (const bi of bomItems) {
-            const qty = posCogsToBaseQty(
-              bi.quantity,
-              bi.ingredient_unit,
-              bi.stock_base_unit || bi.stock_unit,
-              tenantId,
-              bi.material_id,
-              `bill ${bill.id} bom ${item.bom_id} material ${bi.material_id}`
-            )
-            itemCost += (qty * bi.unit_cost)
-          }
-        } else {
-          const ingItems = db.prepare(`
-            SELECT pmi.quantity_used, pmi.unit_id, pmi.stock_item_id, si.unit_cost,
-                   si.base_unit as stock_base_unit, si.unit as stock_unit
-            FROM pos_menu_ingredients pmi
-            JOIN stock_items si ON pmi.stock_item_id = si.id
-            WHERE pmi.pos_menu_id = ?
-          `).all(item.pos_menu_id) as any[]
-
-          for (const ing of ingItems) {
-            const qty = posCogsToBaseQty(
-              ing.quantity_used,
-              ing.unit_id,
-              ing.stock_base_unit || ing.stock_unit,
-              tenantId,
-              ing.stock_item_id,
-              `bill ${bill.id} menu ${item.pos_menu_id} stock item ${ing.stock_item_id}`
-            )
-            itemCost += (qty * ing.unit_cost)
-          }
-        }
-
-        estimatedCOGS += (itemCost * item.quantity)
+    const result = db.transaction(() => {
+      const existingCheck = db.prepare(`
+        SELECT id FROM pos_daily_sales WHERE tenant_id = ? AND sales_date = ?
+      `).get(tenantId, targetDate)
+      if (existingCheck) {
+        throw new ZReportError('This date has already been closed. Please use a different date.')
       }
 
-      // Payment breakdown
-      const method = bill.payment_method || 'CASH'
-      paymentBreakdown[method] = (paymentBreakdown[method] || 0) + bill.payment_amount
-    }
+      // กรองหยาบใน SQL (±1 วัน UTC) แล้วกรองจริงด้วยวันที่ไทยของ closed_at
+      const bills = (db.prepare(`
+        SELECT b.id, b.closed_at, b.total_amount, b.tax_amount, b.service_charge_amount, b.discount_amount
+        FROM pos_running_bills b
+        WHERE b.tenant_id = ?
+          AND b.status = 'PAID'
+          AND b.closed_at >= date(?, '-1 day') AND b.closed_at < date(?, '+2 day')
+          AND b.id NOT IN (SELECT bill_id FROM pos_daily_sales_bills WHERE tenant_id = ?)
+      `).all(tenantId, targetDate, targetDate, tenantId) as (ZBill & { closed_at: string })[])
+        .filter(b => thaiDateStr(b.closed_at) === targetDate)
 
-    const netProfit = totalRevenue - estimatedCOGS
-
-    // Generate summary number
-    const summaryNumber = formatDocumentNumber('POS-SUM', tenantId, 'POS_DAILY_SALES', targetDate.replace(/-/g, ''), 3)
-
-    // Create summary
-    const summaryId = generateId()
-    const now = new Date().toISOString()
-
-    db.prepare(`
-      INSERT INTO pos_daily_sales (
-        id, tenant_id, summary_number, sales_date,
-        total_revenue, total_tax, total_service_charge, total_discount,
-        estimated_cogs, net_profit,
-        cash_amount, bank_amount, other_amount,
-        bill_count, notes, closed_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      summaryId,
-      tenantId,
-      summaryNumber,
-      targetDate,
-      totalRevenue,
-      totalTax,
-      totalServiceCharge,
-      totalDiscount,
-      estimatedCOGS,
-      netProfit,
-      paymentBreakdown['CASH'] || 0,
-      paymentBreakdown['QR_CODE'] || paymentBreakdown['TRANSFER'] || 0,
-      paymentBreakdown['CREDIT_CARD'] || 0,
-      bills.length,
-      notes || null,
-      userId,
-      now
-    )
-
-    // Link bills to summary
-    const linkStmt = db.prepare(`
-      INSERT INTO pos_daily_sales_bills (id, tenant_id, daily_sales_id, bill_id, amount)
-      VALUES (?, ?, ?, ?, ?)
-    `)
-
-    for (const bill of bills) {
-      linkStmt.run(generateId(), tenantId, summaryId, bill.id, bill.total_amount)
-    }
-
-    res.json({
-      success: true,
-      message: 'Daily sales summary created successfully',
-      data: {
-        id: summaryId,
-        summary_number: summaryNumber,
-        sales_date: targetDate,
-        total_revenue: totalRevenue,
-        estimated_cogs: estimatedCOGS,
-        net_profit: netProfit,
-        bill_count: bills.length
+      if (bills.length === 0) {
+        throw new ZReportError('ไม่มีบิลที่ชำระแล้วที่รอปิดกะ')
       }
-    })
-  } catch (error) {
+
+      const totals = summariseZBills(tenantId, bills)
+      const summaryNumber = formatDocumentNumber('POS-SUM', tenantId, 'POS_DAILY_SALES', targetDate.replace(/-/g, ''), 3)
+      const summaryId = generateId()
+
+      db.prepare(`
+        INSERT INTO pos_daily_sales (
+          id, tenant_id, summary_number, sales_date,
+          total_revenue, total_tax, total_service_charge, total_discount,
+          estimated_cogs, net_profit,
+          cash_amount, bank_amount, other_amount,
+          bill_count, notes, closed_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        summaryId, tenantId, summaryNumber, targetDate,
+        totals.total_revenue, totals.total_tax, totals.total_service_charge, totals.total_discount,
+        totals.estimated_cogs, totals.net_profit,
+        totals.cash_amount, totals.bank_amount, totals.other_amount,
+        totals.bill_count, notes || null, userId, new Date().toISOString()
+      )
+
+      const linkStmt = db.prepare(`
+        INSERT INTO pos_daily_sales_bills (id, tenant_id, daily_sales_id, bill_id, amount)
+        VALUES (?, ?, ?, ?, ?)
+      `)
+      for (const bill of bills) {
+        linkStmt.run(generateId(), tenantId, summaryId, bill.id, bill.total_amount)
+      }
+
+      return { id: summaryId, summary_number: summaryNumber, sales_date: targetDate, ...totals }
+    })()
+
+    res.json({ success: true, message: 'Daily sales summary created successfully', data: result })
+  } catch (error: any) {
+    if (error instanceof ZReportError) {
+      return res.status(400).json({ success: false, message: error.message })
+    }
+    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ success: false, message: 'This date or one of its bills was closed concurrently. Please refresh.' })
+    }
     console.error('Create POS daily sales error:', error)
     res.status(500).json({ success: false, message: 'Failed to create daily sales summary' })
   }
@@ -448,6 +398,15 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
 // ============================================
 // POS SHIFTS (เปิด/ปิดกะ)
 // ============================================
+
+class ShiftAlreadyClosedError extends Error {}
+
+/** เงินสดต้องเป็นตัวเลข finite ≥ 0 — ปัด 2 ตำแหน่ง · ไม่ผ่าน = null */
+function parseCashAmount(v: unknown): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null
+}
 
 // GET current open shift
 router.get('/pos-shifts/current', (req: Request, res: Response) => {
@@ -467,7 +426,12 @@ router.get('/pos-shifts/current', (req: Request, res: Response) => {
     const sales = getShiftSalesSummary(tenantId, shift)
     const movements = getShiftCashMovementTotals(tenantId, shift.id)
 
-    res.json({ success: true, data: { ...shift, live: { ...sales, cash_in: movements.cashIn, paid_out: movements.paidOut } } })
+    // stale = กะเปิดค้างจากวันก่อน (เวลาไทย) — เปิดบิลใหม่ไม่ได้ ต้องเคลียร์บิลค้างแล้วปิดกะนี้
+    const stale = thaiDateStr(shift.opened_at) < thaiDateStr()
+    res.json({ success: true, data: {
+      ...shift, stale, // opened_by + opened_by_name มากับ s.* และ JOIN users แล้ว
+      live: { ...sales, cash_in: movements.cashIn, paid_out: movements.paidOut },
+    } })
   } catch (error) {
     console.error('Get current shift error:', error)
     res.status(500).json({ success: false, message: 'Failed to get current shift' })
@@ -500,10 +464,10 @@ router.post('/pos-shifts/open', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const userId = req.user!.userId
-    const { opening_cash, notes } = req.body
-
-    if (opening_cash === undefined || opening_cash === null) {
-      return res.status(400).json({ success: false, message: 'กรุณาระบุเงินสดเปิดกะ' })
+    const { notes } = req.body
+    const opening_cash = parseCashAmount(req.body.opening_cash)
+    if (opening_cash === null) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุเงินสดเปิดกะเป็นตัวเลขตั้งแต่ 0 ขึ้นไป' })
     }
 
     // Subscription: จำกัดจำนวนกะที่เปิดพร้อมกันตามแพ็กเกจ (MASTER bypass)
@@ -551,14 +515,25 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const userId = req.user!.userId
     const { id } = req.params
-    const { closing_cash_counted, notes } = req.body
-
-    if (closing_cash_counted === undefined || closing_cash_counted === null) {
-      return res.status(400).json({ success: false, message: 'กรุณานับและกรอกเงินสดในลิ้นชัก' })
+    const { notes } = req.body
+    const closing_cash_counted = parseCashAmount(req.body.closing_cash_counted)
+    if (closing_cash_counted === null) {
+      return res.status(400).json({ success: false, message: 'กรุณานับและกรอกเงินสดในลิ้นชักเป็นตัวเลขตั้งแต่ 0 ขึ้นไป' })
     }
 
     const shift = db.prepare(`SELECT * FROM pos_shifts WHERE id = ? AND tenant_id = ? AND status = 'OPEN'`).get(id, tenantId) as any
     if (!shift) return res.status(404).json({ success: false, message: 'ไม่พบกะที่เปิดอยู่' })
+
+    // ปิดกะไม่ได้ถ้ายังมีบิลค้าง (ทั้ง tenant รวมบิลที่ไม่มี shift_id) — ต้องชำระหรือยกเลิกก่อน
+    // ไม่งั้นยอดกะไม่ครบ และบิลค้างจะไปถูกนับในกะถัดไป
+    const openBills = db.prepare(`SELECT id, bill_number FROM pos_running_bills WHERE tenant_id = ? AND status = 'OPEN' ORDER BY opened_at`).all(tenantId) as { id: string; bill_number: string }[]
+    if (openBills.length > 0) {
+      return res.status(409).json({
+        success: false, code: 'SHIFT_HAS_OPEN_BILLS',
+        message: `ยังมีบิลค้างชำระ ${openBills.length} บิล กรุณาชำระหรือยกเลิกก่อนปิดกะ`,
+        count: openBills.length, open_bills: openBills,
+      })
+    }
 
     // Calculate sales in this shift
     const sales = getShiftSalesSummary(tenantId, shift)
@@ -574,7 +549,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     // ถ้าปล่อยให้ postJournal ปัดทีละบรรทัดเอง ผลรวมสองฝั่งจะหลุดกัน 0.01 แล้วปิดกะไม่ได้
     const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
     const expectedCash = r2((shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut)
-    const cashDifference = r2(Number(closing_cash_counted) - expectedCash)
+    const cashDifference = r2(closing_cash_counted - expectedCash)
     const nowStr = new Date().toISOString()
     const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย (nowStr เป็น UTC → 00:00–06:59 ได้วันก่อน)
 
@@ -582,19 +557,20 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     // ปิดสถานะกะกับลงบัญชีต้องสำเร็จหรือล้มไปด้วยกัน — เดิมลงบัญชีพังแล้วกะถูกปิดค้าง
     // (CLOSED แต่ไม่มี journal บัญชีพักไม่ถูกเคลียร์ และกดปิดซ้ำไม่ได้เพราะเจอ 404)
     db.transaction(() => {
-      db.prepare(`
+      const closed = db.prepare(`
         UPDATE pos_shifts SET
           status = 'CLOSED', closed_at = ?,
           closing_cash_counted = ?, expected_cash = ?, cash_difference = ?,
           total_revenue = ?, cash_revenue = ?, bank_revenue = ?,
           bill_count = ?, closed_by = ?,
           notes = COALESCE(?, notes)
-        WHERE id = ? AND tenant_id = ?
+        WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
       `).run(
         nowStr, closing_cash_counted, expectedCash, cashDifference,
         sales.total_revenue, sales.cash_revenue, sales.bank_revenue,
         sales.bill_count, userId, notes || null, id, tenantId
       )
+      if (closed.changes !== 1) throw new ShiftAlreadyClosedError()
 
       // Post เงินขาด/เงินเกิน เข้าบัญชีทันทีที่ปิดกะ (ข้ามถ้าเท่ากันพอดี) — ป้องกันลงซ้ำ
       // อัตโนมัติเพราะ UPDATE ด้านบนใช้ WHERE status='OPEN' เท่านั้น กดปิดซ้ำจะเจอ 404
@@ -616,6 +592,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
       // = ยอดบิล − ธนาคาร + ส่วนต่าง → เดบิตเท่าเครดิตเป๊ะเสมอ ไม่ว่าเศษจะปัดไปทางไหน
       // ติดลบได้ถ้าเงินขาดมากกว่ายอดขายเงินสด (เช่นกะที่ขายโอนล้วนแต่เงินทอนหาย) → ย้ายไปฝั่งเครดิต
       const journal = buildShiftCloseJournal({
+        tenant_id: tenantId, id, opened_at: shift.opened_at,
         shift_number: shift.shift_number, total_revenue: sales.total_revenue,
         bank_revenue: sales.bank_revenue, cash_difference: cashDifference,
       })
@@ -655,6 +632,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     console.error('Close shift error:', error)
     // ลงบัญชีไม่ผ่าน = กะยังเปิดอยู่ (rollback แล้ว) บอกเหตุผลจริงให้ผู้ใช้เห็น
     if (error instanceof JournalError) return res.status(400).json({ success: false, message: error.message })
+    if (error instanceof ShiftAlreadyClosedError) return res.status(409).json({ success: false, message: 'กะนี้ถูกปิดไปแล้ว' })
     res.status(500).json({ success: false, message: 'Failed to close shift' })
   }
 })

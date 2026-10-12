@@ -54,12 +54,9 @@ export function getRange(period: string, offset: number = 0): { start: string; e
 function getLedgerTotals(tenantId: string, startDate: string, endDate: string): { revenue: number; cogs: number } {
   const row = db.prepare(`
     SELECT
-      COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN
-        CASE WHEN a.normal_balance = 'DEBIT' THEN jl.debit - jl.credit ELSE jl.credit - jl.debit END
-      ELSE 0 END), 0) as revenue,
-      COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category = 'COGS' THEN
-        CASE WHEN a.normal_balance = 'DEBIT' THEN jl.debit - jl.credit ELSE jl.credit - jl.debit END
-      ELSE 0 END), 0) as cogs
+      -- เครื่องหมายตาม type: ส่วนลดขาย/รับคืน (REVENUE แต่ normal_balance=DEBIT) ต้องหักออกจากยอดขาย ไม่ใช่บวกเพิ่ม
+      COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as revenue,
+      COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category = 'COGS' THEN jl.debit - jl.credit ELSE 0 END), 0) as cogs
     FROM journal_lines jl
     JOIN journal_entries je ON jl.journal_entry_id = je.id
     JOIN accounts a ON jl.account_id = a.id

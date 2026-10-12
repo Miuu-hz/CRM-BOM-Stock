@@ -174,3 +174,47 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
     expect(resGet.body.data.id).toBe(otherWoId)
   })
 })
+
+// เดิมเบิกวัตถุดิบไปผลิตแล้วมูลค่าไม่ตามไปไหนเลย: สินค้าสำเร็จรูปต้นทุน 0 / ไม่มีของออกมาก็ไม่เป็นค่าใช้จ่าย
+describe('PUT /work-orders/:id/status COMPLETED — ต้นทุนวัตถุดิบตามไปที่สินค้าสำเร็จรูป', () => {
+  const put = (token: string, woId: string, status: string) =>
+    request(app).put(`/api/work-orders/${woId}/status`).set('Authorization', `Bearer ${token}`).send({ status })
+
+  it('วัตถุดิบ 20 kg × 5 บาท ผลิตได้ 10 ชิ้น → สินค้าสำเร็จรูปต้นทุน 10 บาท/ชิ้น ไม่มี journal', async () => {
+    const user = createTestUser({ role: 'MASTER' })
+    const materialId = seedMaterialStock(user.tenantId, 100)
+    db.prepare('UPDATE stock_items SET unit_cost = 5 WHERE id = ?').run(materialId)
+    const finishedId = seedFinishedStock(user.tenantId, 0)
+    const bomId = generateId()
+    db.prepare(`INSERT INTO boms (id, tenant_id, product_id, version, status) VALUES (?, ?, ?, 'v1', 'ACTIVE')`)
+      .run(bomId, user.tenantId, finishedId)
+    const woId = seedWO(user.tenantId, { bomId })
+    seedWOMaterial(user.tenantId, woId, materialId, 20)
+
+    expect((await put(user.token, woId, 'IN_PROGRESS')).status).toBe(200)
+    expect((await put(user.token, woId, 'COMPLETED')).status).toBe(200)
+
+    const fg = db.prepare('SELECT quantity, unit_cost FROM stock_items WHERE id = ?').get(finishedId) as any
+    expect(fg.quantity).toBe(10)
+    expect(fg.unit_cost).toBeCloseTo(10, 6)
+    const je = db.prepare("SELECT COUNT(*) c FROM journal_entries WHERE tenant_id = ? AND reference_type = 'WO_MATERIAL'").get(user.tenantId) as any
+    expect(je.c).toBe(0)
+  })
+
+  it('ไม่มีสินค้าสำเร็จรูปออกมา (ไม่ผูก BOM) → วัตถุดิบเป็นค่าใช้จ่าย Dr 5102 / Cr 1107', async () => {
+    const user = createTestUser({ role: 'MASTER' })
+    const materialId = seedMaterialStock(user.tenantId, 100)
+    db.prepare('UPDATE stock_items SET unit_cost = 5 WHERE id = ?').run(materialId)
+    const woId = seedWO(user.tenantId)
+    seedWOMaterial(user.tenantId, woId, materialId, 20)
+
+    expect((await put(user.token, woId, 'IN_PROGRESS')).status).toBe(200)
+    expect((await put(user.token, woId, 'COMPLETED')).status).toBe(200)
+
+    const je = db.prepare("SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = 'WO_MATERIAL'").get(user.tenantId) as any
+    expect(je.total_debit).toBeCloseTo(100, 6)
+    const lines = db.prepare(`SELECT a.code, jl.debit, jl.credit FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+      WHERE jl.journal_entry_id = ? ORDER BY jl.line_number`).all(je.id) as any[]
+    expect(lines.map(l => [l.code, l.debit, l.credit])).toEqual([['5102', 100, 0], ['1107', 0, 100]])
+  })
+})

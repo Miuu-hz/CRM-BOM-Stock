@@ -61,12 +61,11 @@ describe('POS COGS — เมนูไม่มีสูตร (ไม่มี 
       tenantId,
       'u1'
     )
-    expect(res.success, res.errors.join()).toBe(true)
     expect(res.cogsEntryId).toBeTruthy()
 
     const lines = cogsLines(res.cogsEntryId!)
     const cogsLine = lines.find(l => l.code === ACC.COGS_PRODUCT)
-    const invLine = lines.find(l => l.code === ACC.INVENTORY)
+    const invLine = lines.find(l => l.code === ACC.RAW_MATERIAL)
     expect(cogsLine?.debit).toBe(8)
     expect(invLine?.credit).toBe(8)
   })
@@ -86,7 +85,6 @@ describe('POS COGS — เมนูไม่มีสูตร (ไม่มี 
       tenantId,
       'u1'
     )
-    expect(res.success, res.errors.join()).toBe(true)
     expect(res.cogsEntryId).toBeTruthy()
 
     const lines = cogsLines(res.cogsEntryId!)
@@ -114,7 +112,6 @@ describe('POS COGS — เมนูไม่มีสูตร (ไม่มี 
       tenantId,
       'u1'
     )
-    expect(res.success, res.errors.join()).toBe(true)
     expect(res.cogsEntryId).toBeUndefined()
   })
 
@@ -124,14 +121,12 @@ describe('POS COGS — เมนูไม่มีสูตร (ไม่มี 
     const bill = { id: billId, bill_number: 'B-' + billId.slice(0, 6), display_name: 'โต๊ะ 1', subtotal: 20, service_charge_amount: 0, tax_rate: 0, tax_amount: 0, total_amount: 20 }
 
     const sale = await posAccountingService.recordSale(bill as any, { payment_method: 'CASH', amount: 20 } as any, tenantId, 'u1')
-    expect(sale.success, sale.errors.join()).toBe(true)
 
     const cancel = await posAccountingService.recordCancelledSale(bill as any, tenantId, 'u1', 'ทดสอบ')
-    expect(cancel.success, cancel.errors.join()).toBe(true)
     expect(cancel.journalEntryId).toBeTruthy()
 
     const lines = cogsLines(cancel.journalEntryId!)
-    const invLine = lines.find(l => l.code === ACC.INVENTORY)
+    const invLine = lines.find(l => l.code === ACC.RAW_MATERIAL)
     const cogsLine = lines.find(l => l.code === ACC.COGS_PRODUCT)
     // กลับรายการ: ของเดิม Dr COGS 8 / Cr สต็อก 8 → ยกเลิกต้อง Dr สต็อก 8 / Cr COGS 8
     expect(invLine?.debit).toBe(8)

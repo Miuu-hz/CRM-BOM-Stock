@@ -108,6 +108,7 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.SUBCON_LABOR]:     { name: 'ค่าจ้างเหมาช่วง', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
 
   [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
+  [ACC.OTHER_PAYABLE]:    { name: 'เจ้าหนี้อื่น', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
 
   [ACC.POS_CLEARING]:     { name: 'ลูกหนี้การค้า-POS', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
   [ACC.PLATFORM_CLEARING]:{ name: 'ลูกหนี้การค้า-แพลตฟอร์ม', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
