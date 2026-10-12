@@ -41,11 +41,17 @@ export default function SignupPlan({ plan, cycle, packs, onPacksChange }: Props)
           ฿{price.toLocaleString('th-TH')}<span className="text-xs font-normal text-[var(--fg-3)]">/{cycle === 'yearly' ? 'ปี' : 'เดือน'} + VAT</span>
         </span>
       </div>
+      {cycle === 'yearly' && (
+        <p className="text-xs tabular-nums mt-0.5">
+          <s className="text-[var(--fg-4)]">฿{(p.monthly * 12).toLocaleString('th-TH')}</s>{' '}
+          <span className="text-[var(--success)]">ประหยัด ฿{(p.monthly * 12 - price).toLocaleString('th-TH')}</span>
+        </p>
+      )}
       <p className="text-xs text-[var(--success)] mt-1">ทดลองใช้ฟรี 30 วัน ไม่ต้องใส่บัตร · ยกเลิกได้ทุกเมื่อ</p>
       {p.canBuyPacks && included !== null && (
         <fieldset className="mt-3">
           <legend className="text-xs text-[var(--fg-3)] mb-1.5">
-            เลือก {included} Pack ตามธุรกิจ{extra > 0 && ` · เกิน ${extra} Pack +฿${(extra * catalog.packPrice).toLocaleString('th-TH')}/เดือน`}
+            เลือก {included} Pack ตามธุรกิจ{extra > 0 && ` · เกิน ${extra} Pack +฿${(extra * catalog.packPrice * (cycle === 'yearly' ? catalog.yearlyMonths : 1)).toLocaleString('th-TH')}/${cycle === 'yearly' ? 'ปี' : 'เดือน'}`}
           </legend>
           <div className="grid gap-1.5">
             {catalog.packs.map(code => (

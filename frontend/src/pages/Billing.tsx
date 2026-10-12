@@ -45,6 +45,8 @@ const ADDON_LABEL: Record<string, string> = {
   api_access: 'API & Webhook',
 }
 const baht = (n: number) => `฿${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
+// รายปีคิด yearlyMonths เดือน (10) — โชว์เป็น "ราคา 1 ปีที่ลดแล้ว" เทียบกับจ่ายรายเดือน 12 เดือน
+const yearlyDiscountPct = (yearlyMonths: number) => Math.round((1 - yearlyMonths / 12) * 100)
 
 export default function Billing() {
   const { user } = useAuth()
@@ -104,7 +106,8 @@ export default function Billing() {
     for (const [k, v] of Object.entries(addons)) if (k !== 'extra_users' && v > 0) monthly += selected.addons[k] ?? 0
     const sub = monthly * mult
     const vat = Math.round(sub * data.catalog.vatPercent) / 100
-    return { sub, vat, total: sub + vat, extraPacks }
+    const yearlySaving = cycle === 'yearly' ? monthly * 12 - sub : 0
+    return { sub, vat, total: sub + vat, extraPacks, yearlySaving }
   }, [data, selected, cycle, packs, addons])
 
   const choosePlan = (code: string) => {
@@ -186,7 +189,7 @@ export default function Billing() {
         {(['monthly', 'yearly'] as const).map(c => (
           <button key={c} role="radio" aria-checked={cycle === c} onClick={() => setCycle(c)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${cycle === c ? 'bg-[var(--surface)] text-[var(--fg-1)] shadow-sm' : 'text-[var(--fg-3)]'}`}>
-            {c === 'monthly' ? 'รายเดือน' : `รายปี (จ่าย ${catalog.yearlyMonths} เดือน)`}
+            {c === 'monthly' ? 'รายเดือน' : <>รายปี <span className="text-[var(--success)]">ลด {yearlyDiscountPct(catalog.yearlyMonths)}%</span></>}
           </button>
         ))}
       </div>
@@ -203,6 +206,12 @@ export default function Billing() {
                 {active && <Check className="w-4 h-4 text-[var(--primary)]" />}
               </div>
               <div className="text-xl font-bold text-[var(--fg-1)] mt-1 tabular-nums">{baht(price)}</div>
+              {cycle === 'yearly' && (
+                <div className="text-xs tabular-nums">
+                  <s className="text-[var(--fg-4)]">{baht(p.monthly * 12)}</s>{' '}
+                  <span className="text-[var(--success)]">ประหยัด {baht(p.monthly * 12 - price)}</span>
+                </div>
+              )}
               <div className="text-xs text-[var(--fg-3)]">/{cycle === 'yearly' ? 'ปี' : 'เดือน'} · {p.includedPacks === 'all' ? 'ครบ 4 Pack' : p.includedPacks ? `${p.includedPacks} Pack` : 'ไม่มี Pack'}</div>
               {current.planCode === p.code && <div className="text-xs mt-1 text-[var(--success)]">แพ็กปัจจุบัน</div>}
             </button>
@@ -262,6 +271,9 @@ export default function Billing() {
             <div className="flex justify-between"><dt className="text-[var(--fg-3)]">VAT {catalog.vatPercent}%</dt><dd className="tabular-nums">{baht(pricing.vat)}</dd></div>
             <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2"><dt>รวม</dt><dd className="tabular-nums">{baht(pricing.total)}</dd></div>
           </dl>
+          {pricing.yearlySaving > 0 && (
+            <p className="text-xs text-[var(--success)]">ประหยัด {baht(pricing.yearlySaving)}/ปี เทียบกับจ่ายรายเดือน (ก่อน VAT)</p>
+          )}
           {trialEligible && !current.hasSubscription && (
             <p className="text-xs text-[var(--success)]">ทดลองใช้ฟรี 30 วัน ไม่ต้องใส่บัตร — ถ้าไม่ใส่บัตรก่อนครบ ระบบจะกลับเป็นแพ็ก Free อัตโนมัติ</p>
           )}
