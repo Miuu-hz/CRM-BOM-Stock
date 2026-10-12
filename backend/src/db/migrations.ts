@@ -1438,6 +1438,73 @@ export function runMigrations(db: any): void {
     }
   } catch (e) { console.error('⚠️ tenant subscription backfill error:', e) }
 
+  // ==================== SUBSCRIPTION PLANS v2 (Base + Pack + Add-on) — 2026-10-12 ====================
+  // packs/addons ต่อ tenant (ดู PACK_FEATURES/ADDON_FEATURES ใน subscription.service.ts)
+  // stripe_* ไว้ผูกกับ Stripe subscription ในเฟสถัดไป
+  for (const [col, def] of [
+    ['packs', `TEXT DEFAULT '[]'`],
+    ['addons', `TEXT DEFAULT '{}'`],
+    ['stripe_customer_id', 'TEXT'],
+    ['stripe_subscription_id', 'TEXT'],
+  ] as const) {
+    try { db.exec(`ALTER TABLE tenant_subscriptions ADD COLUMN ${col} ${def}`) } catch { /* มีแล้ว */ }
+  }
+
+  // ราคาตาม Phopy_Price.xlsx ชีต "แพ็กเกจ v2" — รันครั้งเดียว (เช็คจาก solo) ไม่งั้นทุกครั้งที่ boot
+  // จะเขียนทับราคาที่ MASTER แก้ผ่าน /api/master/plans
+  // starter/enterprise เดิมเก็บไว้ (is_active=0) เพราะลูกค้าเก่ายังอยู่บนแพ็กนั้น
+  try {
+    const hasV2 = db.prepare(`SELECT 1 FROM subscription_plans WHERE code = 'solo'`).get()
+    if (!hasV2) {
+      const base = ['stock', 'sales', 'purchase', 'pos', 'crm', 'reports']
+      const allPacks = ['kds', 'platform_settlement', 'bom', 'work_orders', 'accounting', 'tax']
+      // free/business มีแถวเดิมอยู่แล้ว (id + code ชนทั้งคู่) → UPDATE ก่อน ไม่มีค่อย INSERT
+      const update = db.prepare(`
+        UPDATE subscription_plans SET
+          name = ?, description = ?, price_monthly = ?, price_yearly = ?, max_users = ?, max_products = ?,
+          max_pos_shifts = ?, features = ?, is_active = 1, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE code = ?
+      `)
+      const insert = db.prepare(`
+        INSERT INTO subscription_plans
+          (id, code, name, description, price_monthly, price_yearly, max_users, max_products, max_pos_shifts, features, is_active, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      `)
+      const upsert = {
+        run: (id: string, code: string, name: string, desc: string, pm: number, py: number,
+              users: number | null, products: number | null, shifts: number | null, features: string, sort: number) => {
+          const r = update.run(name, desc, pm, py, users, products, shifts, features, sort, code)
+          if (r.changes === 0) insert.run(id, code, name, desc, pm, py, users, products, shifts, features, sort)
+        },
+      }
+      const v2: any[][] = [
+        ['plan_free', 'free', 'Free', 'ขาย สต็อก ซื้อ POS พื้นฐาน ไม่มีวันหมดอายุ', 0, 0, 1, 100, 1, base, 1],
+        ['plan_solo', 'solo', 'Solo', 'ร้านเดี่ยว สินค้าไม่จำกัด', 299, 2990, 1, null, 1, base, 2],
+        ['plan_business', 'business', 'Business', '3 ผู้ใช้ + เลือก 1 Pack', 690, 6900, 3, null, 1, base, 3],
+        ['plan_business_plus', 'business_plus', 'Business+', '5 ผู้ใช้ + เลือก 2 Pack', 950, 9500, 5, null, 1, base, 4],
+        ['plan_pro', 'pro', 'Pro', '8 ผู้ใช้ ครบ 4 Pack + Smart Unit + Backup', 1950, 19500, 8, null, null,
+          [...base, ...allPacks, 'ai', 'smart_unit', 'backup'], 5],
+        ['plan_enterprise_ai', 'enterprise_ai', 'Enterprise AI', '20 ผู้ใช้ ครบทุกโมดูล + AI + API', 3490, 34900, 20, null, null,
+          [...base, ...allPacks, 'ai', 'smart_unit', 'backup', 'multi_currency', 'subcontract', 'api_access'], 6],
+      ]
+      db.transaction(() => {
+        for (const [id, code, name, desc, pm, py, users, products, shifts, features, sort] of v2) {
+          upsert.run(id, code, name, desc, pm, py, users, products, shifts, JSON.stringify(features), sort)
+        }
+        db.prepare(`UPDATE subscription_plans SET is_active = 0, sort_order = 90 WHERE code IN ('starter', 'enterprise')`).run()
+        // gate กระทบยอด Shopee/Lazada ย้ายจาก 'accounting' เป็น 'platform_settlement' (Pack Online)
+        // → แพ็ก enterprise เดิมต้องได้ key ใหม่ด้วย ไม่งั้นลูกค้าเก่าเข้าหน้าเดิมไม่ได้
+        const ent = db.prepare(`SELECT features FROM subscription_plans WHERE code = 'enterprise'`).get() as any
+        if (ent) {
+          const f = new Set<string>(JSON.parse(ent.features || '[]'))
+          f.add('platform_settlement')
+          db.prepare(`UPDATE subscription_plans SET features = ? WHERE code = 'enterprise'`).run(JSON.stringify([...f]))
+        }
+      })()
+      console.log('✅ Migration: subscription plans v2 seeded (free/solo/business/business_plus/pro/enterprise_ai)')
+    }
+  } catch (e) { console.error('⚠️ subscription plans v2 seed error:', e) }
+
   // signup_requests — self-service signup awaiting Master approval (no tenant until approved)
   try {
     db.exec(`

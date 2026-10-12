@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import { authenticate, requireMaster } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
-import { getSubscription } from '../services/subscription.service'
+import { getSubscription, PACK_FEATURES, ADDON_FEATURES, EXTRA_USERS } from '../services/subscription.service'
 import { provisionTenant, ProvisionError } from '../services/provisioning'
 
 const router = Router()
@@ -274,6 +274,8 @@ router.get('/subscriptions', authenticate, requireMaster, (req: Request, res: Re
       status: sub.status,
       currentPeriodEnd: sub.currentPeriodEnd,
       daysRemaining,
+      packs: sub.packs,
+      addons: sub.addons,
       usage: {
         users: { used: userCount, max: sub.maxUsers },
         products: { used: productCount, max: sub.maxProducts },
@@ -287,10 +289,25 @@ router.get('/subscriptions', authenticate, requireMaster, (req: Request, res: Re
 router.put('/tenant/:id/subscription', authenticate, requireMaster, (req: Request, res: Response) => {
   const db = getDb()
   const { id } = req.params
-  const { planCode, billingCycle, periodDays, notes } = req.body
+  const { planCode, billingCycle, periodDays, notes, packs, addons } = req.body
 
   const plan = db.prepare('SELECT code FROM subscription_plans WHERE code = ?').get(planCode)
   if (!plan) { res.status(404).json({ success: false, message: `ไม่พบแพ็กเกจ "${planCode}"` }); return }
+
+  // packs/addons ไม่ส่งมา = คงค่าเดิม (COALESCE ด้านล่าง)
+  if (packs !== undefined &&
+      (!Array.isArray(packs) || packs.some((p: unknown) => typeof p !== 'string' || !Object.prototype.hasOwnProperty.call(PACK_FEATURES, p)))) {
+    res.status(400).json({ success: false, message: `packs ต้องเป็น array ของ ${Object.keys(PACK_FEATURES).join('/')}` }); return
+  }
+  const addonKeys: string[] = [...ADDON_FEATURES, EXTRA_USERS]
+  if (addons !== undefined && (
+    typeof addons !== 'object' || addons === null || Array.isArray(addons) ||
+    Object.entries(addons).some(([k, v]) => !addonKeys.includes(k) || !Number.isInteger(v) || (v as number) < 0 || (v as number) > 100)
+  )) {
+    res.status(400).json({ success: false, message: `addons ต้องเป็น { ${addonKeys.join(', ')} } จำนวนเต็ม 0-100` }); return
+  }
+  const packsJson = packs === undefined ? null : JSON.stringify([...new Set(packs)])
+  const addonsJson = addons === undefined ? null : JSON.stringify(addons)
 
   const now = new Date()
   let status: string, cycle: string | null, periodEnd: string | null
@@ -307,8 +324,8 @@ router.put('/tenant/:id/subscription', authenticate, requireMaster, (req: Reques
   const nowStr = now.toISOString()
 
   db.prepare(
-    `INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, billing_cycle, current_period_start, current_period_end, notes, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, billing_cycle, current_period_start, current_period_end, notes, updated_at, packs, addons)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, '[]'), COALESCE(?, '{}'))
      ON CONFLICT(tenant_id) DO UPDATE SET
        plan_code = excluded.plan_code,
        status = excluded.status,
@@ -316,8 +333,11 @@ router.put('/tenant/:id/subscription', authenticate, requireMaster, (req: Reques
        current_period_start = excluded.current_period_start,
        current_period_end = excluded.current_period_end,
        notes = COALESCE(excluded.notes, tenant_subscriptions.notes),
-       updated_at = excluded.updated_at`
-  ).run(randomBytes(8).toString('hex'), id, planCode, status, cycle, nowStr, periodEnd, notes ?? null, nowStr)
+       updated_at = excluded.updated_at,
+       packs = COALESCE(?, tenant_subscriptions.packs),
+       addons = COALESCE(?, tenant_subscriptions.addons)`
+  ).run(randomBytes(8).toString('hex'), id, planCode, status, cycle, nowStr, periodEnd, notes ?? null, nowStr,
+    packsJson, addonsJson, packsJson, addonsJson)
 
   res.json({ success: true, data: getSubscription(id) })
 })

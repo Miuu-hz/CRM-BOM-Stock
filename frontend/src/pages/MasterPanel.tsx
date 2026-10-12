@@ -52,6 +52,8 @@ interface TenantSubscription {
   status: 'FREE' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'NONE'
   currentPeriodEnd: string | null
   daysRemaining: number | null
+  packs: string[]
+  addons: Record<string, number>
   usage: { users: Usage; products: Usage }
 }
 
@@ -68,7 +70,23 @@ interface Plan {
   is_active: number
 }
 
-interface PlanDraft { planCode: string; billingCycle: 'monthly' | 'yearly' }
+interface PlanDraft { planCode: string; billingCycle: 'monthly' | 'yearly'; packs: string[]; addons: Record<string, number> }
+
+// ต้องตรงกับ PACK_FEATURES / ADDON_FEATURES ใน backend subscription.service.ts
+const PACKS = [
+  { code: 'shop', label: 'Shop (KDS + กะไม่จำกัด)' },
+  { code: 'online', label: 'Online (Shopee/Lazada)' },
+  { code: 'maker', label: 'Maker (BOM + ใบสั่งผลิต)' },
+  { code: 'accounting', label: 'Accounting (บัญชี + ภาษี)' },
+]
+const ADDON_MODULES = [
+  { code: 'smart_unit', label: 'Smart Unit' },
+  { code: 'multi_currency', label: 'Multi-Currency' },
+  { code: 'subcontract', label: 'Subcontract' },
+  { code: 'backup', label: 'Backup Google Drive' },
+  { code: 'api_access', label: 'API / Webhook' },
+]
+const emptyDraft = (): PlanDraft => ({ planCode: 'free', billingCycle: 'monthly', packs: [], addons: {} })
 
 // ค่าที่แก้ไขในฟอร์ม Plans — เก็บเป็น string, '' = ไม่จำกัด (null)
 interface PlanEdit {
@@ -116,8 +134,13 @@ const STATUS_DOT: Record<string, string> = {
 
 const PLAN_BADGE_CLS: Record<string, string> = {
   free: 'bg-[var(--surface-2)] text-[var(--fg-2)]',
-  starter: 'bg-[var(--primary-soft)] text-[var(--primary)]',
+  solo: 'bg-[var(--primary-soft)] text-[var(--primary)]',
   business: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+  business_plus: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+  pro: 'bg-[var(--success-soft)] text-[var(--success)]',
+  enterprise_ai: 'bg-[var(--success-soft)] text-[var(--success)]',
+  // แพ็กเก่า (ลูกค้าเดิม)
+  starter: 'bg-[var(--primary-soft)] text-[var(--primary)]',
   enterprise: 'bg-[var(--success-soft)] text-[var(--success)]',
 }
 
@@ -304,7 +327,7 @@ export default function MasterPanel() {
         const subs: TenantSubscription[] = subsRes.data.data
         setSubscriptions(subs)
         const drafts: Record<string, PlanDraft> = {}
-        subs.forEach(s => { drafts[s.tenantId] = { planCode: s.plan ?? 'free', billingCycle: 'monthly' } })
+        subs.forEach(s => { drafts[s.tenantId] = { planCode: s.plan ?? 'free', billingCycle: 'monthly', packs: s.packs ?? [], addons: s.addons ?? {} } })
         setPlanDrafts(drafts)
       }
       if (plansRes.data.success) {
@@ -326,6 +349,8 @@ export default function MasterPanel() {
       const res = await api.put(`/master/tenant/${tenantId}/subscription`, {
         planCode: draft.planCode,
         billingCycle: draft.billingCycle,
+        packs: draft.packs,
+        addons: draft.addons,
       }, { headers: { Authorization: `Bearer ${token}` } })
       if (res.data.success) {
         toast.success('อัปเดตแพ็กเกจแล้ว')
@@ -552,7 +577,11 @@ export default function MasterPanel() {
   const selStat = stats.find(t => t.tenantId === selectedId) ?? null
   const selSub = selectedId ? subByTenant[selectedId] : undefined
   const selQuota = selectedId ? (mcpQuotas[selectedId] ?? EMPTY_QUOTA) : EMPTY_QUOTA
-  const selDraft = selectedId ? (planDrafts[selectedId] ?? { planCode: 'free', billingCycle: 'monthly' as const }) : { planCode: 'free', billingCycle: 'monthly' as const }
+  const selDraft = selectedId ? (planDrafts[selectedId] ?? emptyDraft()) : emptyDraft()
+  const setSelDraft = (patch: Partial<PlanDraft>) => {
+    if (selectedId) setPlanDrafts(prev => ({ ...prev, [selectedId]: { ...selDraft, ...patch } }))
+  }
+  const toggleIn = (list: string[], code: string) => (list.includes(code) ? list.filter(c => c !== code) : [...list, code])
 
   const SUMMARY = [
     { label: 'ทั้งหมด', value: stats.length + ' tenants', icon: Building2 },
@@ -804,14 +833,16 @@ export default function MasterPanel() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <select
                                 value={selDraft.planCode}
-                                onChange={e => setPlanDrafts(prev => ({ ...prev, [selSub.tenantId]: { ...selDraft, planCode: e.target.value } }))}
+                                onChange={e => setSelDraft({ planCode: e.target.value })}
                                 className="flex-1 min-w-[120px] px-2.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                               >
-                                {plans.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+                                {plans.filter(p => p.is_active || p.code === selSub.plan).map(p => (
+                                  <option key={p.code} value={p.code}>{p.name}{p.is_active ? '' : ' (แพ็กเก่า)'}</option>
+                                ))}
                               </select>
                               <select
                                 value={selDraft.billingCycle}
-                                onChange={e => setPlanDrafts(prev => ({ ...prev, [selSub.tenantId]: { ...selDraft, billingCycle: e.target.value as 'monthly' | 'yearly' } }))}
+                                onChange={e => setSelDraft({ billingCycle: e.target.value as 'monthly' | 'yearly' })}
                                 className="px-2.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                               >
                                 <option value="monthly">รายเดือน</option>
@@ -826,6 +857,37 @@ export default function MasterPanel() {
                                 บันทึก
                               </button>
                             </div>
+                            <fieldset className="space-y-1.5">
+                              <legend className="text-xs text-[var(--fg-3)] mb-1">Pack <span className="text-[var(--fg-4)]">(Business 1 · Business+ 2 · Pro/Enterprise ได้ครบอยู่แล้ว · เกิน = Pack เพิ่ม 390฿)</span></legend>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {PACKS.map(p => (
+                                  <label key={p.code} className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+                                    <input type="checkbox" checked={selDraft.packs.includes(p.code)}
+                                      onChange={() => setSelDraft({ packs: toggleIn(selDraft.packs, p.code) })} />
+                                    {p.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </fieldset>
+                            <fieldset className="space-y-1.5">
+                              <legend className="text-xs text-[var(--fg-3)] mb-1">Add-on</legend>
+                              <label className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+                                User เพิ่ม
+                                <input type="number" min={0} max={100} value={selDraft.addons.extra_users ?? 0}
+                                  onChange={e => setSelDraft({ addons: { ...selDraft.addons, extra_users: Math.max(0, Math.min(100, Math.floor(Number(e.target.value) || 0))) } })}
+                                  className="w-20 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)] text-sm" />
+                                คน
+                              </label>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {ADDON_MODULES.map(a => (
+                                  <label key={a.code} className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+                                    <input type="checkbox" checked={(selDraft.addons[a.code] ?? 0) > 0}
+                                      onChange={e => setSelDraft({ addons: { ...selDraft.addons, [a.code]: e.target.checked ? 1 : 0 } })} />
+                                    {a.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </fieldset>
                             <button
                               onClick={() => handleExtend(selSub.tenantId)}
                               disabled={!((selSub.status === 'ACTIVE' || selSub.status === 'EXPIRED') && !!selSub.currentPeriodEnd) || extending === selSub.tenantId}
