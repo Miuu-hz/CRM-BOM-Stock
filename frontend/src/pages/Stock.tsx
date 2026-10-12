@@ -476,7 +476,7 @@ function Stock() {
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 h-11 px-4.5 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:bg-[var(--primary-hover)] transition-colors"
+            className="phopy-btn-ink flex items-center gap-2 h-11 text-sm"
           >
             <Plus className="w-4 h-4" strokeWidth={2.4} />
             เพิ่มสินค้า

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
+import Billing from './Billing'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -29,6 +30,7 @@ import {
   Tag,
   Info,
   Database,
+  Gem,
   Zap,
   UserCog,
   ShieldCheck,
@@ -68,8 +70,8 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  type SettingsTab = 'general' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp'
-  const VALID_TABS: SettingsTab[] = ['general', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp']
+  type SettingsTab = 'general' | 'subscription' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp'
+  const VALID_TABS: SettingsTab[] = ['general', 'subscription', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp']
   // รองรับลิงก์ตรงมาแท็บที่ต้องการ เช่น /settings?tab=units (จาก UnitPicker เมื่อเจอหน่วยที่แปลงไม่ถึง)
   const [searchParams] = useSearchParams()
   const tabFromUrl = searchParams.get('tab') as SettingsTab | null
@@ -79,6 +81,11 @@ export default function SettingsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [localChildren, setLocalChildren] = useState<ChildUser[]>([])
+
+  useEffect(() => {
+    if (tabFromUrl && VALID_TABS.includes(tabFromUrl)) setActiveTab(tabFromUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabFromUrl])
 
   // Load children when tab changes to users
   useEffect(() => {
@@ -102,7 +109,7 @@ export default function SettingsPage() {
   // รายการนี้ต้องตรงกับ show: ของแต่ละแท็บในกลุ่มด้านล่าง
   useEffect(() => {
     const alwaysVisible: SettingsTab[] = ['general', 'units', 'security', 'mcp']
-    const adminOrMasterOnly: SettingsTab[] = ['material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'billing', 'loyalty', 'line', 'bank-accounts']
+    const adminOrMasterOnly: SettingsTab[] = ['subscription', 'material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'billing', 'loyalty', 'line', 'bank-accounts']
     const masterOnly: SettingsTab[] = ['backup']
     const visible = alwaysVisible.includes(activeTab)
       || (adminOrMasterOnly.includes(activeTab) && (isAdmin || isMaster))
@@ -133,6 +140,7 @@ export default function SettingsPage() {
             id: 'system', label: t('settings.settingsPage.groups.system'), icon: Settings,
             tabs: [
               { id: 'general' as const, icon: Settings, label: t('settings.settingsPage.tabs.general'), show: true },
+              { id: 'subscription' as const, icon: Gem, label: t('settings.settingsPage.tabs.subscription', 'แพ็กเกจ'), show: isAdmin || isMaster },
               { id: 'units' as const, icon: ArrowLeftRight, label: t('settings.settingsPage.tabs.units'), show: true },
               { id: 'material-categories' as const, icon: Tag, label: t('settings.settingsPage.tabs.materialCategories'), show: isAdmin || isMaster },
               { id: 'doc-numbering' as const, icon: Hash, label: t('settings.settingsPage.tabs.docNumbering'), show: isAdmin || isMaster },
@@ -214,6 +222,7 @@ export default function SettingsPage() {
       {/* Content */}
       <div className="space-y-6">
         {activeTab === 'general' && <GeneralSettings />}
+        {activeTab === 'subscription' && (isAdmin || isMaster) && <Billing />}
 
         {activeTab === 'users' && isAdmin && !isMaster && <AdminUserManagement />}
         {activeTab === 'users' && isMaster && (
@@ -1148,7 +1157,7 @@ function GeneralSettings() {
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.subscriptionPlan')}</label>
             <p className="font-semibold text-[var(--primary)]">{subPlanName || '-'}</p>
             {(isAdmin || isMaster) && (
-              <Link to="/billing" className="text-xs text-[var(--primary)] underline underline-offset-2">เปลี่ยนแพ็กเกจ / ชำระเงิน</Link>
+              <Link to="/settings?tab=subscription" className="text-xs text-[var(--primary)] underline underline-offset-2">เปลี่ยนแพ็กเกจ / ชำระเงิน</Link>
             )}
           </div>
         </div>

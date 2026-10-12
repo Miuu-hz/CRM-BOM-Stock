@@ -858,7 +858,7 @@ export default function MasterPanel() {
                               </button>
                             </div>
                             <fieldset className="space-y-1.5">
-                              <legend className="text-xs text-[var(--fg-3)] mb-1">Pack <span className="text-[var(--fg-4)]">(Business 1 · Business+ 2 · Pro/Enterprise ได้ครบอยู่แล้ว · เกิน = Pack เพิ่ม 390฿)</span></legend>
+                              <legend className="text-xs text-[var(--fg-3)] mb-1">Pack <span className="text-[var(--fg-4)]">(Business 2 · Business+ 3 · Pro/Enterprise ได้ครบอยู่แล้ว · เกิน = Pack เพิ่ม 390฿)</span></legend>
                               <div className="grid grid-cols-2 gap-1.5">
                                 {PACKS.map(p => (
                                   <label key={p.code} className="flex items-center gap-2 text-sm text-[var(--fg-2)]">

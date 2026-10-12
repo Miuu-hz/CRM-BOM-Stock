@@ -6,24 +6,25 @@ import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { getSubscription } from './subscription.service'
 import { parseSelection, lineItems, subtotal, priceDefinitions, BillingError } from './billing.catalog'
-import { applySubscription, handleEvent, provisionFromSignup, SubscriptionLike } from './billing.service'
+import { applySubscription, changeParams, handleEvent, provisionFromSignup, SubscriptionLike } from './billing.service'
 import billingRouter from '../routes/billing.routes'
 
-const sel = (over: Record<string, unknown>) => parseSelection({ plan: 'business', cycle: 'monthly', packs: ['shop'], addons: {}, ...over })
+const sel = (over: Record<string, unknown>) => parseSelection({ plan: 'business', cycle: 'monthly', packs: ['shop', 'maker'], addons: {}, ...over })
 
 describe('ตรวจคำสั่งซื้อ (parseSelection)', () => {
   it.each([
     [{ plan: 'free' }, 'ไม่พบแพ็กเกจ'],
     [{ plan: 'toString' }, 'ไม่พบแพ็กเกจ'],
     [{ cycle: 'weekly' }, 'รอบบิล'],
-    [{ packs: [] }, 'ต้องเลือก 1 Pack'],
+    [{ packs: ['shop'] }, 'ต้องเลือก 2 Pack'],
+    [{ plan: 'business_plus', packs: ['shop', 'maker'] }, 'ต้องเลือก 3 Pack'],
     [{ packs: ['hacker'] }, 'Pack ต้องเป็น'],
     [{ plan: 'solo', packs: ['shop'] }, 'เลือก Pack ไม่ได้'],
     [{ addons: { extra_users: 3 } }, 'ไม่เกิน 2 คน'],
     [{ addons: { extra_users: 1.5 } }, 'จำนวนเต็ม'],
     [{ addons: { api_access: 1 } }, 'ซื้อ Add-on "api_access" ไม่ได้'],
-    [{ plan: 'business_plus', packs: ['shop', 'online'], addons: { subcontract: 1 } }, 'ต้องเลือก Pack Maker'],
-    [{ plan: 'business_plus', packs: ['shop', 'maker'], addons: { smart_unit: 2 } }, 'ซื้อได้ 1 ชุด'],
+    [{ plan: 'business_plus', packs: ['shop', 'online', 'accounting'], addons: { subcontract: 1 } }, 'ต้องเลือก Pack Maker'],
+    [{ plan: 'business_plus', packs: ['shop', 'maker', 'online'], addons: { smart_unit: 2 } }, 'ซื้อได้ 1 ชุด'],
   ])('%j → ปฏิเสธ', (over, msg) => {
     expect(() => sel(over)).toThrow(BillingError)
     expect(() => sel(over)).toThrow(msg)
@@ -37,8 +38,8 @@ describe('ตรวจคำสั่งซื้อ (parseSelection)', () => {
 })
 
 describe('รายการคิดเงิน (lineItems / subtotal)', () => {
-  it('Business + 2 Pack + ผู้ใช้เพิ่ม 2 = 690 + 390 + 150×2', () => {
-    const s = sel({ packs: ['shop', 'accounting'], addons: { extra_users: 2 } })
+  it('Business + 3 Pack (รวม 2 เกิน 1) + ผู้ใช้เพิ่ม 2 = 690 + 390 + 150×2', () => {
+    const s = sel({ packs: ['shop', 'accounting', 'online'], addons: { extra_users: 2 } })
     expect(lineItems(s)).toEqual([
       { lookupKey: 'phopy_plan_business_monthly', quantity: 1 },
       { lookupKey: 'phopy_pack_monthly', quantity: 1 },
@@ -56,7 +57,7 @@ describe('รายการคิดเงิน (lineItems / subtotal)', () =>
     expect([...['solo', 'business', 'business_plus', 'pro', 'enterprise_ai']].map(p => defs.get(`phopy_plan_${p}_monthly`)))
       .toEqual([299, 690, 950, 1950, 3490])
     expect(defs.get('phopy_plan_solo_yearly')).toBe(2990)
-    const s = sel({ plan: 'business_plus', packs: ['shop', 'maker', 'online'], addons: { extra_users: 5, smart_unit: 1, multi_currency: 1, subcontract: 1 } })
+    const s = sel({ plan: 'business_plus', packs: ['shop', 'maker', 'online', 'accounting'], addons: { extra_users: 5, smart_unit: 1, multi_currency: 1, subcontract: 1 } })
     for (const item of lineItems(s)) expect(defs.has(item.lookupKey)).toBe(true)
   })
 })
@@ -66,11 +67,31 @@ function fakeSub(tenantId: string, over: Partial<SubscriptionLike> = {}): Subscr
     id: `sub_${generateId()}`,
     status: 'active',
     customer: 'cus_test',
-    metadata: { tenant_id: tenantId, plan: 'business', cycle: 'monthly', packs: 'maker', addons: '{"extra_users":1}' },
+    metadata: { tenant_id: tenantId, plan: 'business', cycle: 'monthly', packs: 'maker,shop', addons: '{"extra_users":1}' },
     items: { data: [{ current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400 }] },
     ...over,
   }
 }
+
+describe('เปลี่ยนแพ็กกลางรอบ (changeParams)', () => {
+  const items = [{ price: 'price_new', quantity: 1 }]
+  const existing = (status: string) => ({ status, items: { data: [{ id: 'si_old_1' }, { id: 'si_old_2' }] } }) as any
+
+  it('จ่ายอยู่ → เริ่มรอบใหม่วันนี้ หักมูลค่าที่เหลือ เก็บเงินทันที ตัดไม่ผ่าน = ไม่เปลี่ยน', () => {
+    const p = changeParams(existing('active'), items, { plan: 'pro' })
+    expect(p.billing_cycle_anchor).toEqual({ type: 'now' })
+    expect(p.proration_behavior).toBe('always_invoice')
+    expect(p.payment_behavior).toBe('error_if_incomplete')
+    expect(p.cancel_at_period_end).toBe(false)
+    expect(p.items).toEqual([{ id: 'si_old_1', deleted: true }, { id: 'si_old_2', deleted: true }, ...items])
+  })
+
+  it('ช่วงทดลอง → เปลี่ยนได้เลย ไม่ตัดเงิน ไม่ตัดช่วงทดลองทิ้ง', () => {
+    const p = changeParams(existing('trialing'), items, {})
+    expect(p.proration_behavior).toBe('none')
+    expect(p.billing_cycle_anchor).toBeUndefined()
+  })
+})
 
 describe('Stripe → สิทธิ์ใน ERP (applySubscription)', () => {
   it('จ่ายสำเร็จ → ACTIVE ตามแพ็ก/Pack/Add-on ที่ซื้อ', () => {

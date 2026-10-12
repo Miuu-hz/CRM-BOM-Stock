@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getSubscription } from '../services/subscription.service'
 import { BillingError, publicCatalog } from '../services/billing.catalog'
-import { checkout, handleEvent, portal } from '../services/billing.service'
+import { checkout, handleEvent, portal, previewChange } from '../services/billing.service'
 import { getDb } from '../db/sqlite'
 
 const router = Router()
@@ -84,6 +84,15 @@ router.post('/checkout', async (req: Request, res: Response) => {
     res.json({ success: true, data: result })
   } catch (err) {
     fail(res, err, 'สร้างรายการชำระเงินไม่สำเร็จ')
+  }
+})
+
+// POST /api/billing/preview { plan, cycle, packs, addons } → ยอดที่จะเก็บถ้าเปลี่ยนแพ็กตอนนี้
+router.post('/preview', async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await previewChange(req.user!.tenantId, req.body) })
+  } catch (err) {
+    fail(res, err, 'คำนวณยอดไม่สำเร็จ')
   }
 })
 

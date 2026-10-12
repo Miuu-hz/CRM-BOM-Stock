@@ -215,24 +215,83 @@ export async function checkout(tenantId: string, email: string, input: unknown):
   const items = await resolvePrices(sel)
   const metadata = toMetadata(tenantId, sel)
 
-  if (billing.stripe_subscription_id) {
-    const existing = await stripe().subscriptions.retrieve(billing.stripe_subscription_id)
-    if (!['canceled', 'incomplete_expired'].includes(existing.status)) {
-      const updated = await stripe().subscriptions.update(existing.id, {
-        items: [...existing.items.data.map(i => ({ id: i.id, deleted: true })), ...items],
-        metadata,
-        cancel_at_period_end: false,
-        proration_behavior: 'always_invoice',
-      })
-      applySubscription(updated as unknown as SubscriptionLike)
-      return { updated: true }
-    }
+  const existing = await activeSubscription(billing)
+  if (existing) {
+    const updated = await stripe().subscriptions.update(existing.id, changeParams(existing, items, metadata))
+    applySubscription(updated as unknown as SubscriptionLike)
+    return { updated: true }
   }
 
   return createSession({
     items, metadata, email, customer: billing.stripe_customer_id, clientReferenceId: tenantId,
-    successUrl: `${APP_URL}/billing?status=success`, cancelUrl: `${APP_URL}/billing?status=cancel`,
+    successUrl: `${APP_URL}/settings?tab=subscription&status=success`,
+    cancelUrl: `${APP_URL}/settings?tab=subscription&status=cancel`,
   })
+}
+
+async function activeSubscription(billing: TenantBilling): Promise<Stripe.Subscription | null> {
+  if (!billing.stripe_subscription_id) return null
+  const sub = await stripe().subscriptions.retrieve(billing.stripe_subscription_id)
+  return ['canceled', 'incomplete_expired'].includes(sub.status) ? null : sub
+}
+
+type ChangeTarget = Pick<Stripe.Subscription, 'status'> & { items: { data: { id: string }[] } }
+
+// เปลี่ยนแพ็กกลางรอบ:
+// - ช่วงทดลอง: เปลี่ยนได้ทันที ยังไม่ตัดเงิน ทดลองต่อจนครบ 30 วัน
+// - จ่ายอยู่: เริ่มรอบบิลใหม่วันนี้ เก็บแพ็กใหม่เต็มรอบ แล้วหักมูลค่าแพ็กเดิมที่ยังไม่ได้ใช้ (Stripe คิดตามวินาทีที่เหลือ)
+//   เช่น Solo รายปี 2,990 ใช้ไป 4 เดือน → Business รายปี 6,900: 6,900 − 2,990×8/12 ≈ 4,907 (+VAT)
+//   ตัดบัตรไม่ผ่าน = ไม่เปลี่ยนแพ็ก (error_if_incomplete) ลดแพ็กแล้วเครดิตเกิน = เก็บเป็นเครดิตใช้รอบถัดไป
+export function changeParams(
+  existing: ChangeTarget,
+  items: { price: string; quantity: number }[],
+  metadata: Record<string, string>,
+): Stripe.SubscriptionUpdateParams {
+  const base: Stripe.SubscriptionUpdateParams = {
+    items: [...existing.items.data.map(i => ({ id: i.id, deleted: true })), ...items],
+    metadata,
+    cancel_at_period_end: false,
+  }
+  if (existing.status === 'trialing') return { ...base, proration_behavior: 'none' }
+  return { ...base, billing_cycle_anchor: { type: 'now' }, proration_behavior: 'always_invoice', payment_behavior: 'error_if_incomplete' }
+}
+
+export type ChangePreview =
+  | { kind: 'checkout' }                       // ยังไม่มี subscription → ไปหน้า Checkout (ทดลอง/จ่ายที่นั่น)
+  | { kind: 'trial' }                          // ช่วงทดลอง → เปลี่ยนได้ ยังไม่ตัดเงิน
+  | { kind: 'change'; credit: number; charge: number; tax: number; total: number; nextBilling: string | null }
+
+// ยอดที่จะถูกเก็บถ้ากดเปลี่ยนแพ็กตอนนี้ (บาท) — ใช้ตัวคำนวณของ Stripe เอง ตัวเลขจึงตรงกับใบแจ้งหนี้จริง
+export async function previewChange(tenantId: string, input: unknown): Promise<ChangePreview> {
+  const sel = parseSelection(input)
+  const billing = tenantBilling(tenantId)
+  const existing = await activeSubscription(billing)
+  if (!existing) return { kind: 'checkout' }
+  if (existing.status === 'trialing') return { kind: 'trial' }
+  const items = await resolvePrices(sel)
+  const params = changeParams(existing, items, {})
+  const invoice = await stripe().invoices.createPreview({
+    customer: billing.stripe_customer_id!,
+    subscription: existing.id,
+    subscription_details: {
+      items: params.items as Stripe.InvoiceCreatePreviewParams.SubscriptionDetails.Item[],
+      billing_cycle_anchor: { type: 'now' },
+      proration_behavior: 'always_invoice',
+    },
+  })
+  const baht = (satang: number) => Math.round(satang) / 100
+  const lines = invoice.lines.data
+  const credit = -lines.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0)
+  const charge = lines.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0)
+  const periodEnd = Math.max(0, ...lines.map(l => l.period?.end ?? 0))
+  return {
+    kind: 'change',
+    credit: baht(credit),
+    charge: baht(charge),
+    tax: baht(invoice.total - invoice.subtotal),
+    total: baht(invoice.amount_due),
+    nextBilling: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+  }
 }
 
 // สมัครใหม่จากหน้าราคา phopy.net — ยังไม่มี tenant, webhook เปิดบริษัทให้ตอน checkout เสร็จ (provisionFromSignup)
@@ -296,7 +355,7 @@ export async function portal(tenantId: string): Promise<string> {
   const config = configs.data.find(c => c.metadata?.phopy === 'portal')
   const session = await stripe().billingPortal.sessions.create({
     customer: stripe_customer_id,
-    return_url: `${APP_URL}/billing`,
+    return_url: `${APP_URL}/settings?tab=subscription`,
     ...(config ? { configuration: config.id } : {}),
   })
   return session.url

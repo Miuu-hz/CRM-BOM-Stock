@@ -14,10 +14,10 @@ describe('POST /api/auth/register พร้อมแพ็กเสียเง�
     const email = `bad-${generateId()}@example.com`
     const res = await request(app).post('/api/auth/register').send({
       businessName: 'ร้าน', adminName: 'คน', email, password: 'password123',
-      plan: 'business', cycle: 'monthly', packs: [],  // Business ต้องเลือก 1 Pack
+      plan: 'business', cycle: 'monthly', packs: ['shop'],  // Business ต้องเลือก 2 Pack
     })
     expect(res.status).toBe(400)
-    expect(res.body.message).toContain('ต้องเลือก 1 Pack')
+    expect(res.body.message).toContain('ต้องเลือก 2 Pack')
     expect(db.prepare('SELECT COUNT(*) c FROM signup_requests WHERE email = ?').get(email)).toEqual({ c: 0 })
   })
 })

@@ -1,4 +1,4 @@
-/* Phopy ERP Design Tokens — Light-first, warm cream + ink palette */
+/* Phopy ERP Design Tokens — Light-first, cool white + violet, pastel accents (2026-10) */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
@@ -7,13 +7,22 @@
 
 @layer base {
   :root {
-    --brand-indigo: #3949E5;
+    /* สีที่ Tailwind ใช้คู่ /opacity (bg-phopy-indigo/10, border-danger/30 …) เก็บเป็นช่อง RGB
+       แล้ว tailwind.config อ่านผ่าน rgb(var(--x-rgb) / <alpha-value>) — คลาสเดิมทั้งหมดเปลี่ยนตามธีมเอง */
+    --primary-rgb: 91 92 240;        /* #5B5CF0 */
+    --primary-hover-rgb: 74 75 216;  /* #4A4BD8 */
+    --primary-press-rgb: 61 62 190;  /* #3D3EBE */
+    --success-rgb: 22 163 74;
+    --warning-rgb: 217 136 26;
+    --danger-rgb: 220 38 38;
+
+    --brand-indigo: rgb(var(--primary-rgb));
     --brand-mango: #F5A524;
-    --success: #16A34A;
+    --success: rgb(var(--success-rgb));
     --success-soft: #DCFCE7;
-    --warning: #F5A524;
-    --warning-soft: #FEF4E2;
-    --danger: #DC2626;
+    --warning: rgb(var(--warning-rgb));
+    --warning-soft: #FEF3C7;
+    --danger: rgb(var(--danger-rgb));
     --danger-soft: #FEE2E2;
     --equity: #7C3AED;
     --equity-soft: #F1EAFE;
@@ -25,57 +34,80 @@
     --warning-strong: #B45309;
     --danger-strong: #B91C1C;
     --equity-strong: #6D28D9;
-    --info: #3949E5;
-    --info-soft: #EEF0FE;
+    --info: rgb(var(--primary-rgb));
+    --info-soft: #EEEEFF;
 
-    --bg: #F0ECE2;
-    --surface: #F8F5EE;
-    --surface-2: #E8E3D4;
-    --surface-sunken: #DEDACF;
-    --border: #DEDACF;
-    --border-subtle: color-mix(in oklab, #DEDACF 70%, white);
-    --border-strong: #CFCAB8;
+    --bg: #F6F6FB;
+    --surface: #FFFFFF;
+    --surface-2: #F1F1F8;
+    --surface-sunken: #E9E9F2;
+    --border: #E6E6F0;
+    --border-subtle: #EEEEF5;
+    --border-strong: #D5D5E3;
 
-    --fg: #1E1B16;
-    --fg-1: #1E1B16;
-    --fg-2: #383426;
-    --fg-3: #6B6658;
-    --fg-4: #A8A294;
+    --fg: #111114;
+    --fg-1: #111114;
+    --fg-2: #3A3A48;
+    --fg-3: #6E6E82;
+    --fg-4: #A3A3B5;
     --fg-on-brand: #FFFFFF;
-    --link: #3949E5;
+    --link: rgb(var(--primary-rgb));
 
-    --primary: #3949E5;
-    --primary-hover: #2F3DC4;
-    --primary-press: #2632A8;
-    --primary-soft: #EEF0FE;
+    --primary: rgb(var(--primary-rgb));
+    --primary-hover: rgb(var(--primary-hover-rgb));
+    --primary-press: rgb(var(--primary-press-rgb));
+    --primary-soft: #EEEEFF;
 
-    --shadow-1: 0 1px 2px rgba(30, 27, 22, 0.05);
-    --shadow-2: 0 4px 12px -2px rgba(30, 27, 22, 0.08);
-    --shadow-3: 0 12px 32px -8px rgba(30, 27, 22, 0.16);
-    --shadow-focus: 0 0 0 4px rgba(57, 73, 229, 0.18);
+    /* ปุ่มหลัก/การ์ดเด่น (ภาพอ้างอิงใช้ดำ — light mode ใช้เขียวแทนตามที่ตกลง) */
+    --ink: #0E7C66;
+    --ink-hover: #0A6754;
+    --on-ink: #FFFFFF;
+
+    /* ไล่สีเน้น + พาสเทลการ์ด + แสงฟุ้งหัว Dashboard */
+    --grad-a: #2FA8F5;
+    --grad-b: #7B5CF5;
+    --pastel-peach: #FDE6CC;
+    --pastel-sky: #D6DEFF;
+    --pastel-lilac: #E3D6FB;
+    --blob-1: rgba(160, 140, 255, 0.45);
+    --blob-2: rgba(140, 180, 255, 0.40);
+    --blob-3: rgba(255, 200, 170, 0.45);
+
+    --shadow-1: 0 1px 2px rgba(17, 17, 20, 0.04);
+    --shadow-2: 0 8px 24px -12px rgba(60, 60, 120, 0.18);
+    --shadow-3: 0 16px 40px -12px rgba(60, 60, 120, 0.24);
+    --shadow-focus: 0 0 0 4px rgba(91, 92, 240, 0.20);
   }
 
   :root[data-theme="dark"] {
-    --bg: #16140F;
-    --surface: #1F1D17;
-    --surface-2: #29261E;
-    --surface-sunken: #14110C;
-    --border: #34302A;
-    --border-subtle: #2A2722;
-    --border-strong: #45413A;
+    --primary-rgb: 113 115 245;       /* #7173F5 — ยังอ่านตัวขาวบนปุ่มได้ และเห็นชัดบนพื้นมืด */
+    --primary-hover-rgb: 133 135 255;
+    --primary-press-rgb: 96 98 230;
+    --success-rgb: 74 222 128;
+    --warning-rgb: 251 191 36;
+    --danger-rgb: 248 113 113;
 
-    --fg: #F4EEDD;
-    --fg-1: #F8F3E5;
-    --fg-2: #E2DBC7;
-    --fg-3: #A89F87;
-    --fg-4: #6B6354;
+    --bg: #0C0C11;
+    --surface: #15151D;
+    --surface-2: #1D1D28;
+    --surface-sunken: #09090D;
+    --border: #2A2A38;
+    --border-subtle: #22222E;
+    --border-strong: #3A3A4C;
+
+    --fg: #F4F4FA;
+    --fg-1: #F4F4FA;
+    --fg-2: #D2D2E0;
+    --fg-3: #8F8FA6;
+    --fg-4: #5F5F75;
     --fg-on-brand: #FFFFFF;
+    --link: #A5A6FF;
 
-    --primary-soft: color-mix(in oklab, var(--brand-indigo) 22%, transparent);
-    --success-soft: color-mix(in oklab, var(--success) 22%, transparent);
-    --warning-soft: color-mix(in oklab, var(--warning) 22%, transparent);
-    --danger-soft: color-mix(in oklab, var(--danger) 22%, transparent);
-    --info-soft: color-mix(in oklab, var(--info) 22%, transparent);
+    --primary-soft: rgba(113, 115, 245, 0.18);
+    --success-soft: rgba(74, 222, 128, 0.14);
+    --warning-soft: rgba(251, 191, 36, 0.14);
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --info-soft: rgba(113, 115, 245, 0.18);
     --equity-soft: color-mix(in oklab, var(--equity) 22%, transparent);
 
     --success-strong: #4ADE80;
@@ -83,9 +115,21 @@
     --danger-strong: #F87171;
     --equity-strong: #A78BFA;
 
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
-    --shadow-3: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+    --ink: #F4F4FA;
+    --ink-hover: #FFFFFF;
+    --on-ink: #0C0C11;
+
+    --pastel-peach: rgba(253, 200, 150, 0.14);
+    --pastel-sky: rgba(150, 170, 255, 0.16);
+    --pastel-lilac: rgba(190, 160, 250, 0.16);
+    --blob-1: rgba(123, 92, 245, 0.35);
+    --blob-2: rgba(47, 168, 245, 0.25);
+    --blob-3: rgba(255, 160, 120, 0.18);
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
+    --shadow-3: 0 16px 40px -12px rgba(0, 0, 0, 0.8);
+    --shadow-focus: 0 0 0 4px rgba(113, 115, 245, 0.30);
   }
 
   html, body {
@@ -116,7 +160,7 @@
 @layer components {
   /* Phopy Card */
   .phopy-card {
-    @apply bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-1;
+    @apply bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-1;
     @apply transition-all duration-200 ease-phopy-out;
   }
   .phopy-card:hover {
@@ -126,7 +170,7 @@
   /* Phopy Button Primary */
   .phopy-btn-primary {
     @apply bg-phopy-indigo text-white font-semibold;
-    @apply px-5 py-2.5 rounded-md min-h-[44px];
+    @apply px-5 py-2.5 rounded-full min-h-[44px];
     @apply transition-all duration-120 ease-phopy-out;
     @apply cursor-pointer;
   }
@@ -145,7 +189,7 @@
   /* Phopy Button Secondary / Ghost */
   .phopy-btn-secondary {
     @apply bg-transparent text-[var(--fg-2)] font-medium border border-[var(--border)];
-    @apply px-5 py-2.5 rounded-md min-h-[44px];
+    @apply px-5 py-2.5 rounded-full min-h-[44px];
     @apply transition-all duration-120 ease-phopy-out;
     @apply cursor-pointer;
   }
@@ -159,6 +203,41 @@
     @apply outline-none;
     box-shadow: var(--shadow-focus);
   }
+
+  /* ปุ่มเด่น (หมึก): light = เขียว, dark = ขาว — ใช้กับ action หลักของหน้า เช่น "เพิ่มสินค้า" */
+  .phopy-btn-ink {
+    @apply font-semibold rounded-full min-h-[44px] px-5 py-2.5 cursor-pointer;
+    @apply transition-all duration-120 ease-phopy-out;
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+  .phopy-btn-ink:hover { background: var(--ink-hover); }
+  .phopy-btn-ink:active { transform: translateY(1px); }
+  .phopy-btn-ink:focus-visible { @apply outline-none; box-shadow: var(--shadow-focus); }
+
+  /* การ์ดตัวเลขพาสเทล (Dashboard) */
+  .phopy-tile-peach { background: var(--pastel-peach); }
+  .phopy-tile-sky { background: var(--pastel-sky); }
+  .phopy-tile-lilac { background: var(--pastel-lilac); }
+  .phopy-tile-ink { background: var(--ink); color: var(--on-ink); border-color: transparent; }
+
+  /* ตัวหนังสือไล่สีฟ้า→ม่วง สำหรับคำเน้นในหัวข้อ */
+  .phopy-grad-text {
+    background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* แสงฟุ้งหลังหัวหน้า (ใช้เฉพาะหน้าภาพรวม) — วางเป็นลูกตัวแรกของกล่อง relative */
+  .phopy-aurora {
+    position: absolute; inset: -24px -24px auto -24px; height: 320px;
+    z-index: 0; pointer-events: none; overflow: hidden;
+  }
+  .phopy-aurora i { position: absolute; border-radius: 9999px; filter: blur(60px); }
+  .phopy-aurora i:nth-child(1) { width: 380px; height: 240px; left: 6%; top: -60px; background: var(--blob-1); }
+  .phopy-aurora i:nth-child(2) { width: 320px; height: 220px; left: 42%; top: -50px; background: var(--blob-2); }
+  .phopy-aurora i:nth-child(3) { width: 300px; height: 200px; right: 2%; top: 0; background: var(--blob-3); }
 
   /* Phopy Input */
   .phopy-input {
@@ -238,8 +317,8 @@
   /* Modal scrollbar */
   .modal-scroll::-webkit-scrollbar { width: 3px; }
   .modal-scroll::-webkit-scrollbar-track { background: transparent; }
-  .modal-scroll::-webkit-scrollbar-thumb { background: rgba(168, 162, 148, 0.35); border-radius: 9999px; }
-  .modal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(107, 102, 88, 0.55); }
+  .modal-scroll::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--fg-4) 45%, transparent); border-radius: 9999px; }
+  .modal-scroll::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--fg-3) 60%, transparent); }
 
   /* Hide scrollbar but keep scroll */
   .no-scrollbar::-webkit-scrollbar { display: none; }

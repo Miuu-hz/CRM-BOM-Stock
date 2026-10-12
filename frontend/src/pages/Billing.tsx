@@ -15,6 +15,11 @@ interface CatalogPlan {
   extraUser: { price: number; maxExtra: number }
   addons: Record<string, number>
 }
+type Preview =
+  | { kind: 'checkout' }
+  | { kind: 'trial' }
+  | { kind: 'change'; credit: number; charge: number; tax: number; total: number; nextBilling: string | null }
+
 interface BillingData {
   current: {
     planCode: string
@@ -57,6 +62,7 @@ export default function Billing() {
   const [packs, setPacks] = useState<string[]>([])
   const [addons, setAddons] = useState<Record<string, number>>({})
   const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState<Preview | null>(null)
 
   const load = async () => {
     const res = await api.get('/billing')
@@ -78,7 +84,11 @@ export default function Billing() {
   useEffect(() => {
     load().catch(() => toast.error('โหลดข้อมูลแพ็กเกจไม่สำเร็จ'))
     const status = params.get('status')
-    if (status) setParams({}, { replace: true })
+    if (status) {
+      const next = new URLSearchParams(params)
+      next.delete('status')
+      setParams(next, { replace: true })
+    }
     if (status === 'cancel') toast('ยกเลิกการชำระเงินแล้ว ยังไม่มีการตัดเงิน')
     if (status === 'success') {
       toast.success('ชำระเงินสำเร็จ กำลังเปิดสิทธิ์ให้…')
@@ -110,6 +120,20 @@ export default function Billing() {
     return { sub, vat, total: sub + vat, extraPacks, yearlySaving }
   }, [data, selected, cycle, packs, addons])
 
+  // มีแพ็กอยู่แล้ว + เลือกต่างจากเดิม → ถาม Stripe ว่าต้องจ่ายเท่าไร (หักมูลค่าแพ็กเดิมที่ยังไม่ได้ใช้แล้ว)
+  const selectionKey = JSON.stringify({ plan, cycle, packs: [...packs].sort(), addons })
+  useEffect(() => {
+    setPreview(null)
+    if (!data?.current.hasSubscription) return
+    const timer = setTimeout(() => {
+      api.post('/billing/preview', { plan, cycle, packs, addons })
+        .then(res => setPreview(res.data.data))
+        .catch(() => setPreview(null))
+    }, 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionKey, data?.current.hasSubscription])
+
   const choosePlan = (code: string) => {
     const p = data?.catalog.plans.find(x => x.code === code)
     if (!p) return
@@ -132,7 +156,7 @@ export default function Billing() {
         window.location.href = res.data.data.url
         return
       }
-      toast.success('เปลี่ยนแพ็กเกจแล้ว ส่วนต่างจะคิดตามวันที่เหลือในรอบบิล')
+      toast.success('เปลี่ยนแพ็กเกจแล้ว ใช้งานได้ทันที')
       await load()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'ดำเนินการไม่สำเร็จ')
@@ -277,15 +301,27 @@ export default function Billing() {
           {trialEligible && !current.hasSubscription && (
             <p className="text-xs text-[var(--success)]">ทดลองใช้ฟรี 30 วัน ไม่ต้องใส่บัตร — ถ้าไม่ใส่บัตรก่อนครบ ระบบจะกลับเป็นแพ็ก Free อัตโนมัติ</p>
           )}
-          {current.hasSubscription && (
-            <p className="text-xs text-[var(--fg-3)]">เปลี่ยนแพ็กกลางรอบ Stripe จะคิดส่วนต่างตามวันที่เหลือ และตัดบัตรเดิมทันที</p>
+          {current.hasSubscription && !isCurrent && preview?.kind === 'trial' && (
+            <p className="text-xs text-[var(--success)]">อยู่ในช่วงทดลอง เปลี่ยนแพ็กได้ทันที ยังไม่ตัดเงิน</p>
+          )}
+          {current.hasSubscription && !isCurrent && preview?.kind === 'change' && (
+            <div className="rounded-lg bg-[var(--surface-2)] p-3 text-sm space-y-1">
+              <p className="font-semibold text-[var(--fg-1)]">ถ้าเปลี่ยนตอนนี้</p>
+              <div className="flex justify-between"><span className="text-[var(--fg-3)]">แพ็กใหม่ 1 รอบเต็ม</span><span className="tabular-nums">{baht(preview.charge)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--fg-3)]">หักมูลค่าแพ็กเดิมที่ยังไม่ได้ใช้</span><span className="tabular-nums text-[var(--success)]">−{baht(preview.credit)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--fg-3)]">VAT</span><span className="tabular-nums">{baht(preview.tax)}</span></div>
+              <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-1"><span>จ่ายวันนี้</span><span className="tabular-nums">{baht(preview.total)}</span></div>
+              {preview.nextBilling && <p className="text-xs text-[var(--fg-3)]">รอบบิลใหม่เริ่มวันนี้ ต่ออายุครั้งถัดไป {new Date(preview.nextBilling).toLocaleDateString('th-TH')}</p>}
+              {preview.total === 0 && preview.credit > preview.charge && <p className="text-xs text-[var(--fg-3)]">มูลค่าที่เหลือเกินค่าแพ็กใหม่ ส่วนเกินเก็บเป็นเครดิตใช้รอบถัดไป</p>}
+            </div>
           )}
           <button onClick={submit} disabled={busy || isCurrent}
             className="w-full phopy-btn-primary flex items-center justify-center gap-2 py-2.5 rounded-lg disabled:opacity-50">
             {busy && <RefreshCw className="w-4 h-4 animate-spin" />}
-            {isCurrent ? 'แพ็กปัจจุบัน' : submitLabel}
+            {isCurrent ? 'แพ็กปัจจุบัน' : preview?.kind === 'change' ? `จ่าย ${baht(preview.total)} และเปลี่ยนแพ็ก` : submitLabel}
           </button>
           <p className="text-[11px] text-[var(--fg-4)]">ชำระเงินผ่าน Stripe · ออกใบเสร็จ/ใบกำกับภาษีให้ทางอีเมล</p>
+          <a href="https://phopy.net/compare/" target="_blank" rel="noopener noreferrer" className="block text-xs text-[var(--primary)] underline underline-offset-2">ดูตารางเปรียบเทียบว่าแต่ละแพ็กได้อะไรบ้าง</a>
         </aside>
       </div>
     </div>

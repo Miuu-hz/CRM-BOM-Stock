@@ -27,7 +27,6 @@ import KDS from './pages/KDS'
 import POSClearing from './pages/Accounting/POSClearing'
 import { UserManagement } from './pages/Users'
 import MasterPanel from './pages/MasterPanel'
-import Billing from './pages/Billing'
 import ApprovalInbox from './pages/ApprovalInbox'
 
 // Blocks direct-URL access to a route whose menu is restricted in
@@ -72,7 +71,7 @@ function AppContent() {
     <Layout>
       <CashierScope />
       <Routes>
-        <Route path="/" element={location.search.includes('plan=') ? <Navigate to={`/billing${location.search}`} replace /> : <Dashboard />} />
+        <Route path="/" element={location.search.includes('plan=') ? <Navigate to={`/settings?tab=subscription${location.search.replace(/^\?/, '&')}`} replace /> : <Dashboard />} />
         <Route path="/crm" element={<CRM />} />
         <Route path="/bom" element={<BOM />} />
         <Route path="/stock" element={<Stock />} />
@@ -86,7 +85,7 @@ function AppContent() {
         <Route path="/qc" element={<QC />} />
         <Route path="/production" element={<Navigate to="/bom" replace />} />
         <Route path="/settings" element={<Settings />} />
-        <Route path="/billing" element={<Billing />} />
+        <Route path="/billing" element={<Navigate to={`/settings?tab=subscription${location.search.replace(/^\?/, '&')}`} replace />} />
 
         {/* Accounting Routes */}
         <Route path="/accounting" element={<Navigate to="/accounting/chart-of-accounts" replace />} />

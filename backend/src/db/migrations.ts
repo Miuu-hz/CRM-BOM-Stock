@@ -1505,6 +1505,14 @@ export function runMigrations(db: any): void {
     }
   } catch (e) { console.error('⚠️ subscription plans v2 seed error:', e) }
 
+  // 2026-10-13: Business ได้ 2 Pack (เดิม 1), Business+ ได้ 3 Pack (เดิม 2) — จำนวนจริงอยู่ที่ billing.catalog.ts
+  // แก้เฉพาะคำอธิบายที่ยังเป็นข้อความเดิม (ถ้า MASTER แก้เองแล้วไม่ทับ)
+  try {
+    const fix = db.prepare('UPDATE subscription_plans SET description = ? WHERE code = ? AND description = ?')
+    fix.run('3 ผู้ใช้ + เลือก 2 Pack', 'business', '3 ผู้ใช้ + เลือก 1 Pack')
+    fix.run('5 ผู้ใช้ + เลือก 3 Pack', 'business_plus', '5 ผู้ใช้ + เลือก 2 Pack')
+  } catch (e) { console.error('⚠️ plan pack description update error:', e) }
+
   // signup_requests — self-service signup awaiting Master approval (no tenant until approved)
   try {
     db.exec(`

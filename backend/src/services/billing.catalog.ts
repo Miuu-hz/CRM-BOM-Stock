@@ -28,11 +28,11 @@ export const PLAN_PRICING: Record<string, PlanPricing> = {
     extraUser: { price: 190, maxExtra: 1 }, addons: { backup: 99 },
   },
   business: {
-    name: 'Business', monthly: 690, includedPacks: 1, canBuyPacks: true,
+    name: 'Business', monthly: 690, includedPacks: 2, canBuyPacks: true,
     extraUser: { price: 150, maxExtra: 2 }, addons: { backup: 99 },
   },
   business_plus: {
-    name: 'Business+', monthly: 950, includedPacks: 2, canBuyPacks: true,
+    name: 'Business+', monthly: 950, includedPacks: 3, canBuyPacks: true,
     extraUser: { price: 150, maxExtra: 5 }, addons: { smart_unit: 190, multi_currency: 390, subcontract: 290 },
   },
   pro: {

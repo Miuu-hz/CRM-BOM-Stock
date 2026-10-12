@@ -288,12 +288,13 @@ export default function Dashboard() {
     <motion.div variants={container} initial="hidden" animate="visible" className="space-y-5">
 
       {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
-        <div>
+      <motion.div variants={item} className="relative flex items-center justify-between">
+        <div className="phopy-aurora" aria-hidden="true"><i /><i /><i /></div>
+        <div className="relative">
           <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('dashboard.title')}</h1>
           <p className="text-[var(--fg-4)] text-xs mt-1">{t('dashboard.updated', { time: lastUpdated.toLocaleTimeString('th-TH') })}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-2">
           {/* Period Toggle */}
           <div className="flex bg-[var(--surface-2)] border border-[var(--border)] rounded-lg overflow-hidden" role="group" aria-label={t('dashboard.periodGroup')}>
             {(Object.keys(PERIOD_KEYS) as Period[]).map(p => (
@@ -320,7 +321,7 @@ export default function Dashboard() {
       {/* Section 1: Revenue + Gross Profit */}
       <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Revenue */}
-        <div className="phopy-card p-5 border border-[var(--primary)]/20">
+        <div className="phopy-card phopy-tile-peach p-5">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
               <DollarSign className="w-4 h-4 text-[var(--primary)]" />
@@ -330,14 +331,14 @@ export default function Dashboard() {
           </div>
           {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
             <>
-              <p className="text-3xl font-bold text-[var(--primary)] mt-1">{fmt(revenue.current.revenue)}</p>
+              <p className="text-3xl font-bold text-[var(--fg-1)] mt-1 tabular-nums">{fmt(revenue.current.revenue)}</p>
               <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.previous', { amount: fmt(revenue.previous.revenue) })}</p>
             </>
           )}
         </div>
 
         {/* Gross Profit */}
-        <div className="phopy-card p-5 border border-[var(--success)]/20">
+        <div className="phopy-card phopy-tile-sky p-5">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
               <TrendingUp className="w-4 h-4 text-success" />

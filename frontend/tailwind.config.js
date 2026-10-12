@@ -8,50 +8,51 @@ export default {
     extend: {
       colors: {
         /* Brand */
+        /* อ่านจาก index.css — เปลี่ยนตามธีม light/dark (ชื่อ indigo คงไว้ ไม่ต้องไล่แก้คลาสทั้งระบบ) */
         'phopy': {
-          'indigo': '#3949E5',
-          'indigo-600': '#2F3DC4',
-          'indigo-700': '#2632A8',
-          'indigo-50': '#EEF0FE',
+          'indigo': 'rgb(var(--primary-rgb) / <alpha-value>)',
+          'indigo-600': 'rgb(var(--primary-hover-rgb) / <alpha-value>)',
+          'indigo-700': 'rgb(var(--primary-press-rgb) / <alpha-value>)',
+          'indigo-50': 'var(--primary-soft)',
           'mango': '#F5A524',
           'mango-600': '#D9881A',
           'mango-50': '#FEF4E2',
         },
         /* Neutrals (Sand → Ink) */
         'sand': {
-          50: '#FBF8F1',
-          100: '#F5F0E2',
-          200: '#ECE6D8',
-          300: '#D9D2C0',
-          400: '#A8A294',
+          50: 'var(--surface)',
+          100: 'var(--surface-2)',
+          200: 'var(--surface-sunken)',
+          300: 'var(--border-strong)',
+          400: 'var(--fg-4)',
         },
         'ink': {
-          500: '#6B6658',
-          700: '#383426',
-          900: '#1E1B16',
+          500: 'var(--fg-3)',
+          700: 'var(--fg-2)',
+          900: 'var(--fg-1)',
         },
         /* Surfaces */
         'surface': {
-          DEFAULT: '#FFFFFF',
-          2: '#F5F0E2',
-          sunken: '#ECE6D8',
+          DEFAULT: 'var(--surface)',
+          2: 'var(--surface-2)',
+          sunken: 'var(--surface-sunken)',
         },
         /* Semantic */
         'success': {
-          DEFAULT: '#16A34A',
-          soft: '#DCFCE7',
+          DEFAULT: 'rgb(var(--success-rgb) / <alpha-value>)',
+          soft: 'var(--success-soft)',
         },
         'warning': {
-          DEFAULT: '#F5A524',
-          soft: '#FEF4E2',
+          DEFAULT: 'rgb(var(--warning-rgb) / <alpha-value>)',
+          soft: 'var(--warning-soft)',
         },
         'danger': {
-          DEFAULT: '#DC2626',
-          soft: '#FEE2E2',
+          DEFAULT: 'rgb(var(--danger-rgb) / <alpha-value>)',
+          soft: 'var(--danger-soft)',
         },
         'info': {
-          DEFAULT: '#3949E5',
-          soft: '#EEF0FE',
+          DEFAULT: 'rgb(var(--primary-rgb) / <alpha-value>)',
+          soft: 'var(--info-soft)',
         },
       },
       fontFamily: {
@@ -76,10 +77,10 @@ export default {
         'xl': '20px',
       },
       boxShadow: {
-        '1': '0 1px 2px rgba(30, 27, 22, 0.05)',
-        '2': '0 4px 12px -2px rgba(30, 27, 22, 0.08)',
-        '3': '0 12px 32px -8px rgba(30, 27, 22, 0.16)',
-        'focus': '0 0 0 4px rgba(57, 73, 229, 0.18)',
+        '1': 'var(--shadow-1)',
+        '2': 'var(--shadow-2)',
+        '3': 'var(--shadow-3)',
+        'focus': 'var(--shadow-focus)',
       },
       spacing: {
         '18': '72px',

@@ -48,6 +48,7 @@ export default function SignupPlan({ plan, cycle, packs, onPacksChange }: Props)
         </p>
       )}
       <p className="text-xs text-[var(--success)] mt-1">ทดลองใช้ฟรี 30 วัน ไม่ต้องใส่บัตร · ยกเลิกได้ทุกเมื่อ</p>
+      <a href="https://phopy.net/compare/" target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--primary)] underline underline-offset-2">แพ็กนี้ได้อะไรบ้าง? ดูตารางเปรียบเทียบ</a>
       {p.canBuyPacks && included !== null && (
         <fieldset className="mt-3">
           <legend className="text-xs text-[var(--fg-3)] mb-1.5">
