@@ -1922,7 +1922,20 @@ const Sales = () => {
 
   const OpenShiftModal = ({ onClose }: { onClose: () => void }) => {
     const [openingCash, setOpeningCash] = useState('0')
+    const [lastClosedShift, setLastClosedShift] = useState<{ shift_number: string; closing_cash_counted: number } | null>(null)
     const [saving, setSaving] = useState(false)
+
+    useEffect(() => {
+      posService.getLastClosedShift().then((res: any) => {
+        if (res.success && res.data) {
+          setLastClosedShift(res.data)
+          if (res.suggested_opening_cash !== undefined && res.suggested_opening_cash > 0) {
+            setOpeningCash(res.suggested_opening_cash.toString())
+          }
+        }
+      }).catch(() => {})
+    }, [])
+
     const handleOpen = async () => {
       setSaving(true)
       try {
@@ -1958,6 +1971,12 @@ const Sales = () => {
               onFocus={e => e.target.select()}
               className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
           </div>
+          {lastClosedShift && (lastClosedShift.closing_cash_counted ?? 0) > 0 && (
+            <div className="mt-2 text-xs text-[var(--fg-3)] bg-[var(--bg)] p-2.5 rounded-lg border border-[var(--border)] flex items-center justify-between">
+              <span>{t('sales.pos.previousShiftRemaining', { shift: lastClosedShift.shift_number })}:</span>
+              <span className="font-semibold text-success">฿{fmt(lastClosedShift.closing_cash_counted)}</span>
+            </div>
+          )}
         </Field>
       </ModalShell>
     )
@@ -1974,17 +1993,29 @@ const Sales = () => {
     const [saving, setSaving] = useState(false)
     const [openBillsError, setOpenBillsError] = useState<{ message: string; bills: string[] } | null>(null)
     const [movements, setMovements] = useState<Array<{ id: string; type: 'PAID_OUT' | 'CASH_IN'; amount: number; reason?: string; created_at: string }>>([])
-    const diff = (parseFloat(closingCash) || 0) - expectedCash
+    const [expenses, setExpenses] = useState<Array<{ id: string; reason: string; amount: string }>>([])
+
+    const totalNewExpenses = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+    const adjustedExpectedCash = Math.round((expectedCash - totalNewExpenses) * 100) / 100
+    const diff = (parseFloat(closingCash) || 0) - adjustedExpectedCash
+
     useEffect(() => {
       api.get(`/sales/pos-shifts/${shift.id}/cash-movements`)
         .then(({ data }) => { if (data.success) setMovements(data.data) })
         .catch(() => {})
     }, [])
+
     const handleClose = async () => {
       setSaving(true)
       try {
+        const validExpenses = expenses
+          .filter(e => (parseFloat(e.amount) || 0) > 0 && e.reason.trim())
+          .map(e => ({ reason: e.reason.trim(), amount: parseFloat(e.amount) || 0 }))
+
         const { data } = await api.post(`/sales/pos-shifts/${shift.id}/close`, {
-          closing_cash_counted: parseFloat(closingCash) || 0, notes
+          closing_cash_counted: parseFloat(closingCash) || 0,
+          notes,
+          cash_expenses: validExpenses.length > 0 ? validExpenses : undefined
         })
         if (data.success) {
           toast.success(t('sales.toast.shiftClosed'))
@@ -2047,8 +2078,14 @@ const Sales = () => {
                   <span>− {t('sales.pos.paidOut')}</span><span>{fmt(paidOut)}</span>
                 </div>
               )}
+              {totalNewExpenses > 0 && (
+                <div className="flex justify-between text-danger font-medium">
+                  <span>− {t('sales.pos.cashExpensesBeforeClose')} ({expenses.filter(e => (parseFloat(e.amount) || 0) > 0).length})</span>
+                  <span>−{fmt(totalNewExpenses)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold text-[var(--fg-1)] border-t border-[var(--border)] pt-2 mt-2">
-                <span>{t('sales.pos.expectedCash')}</span><span>{fmt(expectedCash)}</span>
+                <span>{t('sales.pos.expectedCash')}</span><span>{fmt(adjustedExpectedCash)}</span>
               </div>
             </div>
             {movements.length > 0 && (
@@ -2066,6 +2103,80 @@ const Sales = () => {
                 </div>
               </div>
             )}
+
+            {/* รายการใช้เงินสด / นำเงินออกจากเก๊ะก่อนปิดกะ */}
+            <div className="border border-[var(--border)] rounded-xl p-3 bg-[var(--bg)]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-[var(--fg-2)] flex items-center gap-1.5">
+                  <Receipt className="w-3.5 h-3.5 text-warning" />
+                  {t('sales.pos.cashExpenses')} ({expenses.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setExpenses(prev => [...prev, { id: Date.now().toString(), reason: '', amount: '' }])}
+                  className="px-2.5 py-1 text-xs font-medium rounded-md bg-phopy-indigo/10 text-phopy-indigo hover:bg-phopy-indigo/20 flex items-center gap-1 border border-phopy-indigo/30 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> {t('sales.pos.addCashExpense')}
+                </button>
+              </div>
+
+              {diff < -0.01 && expenses.length === 0 && (
+                <div className="mb-2 p-2 rounded-lg bg-danger/10 border border-danger/20 text-xs text-danger flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{t('sales.pos.cashDiscrepancyHint', { amount: fmt(Math.abs(diff)) })}</span>
+                </div>
+              )}
+
+              {expenses.length === 0 ? (
+                <p className="text-xs text-[var(--fg-4)] py-1 italic text-center">{t('sales.pos.noExpensesAdded')}</p>
+              ) : (
+                <div className="space-y-2 mt-2 max-h-44 overflow-y-auto pr-1">
+                  {expenses.map((exp, idx) => (
+                    <div key={exp.id} className="flex items-center gap-2 bg-[var(--surface)] p-2 rounded-lg border border-[var(--border)]">
+                      <span className="text-xs text-[var(--fg-4)] w-4 text-center">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        placeholder={t('sales.pos.expenseReasonPlaceholder')}
+                        value={exp.reason}
+                        onChange={e => {
+                          const val = e.target.value
+                          setExpenses(prev => prev.map(item => item.id === exp.id ? { ...item, reason: val } : item))
+                        }}
+                        className="flex-1 min-w-0 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+                      />
+                      <div className="relative w-24 shrink-0">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">฿</span>
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={exp.amount}
+                          onChange={e => {
+                            const val = e.target.value
+                            setExpenses(prev => prev.map(item => item.id === exp.id ? { ...item, amount: val } : item))
+                          }}
+                          className="w-full pl-5 pr-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-xs font-semibold text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo text-right"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExpenses(prev => prev.filter(item => item.id !== exp.id))}
+                        className="p-1 text-danger hover:bg-danger/10 rounded transition-colors"
+                        title={t('sales.common.delete')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {totalNewExpenses > 0 && (
+                    <div className="flex justify-between items-center text-xs font-medium text-[var(--fg-2)] pt-1 px-1">
+                      <span>{t('sales.pos.totalExpenses')}:</span>
+                      <span className="text-danger font-bold">−฿{fmt(totalNewExpenses)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <Field label={t('sales.pos.countCash')}>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>

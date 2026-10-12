@@ -384,15 +384,33 @@ export function buildLedger(tenantId: string, accountId: string, startDate?: str
     `).get(accountId, tenantId) as any
     if (!account) return null
 
+    // ponytail: หากเป็นบัญชีคุมหมวด/มีลูกหลาน รวมยอดทุกลูกหลาน (descendants) เพื่อแสดงภาพรวมและแนวโน้มใน drawer
+    const allAccounts = db.prepare('SELECT id, parent_id FROM accounts WHERE tenant_id = ?').all(tenantId) as { id: string; parent_id: string | null }[]
+    const targetIds = [accountId]
+    let frontier = [accountId]
+    while (frontier.length > 0) {
+      const children = allAccounts.filter(a => a.parent_id && frontier.includes(a.parent_id)).map(a => a.id)
+      targetIds.push(...children)
+      frontier = children
+    }
+
+    const inPlaceholders = targetIds.map(() => '?').join(',')
+
     // ยอดยกมา = ก่อน startDate เท่านั้น ไม่มี startDate = 0 (รายการนับตั้งแต่ต้นอยู่แล้ว)
     // เดิมรัน query นี้โดยไม่มีเงื่อนไขวันที่ → ยอดยกมารวมทุกรายการแล้วบวกรายการซ้ำอีกรอบ ยอดปิดเป็น 2 เท่า (บั๊กเดียวกับงบทดลอง)
+    const obParams: any[] = [account.normalBalance, ...targetIds]
+    let obSql = `
+      SELECT COALESCE(SUM(CASE WHEN ? = 'DEBIT' THEN debit - credit ELSE credit - debit END), 0) as balance
+      FROM journal_lines jl
+      JOIN journal_entries je ON jl.journal_entry_id = je.id
+      WHERE jl.account_id IN (${inPlaceholders}) AND je.is_posted = 1
+    `
+    if (startDate) {
+      obSql += ' AND je.date < ?'
+      obParams.push(startDate)
+    }
     const openingBalance = startDate
-      ? Number((db.prepare(`
-          SELECT COALESCE(SUM(CASE WHEN ? = 'DEBIT' THEN debit - credit ELSE credit - debit END), 0) as balance
-          FROM journal_lines jl
-          JOIN journal_entries je ON jl.journal_entry_id = je.id
-          WHERE jl.account_id = ? AND je.is_posted = 1 AND je.date < ?
-        `).get(account.normalBalance, accountId, startDate) as any).balance)
+      ? Number((db.prepare(obSql).get(...obParams) as any).balance)
       : 0
 
     // Get transactions
@@ -407,12 +425,15 @@ export function buildLedger(tenantId: string, accountId: string, startDate?: str
         je.reference_id as referenceId,
         jl.debit,
         jl.credit,
-        jl.description as lineDescription
+        jl.description as lineDescription,
+        a.code as accountCode,
+        a.name as accountName
       FROM journal_lines jl
       JOIN journal_entries je ON jl.journal_entry_id = je.id
-      WHERE jl.account_id = ? AND je.is_posted = 1
+      JOIN accounts a ON jl.account_id = a.id
+      WHERE jl.account_id IN (${inPlaceholders}) AND je.is_posted = 1
     `
-    const transactionsParams: any[] = [accountId]
+    const transactionsParams: any[] = [...targetIds]
 
     if (startDate) {
       transactionsQuery += ' AND je.date >= ?'

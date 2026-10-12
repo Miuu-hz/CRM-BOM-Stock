@@ -420,7 +420,24 @@ router.get('/pos-shifts/current', (req: Request, res: Response) => {
       ORDER BY s.opened_at DESC LIMIT 1
     `).get(tenantId) as any
 
-    if (!shift) return res.json({ success: true, data: null })
+    if (!shift) {
+      const lastClosed = db.prepare(`
+        SELECT id, shift_number, closed_at, closing_cash_counted
+        FROM pos_shifts
+        WHERE tenant_id = ? AND status = 'CLOSED'
+        ORDER BY closed_at DESC, opened_at DESC
+        LIMIT 1
+      `).get(tenantId) as any
+      const suggestedOpeningCash = lastClosed && lastClosed.closing_cash_counted !== null && lastClosed.closing_cash_counted !== undefined
+        ? Number(lastClosed.closing_cash_counted) || 0
+        : 0
+      return res.json({
+        success: true,
+        data: null,
+        last_closed_shift: lastClosed || null,
+        suggested_opening_cash: suggestedOpeningCash,
+      })
+    }
 
     // Attach current sales summary from bills since shift opened
     const sales = getShiftSalesSummary(tenantId, shift)
@@ -435,6 +452,31 @@ router.get('/pos-shifts/current', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get current shift error:', error)
     res.status(500).json({ success: false, message: 'Failed to get current shift' })
+  }
+})
+
+// GET last closed shift (for opening cash suggestions)
+router.get('/pos-shifts/last-closed', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const lastClosed = db.prepare(`
+      SELECT id, shift_number, closed_at, closing_cash_counted
+      FROM pos_shifts
+      WHERE tenant_id = ? AND status = 'CLOSED'
+      ORDER BY closed_at DESC, opened_at DESC
+      LIMIT 1
+    `).get(tenantId) as any
+    const suggestedOpeningCash = lastClosed && lastClosed.closing_cash_counted !== null && lastClosed.closing_cash_counted !== undefined
+      ? Number(lastClosed.closing_cash_counted) || 0
+      : 0
+    res.json({
+      success: true,
+      data: lastClosed || null,
+      suggested_opening_cash: suggestedOpeningCash,
+    })
+  } catch (error) {
+    console.error('Get last closed shift error:', error)
+    res.status(500).json({ success: false, message: 'Failed to get last closed shift' })
   }
 })
 
@@ -535,28 +577,72 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
       })
     }
 
-    // Calculate sales in this shift
-    const sales = getShiftSalesSummary(tenantId, shift)
-    const movements = getShiftCashMovementTotals(tenantId, id)
-    // บิลที่ไม่มี payment (หรือ payment ไม่ครบ) ไม่เข้าทั้งเงินสดและธนาคาร แต่ขาเงินสดตอนปิดกะเป็น "ส่วนที่เหลือ"
-    // จึงดูดยอดนี้เข้าเงินสดเงียบ ๆ — เตือนไว้ให้ตามดูบิลนั้น
-    const unclassified = (sales.total_revenue || 0) - (sales.cash_revenue || 0) - (sales.bank_revenue || 0)
-    if (unclassified > 0.01) {
-      console.warn(`⚠️ ปิดกะ ${shift.shift_number}: ยอดบิล ${unclassified.toFixed(2)} บาทไม่มีรายการรับชำระ (pos_payments) — ถูกนับเป็นเงินสด`)
+    // รายการนำเงินไปใช้จ่ายก่อนปิดเก๊ะ (petty cash expenses / cash out)
+    const rawExpenses = Array.isArray(req.body.cash_expenses) ? req.body.cash_expenses : []
+    const validExpenses: Array<{ reason: string; amount: number; account_id?: string }> = []
+    for (const exp of rawExpenses) {
+      const amt = Number(exp.amount)
+      const reason = typeof exp.reason === 'string' ? exp.reason.trim() : ''
+      if (amt > 0 && reason) {
+        validExpenses.push({ reason, amount: amt, account_id: exp.account_id })
+      }
     }
 
     // ปัดเป็นสตางค์ก่อนใช้ทุกตัว — ยอดบิลบางใบมีเศษเกิน 2 ตำแหน่ง/เศษ floating point
     // ถ้าปล่อยให้ postJournal ปัดทีละบรรทัดเอง ผลรวมสองฝั่งจะหลุดกัน 0.01 แล้วปิดกะไม่ได้
     const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
-    const expectedCash = r2((shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut)
-    const cashDifference = r2(closing_cash_counted - expectedCash)
     const nowStr = new Date().toISOString()
     const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย (nowStr เป็น UTC → 00:00–06:59 ได้วันก่อน)
 
     let journalEntryId: string | null = null
+    let sales: any
+    let movements: { cashIn: number; paidOut: number } = { cashIn: 0, paidOut: 0 }
+    let expectedCash = 0
+    let cashDifference = 0
+
     // ปิดสถานะกะกับลงบัญชีต้องสำเร็จหรือล้มไปด้วยกัน — เดิมลงบัญชีพังแล้วกะถูกปิดค้าง
     // (CLOSED แต่ไม่มี journal บัญชีพักไม่ถูกเคลียร์ และกดปิดซ้ำไม่ได้เพราะเจอ 404)
     db.transaction(() => {
+      // 1. บันทึกรายการเงินจ่ายออกจากเก๊ะที่ระบุมาก่อนปิดเก๊ะ
+      if (validExpenses.length > 0) {
+        const defaultExpenseAccountId = getOrCreateAccount(tenantId, ACC.OTHER_EXPENSE)
+        const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
+        for (const exp of validExpenses) {
+          const movementId = generateId()
+          const accId = exp.account_id || defaultExpenseAccountId
+          db.prepare(`
+            INSERT INTO pos_shift_cash_movements (id, tenant_id, shift_id, type, amount, reason, account_id, created_by, created_at)
+            VALUES (?, ?, ?, 'PAID_OUT', ?, ?, ?, ?, ?)
+          `).run(movementId, tenantId, id, exp.amount, exp.reason, accId, userId, nowStr)
+
+          const desc = `จ่ายออกจากลิ้นชัก กะ ${shift.shift_number} - ${exp.reason}`
+          postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, accId, cashAccountId, exp.amount)
+        }
+      }
+
+      // 2. คำนวณยอดขายและยอดเงินเข้า-ออกของกะนี้ (รวมรายการจ่ายออกด้านบนแล้ว)
+      sales = getShiftSalesSummary(tenantId, shift)
+      movements = getShiftCashMovementTotals(tenantId, id)
+
+      // บิลที่ไม่มี payment (หรือ payment ไม่ครบ) ไม่เข้าทั้งเงินสดและธนาคาร แต่ขาเงินสดตอนปิดกะเป็น "ส่วนที่เหลือ"
+      // จึงดูดยอดนี้เข้าเงินสดเงียบ ๆ — เตือนไว้ให้ตามดูบิลนั้น
+      const unclassified = (sales.total_revenue || 0) - (sales.cash_revenue || 0) - (sales.bank_revenue || 0)
+      if (unclassified > 0.01) {
+        console.warn(`⚠️ ปิดกะ ${shift.shift_number}: ยอดบิล ${unclassified.toFixed(2)} บาทไม่มีรายการรับชำระ (pos_payments) — ถูกนับเป็นเงินสด`)
+      }
+
+      expectedCash = r2((shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut)
+      cashDifference = r2(closing_cash_counted - expectedCash)
+
+      // รวบรวม notes: ถ้ามีรายการค่าใช้จ่าย ให้บันทึกลง notes ของกะด้วยเพื่อใช้อ้างอิงในรายงาน
+      let finalNotes = notes || null
+      if (validExpenses.length > 0) {
+        const expenseSummary = validExpenses.map(e => `${e.reason} ${e.amount.toLocaleString()} บ.`).join(', ')
+        finalNotes = notes
+          ? `${notes} [ค่าใช้จ่ายก่อนปิดเก๊ะ: ${expenseSummary}]`
+          : `[ค่าใช้จ่ายก่อนปิดเก๊ะ: ${expenseSummary}]`
+      }
+
       const closed = db.prepare(`
         UPDATE pos_shifts SET
           status = 'CLOSED', closed_at = ?,
@@ -568,7 +654,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
       `).run(
         nowStr, closing_cash_counted, expectedCash, cashDifference,
         sales.total_revenue, sales.cash_revenue, sales.bank_revenue,
-        sales.bill_count, userId, notes || null, id, tenantId
+        sales.bill_count, userId, finalNotes, id, tenantId
       )
       if (closed.changes !== 1) throw new ShiftAlreadyClosedError()
 

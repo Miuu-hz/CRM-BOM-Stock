@@ -1146,3 +1146,131 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 2. `get_erp_guide(topic)` read-only: schema ย่อ, กฎหน่วย 3 ชั้น, ผังบัญชีค่าใช้จ่าย, flow PO→GR→PI
 - ก่อนลงจริง: วัดขนาด token ของ instructions + ทดสอบกับ Claude client จริงว่าโผล่ใน system prompt
 - ข้อควรจำ: context ช่วยลดการเรียกผิด แต่แทนด่านตรวจฝั่ง server ไม่ได้ (บั๊กเก่าแบบ "ข้าวโพด" → "สลัดทูน่าข้าวโพด" หายเพราะ guard ไม่ใช่เพราะ context)
+
+### ✅ แก้ไข Chart of Accounts: ยอดเงิน Root Account 1-5 Rollup และ 10 รายการล่าสุดใน Drawer
+- **ปัญหา:** หน้า Chart of Accounts เดิมไม่คำนวณยอดสะสมของ Root Accounts (หมวด 1-5) และบัญชีแม่ที่มีย่อย ทำให้ยอดเงินหมวด 5 (ค่าใช้จ่าย) และหมวดอื่นๆ แสดงเป็น 0 หรือว่างเปล่า และใน Drawer ด้านขวายังไม่มีประวัติ 10 รายการล่าสุด
+- **การแก้ไข:**
+  - `backend/src/routes/reports.routes.ts`: ปรับปรุง endpoint ให้คำนวณยอดดุลแบบ Rollup จากลูกหลานทุกระดับขึ้นมาที่ Root/Parent Account และเพิ่มฟิลด์ `recent_transactions` ดึง 10 รายการเคลื่อนไหวล่าสุดพร้อม badge ระบุรหัสบัญชีย่อย
+  - `frontend/src/pages/Accounting/ChartOfAccounts.tsx`: แสดงยอดรวมของบัญชีระดับ Root ทุกหมวด และแสดง 10 ธุรกรรมล่าสุดพร้อม badge ใน Drawer รายละเอียด
+  - Build backend (`tsc`) + frontend (`vite build`) และ deploy รันบน LXC 100 เรียบร้อย
+
+### 🎯 แผนยกระดับ CRM เป็น AI-Native CRM (ศึกษาเปรียบเทียบ Relaticle)
+
+จากการวิเคราะห์สถาปัตยกรรมของ [Relaticle](https://github.com/relaticle/relaticle) (Open-source AI-native CRM) เปรียบเทียบกับ Phopy Mini-ERP/CRM ในปัจจุบัน ได้ข้อสรุปส่วนต่างและฟีเจอร์สำคัญ 6 ด้าน:
+
+1. **Company vs People (1:N Contact Model):**
+   - *สถานะปัจจุบัน:* Phopy รวมนิติบุคคลและผู้ติดต่อเป็น record เดียวใน `customers` (เหมาะกับ B2C / SME ซื้อง่ายขายคล่อง)
+   - *สิ่งที่ต่าง:* Relaticle แยก `companies` กับ `contacts` (1 บริษัทมีหลายผู้ติดต่อ: ฝ่ายจัดซื้อ, การเงิน, ผู้บริหาร)
+   - *ทิศทาง:* เพิ่มตาราง `customer_contacts` 1:N รองรับเมื่อขยายงานลูกค้าระดับองค์กร/โรงงานใหญ่
+
+2. **Sales Pipeline & Opportunity Tracking (Lead/Deal Stages & Stale Days):**
+   - *สถานะปัจจุบัน:* Phopy มี Document Flow (Quotation → Sales Order → Invoice) ชัดเจน แต่ยังไม่มี Sales Pipeline ก่อนออกใบเสนอราคา
+   - *สิ่งที่ต่าง:* Relaticle มี Opportunity Kanban (Lead, Discovery, Proposal, Won/Lost) พร้อม Stale Alerts (แจ้งเตือนดีลที่ค้างนิ่งเกิน X วัน)
+   - *ทิศทาง:* เพิ่ม Deal Stage และตัวนับ Stale Days ก่อนถึงขั้นตอนใบเสนอราคา
+
+3. **Task Management & Follow-up Reminders (งานติดตามลูกค้า):** ⭐ *(User เลือก: กำหนดทำในแผนพัฒนา)*
+   - *สถานะปัจจุบัน:* ยังไม่มีระบบบันทึก Task/สิ่งที่ต้องทำติดตามลูกค้าสำหรับทีมขาย
+   - *สิ่งที่ต่าง:* Relaticle มี Actionable Tasks ผูกกับลูกค้า/ดีล มี Due Date, Assignee, Priority, Status (Todo, In Progress, Done)
+   - *แนวทาง Phopy:* สร้างตาราง `crm_tasks` (customer_id, title, due_date, assigned_to, status, priority, reminder_at) แสดงบนหน้าลูกค้าและมีกระดานสรุปงานที่ต้องตาม
+
+4. **Dynamic Custom Fields (ฟิลด์ยืดหยุ่นปรับแต่งเองได้):** ⭐ *(User เลือก: กำหนดทำในแผนพัฒนา)*
+   - *สถานะปัจจุบัน:* ตาราง `customers` เป็น static schema (มีเฉพาะ `notes` และ `tags` แบบง่าย)
+   - *สิ่งที่ต่าง:* Relaticle รองรับ Custom Properties ยืดหยุ่นตามประเภทธุรกิจ (เช่น ขนาดโรงแรม, จำนวนห้อง, รอบสั่งซื้อประจำ)
+   - *แนวทาง Phopy:* เพิ่ม JSON column `custom_fields` ใน `customers` หรือตารางนิยาม schema ย่อย ช่วยให้แต่ละ tenant เก็บข้อมูลเฉพาะทางของลูกค้าได้โดยไม่ต้อง migrate schema ทุกครั้ง
+
+5. **Unified Activity Timeline & Safety Buffer (ประวัติกิจกรรมรวมศูนย์และระบบถอยหลัง):** ⭐ *(User เลือก: กำหนดทำในแผนพัฒนา)*
+   - *สถานะปัจจุบัน:* กิจกรรมกระจายอยู่ตามเอกสาร (Orders, Quotations, Invoices) ไม่มีหน้าเดียวที่รวมทุกความเคลื่อนไหว
+   - *สิ่งที่ต่าง:* Relaticle รวมทุกการกระทำเป็น Unified Activity Feed (โทร, นัดหมาย, ส่งอีเมล, แก้ไขข้อมูล, สถานะเปลี่ยน) พร้อมระบบ Event Log / Safety Buffer
+   - *แนวทาง Phopy:* สร้างตาราง `customer_activities` รวมประวัติการโทร, แชท, นัดหมาย, สเตตัสเปลี่ยน, บันทึกการพบลูกค้า ให้เซลส์เปิดโปรไฟล์ลูกค้าแล้วเห็นไทม์ไลน์ 360 องศา
+
+6. **Field-Level Audit Trail + Approval System Link (บันทึกประวัติการแก้ระดับฟิลด์ + เชื่อม Approval Gate):** ⭐⭐ **(Priority สูงสุด — ต้องทำทันที!)**
+   - *เหตุผลความจำเป็น:* Phopy มีระบบ **Multi-level Approval Gate** อยู่แล้ว (`approval_requests`, `approval_settings`, `services/approvalGate.service.ts`) สำหรับ PO/SO แต่การแก้ไขข้อมูลสำคัญของลูกค้า (เช่น วงเงินเครดิต `credit_limit`, เทอมชำระ `credit_days`, เลขภาษี `tax_id`, หรือสถานะ VAT) ยังสามารถแก้ตรงได้ทันทีโดยไม่มี audit log รายละเอียดและไม่มีการขออนุมัติ
+   - *การเชื่อมต่อ (ทำได้ทันที ไม่ซับซ้อน):*
+     1. **Audit Trail Table:** สร้าง `customer_audit_logs` (tenant_id, customer_id, field_name, old_value, new_value, changed_by, changed_at, reason, approval_request_id)
+     2. **เชื่อม Approval Gate เดิม:** เมื่อมีการขอแก้ฟิลด์ Sensitive (วงเงินเครดิต, เทอมเครดิต, เลขภาษี) ให้ intercept ผ่าน `approvalGate.service.ts` สร้าง `approval_request` ประเภท `CUSTOMER_CREDIT_CHANGE` หรือ `CUSTOMER_SENSITIVE_EDIT`
+     3. **Pending Changes:** ข้อมูลที่ยังไม่อนุมัติจะถูกพักไว้ใน pending buffer หรือ request payload เมื่อผู้มีอำนาจกดอนุมัติในระบบเดิม จึงจะ commit ค่าใหม่ลง `customers` และเขียนลง `customer_audit_logs`
+     4. สำหรับฟิลด์ทั่วไป (เบอร์โทร, ที่อยู่, ชื่อผู้ติดต่อ) บันทึกลง `customer_audit_logs` ทันทีเพื่อความโปร่งใสโดยไม่ต้องขออนุมัติ
+
+---
+
+### 📋 สรุป Roadmap ลำดับความสำคัญ (ตามนโยบายผู้บริหาร)
+- 🚀 **ระยะที่ 1 (เริ่มทันที):** ข้อ 6 — **Field-Level Audit Trail + Approval System Link** (ใช้ระบบอนุมัติเดิมที่เสร็จสมบูรณ์แล้วมาควบคุมการแก้ไขฟิลด์สำคัญ เช่น วงเงินเครดิต เทอมเครดิต และเลขประจำตัวผู้เสียภาษี)
+- 📦 **ระยะที่ 2 (กำหนดทำในลำดับถัดไป):** ข้อ 3 (Tasks & Follow-up), ข้อ 4 (Custom Fields), ข้อ 5 (Unified Timeline)
+- ⏳ **ระยะที่ 3 (ระยะยาวตามความจำเป็น):** ข้อ 1 (1:N Contacts), ข้อ 2 (Deal Pipeline)
+
+
+---
+
+## 📅 แผน — 12 ตุลาคม 2026 (นำราคา v2 จาก `Phopy_Price.xlsx` เข้าระบบ: Base + Pack + Add-on)
+
+ที่มา: `Phopy_Price.xlsx` ชีต "แพ็กเกจ v2" / "Add-ons" / "คำนวณราคา" — 6 แพ็ก (Free 0 / Solo 299 / Business 690 / Business+ 950 / Pro 1,950 / Enterprise AI 3,490) + 4 Pack (Shop / Online / Maker / Accounting) + Add-on (User, Pack, Smart Unit, Multi-Currency, Subcontract, API, Backup, MCP key, LINE Bot, AI Credits)
+
+### สภาพระบบตอนนี้ (สำรวจแล้ว)
+- มีโครงอยู่แล้ว: `subscription_plans` (features เป็น JSON array + max_users/max_products/max_pos_shifts) · `tenant_subscriptions` (1 แถวต่อ tenant) · `services/subscription.service.ts` (`getSubscription` / `hasFeature` / `getLimits`) · `middleware/subscription.middleware.ts` (`subscriptionGate(feature)` → 403 `FEATURE_LOCKED`) · MasterPanel แก้แพ็ก/ต่ออายุได้ · frontend `api.ts` toast error code
+- แพ็กที่ seed อยู่ใน DB จริง = ราคา v0 (free / starter 990 / business 2,490 / enterprise 5,990) ไม่ตรงทั้ง v1 และ v2
+- tenant จริง: enterprise ACTIVE 3 (grandfather จาก backfill) · starter 1 · free 1
+- **ช่องโหว่ที่ต้องแก้ก่อนขาย v2:**
+  1. ไม่มีแนวคิด "Pack ที่ลูกค้าเลือก" และ "Add-on" — features ผูกกับแพ็กอย่างเดียว
+  2. feature key หยาบเกินไป: `accounting` คุมทั้ง settlement / currencies / clearing · `pos` รวมกะและนำส่งเงิน · `work_orders` รวม subcontract — แต่ v2 แยกขายเป็นคนละ Pack/Add-on
+  3. `platform-settlement` ถูก gate ด้วย `accounting` แต่ v2 จัดเป็น **Pack Online**
+  4. route ที่ยังไม่ gate เลย: `/api/approval`, `/api/qc`, `/api/phopy-board`, `/api/backup`, `/api/kanban`, `/api/line` (ใช้ `subscriptionGate()` = เช็คแค่หมดอายุ หรือไม่มี gate)
+  5. MCP quota = `max_users` ของแพ็ก และมี scope แค่ full/readonly — v2 ต้องการจำนวน key ตามแพ็ก + scope 3 ระดับ (อ่าน / Draft / เขียน) + โควตา call ต่อ key ต่อเดือน + tool เฉพาะโมดูลที่แพ็กมี
+  6. frontend ไม่รู้ features — เมนูที่ล็อกยังโชว์ กดแล้วค่อยโดน 403
+
+### ลำดับที่จะเริ่ม (เรียงตามสิ่งที่อย่างอื่นต้องพึ่ง)
+
+**ระยะ 0 — แคตตาล็อก feature key (เอกสาร ไม่มีโค้ด) ← เริ่มตรงนี้**
+แตกแถวใน Excel ให้เป็น key ระดับที่ขายแยกได้ แล้วผูกกับ route:
+
+| key | แถวใน Excel | route ปัจจุบัน | ขายใน |
+|---|---|---|---|
+| `pos_shift`, `pos_clearing`, `pos_bom`, `kds` | POS Shift / Clearing / POS-BOM / KDS | `/api/pos/*` (แยก sub-route), `/api/clearing`, `/api/pos/kds` | Pack Shop |
+| `settlement` | Shopee/Lazada Settlement | `/api/platform-settlement` | Pack Online |
+| `bom`, `work_orders`, `qc`, `cost_calc` | BOM / WO / QC / Calculator | `/api/bom`, `/api/work-orders`, `/api/qc`, `/api/calculator` | Pack Maker |
+| `accounting`, `tax` | ผังบัญชี JE TB Budget ปิดงวด VAT WHT CIT | `/api/accounts`, `/api/journal`, `/api/period-closing`, `/api/budgets`, `/api/tax`, `/api/wht-certificates` | Pack Accounting |
+| `subcontract` | Subcontract | `/api/subcontracts` | Add-on 290 (ต้องมี Maker) |
+| `multi_currency` | Multi-Currency | `/api/currencies` | Add-on 390 |
+| `smart_unit` | Smart Unit | ใน stock service (ไม่ใช่ route แยก — ต้อง gate ที่ service) | Add-on 190 / Pro+ |
+| `credit_note`, `crm_activity`, `stock_adjust`, `sku_alias` | ใบลดหนี้ / Activity / ปรับสต็อก / Alias | ย่อยใน `/api/sales`, `/api/activities`, `/api/stock` | Solo+ |
+| `ar_aging`, `ap_aging`, `pr`, `approval`, `kanban_sso` | AR/AP Aging / PR / Approval / Kanban | `/api/receivables`, `/api/purchase-requests`, `/api/approval`, `/api/kanban` | Business+ |
+| `phopy_board` | Phopy Board | `/api/phopy-board` | Business+ ขึ้นไป |
+| `backup`, `api_access` | Backup / API & Webhook | `/api/backup`, `/api/agent` | Add-on |
+
+**ระยะ 1 — โมเดลข้อมูล + จุดคำนวณจุดเดียว (backend)**
+- เพิ่มคอลัมน์ใน `tenant_subscriptions`: `packs` (JSON เช่น `["shop","accounting"]`), `addons` (JSON เช่น `{"extra_users":1,"smart_unit":true,"mcp_keys":3,"line_bot":"lite"}`)
+- ตาราง/ค่าคงที่ `PACK_FEATURES` (shop/online/maker/accounting → feature keys) ในโค้ด ไม่ต้องทำตาราง DB — เปลี่ยนน้อย
+- `subscription_plans` เพิ่มคอลัมน์ `included_packs` (0/1/2/4), `included_mcp_keys`, `mcp_scope` (read/draft/write/full), `mcp_calls_per_key`
+- แก้ `getSubscription()` ให้คืน **effective features** = แพ็ก ∪ Pack ที่เลือก ∪ Add-on และ `maxUsers` = แพ็ก + extra_users — ทุก gate (`subscriptionGate`, `hasFeature`, `getLimits`, MCP quota) วิ่งผ่านฟังก์ชันนี้อยู่แล้ว แก้ที่เดียวพอ
+- validate ที่ MasterPanel/route: จำนวน Pack ≤ `included_packs` + pack ที่ซื้อเพิ่ม · Solo ซื้อ Pack ไม่ได้ · Subcontract ต้องมี Maker · เพดาน user (Solo +1, Business ≤5, Business+ ≤10)
+- seed 6 แพ็กใหม่ด้วย code ใหม่ (`free`, `solo`, `business_v2`, `business_plus`, `pro`, `enterprise_ai`) แบบ `INSERT OR IGNORE` · แพ็กเก่าตั้ง `is_active=0` ไม่ลบ (tenant เดิมยังอ้างอยู่)
+- test: `subscription.service` effective features ครบทุกแพ็ก × Pack (รันด้วย `SQLITE_DB_PATH=/tmp/x.db`)
+
+**ระยะ 2 — ซอยด่านใน `index.ts`**
+- เปลี่ยน `subscriptionGate('accounting')` ของ settlement → `settlement`, currencies → `multi_currency`, subcontracts → `subcontract`
+- ใส่ key ให้ route ที่ยัง gate ว่าง: approval, qc, phopy-board, backup, kanban
+- POS: ตอนนี้ `maxPosShifts` เป็นตัวเลขของแพ็ก → เปลี่ยนเป็น "ไม่มี `pos_shift` = 1 กะ/วัน" ตาม Excel แถว 18
+- ฟีเจอร์ที่อยู่ในไฟล์ route เดียวกัน (ใบลดหนี้ใน `/api/sales`, ปรับสต็อกใน `/api/stock`, smart unit ใน service) ใส่ `hasFeature()` ที่ handler
+- **ก่อน deploy:** ย้าย tenant เดิมไปแพ็ก v2 ก่อน (enterprise → `enterprise_ai`, starter → ตกลงกับลูกค้า, free → `free`) ไม่งั้นฟีเจอร์ที่ใช้อยู่หายทันที
+
+**ระยะ 3 — Frontend รู้แพ็ก**
+- endpoint `GET /api/subscription/me` คืน plan, packs, addons, effective features, limits
+- ซ่อน/ล็อกเมนู sidebar ตาม features (แสดงกุญแจ + ปุ่ม "อัปเกรด" แทนการซ่อนเงียบ — เป็นช่องขาย)
+- หน้า Settings แสดงแพ็ก + Pack + Add-on ปัจจุบัน
+- MasterPanel: เลือก Pack / ติ๊ก Add-on / จำนวน user/key ต่อ tenant + แสดงยอดรวม/ด. และคำแนะนำ "≥ 85% ของแพ็กถัดไป → แนะนำอัปเกรด" (สูตรเดียวกับชีตคำนวณราคา)
+
+**ระยะ 4 — MCP ตามแพ็ก**
+- quota = `included_mcp_keys` + `addons.mcp_keys` แทน `max_users` (แก้ทั้ง `mcpSettings.routes.ts` และ `mcp/server.ts resolveTenant` — โค้ดคำนวณซ้ำกันอยู่ 2 ที่ ควรรวมเป็นฟังก์ชันเดียวใน subscription.service)
+- scope 3 ระดับ: `read` (Solo) / `draft` (Business, Business+ — สร้างได้แค่ร่าง QT/PO/PR) / `write` (Pro — post เอกสาร, JE ผ่าน Approval) / `full` (Enterprise) — ต่อยอดจาก `mcp_scope` เดิม
+- `registerTools` กรอง tool ตาม effective features (เช่น ไม่มี Pack Accounting → ไม่เห็น tool บัญชี)
+- นับ call ต่อ key ต่อเดือน (ตาราง `mcp_usage(tenant_id, user_id, month, calls)`) และตัดที่โควตา
+
+**ระยะ 5 — Add-on ที่ต้องมีระบบนับ/คิดเงิน (ทำทีหลัง เมื่อมีลูกค้าซื้อจริง)**
+- LINE Bot tier (Notify / Lite / Staff / Full) — มี `line-bot.service.ts` แล้ว แค่ gate ความสามารถตาม tier + จำนวนคน LINE
+- AI Credits — ต้องมีตารางยอดเครดิต + log ต้นทุน token จริง (Excel ระบุตั้งราคา ≥ 3 เท่าต้นทุน) · Pro 200 / Enterprise 2,000 ต่อเดือน หมดอายุสิ้นเดือน
+- API / Webhook โควตา 10k calls · Backup รายสัปดาห์ vs รายวัน (มี `backup.service.ts` แล้ว)
+- ราคารายปี (จ่าย 10 เดือน) — ตอนนี้คิดเงินมือผ่าน MasterPanel อยู่แล้ว ยังไม่ต้องมี payment gateway
+
+### ข้อตัดสินใจที่ต้องให้เจ้าของยืนยันก่อนเริ่มระยะ 1
+- tenant `starter` (990) ย้ายไปแพ็กไหน และ tenant enterprise 3 ราย ใช้ `enterprise_ai` แบบ grandfather ราคาเดิมหรือไม่
+- ลูกค้าเลือก Pack เองตอนสมัคร (signup) หรือ MASTER ตั้งให้
+- ล็อกเมนูแบบโชว์กุญแจ (แนะนำ) หรือซ่อน

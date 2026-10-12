@@ -147,8 +147,13 @@ const posService = {
     return response.data
   },
 
-  closeShift: async (id: string, closing_cash_counted: number, notes?: string) => {
-    const response = await api.post(`/sales/pos-shifts/${id}/close`, { closing_cash_counted, notes })
+  closeShift: async (id: string, closing_cash_counted: number, notes?: string, cash_expenses?: Array<{ reason: string; amount: number; account_id?: string }>) => {
+    const response = await api.post(`/sales/pos-shifts/${id}/close`, { closing_cash_counted, notes, cash_expenses })
+    return response.data
+  },
+
+  getLastClosedShift: async () => {
+    const response = await api.get('/sales/pos-shifts/last-closed')
     return response.data
   },
 
