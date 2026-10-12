@@ -3,6 +3,9 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../db/sqlite'
+import { randomBytes } from 'crypto'
+import { BillingError, parseSelection, Selection } from '../services/billing.catalog'
+import { signupCheckout } from '../services/billing.service'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 
 const router = Router()
@@ -282,10 +285,12 @@ router.post('/refresh', async (req, res) => {
 // @route   POST /api/auth/register
 // @desc    Public self-service signup. Creates a PENDING signup request (no tenant
 //          yet) that a Master must approve. The applicant sets their own password.
+//          With a paid `plan` (from the phopy.net pricing page) it instead goes
+//          straight to Stripe Checkout; the webhook provisions the tenant on success.
 //          Spam guards: IP rate-limit + honeypot field (`website`) + duplicate checks.
 router.post('/register', registerIpLimiter, async (req, res) => {
   try {
-    const { businessName, adminName, password, phone, website } = req.body
+    const { businessName, adminName, password, phone, website, plan } = req.body
     const email = typeof req.body?.email === 'string' ? req.body.email.trim() : req.body?.email
 
     // Honeypot: real users never fill `website`; bots do → pretend success, do nothing.
@@ -301,6 +306,17 @@ router.post('/register', registerIpLimiter, async (req, res) => {
       return res.status(400).json({ success: false, message: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร' })
     }
 
+    // แพ็กเสียเงิน → ตรวจคำสั่งซื้อก่อนบันทึกอะไร (Free = ไม่ส่ง plan หรือ plan='free')
+    let selection: Selection | null = null
+    if (plan && plan !== 'free') {
+      try {
+        selection = parseSelection({ plan, cycle: req.body.cycle, packs: req.body.packs, addons: req.body.addons })
+      } catch (err) {
+        if (err instanceof BillingError) return res.status(400).json({ success: false, message: err.message })
+        throw err
+      }
+    }
+
     const db = getDb()
 
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email)
@@ -310,16 +326,24 @@ router.post('/register', registerIpLimiter, async (req, res) => {
     const existingPending = db.prepare(
       `SELECT id FROM signup_requests WHERE email = ? COLLATE NOCASE AND status = 'pending'`,
     ).get(email)
-    if (existingPending) {
+    if (existingPending && !selection) {
       return res.status(409).json({ success: false, message: 'มีคำขอสมัครด้วยอีเมลนี้อยู่แล้ว กรุณารอผู้ดูแลอนุมัติ' })
     }
 
     const passwordHash = await bcrypt.hash(password, 10)
+    const id = randomBytes(12).toString('hex')
+    // 'checkout' = รอจ่ายที่ Stripe (ไม่โผล่ในคิวอนุมัติของ MASTER) — สมัครแบบเสียเงินแทนคำขอเดิมที่ค้างอยู่
+    // (ทิ้ง checkout กลางทาง / คำขอ Free ที่ยังไม่อนุมัติ) จึงกดสมัครซ้ำด้วยอีเมลเดิมได้
+    if (selection) db.prepare(`DELETE FROM signup_requests WHERE email = ? COLLATE NOCASE AND status IN ('checkout', 'pending')`).run(email)
     db.prepare(
       `INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, created_at)
-       VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
-    ).run(businessName, adminName, email, passwordHash, phone || null)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    ).run(id, businessName, adminName, email, passwordHash, phone || null, selection ? 'checkout' : 'pending')
 
+    if (selection) {
+      const { url } = await signupCheckout(id, email, selection)
+      return res.json({ success: true, data: { checkoutUrl: url } })
+    }
     res.json({ success: true, data: { pending: true } })
   } catch (error) {
     console.error('Register error:', error)

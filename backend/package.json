@@ -24,6 +24,7 @@
     "@line/bot-sdk": "^11.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^5.8.1",
+    "@sentry/node": "^10.69.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cookie-parser": "^1.4.10",
     "@types/papaparse": "^5.5.2",
@@ -44,8 +45,8 @@
     "papaparse": "^5.5.3",
     "pg": "^8.22.0",
     "qrcode": "^1.5.4",
-    "zod": "^3.22.4",
-    "@sentry/node": "^10.69.0"
+    "stripe": "^23.0.0",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -56,12 +57,12 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^20.19.30",
     "@types/node-cron": "^3.0.11",
+    "@types/supertest": "^7.2.1",
     "nodemon": "^3.0.2",
     "prisma": "^5.8.1",
+    "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3",
-    "vitest": "^4.1.10",
-    "supertest": "^7.2.2",
-    "@types/supertest": "^7.2.1"
+    "vitest": "^4.1.10"
   }
 }

@@ -1,0 +1,281 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import toast from 'react-hot-toast'
+import { CreditCard, ExternalLink, RefreshCw, Check } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import api from '../services/api'
+
+// ราคาทั้งหมดมาจาก backend (billing.catalog.ts) — หน้านี้แค่คำนวณยอดโชว์ Stripe คิดเงินจริงเอง
+interface CatalogPlan {
+  code: string
+  name: string
+  monthly: number
+  includedPacks: number | 'all'
+  canBuyPacks: boolean
+  extraUser: { price: number; maxExtra: number }
+  addons: Record<string, number>
+}
+interface BillingData {
+  current: {
+    planCode: string
+    planName: string
+    status: string
+    cycle: 'monthly' | 'yearly' | null
+    currentPeriodEnd: string | null
+    packs: string[]
+    addons: Record<string, number>
+    hasSubscription: boolean
+    hasCustomer: boolean
+  }
+  trialEligible: boolean
+  catalog: { yearlyMonths: number; packPrice: number; vatPercent: number; packs: string[]; plans: CatalogPlan[] }
+}
+
+const PACK_LABEL: Record<string, string> = {
+  shop: 'Shop — KDS, ปิดกะไม่จำกัด',
+  online: 'Online — กระทบยอด Shopee/Lazada',
+  maker: 'Maker — BOM, ใบสั่งผลิต, QC',
+  accounting: 'Accounting — บัญชี, VAT, WHT',
+}
+const ADDON_LABEL: Record<string, string> = {
+  backup: 'สำรองข้อมูลขึ้น Google Drive',
+  smart_unit: 'Smart Unit แปลงหน่วยอัตโนมัติ',
+  multi_currency: 'Multi-Currency หลายสกุลเงิน',
+  subcontract: 'Subcontract จ้างผลิตภายนอก',
+  api_access: 'API & Webhook',
+}
+const baht = (n: number) => `฿${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
+
+export default function Billing() {
+  const { user } = useAuth()
+  const [params, setParams] = useSearchParams()
+  const [data, setData] = useState<BillingData | null>(null)
+  const [cycle, setCycle] = useState<'monthly' | 'yearly'>('monthly')
+  const [plan, setPlan] = useState('business')
+  const [packs, setPacks] = useState<string[]>([])
+  const [addons, setAddons] = useState<Record<string, number>>({})
+  const [busy, setBusy] = useState(false)
+
+  const load = async () => {
+    const res = await api.get('/billing')
+    const d: BillingData = res.data.data
+    setData(d)
+    const wanted = params.get('plan')
+    if (wanted && d.catalog.plans.some(p => p.code === wanted)) {
+      setPlan(wanted)
+      if (params.get('cycle') === 'yearly') setCycle('yearly')
+    } else if (d.catalog.plans.some(p => p.code === d.current.planCode)) {
+      setPlan(d.current.planCode)
+      setPacks(d.current.packs)
+      setAddons(d.current.addons)
+      if (d.current.cycle) setCycle(d.current.cycle)
+    }
+    return d
+  }
+
+  useEffect(() => {
+    load().catch(() => toast.error('โหลดข้อมูลแพ็กเกจไม่สำเร็จ'))
+    const status = params.get('status')
+    if (status) setParams({}, { replace: true })
+    if (status === 'cancel') toast('ยกเลิกการชำระเงินแล้ว ยังไม่มีการตัดเงิน')
+    if (status === 'success') {
+      toast.success('ชำระเงินสำเร็จ กำลังเปิดสิทธิ์ให้…')
+      // webhook จาก Stripe อาจมาช้ากว่าการ redirect กลับ — รอดูสถานะอีกสักครู่
+      let tries = 0
+      const timer = setInterval(async () => {
+        tries++
+        const d = await load().catch(() => null)
+        if (tries >= 6 || d?.current.hasSubscription) clearInterval(timer)
+      }, 3000)
+      return () => clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const selected = data?.catalog.plans.find(p => p.code === plan)
+
+  const pricing = useMemo(() => {
+    if (!data || !selected) return null
+    const mult = cycle === 'yearly' ? data.catalog.yearlyMonths : 1
+    const included = selected.includedPacks === 'all' ? Infinity : selected.includedPacks
+    const extraPacks = selected.includedPacks === 'all' ? 0 : Math.max(0, packs.length - included)
+    let monthly = selected.monthly + extraPacks * data.catalog.packPrice
+    monthly += (addons.extra_users ?? 0) * selected.extraUser.price
+    for (const [k, v] of Object.entries(addons)) if (k !== 'extra_users' && v > 0) monthly += selected.addons[k] ?? 0
+    const sub = monthly * mult
+    const vat = Math.round(sub * data.catalog.vatPercent) / 100
+    return { sub, vat, total: sub + vat, extraPacks }
+  }, [data, selected, cycle, packs, addons])
+
+  const choosePlan = (code: string) => {
+    const p = data?.catalog.plans.find(x => x.code === code)
+    if (!p) return
+    setPlan(code)
+    // ล้างตัวเลือกที่แพ็กใหม่ซื้อไม่ได้ ไม่งั้น backend ปฏิเสธ
+    setPacks(prev => (p.includedPacks === 'all' || !p.canBuyPacks ? [] : prev))
+    setAddons(prev => {
+      const next: Record<string, number> = {}
+      if (prev.extra_users) next.extra_users = Math.min(prev.extra_users, p.extraUser.maxExtra)
+      for (const k of Object.keys(p.addons)) if (prev[k]) next[k] = 1
+      return next
+    })
+  }
+
+  const submit = async () => {
+    setBusy(true)
+    try {
+      const res = await api.post('/billing/checkout', { plan, cycle, packs, addons })
+      if (res.data.data.url) {
+        window.location.href = res.data.data.url
+        return
+      }
+      toast.success('เปลี่ยนแพ็กเกจแล้ว ส่วนต่างจะคิดตามวันที่เหลือในรอบบิล')
+      await load()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ดำเนินการไม่สำเร็จ')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openPortal = async () => {
+    setBusy(true)
+    try {
+      const res = await api.post('/billing/portal')
+      window.location.href = res.data.data.url
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'เปิดหน้าจัดการการชำระเงินไม่สำเร็จ')
+      setBusy(false)
+    }
+  }
+
+  if (user && !['ADMIN', 'MASTER'].includes(user.role)) {
+    return <div className="phopy-card p-6 text-[var(--fg-2)]">เฉพาะผู้ดูแลบริษัท (ADMIN) เท่านั้นที่จัดการแพ็กเกจได้</div>
+  }
+  if (!data || !selected || !pricing) {
+    return <div className="flex items-center gap-2 text-[var(--fg-3)] p-6"><RefreshCw className="w-4 h-4 animate-spin" /> กำลังโหลด…</div>
+  }
+
+  const { current, catalog, trialEligible } = data
+  const isCurrent = current.hasSubscription && current.planCode === plan && current.cycle === cycle &&
+    JSON.stringify([...current.packs].sort()) === JSON.stringify([...packs].sort()) &&
+    JSON.stringify(current.addons) === JSON.stringify(addons)
+  const submitLabel = current.hasSubscription ? 'เปลี่ยนแพ็กเกจ' : trialEligible ? 'เริ่มทดลองใช้ฟรี 30 วัน' : 'ไปชำระเงิน'
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--fg-1)]">แพ็กเกจและการชำระเงิน</h1>
+          <p className="text-sm text-[var(--fg-3)] mt-1">
+            ตอนนี้ใช้ <b className="text-[var(--fg-1)]">{current.planName}</b>
+            {current.packs.length > 0 && <> · Pack: {current.packs.join(', ')}</>}
+            {current.currentPeriodEnd && current.status === 'ACTIVE' && <> · ใช้ได้ถึง {new Date(current.currentPeriodEnd).toLocaleDateString('th-TH')}</>}
+            {current.status === 'EXPIRED' && <b className="text-[var(--danger)]"> · หมดอายุแล้ว</b>}
+          </p>
+        </div>
+        {current.hasCustomer && (
+          <button onClick={openPortal} disabled={busy}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] text-sm disabled:opacity-50">
+            <CreditCard className="w-4 h-4" /> บัตร · ใบเสร็จ · ยกเลิก <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      <div className="inline-flex rounded-lg border border-[var(--border)] p-1 bg-[var(--surface-2)]" role="radiogroup" aria-label="รอบบิล">
+        {(['monthly', 'yearly'] as const).map(c => (
+          <button key={c} role="radio" aria-checked={cycle === c} onClick={() => setCycle(c)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${cycle === c ? 'bg-[var(--surface)] text-[var(--fg-1)] shadow-sm' : 'text-[var(--fg-3)]'}`}>
+            {c === 'monthly' ? 'รายเดือน' : `รายปี (จ่าย ${catalog.yearlyMonths} เดือน)`}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" role="radiogroup" aria-label="แพ็กเกจ">
+        {catalog.plans.map(p => {
+          const active = p.code === plan
+          const price = cycle === 'yearly' ? p.monthly * catalog.yearlyMonths : p.monthly
+          return (
+            <button key={p.code} role="radio" aria-checked={active} onClick={() => choosePlan(p.code)}
+              className={`text-left p-4 rounded-xl border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${active ? 'border-[var(--primary)] bg-[var(--primary-soft)]' : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]'}`}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[var(--fg-1)]">{p.name}</span>
+                {active && <Check className="w-4 h-4 text-[var(--primary)]" />}
+              </div>
+              <div className="text-xl font-bold text-[var(--fg-1)] mt-1 tabular-nums">{baht(price)}</div>
+              <div className="text-xs text-[var(--fg-3)]">/{cycle === 'yearly' ? 'ปี' : 'เดือน'} · {p.includedPacks === 'all' ? 'ครบ 4 Pack' : p.includedPacks ? `${p.includedPacks} Pack` : 'ไม่มี Pack'}</div>
+              {current.planCode === p.code && <div className="text-xs mt-1 text-[var(--success)]">แพ็กปัจจุบัน</div>}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
+          {selected.includedPacks !== 'all' && selected.canBuyPacks && (
+            <fieldset className="phopy-card p-5">
+              <legend className="sr-only">เลือก Pack</legend>
+              <h2 className="font-semibold text-[var(--fg-1)]">เลือก Pack</h2>
+              <p className="text-xs text-[var(--fg-3)] mb-3">รวมในแพ็ก {selected.includedPacks} Pack · เกินจากนี้ Pack ละ {baht(catalog.packPrice)}/เดือน</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {catalog.packs.map(code => (
+                  <label key={code} className="flex items-center gap-2 text-sm text-[var(--fg-2)] cursor-pointer">
+                    <input type="checkbox" checked={packs.includes(code)}
+                      onChange={() => setPacks(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])} />
+                    {PACK_LABEL[code] ?? code}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
+          <fieldset className="phopy-card p-5 space-y-3">
+            <legend className="sr-only">Add-on</legend>
+            <h2 className="font-semibold text-[var(--fg-1)]">Add-on</h2>
+            <label className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+              ผู้ใช้เพิ่ม
+              <input type="number" min={0} max={selected.extraUser.maxExtra} value={addons.extra_users ?? 0}
+                onChange={e => {
+                  const n = Math.max(0, Math.min(selected.extraUser.maxExtra, Math.floor(Number(e.target.value) || 0)))
+                  setAddons(prev => ({ ...prev, extra_users: n }))
+                }}
+                className="w-20 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-1)]" />
+              คน <span className="text-xs text-[var(--fg-4)]">({baht(selected.extraUser.price)}/คน/เดือน · สูงสุด {selected.extraUser.maxExtra})</span>
+            </label>
+            {Object.entries(selected.addons).map(([code, price]) => (
+              <label key={code} className="flex items-center gap-2 text-sm text-[var(--fg-2)] cursor-pointer">
+                <input type="checkbox" checked={(addons[code] ?? 0) > 0}
+                  onChange={e => setAddons(prev => ({ ...prev, [code]: e.target.checked ? 1 : 0 }))} />
+                {ADDON_LABEL[code] ?? code} <span className="text-xs text-[var(--fg-4)]">+{baht(price)}/เดือน</span>
+              </label>
+            ))}
+            {Object.keys(selected.addons).length === 0 && (
+              <p className="text-xs text-[var(--fg-4)]">Add-on โมดูลรวมอยู่ในแพ็กนี้แล้ว</p>
+            )}
+          </fieldset>
+        </div>
+
+        <aside className="phopy-card p-5 h-fit space-y-3 lg:sticky lg:top-4">
+          <h2 className="font-semibold text-[var(--fg-1)]">สรุปยอดต่อ{cycle === 'yearly' ? 'ปี' : 'เดือน'}</h2>
+          <dl className="text-sm space-y-1.5">
+            <div className="flex justify-between"><dt className="text-[var(--fg-3)]">ก่อน VAT</dt><dd className="tabular-nums">{baht(pricing.sub)}</dd></div>
+            <div className="flex justify-between"><dt className="text-[var(--fg-3)]">VAT {catalog.vatPercent}%</dt><dd className="tabular-nums">{baht(pricing.vat)}</dd></div>
+            <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-2"><dt>รวม</dt><dd className="tabular-nums">{baht(pricing.total)}</dd></div>
+          </dl>
+          {trialEligible && !current.hasSubscription && (
+            <p className="text-xs text-[var(--success)]">ทดลองใช้ฟรี 30 วัน ไม่ต้องใส่บัตร — ถ้าไม่ใส่บัตรก่อนครบ ระบบจะกลับเป็นแพ็ก Free อัตโนมัติ</p>
+          )}
+          {current.hasSubscription && (
+            <p className="text-xs text-[var(--fg-3)]">เปลี่ยนแพ็กกลางรอบ Stripe จะคิดส่วนต่างตามวันที่เหลือ และตัดบัตรเดิมทันที</p>
+          )}
+          <button onClick={submit} disabled={busy || isCurrent}
+            className="w-full phopy-btn-primary flex items-center justify-center gap-2 py-2.5 rounded-lg disabled:opacity-50">
+            {busy && <RefreshCw className="w-4 h-4 animate-spin" />}
+            {isCurrent ? 'แพ็กปัจจุบัน' : submitLabel}
+          </button>
+          <p className="text-[11px] text-[var(--fg-4)]">ชำระเงินผ่าน Stripe · ออกใบเสร็จ/ใบกำกับภาษีให้ทางอีเมล</p>
+        </aside>
+      </div>
+    </div>
+  )
+}

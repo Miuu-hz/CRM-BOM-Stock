@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -1147,6 +1147,9 @@ function GeneralSettings() {
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.subscriptionPlan')}</label>
             <p className="font-semibold text-[var(--primary)]">{subPlanName || '-'}</p>
+            {(isAdmin || isMaster) && (
+              <Link to="/billing" className="text-xs text-[var(--primary)] underline underline-offset-2">เปลี่ยนแพ็กเกจ / ชำระเงิน</Link>
+            )}
           </div>
         </div>
       </div>

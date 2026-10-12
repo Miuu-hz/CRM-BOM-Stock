@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import { stripNonAscii, EMAIL_REGEX } from '../utils/email'
+import SignupPlan from '../components/SignupPlan'
 
 type Mode = 'login' | 'signup' | 'submitted'
 
@@ -34,7 +35,14 @@ function Login() {
   const { t } = useTranslation()
   const { login } = useAuth()
 
-  const [mode, setMode] = useState<Mode>('login')
+  // มาจากปุ่มบนหน้าราคา phopy.net: ?plan=solo&cycle=monthly → เปิดหน้าสมัครพร้อมแพ็กนั้น แล้วไปจ่ายที่ Stripe
+  // ?signup=success|cancel = กลับมาจาก Stripe
+  const [urlParams] = useState(() => new URLSearchParams(window.location.search))
+  const paidPlan = urlParams.get('plan') && urlParams.get('plan') !== 'free' ? urlParams.get('plan') : null
+  const planCycle: 'monthly' | 'yearly' = urlParams.get('cycle') === 'yearly' ? 'yearly' : 'monthly'
+  const signupReturn = urlParams.get('signup')
+  const [packs, setPacks] = useState<string[]>([])
+  const [mode, setMode] = useState<Mode>(urlParams.get('plan') ? 'signup' : 'login')
 
   // ── Login state ──
   const [email, setEmail] = useState('')
@@ -103,7 +111,10 @@ function Login() {
         password: su.password,
         phone: su.phone.trim(),
         website: su.website, // honeypot
+        ...(paidPlan ? { plan: paidPlan, cycle: planCycle, packs } : {}),
       })
+      // แพ็กเสียเงิน → ไปหน้าชำระเงินของ Stripe (บริษัทถูกสร้างให้อัตโนมัติเมื่อจ่าย/เริ่มทดลองสำเร็จ)
+      if (res.data?.data?.checkoutUrl) { window.location.href = res.data.data.checkoutUrl; return }
       if (res.data?.success) setMode('submitted')
       else setSuErr(res.data?.message || 'สมัครไม่สำเร็จ')
     } catch (err: any) {
@@ -163,13 +174,18 @@ function Login() {
           <img src="/brand/phopy-wordmark-trim.png" alt={t('app.name')}
             className="brand-wordmark h-8 w-auto object-contain" />
           <p className="text-[var(--fg-3)] mt-2">
-            {mode === 'login' ? t('app.tagline') : mode === 'signup' ? 'สมัครใช้งานฟรี เริ่มต้นใน 1 นาที' : ''}
+            {mode === 'login' ? t('app.tagline') : mode === 'signup' ? (paidPlan ? 'สมัครแล้วเริ่มใช้งานได้ทันที' : 'สมัครใช้งานฟรี เริ่มต้นใน 1 นาที') : ''}
           </p>
         </div>
 
         {/* ==================== LOGIN ==================== */}
         {mode === 'login' && (
           <>
+            {signupReturn === 'success' && (
+              <div className="mb-6 p-3 bg-[var(--success-soft)] border border-success/30 rounded-lg text-[var(--success)] text-sm">
+                สมัครเรียบร้อย เข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ตั้งไว้ได้เลย (ถ้ายังเข้าไม่ได้ รอสักครู่แล้วลองใหม่)
+              </div>
+            )}
             {error && (
               <div className="mb-6 p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-danger text-sm">
                 {error}
@@ -229,6 +245,10 @@ function Login() {
               ))}
             </div>
 
+            {paidPlan && <SignupPlan plan={paidPlan} cycle={planCycle} packs={packs} onPacksChange={setPacks} />}
+            {signupReturn === 'cancel' && !suErr && (
+              <div className="mb-4 p-3 bg-[var(--surface-2)] rounded-lg text-[var(--fg-2)] text-sm">ยกเลิกการชำระเงินแล้ว ยังไม่มีการตัดเงิน — สมัครใหม่ได้เลย</div>
+            )}
             {suErr && (
               <div className="mb-4 p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-danger text-sm">{suErr}</div>
             )}
@@ -270,7 +290,7 @@ function Login() {
                 className="flex-1 phopy-btn-primary flex items-center justify-center gap-2 disabled:opacity-50">
                 {suBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                   <>
-                    <span>{step === STEPS.length - 1 ? 'สมัครใช้ฟรี' : 'ถัดไป'}</span>
+                    <span>{step === STEPS.length - 1 ? (paidPlan ? 'ไปหน้าชำระเงิน' : 'สมัครใช้ฟรี') : 'ถัดไป'}</span>
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}

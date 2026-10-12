@@ -146,6 +146,7 @@ import kdsRoutes from './routes/kds.routes'
 
 
 import lineBotRoutes from './routes/line-bot.routes'
+import billingRoutes from './routes/billing.routes'
 
 
 import settingsRoutes from './routes/settings.routes'
@@ -306,7 +307,7 @@ const globalLimiter = rateLimit({
   // Skip rate limiting for health checks and agent webhooks
 
 
-  skip: (req) => req.path === '/api/health' || req.path.startsWith('/api/agent/webhook'),
+  skip: (req) => req.path === '/api/health' || req.path.startsWith('/api/agent/webhook') || req.path === '/api/billing/webhook',
 
 
 })
@@ -346,6 +347,8 @@ app.use(cors({
 
 
 app.use('/api/line/webhook', express.raw({ type: 'application/json' }))
+// Stripe ตรวจลายเซ็นจาก raw body เหมือนกัน
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }))
 
 
 
@@ -622,6 +625,8 @@ app.use('/api/subcontracts', subcontractRoutes)
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)
 app.use('/api/master', masterRoutes)
+// ไม่ผ่าน subscriptionGate — แพ็กหมดอายุแล้วก็ต้องเข้ามาต่ออายุได้
+app.use('/api/billing', billingRoutes)
 setupMcpRoutes(app as unknown as import('express').Router)
 
 
