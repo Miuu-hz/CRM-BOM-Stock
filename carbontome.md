@@ -1118,3 +1118,31 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - 🐛 แก้ไปด้วย: `matchStockItem` เดิมกรอง `status = 'ACTIVE'` → ของที่ "หมด" (OUT 28 ตัว / LOW / ADEQUATE) ผูกด้วยชื่อตรงไม่ได้ → เปลี่ยนเป็น `!= 'INACTIVE'` (INACTIVE คือสถานะปิดใช้ตัวเดียว) · ลบ try/catch อ่าน `purchase_order_items.unit` แบบ schema เก่าใน confirm GR (คอลัมน์มีแล้ว = โค้ดตาย)
 - ยังไม่มี: หน้าจอดู/ลบชื่อรองโดยตรง (ตอนนี้แก้ได้ด้วยการผูกใหม่แล้วยืนยัน GR หรือสร้าง SKU ชื่อนั้นแยก)
 - เทสต์ `services/stockItemAlias.test.ts` 5 ตัว · ชุดเต็ม 63 ไฟล์ 364 ผ่าน · build backend+frontend + restart แล้ว · migration รันบน production แล้ว
+
+
+---
+
+## 📅 Session Log — 12 ตุลาคม 2026 (ของไม่นับสต็อกลงบัญชีผิดฝั่ง + แผน MCP instructions)
+
+### ✅ ของไม่นับสต็อก (`skip_stock`) ลงบัญชีค่าใช้จ่ายแยกหมวด — commit `87b9f7a`
+- บั๊ก: ใบแจ้งหนี้ซื้อ Dr 1107 สต็อกวัตถุดิบเต็มก้อน รวมบรรทัด `skip_stock` (น้ำมัน/ของใช้/บรรจุภัณฑ์) → 1107 พองเกินของจริง และ Phopy Board (Executive overview) ไม่เห็นค่าใช้จ่ายกลุ่มนี้ใน KPI/OPEX/กำไร (เห็นแค่ในก้อน "ไม่ระบุหมวด" ที่อ่านจาก PO)
+- แก้: `purchase_order_items.expense_account_id` เลือกต่อบรรทัด (ว่าง = 5403) · `purchaseBilling.service.ts` Dr แยกตามบัญชีตามสัดส่วน (รวมส่วนลด/VAT ขอคืนไม่ได้) · บัญชีใหม่ 5313 ค่าวัสดุสิ้นเปลือง · Phopy Board ตัด skip_stock ออกจากก้อนซื้อตามหมวด · MCP `create_draft_po`/`update_purchase_order` รับ `expenseAccountCode` และไม่ทิ้ง skip_stock/notes
+- ข้อมูลย้อนหลัง: `scripts/classifyNonStockLines.js` จัดหมวด 62 บรรทัด + `scripts/reclassSkipStockInvoices.js` JV `PURCHASE_INVOICE_RECLASS` 19 ใบ ฿7,992.43 (tenant_bb_pillow) ลงแล้ว
+- ค้าง: 7 บรรทัดหมวดไม่ชัด (ถุงเท้า ELLE, DIY, ลูกบอลตกแต่ง) อยู่ 5403 รอเจ้าของยืนยัน · GL 1107 (48,787) ต่ำกว่ามูลค่าสต็อกจริง (49,514) ฿726 ยังไม่กระทบยอด — เริ่มดูจาก 5 ใบที่ย้ายได้ไม่เต็มเพราะส่วนต่างค้างใน 2109
+
+### 📌 แผน: MCP `instructions` + `get_erp_guide` (ยังไม่ทำ — เลื่อนไว้ มีงานใหญ่กว่า)
+สภาพตอนนี้: `mcp/server.ts` สร้าง `new McpServer({ name, version })` เฉย ๆ ไม่มี `instructions` และไม่มี resources · มี 44 tools ซึ่งคำอธิบาย tool ทั้งหมดถูกส่งให้ agent ทุก request อยู่แล้ว
+
+เทียบทางเลือก:
+
+| | `instructions` | Schema Resources | tool `get_erp_guide(topic)` |
+|---|---|---|---|
+| ใครโหลด | client ใส่ system prompt ให้อัตโนมัติตอนเชื่อมต่อ | client/ผู้ใช้เลือกแนบเอง | โมเดลเลือกเรียกเอง |
+| กิน token | ทุก request (มัก cache ได้) | เฉพาะตอนถูกอ่าน | เฉพาะตอนเรียก |
+| agent เห็นแน่ไหม | แน่ | ไม่แน่ (หลาย client ไม่อ่าน resource) | บ่อยกว่า resource มาก |
+
+ตัดสินใจ: ทำ 2 ชั้น — **ไม่ทำ resources** จนกว่าจะมี client ที่ใช้อยู่จริงและอ่าน resource แน่
+1. `instructions` สั้น ~300–500 token: กฎเหล็ก 5–8 ข้อจากด่านที่ระบบบังคับอยู่แล้ว เช่น หา SKU ด้วย search ก่อนผูก · ของไม่นับสต็อกต้อง `skipStock` + `expenseAccountCode` · หน่วยต้องมีกฎแปลง · PO/PR ที่สร้างเป็นร่างเสมอ (approval gate) · tool บัญชีเห็นเฉพาะ MASTER/ADMIN · ถ้าต้องการรายละเอียดให้เรียก `get_erp_guide`
+2. `get_erp_guide(topic)` read-only: schema ย่อ, กฎหน่วย 3 ชั้น, ผังบัญชีค่าใช้จ่าย, flow PO→GR→PI
+- ก่อนลงจริง: วัดขนาด token ของ instructions + ทดสอบกับ Claude client จริงว่าโผล่ใน system prompt
+- ข้อควรจำ: context ช่วยลดการเรียกผิด แต่แทนด่านตรวจฝั่ง server ไม่ได้ (บั๊กเก่าแบบ "ข้าวโพด" → "สลัดทูน่าข้าวโพด" หายเพราะ guard ไม่ใช่เพราะ context)
