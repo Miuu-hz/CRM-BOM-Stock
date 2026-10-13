@@ -7,7 +7,7 @@ import { getSubscription } from '../services/subscription.service'
 import authRouter from './auth.routes'
 
 const app = express()
-app.set('trust proxy', true)  // แยก IP ต่อคำขอ ไม่ให้ชน limiter 5 ครั้ง/ชม.
+app.set('trust proxy', 1)  // แยก IP ต่อคำขอ (ค่าเดียวกับ index.ts) ไม่ให้ชน limiter 5 ครั้ง/ชม.
 app.use(express.json())
 let ip = 0
 const register = (b: object) => request(app).post('/api/auth/register').set('X-Forwarded-For', `10.9.0.${++ip}`).send(b)

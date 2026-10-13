@@ -5,8 +5,8 @@ import Stripe from 'stripe'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { getSubscription } from './subscription.service'
-import { parseSelection, lineItems, subtotal, priceDefinitions, BillingError } from './billing.catalog'
-import { applySubscription, changeParams, handleEvent, trialFor, SubscriptionLike } from './billing.service'
+import { parseSelection, lineItems, subtotal, priceDefinitions, BillingError, classifyChange } from './billing.catalog'
+import { applySubscription, assertFits, changeParams, handleEvent, trialFor, SubscriptionLike } from './billing.service'
 import billingRouter from '../routes/billing.routes'
 
 const sel = (over: Record<string, unknown>) => parseSelection({ plan: 'business', cycle: 'monthly', packs: ['shop', 'maker'], addons: {}, ...over })
@@ -209,6 +209,86 @@ describe('ทดลองใช้ (TRIAL) ใน getSubscription', () => {
     expect(s.packs).toEqual([])
     expect(s.features).not.toContain('accounting')
     expect(s.maxUsers).toBe(1)
+  })
+})
+
+describe('ขึ้นหรือลงแพ็ก (classifyChange) — ลง = มีผลวันครบรอบ ไม่คืนเงิน', () => {
+  const S = (plan: string, cycle: 'monthly' | 'yearly', packs: string[] = [], addons: Record<string, number> = {}) =>
+    parseSelection({ plan, cycle, packs, addons })
+  it.each([
+    ['Business → Solo', S('business', 'yearly', ['shop', 'maker']), S('solo', 'yearly'), 'downgrade'],
+    ['Business → Business+', S('business', 'monthly', ['shop', 'maker']), S('business_plus', 'monthly', ['shop', 'maker', 'online']), 'upgrade'],
+    ['รายเดือน → รายปี แพ็กเดิม', S('solo', 'monthly'), S('solo', 'yearly'), 'upgrade'],
+    ['รายปี → รายเดือน แพ็กเดิม', S('solo', 'yearly'), S('solo', 'monthly'), 'downgrade'],
+    ['รายปี → รายเดือน แต่ขึ้นแพ็ก (ยังจ่ายปีไว้แล้ว)', S('solo', 'yearly'), S('pro', 'monthly'), 'downgrade'],
+    ['ถอด Add-on', S('business', 'monthly', ['shop', 'maker'], { backup: 1 }), S('business', 'monthly', ['shop', 'maker']), 'downgrade'],
+    ['เพิ่ม Pack', S('business', 'monthly', ['shop', 'maker']), S('business', 'monthly', ['shop', 'maker', 'online']), 'upgrade'],
+    ['ลดผู้ใช้เพิ่ม', S('pro', 'monthly', [], { extra_users: 3 }), S('pro', 'monthly', [], { extra_users: 1 }), 'downgrade'],
+    ['สลับ Pack ราคาเท่าเดิม', S('business', 'monthly', ['shop', 'maker']), S('business', 'monthly', ['shop', 'online']), 'upgrade'],
+  ])('%s → %s', (_name, cur, next, expected) => {
+    expect(classifyChange(cur as any, next as any)).toBe(expected)
+  })
+})
+
+describe('ด่านลดแพ็ก: ผู้ใช้ต้องพอดีแพ็กใหม่ (assertFits)', () => {
+  const seedUsers = (n: number) => {
+    const tenantId = `t_${generateId()}`
+    for (let i = 0; i < n; i++) {
+      db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'u', 'USER', ?, 'active')`)
+        .run(generateId(), `fit-${generateId()}@example.com`, tenantId)
+    }
+    return tenantId
+  }
+  it('3 คน → Solo (1 คน) ไม่ได้ บอกว่าต้องลดเหลือกี่คน', () => {
+    const t = seedUsers(3)
+    expect(() => assertFits(t, parseSelection({ plan: 'solo', cycle: 'monthly' }))).toThrow('ลบผู้ใช้ให้เหลือ 1 คน')
+  })
+  it('ซื้อผู้ใช้เพิ่มให้พอ → ผ่าน', () => {
+    const t = seedUsers(2)
+    expect(() => assertFits(t, parseSelection({ plan: 'solo', cycle: 'monthly', addons: { extra_users: 1 } }))).not.toThrow()
+  })
+  it('3 คน → Business (3 คน) ผ่าน', () => {
+    const t = seedUsers(3)
+    expect(() => assertFits(t, parseSelection({ plan: 'business', cycle: 'monthly', packs: ['shop', 'maker'] }))).not.toThrow()
+  })
+})
+
+describe('สถานะลดแพ็กที่ตั้งเวลาไว้ / ยกเลิกต่ออายุ (applySubscription)', () => {
+  const pendingOf = (t: string) => (db.prepare('SELECT pending_change, cancel_at FROM tenant_subscriptions WHERE tenant_id = ?').get(t) as any)
+  const withPending = (sub: SubscriptionLike) => {
+    applySubscription(sub)
+    const pending = { plan: 'solo', cycle: 'monthly', packs: [], addons: {}, effectiveAt: '2026-12-01T00:00:00.000Z' }
+    db.prepare('UPDATE tenant_subscriptions SET pending_change = ? WHERE tenant_id = ?').run(JSON.stringify(pending), sub.metadata.tenant_id)
+  }
+  it('ยังรอวันครบรอบ (มี schedule, แพ็กยังเป็นของเดิม) → เก็บไว้', () => {
+    const t = `t_${generateId()}`
+    const sub = fakeSub(t, { schedule: 'sub_sched_1' })
+    withPending(sub)
+    applySubscription(sub)
+    expect(pendingOf(t).pending_change).toContain('"solo"')
+  })
+  it('ถึงวันแล้ว Stripe เปลี่ยนเป็นแพ็กใหม่ → ล้าง และสิทธิ์เป็นแพ็กใหม่', () => {
+    const t = `t_${generateId()}`
+    const sub = fakeSub(t, { schedule: 'sub_sched_1' })
+    withPending(sub)
+    applySubscription({ ...sub, metadata: { tenant_id: t, plan: 'solo', cycle: 'monthly', packs: '', addons: '{}' } })
+    expect(pendingOf(t).pending_change).toBeNull()
+    expect(getSubscription(t).planCode).toBe('solo')
+  })
+  it('schedule ถูกปล่อย/ยกเลิก → ล้าง', () => {
+    const t = `t_${generateId()}`
+    const sub = fakeSub(t, { schedule: 'sub_sched_1' })
+    withPending(sub)
+    applySubscription({ ...sub, schedule: null })
+    expect(pendingOf(t).pending_change).toBeNull()
+  })
+  it('กดยกเลิกใน Portal → จำวันสิ้นสุด, กลับมาต่ออายุ → ล้าง', () => {
+    const t = `t_${generateId()}`
+    const sub = fakeSub(t, { cancel_at_period_end: true })
+    applySubscription(sub)
+    expect(new Date(pendingOf(t).cancel_at).getTime()).toBe(sub.items.data[0].current_period_end * 1000)
+    applySubscription({ ...sub, cancel_at_period_end: false })
+    expect(pendingOf(t).cancel_at).toBeNull()
   })
 })
 

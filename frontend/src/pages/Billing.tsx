@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { CreditCard, ExternalLink, RefreshCw, Check } from 'lucide-react'
+import { CreditCard, ExternalLink, RefreshCw, Check, CalendarClock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 
@@ -19,6 +19,7 @@ type Preview =
   | { kind: 'checkout' }
   | { kind: 'trial' }
   | { kind: 'change'; credit: number; charge: number; tax: number; total: number; nextBilling: string | null }
+  | { kind: 'downgrade'; effectiveAt: string; blocked: string | null }
 
 interface BillingData {
   current: {
@@ -31,6 +32,8 @@ interface BillingData {
     addons: Record<string, number>
     hasSubscription: boolean
     hasCustomer: boolean
+    cancelAt: string | null
+    pendingChange: { plan: string; planName: string; cycle: 'monthly' | 'yearly'; packs: string[]; effectiveAt: string } | null
   }
   trialEligible: boolean
   catalog: { yearlyMonths: number; packPrice: number; vatPercent: number; packs: string[]; plans: CatalogPlan[] }
@@ -52,6 +55,7 @@ const ADDON_LABEL: Record<string, string> = {
 const baht = (n: number) => `฿${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
 // รายปีคิด yearlyMonths เดือน (10) — โชว์เป็น "ราคา 1 ปีที่ลดแล้ว" เทียบกับจ่ายรายเดือน 12 เดือน
 const yearlyDiscountPct = (yearlyMonths: number) => Math.round((1 - yearlyMonths / 12) * 100)
+const thDate = (iso: string) => new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export default function Billing() {
   const { user } = useAuth()
@@ -156,10 +160,24 @@ export default function Billing() {
         window.location.href = res.data.data.url
         return
       }
-      toast.success('เปลี่ยนแพ็กเกจแล้ว ใช้งานได้ทันที')
+      if (res.data.data.scheduled) toast.success(`ตั้งเวลาเปลี่ยนแพ็กแล้ว มีผล ${thDate(res.data.data.effectiveAt)}`)
+      else toast.success('เปลี่ยนแพ็กเกจแล้ว ใช้งานได้ทันที')
       await load()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'ดำเนินการไม่สำเร็จ')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelPending = async () => {
+    setBusy(true)
+    try {
+      await api.post('/billing/cancel-pending')
+      toast.success('ยกเลิกการเปลี่ยนแพ็กแล้ว ใช้แพ็กปัจจุบันต่อตามปกติ')
+      await load()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ยกเลิกไม่สำเร็จ')
     } finally {
       setBusy(false)
     }
@@ -202,6 +220,7 @@ export default function Billing() {
             {current.currentPeriodEnd && current.status === 'ACTIVE' && <> · ใช้ได้ถึง {new Date(current.currentPeriodEnd).toLocaleDateString('th-TH')}</>}
             {current.currentPeriodEnd && current.status === 'TRIAL' && <b className="text-[var(--warning)]"> · ทดลองใช้ฟรีถึง {new Date(current.currentPeriodEnd).toLocaleDateString('th-TH')} (ไม่สมัครต่อ = กลับเป็น Free ข้อมูลอยู่ครบ)</b>}
             {current.status === 'EXPIRED' && <b className="text-[var(--danger)]"> · หมดอายุแล้ว</b>}
+            {current.cancelAt && <b className="text-[var(--danger)]"> · ยกเลิกแล้ว ใช้ได้ถึง {thDate(current.cancelAt)} (ไม่ต่ออายุ)</b>}
           </p>
         </div>
         {current.hasCustomer && (
@@ -211,6 +230,21 @@ export default function Billing() {
           </button>
         )}
       </div>
+
+      {current.pendingChange && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--warning)]/40 bg-[var(--warning-soft)] p-4" role="status">
+          <CalendarClock className="w-5 h-5 text-warning flex-shrink-0" />
+          <p className="flex-1 text-sm text-[var(--fg-1)]">
+            ตั้งเวลาเปลี่ยนเป็น <b>{current.pendingChange.planName}</b> ({current.pendingChange.cycle === 'yearly' ? 'รายปี' : 'รายเดือน'})
+            {current.pendingChange.packs.length > 0 && <> · Pack: {current.pendingChange.packs.join(', ')}</>}
+            {' '}มีผล <b>{thDate(current.pendingChange.effectiveAt)}</b> — ถึงวันนั้นยังใช้แพ็กปัจจุบันได้ครบ
+          </p>
+          <button onClick={cancelPending} disabled={busy}
+            className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg-2)] hover:bg-[var(--surface-2)] disabled:opacity-50">
+            ยกเลิกการเปลี่ยน
+          </button>
+        </div>
+      )}
 
       <div className="inline-flex rounded-lg border border-[var(--border)] p-1 bg-[var(--surface-2)]" role="radiogroup" aria-label="รอบบิล">
         {(['monthly', 'yearly'] as const).map(c => (
@@ -315,13 +349,26 @@ export default function Billing() {
               <div className="flex justify-between"><span className="text-[var(--fg-3)]">VAT</span><span className="tabular-nums">{baht(preview.tax)}</span></div>
               <div className="flex justify-between font-bold text-[var(--fg-1)] border-t border-[var(--border)] pt-1"><span>จ่ายวันนี้</span><span className="tabular-nums">{baht(preview.total)}</span></div>
               {preview.nextBilling && <p className="text-xs text-[var(--fg-3)]">รอบบิลใหม่เริ่มวันนี้ ต่ออายุครั้งถัดไป {new Date(preview.nextBilling).toLocaleDateString('th-TH')}</p>}
-              {preview.total === 0 && preview.credit > preview.charge && <p className="text-xs text-[var(--fg-3)]">มูลค่าที่เหลือเกินค่าแพ็กใหม่ ส่วนเกินเก็บเป็นเครดิตใช้รอบถัดไป</p>}
+              {current.pendingChange && <p className="text-xs text-warning">การลดแพ็กที่ตั้งเวลาไว้จะถูกยกเลิก</p>}
             </div>
           )}
-          <button onClick={submit} disabled={busy || isCurrent}
+          {current.hasSubscription && !isCurrent && preview?.kind === 'downgrade' && (
+            preview.blocked
+              ? <p className="rounded-lg bg-[var(--danger-soft)] p-3 text-sm text-danger" role="alert">{preview.blocked}</p>
+              : (
+                <div className="rounded-lg bg-[var(--surface-2)] p-3 text-sm space-y-1">
+                  <p className="font-semibold text-[var(--fg-1)]">ลดแพ็ก — มีผล {thDate(preview.effectiveAt)}</p>
+                  <p className="text-xs text-[var(--fg-3)]">ใช้แพ็กปัจจุบันได้ครบจนถึงวันนั้น (จ่ายไว้แล้ว) ไม่มีการคืนเงิน แล้วเริ่มตัดราคาใหม่ {baht(pricing.total)} ในวันนั้น · ยกเลิกการเปลี่ยนได้ก่อนถึงวัน</p>
+                </div>
+              )
+          )}
+          <button onClick={submit} disabled={busy || isCurrent || (preview?.kind === 'downgrade' && !!preview.blocked)}
             className="w-full phopy-btn-primary flex items-center justify-center gap-2 py-2.5 rounded-lg disabled:opacity-50">
             {busy && <RefreshCw className="w-4 h-4 animate-spin" />}
-            {isCurrent ? 'แพ็กปัจจุบัน' : preview?.kind === 'change' ? `จ่าย ${baht(preview.total)} และเปลี่ยนแพ็ก` : submitLabel}
+            {isCurrent ? 'แพ็กปัจจุบัน'
+              : preview?.kind === 'change' ? `จ่าย ${baht(preview.total)} และเปลี่ยนแพ็ก`
+              : preview?.kind === 'downgrade' ? `ตั้งเวลาลดแพ็ก (มีผล ${thDate(preview.effectiveAt)})`
+              : submitLabel}
           </button>
           <p className="text-[11px] text-[var(--fg-4)]">ชำระเงินผ่าน Stripe · ออกใบเสร็จ/ใบกำกับภาษีให้ทางอีเมล</p>
           <a href="https://phopy.net/compare/" target="_blank" rel="noopener noreferrer" className="block text-xs text-[var(--primary)] underline underline-offset-2">ดูตารางเปรียบเทียบว่าแต่ละแพ็กได้อะไรบ้าง</a>

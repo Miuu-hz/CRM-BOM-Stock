@@ -195,3 +195,14 @@ export function publicCatalog() {
     plans: Object.entries(PLAN_PRICING).map(([code, p]) => ({ code, ...p })),
   }
 }
+
+// ราคารวมต่อเดือนแบบไม่คิดส่วนลดรายปี — ใช้เทียบว่าการเปลี่ยนแพ็กเป็นขึ้นหรือลง
+export const monthlyValue = (sel: Selection): number => subtotal({ ...sel, cycle: 'monthly' })
+
+// อัปเกรด = มีผลทันที (เก็บส่วนต่าง) · ดาวน์เกรด = มีผลวันครบรอบ ไม่คืนเงิน (ลูกค้าใช้ของที่จ่ายแล้วจนครบ)
+// - รายปี → รายเดือน นับเป็นดาวน์เกรดเสมอ (จ่ายล่วงหน้าทั้งปีไปแล้ว)
+// - ราคาเท่าเดิม (เช่นสลับ Pack) = มีผลทันที
+export function classifyChange(current: Selection, next: Selection): 'upgrade' | 'downgrade' {
+  if (current.cycle === 'yearly' && next.cycle === 'monthly') return 'downgrade'
+  return monthlyValue(next) >= monthlyValue(current) ? 'upgrade' : 'downgrade'
+}

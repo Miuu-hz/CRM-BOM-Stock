@@ -1446,6 +1446,8 @@ export function runMigrations(db: any): void {
     ['addons', `TEXT DEFAULT '{}'`],
     ['stripe_customer_id', 'TEXT'],
     ['stripe_subscription_id', 'TEXT'],
+    ['pending_change', 'TEXT'], // JSON Selection + effectiveAt: ลดแพ็กที่ตั้งเวลาไว้ (มีผลวันครบรอบ)
+    ['cancel_at', 'TEXT'],      // กดยกเลิกใน Stripe Portal แล้ว ใช้ได้ถึงวันนี้
   ] as const) {
     try { db.exec(`ALTER TABLE tenant_subscriptions ADD COLUMN ${col} ${def}`) } catch { /* มีแล้ว */ }
   }

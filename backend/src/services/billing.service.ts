@@ -1,7 +1,7 @@
 import Stripe from 'stripe'
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/sqlite'
-import { BillingError, lineItems, parseSelection, Selection } from './billing.catalog'
+import { BillingError, classifyChange, lineItems, parseSelection, PLAN_PRICING, Selection } from './billing.catalog'
 import { TRIAL_DAYS } from './provisioning'
 
 let client: Stripe | null = null
@@ -48,7 +48,14 @@ export interface SubscriptionLike {
   customer: string | { id: string }
   metadata: Record<string, string>
   items: { data: { current_period_end: number }[] }
+  cancel_at_period_end?: boolean
+  schedule?: string | { id: string } | null
 }
+
+const sameSelection = (a: Selection, b: Selection) =>
+  a.plan === b.plan && a.cycle === b.cycle &&
+  JSON.stringify([...a.packs].sort()) === JSON.stringify([...b.packs].sort()) &&
+  JSON.stringify(Object.entries(a.addons).sort()) === JSON.stringify(Object.entries(b.addons).sort())
 
 // เขียนสิทธิ์ของ tenant ตามสถานะ subscription ใน Stripe — เรียกซ้ำกี่ครั้งก็ได้ผลเท่าเดิม
 export function applySubscription(sub: SubscriptionLike): void {
@@ -58,7 +65,7 @@ export function applySubscription(sub: SubscriptionLike): void {
     return
   }
   const db = getDb()
-  const current = db.prepare('SELECT stripe_subscription_id FROM tenant_subscriptions WHERE tenant_id = ?').get(tenantId) as any
+  const current = db.prepare('SELECT stripe_subscription_id, pending_change FROM tenant_subscriptions WHERE tenant_id = ?').get(tenantId) as any
   // subscription เก่าที่ถูกแทนแล้ว (เช่นยกเลิกแล้วสมัครใหม่) ห้ามมาทับสิทธิ์ของตัวใหม่
   if (current?.stripe_subscription_id && current.stripe_subscription_id !== sub.id) {
     console.warn(`[billing] ข้าม ${sub.id}: tenant ${tenantId} ใช้ ${current.stripe_subscription_id} อยู่`)
@@ -73,19 +80,30 @@ export function applySubscription(sub: SubscriptionLike): void {
     // เลิกจ่าย → กลับเป็น Free (ข้อมูลอยู่ครบ) แทนที่จะล็อกทั้งบริษัท
     upsert(tenantId, {
       plan_code: 'free', status: 'FREE', billing_cycle: null, current_period_end: null,
-      packs: '[]', addons: '{}', stripe_customer_id: customerId, stripe_subscription_id: null, updated_at: now,
+      packs: '[]', addons: '{}', stripe_customer_id: customerId, stripe_subscription_id: null,
+      pending_change: null, cancel_at: null, updated_at: now,
     })
     return
   }
 
   // active / trialing / past_due (Stripe กำลังตัดบัตรซ้ำ) / paused → ใช้ได้ถึงสิ้นรอบ
   const sel = fromMetadata(sub.metadata)
-  const periodEnd = Math.max(...sub.items.data.map(i => i.current_period_end)) * 1000 + GRACE_MS
+  const paidUntil = Math.max(...sub.items.data.map(i => i.current_period_end)) * 1000
+  // การลดแพ็กที่ตั้งเวลาไว้: หมดเมื่อมีผลแล้ว (metadata เป็นแพ็กใหม่) หรือ schedule ถูกปล่อย/ยกเลิก
+  let pending: string | null = current?.pending_change ?? null
+  if (pending) {
+    const p = JSON.parse(pending) as Selection
+    if (!sub.schedule || sameSelection(p, sel)) pending = null
+  }
   upsert(tenantId, {
     plan_code: sel.plan, status: 'ACTIVE', billing_cycle: sel.cycle,
-    current_period_end: new Date(periodEnd).toISOString(),
+    current_period_end: new Date(paidUntil + GRACE_MS).toISOString(),
     packs: JSON.stringify(sel.packs), addons: JSON.stringify(sel.addons),
-    stripe_customer_id: customerId, stripe_subscription_id: sub.id, updated_at: now,
+    stripe_customer_id: customerId, stripe_subscription_id: sub.id,
+    pending_change: pending,
+    // กดยกเลิกใน Customer Portal = ใช้ได้ถึงสิ้นรอบ ไม่ต่ออายุ
+    cancel_at: sub.cancel_at_period_end ? new Date(paidUntil).toISOString() : null,
+    updated_at: now,
   })
 }
 
@@ -183,7 +201,7 @@ async function vatRate(): Promise<string> {
   return vat.id
 }
 
-export type CheckoutResult = { url: string } | { updated: true }
+export type CheckoutResult = { url: string } | { updated: true } | { scheduled: true; effectiveAt: string }
 
 // ยังไม่มี subscription → ส่งไปหน้า Stripe Checkout
 // มีอยู่แล้ว → เปลี่ยน item ใน subscription เดิม (Stripe คิดส่วนต่างตามวันที่เหลือให้เอง)
@@ -195,6 +213,17 @@ export async function checkout(tenantId: string, email: string, input: unknown):
 
   const existing = await activeSubscription(billing)
   if (existing) {
+    assertFits(tenantId, sel)
+    // พ้นช่วงทดลองแล้ว + ลดแพ็ก → ใช้แพ็กเดิมจนครบรอบที่จ่ายไว้ แล้วค่อยเปลี่ยน ไม่คืนเงิน
+    if (existing.status !== 'trialing' && classifyChange(fromMetadata(existing.metadata), sel) === 'downgrade') {
+      const effectiveAt = new Date((await scheduleDowngrade(existing, items, metadata, sel)) * 1000).toISOString()
+      getDb().prepare('UPDATE tenant_subscriptions SET pending_change = ? WHERE tenant_id = ?')
+        .run(JSON.stringify({ ...sel, effectiveAt }), tenantId)
+      return { scheduled: true, effectiveAt }
+    }
+    // อัปเกรด/ช่วงทดลอง → มีผลทันที (ถ้ามีการลดแพ็กตั้งไว้ ยกเลิกก่อน ไม่งั้น Stripe ไม่ให้แก้ subscription)
+    await releaseSchedule(existing)
+    getDb().prepare('UPDATE tenant_subscriptions SET pending_change = NULL WHERE tenant_id = ?').run(tenantId)
     const updated = await stripe().subscriptions.update(existing.id, changeParams(existing, items, metadata))
     applySubscription(updated as unknown as SubscriptionLike)
     return { updated: true }
@@ -205,6 +234,66 @@ export async function checkout(tenantId: string, email: string, input: unknown):
     successUrl: `${APP_URL}/settings?tab=subscription&status=success`,
     cancelUrl: `${APP_URL}/settings?tab=subscription&status=cancel`,
   })
+}
+
+// ลดแพ็กแล้วผู้ใช้ต้องพอดีแพ็กใหม่ — ไม่งั้นวันที่มีผล บริษัทจะมีคนเกินโควตา ให้ปิดผู้ใช้ก่อน
+// (นับแบบเดียวกับด่านเพิ่มผู้ใช้ใน user.routes)
+export function assertFits(tenantId: string, sel: Selection): void {
+  const db = getDb()
+  const plan = db.prepare('SELECT max_users FROM subscription_plans WHERE code = ?').get(sel.plan) as { max_users: number | null } | undefined
+  if (!plan || plan.max_users === null) return
+  const max = plan.max_users + (sel.addons.extra_users ?? 0)
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE tenant_id = ?').get(tenantId) as { c: number }).c
+  if (count > max) {
+    throw new BillingError(`แพ็ก ${PLAN_PRICING[sel.plan].name} ใช้ได้ ${max} ผู้ใช้ ตอนนี้บริษัทมี ${count} คน — ลบผู้ใช้ให้เหลือ ${max} คน หรือเพิ่ม Add-on ผู้ใช้ ก่อนเปลี่ยนแพ็ก`)
+  }
+}
+
+const idOf = (x: string | { id: string }) => (typeof x === 'string' ? x : x.id)
+
+// ตั้งเวลาเปลี่ยนแพ็กตอนครบรอบด้วย Subscription Schedule: เฟสแรก = แพ็กเดิมจนสิ้นรอบ, เฟสสอง = แพ็กใหม่
+// พอเฟสสองเริ่ม Stripe ตัดเงินราคาใหม่เอง + ตั้ง metadata ใหม่ → webhook subscription.updated → applySubscription
+// คืนเวลาที่มีผล (unix วินาที)
+async function scheduleDowngrade(existing: Stripe.Subscription, items: { price: string; quantity: number }[], metadata: Record<string, string>, sel: Selection): Promise<number> {
+  const s = stripe()
+  const scheduleId = existing.schedule ? idOf(existing.schedule) : (await s.subscriptionSchedules.create({ from_subscription: existing.id })).id
+  const schedule = await s.subscriptionSchedules.retrieve(scheduleId)
+  const now = Math.floor(Date.now() / 1000)
+  const phase = schedule.phases.find(p => p.start_date <= now && now < p.end_date) ?? schedule.phases[0]
+  const vat = [await vatRate()]
+  await s.subscriptionSchedules.update(scheduleId, {
+    end_behavior: 'release',
+    proration_behavior: 'none',
+    phases: [
+      {
+        items: phase.items.map(i => ({ price: idOf(i.price), quantity: i.quantity ?? 1 })),
+        start_date: phase.start_date,
+        end_date: phase.end_date,
+        metadata: existing.metadata,
+        default_tax_rates: phase.default_tax_rates?.length ? phase.default_tax_rates.map(idOf) : vat,
+        proration_behavior: 'none',
+      },
+      {
+        items,
+        metadata,
+        default_tax_rates: vat,
+        duration: { interval: sel.cycle === 'yearly' ? 'year' : 'month', interval_count: 1 },
+        proration_behavior: 'none',
+      },
+    ],
+  })
+  return phase.end_date
+}
+
+async function releaseSchedule(sub: Stripe.Subscription): Promise<void> {
+  if (sub.schedule) await stripe().subscriptionSchedules.release(idOf(sub.schedule))
+}
+
+// ยกเลิกการลดแพ็กที่ตั้งเวลาไว้ — ใช้แพ็กปัจจุบันต่อตามปกติ
+export async function cancelPendingChange(tenantId: string): Promise<void> {
+  const existing = await activeSubscription(tenantBilling(tenantId))
+  if (existing) await releaseSchedule(existing)
+  getDb().prepare('UPDATE tenant_subscriptions SET pending_change = NULL WHERE tenant_id = ?').run(tenantId)
 }
 
 async function activeSubscription(billing: TenantBilling): Promise<Stripe.Subscription | null> {
@@ -237,6 +326,7 @@ export function changeParams(
 export type ChangePreview =
   | { kind: 'checkout' }                       // ยังไม่มี subscription → ไปหน้า Checkout (ทดลอง/จ่ายที่นั่น)
   | { kind: 'trial' }                          // ช่วงทดลอง → เปลี่ยนได้ ยังไม่ตัดเงิน
+  | { kind: 'downgrade'; effectiveAt: string; blocked: string | null } // ลดแพ็ก → มีผลวันครบรอบ ไม่คืนเงิน
   | { kind: 'change'; credit: number; charge: number; tax: number; total: number; nextBilling: string | null }
 
 // ยอดที่จะถูกเก็บถ้ากดเปลี่ยนแพ็กตอนนี้ (บาท) — ใช้ตัวคำนวณของ Stripe เอง ตัวเลขจึงตรงกับใบแจ้งหนี้จริง
@@ -246,6 +336,12 @@ export async function previewChange(tenantId: string, input: unknown): Promise<C
   const existing = await activeSubscription(billing)
   if (!existing) return { kind: 'checkout' }
   if (existing.status === 'trialing') return { kind: 'trial' }
+  if (classifyChange(fromMetadata(existing.metadata), sel) === 'downgrade') {
+    let blocked: string | null = null
+    try { assertFits(tenantId, sel) } catch (err) { if (err instanceof BillingError) blocked = err.message; else throw err }
+    const end = Math.max(...existing.items.data.map(i => i.current_period_end))
+    return { kind: 'downgrade', effectiveAt: new Date(end * 1000).toISOString(), blocked }
+  }
   const items = await resolvePrices(sel)
   const params = changeParams(existing, items, {})
   const invoice = await stripe().invoices.createPreview({

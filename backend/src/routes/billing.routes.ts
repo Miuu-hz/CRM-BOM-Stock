@@ -2,8 +2,8 @@ import { Router, Request, Response } from 'express'
 import Stripe from 'stripe'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getSubscription } from '../services/subscription.service'
-import { BillingError, publicCatalog } from '../services/billing.catalog'
-import { checkout, handleEvent, portal, previewChange, trialFor } from '../services/billing.service'
+import { BillingError, PLAN_PRICING, publicCatalog } from '../services/billing.catalog'
+import { cancelPendingChange, checkout, handleEvent, portal, previewChange, trialFor } from '../services/billing.service'
 import { getDb } from '../db/sqlite'
 
 const router = Router()
@@ -55,8 +55,10 @@ const fail = (res: Response, err: unknown, fallback: string) => {
 router.get('/', (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
   const sub = getSubscription(tenantId)
-  const row = getDb().prepare('SELECT billing_cycle, stripe_customer_id, stripe_subscription_id, status, current_period_end FROM tenant_subscriptions WHERE tenant_id = ?')
+  const row = getDb().prepare('SELECT billing_cycle, stripe_customer_id, stripe_subscription_id, status, current_period_end, pending_change, cancel_at FROM tenant_subscriptions WHERE tenant_id = ?')
     .get(tenantId) as any
+  let pending: any = null
+  try { pending = row?.pending_change ? JSON.parse(row.pending_change) : null } catch { /* ค่าเสีย = ไม่มี */ }
   res.json({
     success: true,
     data: {
@@ -70,6 +72,8 @@ router.get('/', (req: Request, res: Response) => {
         addons: sub.addons,
         hasSubscription: !!row?.stripe_subscription_id,
         hasCustomer: !!row?.stripe_customer_id,
+        cancelAt: row?.cancel_at ?? null,
+        pendingChange: pending ? { ...pending, planName: PLAN_PRICING[pending.plan]?.name ?? pending.plan } : null,
       },
       trialEligible: trialFor(row ?? { stripe_customer_id: null, status: null, current_period_end: null }) !== null,
       catalog: publicCatalog(),
@@ -93,6 +97,16 @@ router.post('/preview', async (req: Request, res: Response) => {
     res.json({ success: true, data: await previewChange(req.user!.tenantId, req.body) })
   } catch (err) {
     fail(res, err, 'คำนวณยอดไม่สำเร็จ')
+  }
+})
+
+// POST /api/billing/cancel-pending → ยกเลิกการลดแพ็กที่ตั้งเวลาไว้
+router.post('/cancel-pending', async (req: Request, res: Response) => {
+  try {
+    await cancelPendingChange(req.user!.tenantId)
+    res.json({ success: true })
+  } catch (err) {
+    fail(res, err, 'ยกเลิกการเปลี่ยนแพ็กไม่สำเร็จ')
   }
 })
 
