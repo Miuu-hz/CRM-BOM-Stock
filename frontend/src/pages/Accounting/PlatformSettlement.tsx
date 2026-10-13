@@ -13,6 +13,7 @@ interface FeeMappingRow {
   accountCode: string | null
   label: string
   columnAliases: string[]
+  vatClaimable: boolean
   isActive: boolean
 }
 
@@ -361,8 +362,8 @@ function Row({ label, value, bold, muted, border, className }: { label: string; 
 
 function FeeMappingSettings({ mappings, onClose, onSaved }: { mappings: FeeMappingRow[]; onClose: () => void; onSaved: () => void }) {
   const feeRows = mappings.filter((m) => m.targetField === 'FEE')
-  const [edits, setEdits] = useState<Record<string, { accountCode: string; aliasesText: string }>>(
-    Object.fromEntries(feeRows.map((r) => [r.id, { accountCode: r.accountCode || '', aliasesText: r.columnAliases.join(', ') }]))
+  const [edits, setEdits] = useState<Record<string, { accountCode: string; aliasesText: string; vatClaimable: boolean }>>(
+    Object.fromEntries(feeRows.map((r) => [r.id, { accountCode: r.accountCode || '', aliasesText: r.columnAliases.join(', '), vatClaimable: r.vatClaimable }]))
   )
   const [saving, setSaving] = useState(false)
 
@@ -373,6 +374,7 @@ function FeeMappingSettings({ mappings, onClose, onSaved }: { mappings: FeeMappi
         id: r.id,
         accountCode: edits[r.id].accountCode,
         columnAliases: edits[r.id].aliasesText.split(',').map((s) => s.trim()).filter(Boolean),
+        vatClaimable: edits[r.id].vatClaimable,
       }))
       const res = await api.put('/platform-settlement/fee-mappings', { updates })
       if (res.data.success) {
@@ -418,6 +420,14 @@ function FeeMappingSettings({ mappings, onClose, onSaved }: { mappings: FeeMappi
                   className="flex-1 px-2 py-1.5 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-1)] text-sm"
                 />
               </div>
+              <label className="flex items-center gap-2 text-xs text-[var(--fg-3)]">
+                <input
+                  type="checkbox"
+                  checked={edits[r.id]?.vatClaimable || false}
+                  onChange={(e) => setEdits({ ...edits, [r.id]: { ...edits[r.id], vatClaimable: e.target.checked } })}
+                />
+                {r.feeType === 'SHIPPING_REVENUE' || r.feeType === 'SHIPPING_SUBSIDY' ? 'คิดภาษีขาย' : 'ขอคืนภาษีซื้อได้ (มีใบกำกับ)'}
+              </label>
             </div>
           ))}
         </div>

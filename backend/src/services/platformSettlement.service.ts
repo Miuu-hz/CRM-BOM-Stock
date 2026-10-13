@@ -76,19 +76,43 @@ function splitVat(grossSales: number, vatAmount?: number): { revenue: number; va
 // ⚠ ยังไม่ได้ยืนยันกับไฟล์รายงานจริงของ Shopee/Lazada/TikTok — เป็นจุดตั้งต้นให้แก้เท่านั้น
 // พอได้ไฟล์จริงมาสักรอบ ให้แก้รายการนี้ผ่านหน้าตั้งค่า (PUT /fee-mappings) ไม่ต้องแก้โค้ด
 // เทียบแบบไม่สนตัวพิมพ์เล็กใหญ่และช่องว่าง คอลัมน์ไหนไม่ตรงสักตัว preview จะฟ้องว่า "ไม่รู้จัก"
-const DEFAULT_FEE_ACCOUNTS: Array<{ feeType: string; accountCode: string; label: string; columnAliases: string[] }> = [
-  { feeType: 'COMMISSION',      accountCode: '5203', label: 'ค่าคอมมิชชั่น (GP/ค่าต๋ง)',
+// vatClaimable: สำหรับค่าธรรมเนียม (รายจ่าย) = ขอคืนภาษีซื้อได้ไหม (ต้องมีใบกำกับภาษีจากแพลตฟอร์ม)
+// ของ SHIPPING_REVENUE (รายรับ) เท่านั้น คอลัมน์เดียวกันแปลว่า "มีภาษีขาย" แทน (ดูคำอธิบายที่แถวนั้น)
+// ⚠️ 2026-10-13 เจ้าของยืนยัน: Shopee ยังไม่ออกใบกำกับภาษีค่าธรรมเนียมให้ร้าน → ตั้งค่าเริ่มต้นของ
+// ค่าธรรมเนียมทุกตัว (รายจ่าย) เป็น false (ลงต้นทุนเต็มจำนวนไปก่อน) เปิดเองได้ทีหลังถ้าขอใบกำกับได้แล้ว
+const DEFAULT_FEE_ACCOUNTS: Array<{ feeType: string; accountCode: string; label: string; columnAliases: string[]; vatClaimable: boolean }> = [
+  { feeType: 'COMMISSION',      accountCode: '5203', label: 'ค่าคอมมิชชั่น (GP/ค่าต๋ง)', vatClaimable: false,
     columnAliases: ['Commission Fee', 'Commission', 'Service Fee', 'Platform commission', 'Payment Fee', 'ค่าคอมมิชชั่น', 'ค่าบริการ'] },
-  { feeType: 'SHIPPING',        accountCode: '5202', label: 'ค่าขนส่งสินค้า',
+  { feeType: 'SHIPPING',        accountCode: '5202', label: 'ค่าขนส่งสินค้า (ฝั่งจ่าย/ถูกเรียกเก็บ)', vatClaimable: false,
     columnAliases: ['Shipping Fee', 'Actual shipping fee', 'Shipping cost', 'ค่าจัดส่ง', 'ค่าขนส่ง'] },
-  { feeType: 'ADS',             accountCode: '5201', label: 'ค่าโฆษณา',
+  { feeType: 'ADS',             accountCode: '5201', label: 'ค่าโฆษณา', vatClaimable: false,
     columnAliases: ['Ads Cost', 'Ad Cost', 'Advertising Fee', 'ค่าโฆษณา'] },
-  { feeType: 'TRANSACTION',     accountCode: '5309', label: 'ค่าธรรมเนียมชำระเงิน/ธนาคาร',
+  { feeType: 'TRANSACTION',     accountCode: '5309', label: 'ค่าธรรมเนียมชำระเงิน/ธนาคาร', vatClaimable: false,
     columnAliases: ['Transaction Fee', 'Payment processing fee', 'ค่าธรรมเนียมการทำรายการ', 'ค่าธรรมเนียมชำระเงิน'] },
-  { feeType: 'PACKAGING',       accountCode: '5204', label: 'ค่าบรรจุภัณฑ์',
+  { feeType: 'PACKAGING',       accountCode: '5204', label: 'ค่าบรรจุภัณฑ์', vatClaimable: false,
     columnAliases: ['Packaging Fee', 'Fulfilment Fee', 'ค่าบรรจุภัณฑ์'] },
-  { feeType: 'SELLER_DISCOUNT', accountCode: '4301', label: 'ส่วนลดผู้ขายร่วมจ่าย',
+  { feeType: 'SELLER_DISCOUNT', accountCode: '4301', label: 'ส่วนลดผู้ขายร่วมจ่าย', vatClaimable: false,
     columnAliases: ['Seller Discount', 'Seller Voucher', 'Seller Coupon', 'ส่วนลดจากผู้ขาย'] },
+  // ── เฟส 3 (2026-10-13): ค่าธรรมเนียมประเภทใหม่จากไฟล์ income.โอนเงินสำเร็จ ของ Shopee ──────
+  { feeType: 'SERVICE',         accountCode: '5203', label: 'ค่าบริการแพลตฟอร์ม (Service Fee)', vatClaimable: false,
+    columnAliases: ['Service Fee'] },
+  { feeType: 'INFRASTRUCTURE',  accountCode: '5203', label: 'ค่าโครงสร้างพื้นฐาน (Infrastructure Fee)', vatClaimable: false,
+    columnAliases: ['Infrastructure Fee'] },
+  { feeType: 'AFFILIATE',       accountCode: '5201', label: 'ค่าคอมมิชชั่นนักการตลาด/affiliate (AMS)', vatClaimable: false,
+    columnAliases: ['AMS Commission Fee'] },
+  { feeType: 'OTHER',           accountCode: '5403', label: 'ค่าธรรมเนียมอื่น', vatClaimable: false,
+    columnAliases: [] },
+  // ยอดขนส่งฝั่งรับ — แยก 2 ก้อนตามที่มา เพราะสถานะทาง VAT ต่างกัน (ม.79 ฐานภาษี = สิ่งที่ "ผู้ประกอบการ
+  // เรียกเก็บจากผู้ซื้อ" เท่านั้น เงินอุดหนุนจากบุคคลที่สามไม่ใช่ค่าตอบแทนการขาย/บริการ):
+  // 1) shipping_buyer_paid = ค่าส่งที่ร้านเรียกเก็บจากผู้ซื้อเอง "ในชื่อร้าน" (ร้านไม่ได้ประกอบกิจการขนส่ง
+  //    เป็นปกติธุระ) → เข้าฐาน VAT ขายตามปกติ — default เปิดภาษีขาย (true)
+  // 2) shipping_shopee_subsidy = เงินที่ Shopee ออกแทนลูกค้า (เงินอุดหนุนจากแพลตฟอร์ม ไม่ใช่สิ่งที่ร้าน
+  //    เรียกเก็บจากผู้ซื้อ) → เป็นรายได้ แต่ไม่เข้าฐาน VAT ขาย (อ้างอิงบทความ Prosoft iBiz ที่อ้าง iliketax)
+  //    — default ปิดภาษีขาย (false) แก้ได้ถ้านักบัญชียืนยันเป็นอย่างอื่น
+  { feeType: 'SHIPPING_REVENUE', accountCode: '4203', label: 'รายได้ค่าขนส่งที่เรียกเก็บจากผู้ซื้อ', vatClaimable: true,
+    columnAliases: [] },
+  { feeType: 'SHIPPING_SUBSIDY', accountCode: '4203', label: 'รายได้เงินอุดหนุนค่าขนส่งจาก Shopee', vatClaimable: false,
+    columnAliases: [] },
 ]
 
 // ฟิลด์หลักที่ไม่ใช่ค่าธรรมเนียม (บัญชีปลายทางตายตัวตามกติกาบัญชี ไม่ให้แก้ผ่านหน้านี้)
@@ -116,18 +140,18 @@ export function ensureDefaultFeeMappings(tenantId: string): void {
   const now = new Date().toISOString()
   const insert = db.prepare(`
     INSERT OR IGNORE INTO platform_fee_mappings
-      (id, tenant_id, target_field, fee_type, account_code, label, column_aliases, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      (id, tenant_id, target_field, fee_type, account_code, label, column_aliases, vat_claimable, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `)
   // INSERT OR IGNORE — แถวที่มีอยู่แล้วไม่ถูกทับ ของที่ผู้ใช้แก้เองจึงไม่หาย
   // (แลกกับการที่ tenant เก่าจะไม่ได้ alias ชุดใหม่อัตโนมัติ ต้องไปเพิ่มเองในหน้าตั้งค่า)
   for (const f of DEFAULT_FEE_ACCOUNTS) {
     insert.run(`${tenantId}-fee-${f.feeType}`, tenantId, 'FEE', f.feeType, f.accountCode, f.label,
-      JSON.stringify(f.columnAliases), now, now)
+      JSON.stringify(f.columnAliases), f.vatClaimable ? 1 : 0, now, now)
   }
   for (const c of CORE_FIELDS) {
     insert.run(`${tenantId}-core-${c.targetField}`, tenantId, c.targetField, null, null, c.label,
-      JSON.stringify(c.columnAliases), now, now)
+      JSON.stringify(c.columnAliases), 0, now, now)
   }
 }
 
@@ -138,6 +162,8 @@ export interface FeeMappingRow {
   accountCode: string | null
   label: string
   columnAliases: string[]
+  /** รายจ่าย: ขอคืนภาษีซื้อได้ไหม (มีใบกำกับ) — ใช้แยก Dr 1110 / รายรับ (SHIPPING_REVENUE): มีภาษีขายไหม — ใช้แยก Cr 2104 (เฟส 3) */
+  vatClaimable: boolean
   isActive: boolean
 }
 
@@ -151,6 +177,7 @@ function rowToFeeMapping(r: any): FeeMappingRow {
     accountCode: r.account_code,
     label: r.label,
     columnAliases: aliases,
+    vatClaimable: !!r.vat_claimable,
     isActive: !!r.is_active,
   }
 }
@@ -167,21 +194,28 @@ export interface FeeMappingUpdate {
   id: string
   accountCode?: string | null
   columnAliases?: string[]
+  vatClaimable?: boolean | null
 }
 
-/** แก้บัญชีปลายทาง/รายชื่อคอลัมน์ที่รู้จักของแถวหนึ่ง — ไม่แตะ target_field/fee_type (คงที่ตามตัวตนของแถว) */
+/** แก้บัญชีปลายทาง/รายชื่อคอลัมน์/ขอคืน VAT ได้ไหมของแถวหนึ่ง — ไม่แตะ target_field/fee_type (คงที่ตามตัวตนของแถว) */
 export function updateFeeMappings(tenantId: string, updates: FeeMappingUpdate[]): FeeMappingRow[] {
   const now = new Date().toISOString()
   const stmt = db.prepare(`
     UPDATE platform_fee_mappings
     SET account_code = COALESCE(?, account_code),
         column_aliases = COALESCE(?, column_aliases),
+        vat_claimable = COALESCE(?, vat_claimable),
         updated_at = ?
     WHERE id = ? AND tenant_id = ?
   `)
   const tx = db.transaction((rows: FeeMappingUpdate[]) => {
     for (const u of rows) {
-      stmt.run(u.accountCode ?? null, u.columnAliases ? JSON.stringify(u.columnAliases) : null, now, u.id, tenantId)
+      stmt.run(
+        u.accountCode ?? null,
+        u.columnAliases ? JSON.stringify(u.columnAliases) : null,
+        u.vatClaimable == null ? null : (u.vatClaimable ? 1 : 0),
+        now, u.id, tenantId
+      )
     }
   })
   tx(updates)
@@ -190,14 +224,25 @@ export function updateFeeMappings(tenantId: string, updates: FeeMappingUpdate[])
 
 /** หาบัญชีปลายทางของค่าธรรมเนียมประเภทหนึ่ง — throw ชัดเจนถ้ายังไม่ได้ผูกไว้ (ห้ามเดา/ห้ามลงบัญชีมั่ว) */
 function resolveFeeAccount(tenantId: string, feeType: string): string {
+  return resolveFeeMapping(tenantId, feeType).accountCode
+}
+
+export interface FeeAccountResolution {
+  accountCode: string
+  /** ขอคืนภาษีซื้อได้ไหม (มีใบกำกับ) — ใช้โดยเฟส 3 (platformMonthPosting.service.ts) แยก Dr 1110 */
+  claimable: boolean
+}
+
+/** เหมือน resolveFeeAccount แต่คืน vat_claimable มาด้วย — เฟส 3 ใช้ตัดสินใจแยก VAT ซื้อ */
+export function resolveFeeMapping(tenantId: string, feeType: string): FeeAccountResolution {
   ensureDefaultFeeMappings(tenantId)
   const row = db.prepare(
-    `SELECT account_code FROM platform_fee_mappings WHERE tenant_id = ? AND target_field = 'FEE' AND fee_type = ? AND is_active = 1`
-  ).get(tenantId, feeType) as { account_code: string | null } | undefined
+    `SELECT account_code, vat_claimable FROM platform_fee_mappings WHERE tenant_id = ? AND target_field = 'FEE' AND fee_type = ? AND is_active = 1`
+  ).get(tenantId, feeType) as { account_code: string | null; vat_claimable: number } | undefined
   if (!row || !row.account_code) {
     throw new SettlementError(`ยังไม่ได้ผูกบัญชีให้ค่าธรรมเนียมประเภท "${feeType}" — ไปตั้งค่าที่หน้าผูกค่าธรรมเนียมก่อน`)
   }
-  return row.account_code
+  return { accountCode: row.account_code, claimable: row.vat_claimable === 1 }
 }
 
 // ============================================================

@@ -2729,6 +2729,31 @@ export function runMigrations(db: any): void {
     `)
     console.log('✅ Migration: platform_months เฟส 2 (cogs/sale_confirmed) + platform_sku_proposals created')
   } catch (e) { console.error('⚠️ platform_months phase2 migration error:', e) }
+
+  // ==================== เฟส 3: ลงบัญชีรอบเดือนแพลตฟอร์ม (2026-10-13) ====================
+  // journal_ids = รายการ id journal_entries ที่ลงไปตอน POSTED (ไว้โชว์/อ้างอิง — ตอน unpost ใช้
+  // reverseJournalEntryForReference ไล่จาก reference_type/reference_id จริง ไม่ได้อ่านคอลัมน์นี้)
+  //
+  // vat_claimable: รายจ่าย = ขอคืนภาษีซื้อได้ไหม (มีใบกำกับ) / SHIPPING_REVENUE = มีภาษีขายไหม
+  // ค่าเริ่มต้น 0 สำหรับทุกแถวที่มีอยู่แล้ว (Shopee ยังไม่ออกใบกำกับค่าธรรมเนียมให้ร้าน 2026-10-13)
+  // แถวใหม่ (รวม SHIPPING_REVENUE) ได้ค่าเริ่มต้นที่ถูกต้องจาก ensureDefaultFeeMappings ตอน insert
+  // อยู่แล้ว ไม่ต้อง backfill เพิ่ม
+  try {
+    const pmCols3 = db.prepare(`PRAGMA table_info(platform_months)`).all() as any[]
+    ;[
+      ['journal_ids', 'TEXT'],
+      ['posted_at', 'TEXT'],
+      ['posted_by', 'TEXT'],
+    ].forEach(([col, type]) => {
+      if (!pmCols3.some((c: any) => c.name === col)) db.exec(`ALTER TABLE platform_months ADD COLUMN ${col} ${type}`)
+    })
+
+    const feeMapCols = db.prepare(`PRAGMA table_info(platform_fee_mappings)`).all() as any[]
+    if (!feeMapCols.some((c: any) => c.name === 'vat_claimable')) {
+      db.exec(`ALTER TABLE platform_fee_mappings ADD COLUMN vat_claimable INTEGER NOT NULL DEFAULT 0`)
+    }
+    console.log('✅ Migration: platform_months เฟส 3 (journal_ids/posted) + platform_fee_mappings.vat_claimable')
+  } catch (e) { console.error('⚠️ platform_months phase3 migration error:', e) }
 }
 
 /**

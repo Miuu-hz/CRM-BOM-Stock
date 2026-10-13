@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, AlertTriangle, Search, Undo2 } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Search, Undo2, BookOpenCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -42,6 +42,44 @@ interface StockItemOption {
   name: string
   unit: string
   quantity: number
+}
+
+// ==================== เฟส 3: ลงบัญชี (ตรงกับ platformMonthPosting.service.ts) ====================
+
+interface PlanLine {
+  code: string
+  name?: string
+  description: string
+  debit: number
+  credit: number
+}
+
+interface JournalPlanView {
+  referenceType: string
+  description: string
+  date: string
+  lines: PlanLine[]
+  totalDebit: number
+  totalCredit: number
+}
+
+interface PostingPreview {
+  monthId: string
+  status: string
+  vatRegistered: boolean
+  journals: {
+    opening: JournalPlanView | null
+    sales: JournalPlanView
+    shipping: JournalPlanView | null
+    cogs: JournalPlanView | null
+    fees: JournalPlanView | null
+    adjust: JournalPlanView | null
+    payouts: JournalPlanView[]
+  }
+  ledgerBalance1181: number
+  walletClosing: number
+  difference: number
+  expectedNetMovement: number
 }
 
 type Filter = 'all' | 'unmapped' | 'proposed' | 'mapped'
@@ -206,18 +244,21 @@ export default function PlatformMonthSale() {
         </select>
       </div>
 
-      {selectedMonth?.status === 'SALE_CONFIRMED' ? (
+      {selectedMonth?.status === 'SALE_CONFIRMED' || selectedMonth?.status === 'POSTED' ? (
         <div className="border border-[var(--success)] bg-[var(--success-soft)] rounded-lg p-4 space-y-2">
           <p className="text-sm font-medium text-success flex items-center gap-1">
             <CheckCircle2 className="w-4 h-4" /> ยืนยันการขายแล้ว ตัดสต็อกเรียบร้อย — ต้นทุนรวม {fmt(selectedMonth.cogs_amount)}
           </p>
-          <button
-            onClick={handleCancelSale}
-            disabled={busy}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--fg-3)] text-xs hover:text-[var(--fg-1)] disabled:opacity-50"
-          >
-            <Undo2 className="w-3.5 h-3.5" /> ยกเลิกการยืนยัน (คืนสต็อก)
-          </button>
+          {selectedMonth.status === 'SALE_CONFIRMED' && (
+            <button
+              onClick={handleCancelSale}
+              disabled={busy}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--fg-3)] text-xs hover:text-[var(--fg-1)] disabled:opacity-50"
+            >
+              <Undo2 className="w-3.5 h-3.5" /> ยกเลิกการยืนยัน (คืนสต็อก)
+            </button>
+          )}
+          <PostingPanel monthId={monthId} status={selectedMonth.status} onChanged={() => { loadMonths() }} />
         </div>
       ) : (
         <>
@@ -365,6 +406,147 @@ function MappingRowItem({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ==================== เฟส 3: ลงบัญชี — preview JV + ปุ่มลงบัญชี/ยกเลิก ====================
+
+function fmtSigned(n: number) {
+  const v = n || 0
+  return `${v < 0 ? '-' : ''}${fmt(Math.abs(v))}`
+}
+
+function JournalCard({ plan }: { plan: JournalPlanView }) {
+  return (
+    <div className="border border-[var(--border)] rounded-lg p-3 space-y-1.5">
+      <p className="text-xs font-medium text-[var(--fg-1)]">{plan.description} <span className="text-[var(--fg-4)]">({plan.date})</span></p>
+      {plan.referenceType === 'PLATFORM_MONTH_SHIPPING' && (
+        <p className="text-xs text-warning">เงินก้อนนี้ไม่ผ่านบัญชีธนาคารร้าน — เข้าและออกในกระเป๋า Shopee (1181)</p>
+      )}
+      <table className="w-full text-xs">
+        <tbody>
+          {plan.lines.map((l, i) => (
+            <tr key={i} className="border-t border-[var(--border)]/50">
+              <td className="py-1 pr-2 text-[var(--fg-3)]">{l.code} {l.name || ''} <span className="text-[var(--fg-4)]">· {l.description}</span></td>
+              <td className="py-1 text-right w-20 text-[var(--fg-1)]">{l.debit > 0 ? fmt(l.debit) : ''}</td>
+              <td className="py-1 text-right w-20 text-[var(--fg-1)]">{l.credit > 0 ? fmt(l.credit) : ''}</td>
+            </tr>
+          ))}
+          <tr className="border-t border-[var(--border)] font-medium">
+            <td className="py-1 text-[var(--fg-3)]">รวม</td>
+            <td className="py-1 text-right w-20">{fmt(plan.totalDebit)}</td>
+            <td className="py-1 text-right w-20">{fmt(plan.totalCredit)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function PostingPanel({ monthId, status, onChanged }: { monthId: string; status: string; onChanged: () => void }) {
+  const [preview, setPreview] = useState<PostingPreview | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  const load = async () => {
+    try {
+      setLoading(true)
+      const res = await api.get(`/platform-settlement/months/${monthId}/posting-preview`)
+      if (res.data.success) setPreview(res.data.data)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'โหลดตัวอย่างการลงบัญชีไม่สำเร็จ')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { if (monthId) load() }, [monthId, status])
+
+  const handlePost = async () => {
+    try {
+      setBusy(true)
+      const res = await api.post(`/platform-settlement/months/${monthId}/post`)
+      if (res.data.success) {
+        toast.success(res.data.message || 'ลงบัญชีแล้ว')
+        load(); onChanged()
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ลงบัญชีไม่สำเร็จ')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleUnpost = async () => {
+    try {
+      setBusy(true)
+      const res = await api.post(`/platform-settlement/months/${monthId}/unpost`)
+      if (res.data.success) {
+        toast.success('ยกเลิกการลงบัญชีแล้ว')
+        load(); onChanged()
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ยกเลิกการลงบัญชีไม่สำเร็จ')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-t border-[var(--border)] pt-3 space-y-2">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 text-sm font-medium text-[var(--fg-1)]">
+        <BookOpenCheck className="w-4 h-4" /> ลงบัญชี {status === 'POSTED' ? '(ลงบัญชีแล้ว)' : '(ยังไม่ลงบัญชี)'}
+        <span className="text-xs text-[var(--primary)] underline ml-1">{open ? 'ซ่อน' : 'ดูตัวอย่าง'}</span>
+      </button>
+
+      {open && (
+        loading || !preview ? (
+          <p className="text-xs text-[var(--fg-3)] py-2">กำลังโหลด...</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-4 text-xs text-[var(--fg-3)] flex-wrap">
+              <span>VAT: {preview.vatRegistered ? 'จดทะเบียนแล้ว' : 'ไม่ได้จดทะเบียน'}</span>
+              <span>1181 ในบัญชี: {fmtSigned(preview.ledgerBalance1181)}</span>
+              <span>ยอดกระเป๋าแพลตฟอร์ม (closing): {fmtSigned(preview.walletClosing)}</span>
+              <span className={Math.abs(preview.difference) > 1 ? 'text-warning font-medium' : ''}>
+                ส่วนต่าง: {fmtSigned(preview.difference)}
+                {Math.abs(preview.difference) > 1 ? ' — ยอดยกมาก่อนใช้ระบบ ให้ผู้ทำบัญชีลงปรับเอง' : ''}
+              </span>
+            </div>
+
+            {preview.journals.opening && <JournalCard plan={preview.journals.opening} />}
+            <JournalCard plan={preview.journals.sales} />
+            {preview.journals.shipping && <JournalCard plan={preview.journals.shipping} />}
+            {preview.journals.cogs && <JournalCard plan={preview.journals.cogs} />}
+            {preview.journals.fees && <JournalCard plan={preview.journals.fees} />}
+            {preview.journals.adjust && <JournalCard plan={preview.journals.adjust} />}
+            {preview.journals.payouts.map((p, i) => <JournalCard key={i} plan={p} />)}
+          </div>
+        )
+      )}
+
+      <div className="flex items-center gap-2">
+        {status === 'SALE_CONFIRMED' && (
+          <button
+            onClick={handlePost}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-medium disabled:opacity-50"
+          >
+            {busy ? 'กำลังลงบัญชี...' : 'ลงบัญชี'}
+          </button>
+        )}
+        {status === 'POSTED' && (
+          <button
+            onClick={handleUnpost}
+            disabled={busy}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--fg-3)] text-xs hover:text-[var(--fg-1)] disabled:opacity-50"
+          >
+            <Undo2 className="w-3.5 h-3.5" /> {busy ? 'กำลังยกเลิก...' : 'ยกเลิกการลงบัญชี'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

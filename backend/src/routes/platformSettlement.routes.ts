@@ -19,6 +19,7 @@ import {
   confirmSale,
   cancelSale,
 } from '../services/platformMonthSale.service'
+import { previewPosting, postMonth, unpostMonth } from '../services/platformMonthPosting.service'
 
 const router = Router()
 router.use(authenticate)
@@ -26,6 +27,15 @@ router.use(authenticate)
 // รับ error ของเฟส 2 ให้แปลงเป็น 400 พร้อมข้อความไทย — error อื่นที่ไม่รู้จักค่อย 500
 function handlePhase2Error(res: Response, err: any, fallbackMessage: string) {
   if (err instanceof PlatformMonthError || err instanceof StockItemRefError) {
+    return res.status(400).json({ success: false, message: err.message })
+  }
+  console.error(fallbackMessage, err)
+  res.status(500).json({ success: false, message: fallbackMessage })
+}
+
+// เฟส 3 โยน PlatformMonthError (เช็คภายใน) หรือ SettlementError (ยังไม่ผูกบัญชีค่าธรรมเนียม) ทั้งคู่ถือเป็น 400
+function handlePostingError(res: Response, err: any, fallbackMessage: string) {
+  if (err instanceof PlatformMonthError || err instanceof SettlementError) {
     return res.status(400).json({ success: false, message: err.message })
   }
   console.error(fallbackMessage, err)
@@ -108,6 +118,40 @@ router.post('/months/:id/cancel-sale', requireRole('ADMIN', 'MASTER', 'MANAGER')
     res.json({ success: true, message: 'ยกเลิกการยืนยันการขายแล้ว คืนสต็อกทั้งหมด' })
   } catch (err) {
     handlePhase2Error(res, err, 'ยกเลิกการยืนยันการขายไม่สำเร็จ')
+  }
+})
+
+// ==================== เฟส 3: ลงบัญชีรอบเดือน (ขาย/ต้นทุน/ค่าธรรมเนียม/ปรับปรุง/ถอนเงิน ผ่าน 1181) ====================
+
+// GET /api/platform-settlement/months/:id/posting-preview — ดู JV ที่จะลง ก่อนกดลงจริง
+router.get('/months/:id/posting-preview', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    res.json({ success: true, data: previewPosting(tenantId, req.params.id) })
+  } catch (err) {
+    handlePostingError(res, err, 'โหลดตัวอย่างการลงบัญชีไม่สำเร็จ')
+  }
+})
+
+// POST /api/platform-settlement/months/:id/post — ลงบัญชีจริง
+router.post('/months/:id/post', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const result = postMonth(tenantId, req.params.id, req.user!.email)
+    res.json({ success: true, data: result, message: `ลงบัญชีแล้ว ${result.journalIds.length} รายการ` })
+  } catch (err) {
+    handlePostingError(res, err, 'ลงบัญชีไม่สำเร็จ')
+  }
+})
+
+// POST /api/platform-settlement/months/:id/unpost — ยกเลิกการลงบัญชี (กลับรายการทุกใบ)
+router.post('/months/:id/unpost', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    unpostMonth(tenantId, req.params.id, req.user!.email)
+    res.json({ success: true, message: 'ยกเลิกการลงบัญชีแล้ว' })
+  } catch (err) {
+    handlePostingError(res, err, 'ยกเลิกการลงบัญชีไม่สำเร็จ')
   }
 })
 

@@ -305,6 +305,7 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
 
 export function cancelSale(tenantId: string, monthId: string, userId: string): void {
   const month = getMonthRow(tenantId, monthId)
+  if (month.status === 'POSTED') throw new PlatformMonthError('รอบนี้ลงบัญชีไปแล้ว — ต้องยกเลิกการลงบัญชี (เฟส 3) ก่อน จึงยกเลิกการยืนยันการขายได้')
   if (month.status !== 'SALE_CONFIRMED') throw new PlatformMonthError('รอบนี้ยังไม่ได้ยืนยันการขาย')
 
   const reference = `${REF_PREFIX}${monthId}`
