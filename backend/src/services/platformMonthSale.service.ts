@@ -311,7 +311,17 @@ export function cancelSale(tenantId: string, monthId: string, userId: string): v
   const now = new Date().toISOString()
 
   db.transaction(() => {
-    const movements = db.prepare(`SELECT * FROM stock_movements WHERE tenant_id = ? AND reference = ? AND type = 'OUT'`).all(tenantId, reference) as any[]
+    // เอาเฉพาะ OUT ที่ยังไม่เคยถูกคืน — ยืนยัน→ยกเลิก→ยืนยันใหม่ใช้ reference เดิม ถ้าไม่กรอง ยกเลิกรอบสองจะคืนสต็อกซ้ำ
+    // ponytail: จับคู่ผ่าน notes "(<id OUT>)" ของแถว IN ที่คืนไปแล้ว — ถ้าเปลี่ยนรูปแบบ notes ต้องแก้ตรงนี้ด้วย
+    const movements = db.prepare(`
+      SELECT m.* FROM stock_movements m
+      WHERE m.tenant_id = ? AND m.reference = ? AND m.type = 'OUT'
+        AND NOT EXISTS (
+          SELECT 1 FROM stock_movements r
+          WHERE r.tenant_id = m.tenant_id AND r.reference = m.reference AND r.type = 'IN'
+            AND r.notes LIKE '%(' || m.id || ')'
+        )
+    `).all(tenantId, reference) as any[]
     for (const m of movements) {
       db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?').run(m.quantity, now, m.stock_item_id, tenantId)
       db.prepare(`

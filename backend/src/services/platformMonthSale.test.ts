@@ -139,6 +139,21 @@ describe('platformMonthSale — จับคู่ SKU + ยืนยันก�
     expect(month.cogs_amount).toBe(0)
   })
 
+  it('ยืนยัน→ยกเลิก→ยืนยัน→ยกเลิก ไม่คืนสต็อกซ้ำ', () => {
+    const tenantId = newTenant()
+    const stockItemId = makeStockItem(tenantId, { name: 'หมอน', category: 'FINISHED', quantity: 50, unitCost: 20 })
+    const monthId = makeMonth(tenantId)
+    const sourceRef = sourceRefOf('SHOPEE', { variant_id: 'V1' })
+    addVariantRow(tenantId, monthId, { productId: 'P1', variantId: 'V1', productName: 'หมอน', variantName: 'ขาว', qtyConfirmed: 7 })
+    confirmMapping(tenantId, { monthId, sourceRef, stockItemId, factor: 1 }, 'tester')
+    for (let i = 0; i < 2; i++) {
+      confirmSale(tenantId, monthId, 'tester')
+      expect((db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockItemId) as any).quantity).toBe(43)
+      cancelSale(tenantId, monthId, 'tester')
+      expect((db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockItemId) as any).quantity).toBe(50)
+    }
+  })
+
   it('ยืนยันการขายแล้ว ส่งไฟล์ใหม่เข้ารอบเดิมต้องถูกบล็อก (status != COLLECTING)', () => {
     const tenantId = newTenant()
     const stockItemId = makeStockItem(tenantId, { name: 'เสื้อ', category: 'FINISHED', quantity: 50, unitCost: 20 })
