@@ -49,20 +49,25 @@ export function getSubscription(tenantId: string): SubscriptionInfo {
 
   if (!row) return FULL_ACCESS(tenantId)
 
+  const lapsed = !!row.current_period_end && new Date(row.current_period_end).getTime() < Date.now()
+  const freePlan = () => db.prepare(`SELECT ${PLAN_COLS} FROM subscription_plans p WHERE p.code = 'free'`).get() as any
+
   // ทดลองใช้ (สมัครเองจากหน้าเว็บ) ครบกำหนดแล้วยังไม่จ่าย → ใช้ต่อแบบ Free ข้อมูลอยู่ครบ (ไม่ล็อกบริษัท)
   // ponytail: lazy เหมือน ACTIVE ไม่มี cron — แถวใน DB ยังเป็น TRIAL ไว้ให้ checkout รู้ว่าใช้สิทธิ์ทดลองไปแล้ว
-  if (row.status === 'TRIAL' && row.current_period_end &&
-      new Date(row.current_period_end).getTime() < Date.now()) {
-    const free = db.prepare(`SELECT ${PLAN_COLS} FROM subscription_plans p WHERE p.code = 'free'`).get() as any
-    row = { ...free, status: 'FREE', current_period_end: null, packs: '[]', addons: '{}' }
+  if (row.status === 'TRIAL' && lapsed) {
+    row = { ...freePlan(), status: 'FREE', current_period_end: null, packs: '[]', addons: '{}' }
   }
 
   let status = row.status as SubscriptionInfo['status']
   // Lazy expiry: ACTIVE ที่เลย current_period_end ถือเป็น EXPIRED ทันที (ไม่ต้อง cron)
   // FREE มี current_period_end = NULL จึงไม่หมดอายุ
-  if (status === 'ACTIVE' && row.current_period_end &&
-      new Date(row.current_period_end).getTime() < Date.now()) {
-    status = 'EXPIRED'
+  if (status === 'ACTIVE' && lapsed) status = 'EXPIRED'
+
+  // หมดอายุ/ยกเลิก: subscriptionGate ยังให้ ADMIN เข้าระบบได้เพื่อต่ออายุ — แต่ต้องได้แค่สิทธิ์ระดับ Free
+  // (เดิมได้ฟีเจอร์แพ็กเสียเงินครบต่อไปเรื่อย ๆ) ชื่อแพ็ก/วันหมดอายุคงไว้ให้หน้าแพ็กเกจบอกว่าอะไรหมด
+  if (status === 'EXPIRED' || status === 'CANCELLED') {
+    const free = freePlan()
+    row = { ...row, features: free.features, max_users: free.max_users, max_products: free.max_products, max_pos_shifts: free.max_pos_shifts, packs: '[]', addons: '{}' }
   }
 
   // ไม่เชื่อค่าใน DB ตรง ๆ — pack/add-on ที่ไม่รู้จักถูกทิ้ง

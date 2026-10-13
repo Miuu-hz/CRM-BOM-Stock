@@ -62,3 +62,31 @@ describe('แพ็กเกจ v2 (Base + Pack + Add-on)', () => {
     expect(sub.features).toContain('platform_settlement')
   })
 })
+
+describe('หมดอายุ/ยกเลิก → เหลือสิทธิ์ระดับ Free (ADMIN เข้าได้แค่ไว้ต่ออายุ)', () => {
+  const seed = (status: string, end: string | null) => {
+    const tenantId = `t_${Math.random().toString(36).slice(2)}`
+    db.prepare(`INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, current_period_end, packs, addons) VALUES (?, ?, 'enterprise_ai', ?, ?, '["shop"]', '{"extra_users":5}')`)
+      .run(`s_${tenantId}`, tenantId, status, end)
+    return tenantId
+  }
+  it('ACTIVE เลยวันหมดอายุ → EXPIRED, ฟีเจอร์/โควตาเท่า Free แต่ยังบอกชื่อแพ็กเดิม', () => {
+    const s = getSubscription(seed('ACTIVE', new Date(Date.now() - 1000).toISOString()))
+    expect(s.status).toBe('EXPIRED')
+    expect(s.planCode).toBe('enterprise_ai')
+    expect(s.features).not.toContain('accounting')
+    expect(s.features).not.toContain('ai')
+    expect(s.packs).toEqual([])
+    expect(s.maxUsers).toBe(1)
+  })
+  it('CANCELLED → สิทธิ์ระดับ Free', () => {
+    const s = getSubscription(seed('CANCELLED', null))
+    expect(s.features).not.toContain('kds')
+    expect(s.maxUsers).toBe(1)
+  })
+  it('ACTIVE ยังไม่หมด → ได้ครบตามแพ็ก', () => {
+    const s = getSubscription(seed('ACTIVE', new Date(Date.now() + 86400000).toISOString()))
+    expect(s.features).toContain('accounting')
+    expect(s.maxUsers).toBe(25)
+  })
+})
