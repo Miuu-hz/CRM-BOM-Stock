@@ -49,6 +49,7 @@ interface MenuItem {
   descriptionKey?: string
   isParent?: boolean
   subMenu?: MenuItem[]
+  beta?: boolean // ยังไม่พร้อมใช้งานเต็มรูปแบบ → ป้าย Beta
 }
 
 const KANBAN_SSO_PATH = 'https://kanban.phopy.net'
@@ -85,7 +86,7 @@ const menuItems: MenuItem[] = [
   { path: '/sales', tKey: 'sidebar.sales', icon: TrendingUp, descriptionKey: 'sidebar.salesDesc' },
   { path: '/receivables', tKey: 'sidebar.receivables', icon: Coins, descriptionKey: 'sidebar.receivablesDesc' },
   { path: '/marketing', tKey: 'sidebar.marketing', icon: Megaphone, descriptionKey: 'sidebar.marketingDesc' },
-  { path: '/tax', tKey: 'sidebar.tax', icon: Percent, descriptionKey: 'sidebar.taxDesc' },
+  { path: '/tax', tKey: 'sidebar.tax', icon: Percent, descriptionKey: 'sidebar.taxDesc', beta: true },
   {
     path: '/accounting',
     tKey: 'sidebar.accounting',
@@ -423,7 +424,7 @@ function Sidebar({ mode }: SidebarProps) {
                   key={item.path}
                   to={item.path}
                   end={item.path === '/'}
-                  title={label}
+                  title={item.beta ? `${label} (Beta)` : label}
                   className={({ isActive }) =>
                     `flex justify-center items-center py-3 rounded-lg transition-all ${
                       isActive
@@ -474,6 +475,7 @@ function Sidebar({ mode }: SidebarProps) {
                     <div className="flex-1">
                       <p className={`font-semibold text-sm ${isActive ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>
                         {label}
+                        {item.beta && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none align-middle bg-[var(--warning-soft)] text-warning">Beta</span>}
                       </p>
                       {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
                     </div>

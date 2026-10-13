@@ -164,7 +164,7 @@ export default function SettingsPage() {
               { id: 'pos' as const, icon: Store, label: t('settings.settingsPage.tabs.pos'), show: isAdmin || isMaster },
               { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster },
               { id: 'loyalty' as const, icon: Star, label: t('settings.settingsPage.tabs.loyalty'), show: isAdmin || isMaster },
-              { id: 'line' as const, icon: MessageSquare, label: t('settings.settingsPage.tabs.line'), show: isAdmin || isMaster },
+              { id: 'line' as const, icon: MessageSquare, label: t('settings.settingsPage.tabs.line'), show: isAdmin || isMaster, beta: true },
               { id: 'bank-accounts' as const, icon: Landmark, label: t('settings.settingsPage.tabs.bankAccounts'), show: isAdmin || isMaster },
             ],
           },
@@ -212,6 +212,7 @@ export default function SettingsPage() {
                   icon={tb.icon}
                   label={tb.label}
                   badge={(tb as any).badge}
+                  beta={(tb as any).beta}
                 />
               ))}
             </div>
@@ -283,7 +284,7 @@ export default function SettingsPage() {
 }
 
 // Tab Button Component
-function TabButton({ active, onClick, icon: Icon, label, badge }: any) {
+function TabButton({ active, onClick, icon: Icon, label, badge, beta }: any) {
   return (
     <button
       onClick={onClick}
@@ -294,6 +295,7 @@ function TabButton({ active, onClick, icon: Icon, label, badge }: any) {
     >
       <Icon className="w-5 h-5" />
       <span>{label}</span>
+      {beta && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none align-middle bg-[var(--warning-soft)] text-warning">Beta</span>}
       {badge !== undefined && (
         <span className="ml-1 px-2 py-0.5 bg-phopy-indigo/30 text-[var(--primary)] rounded-full text-xs">
           {badge}
