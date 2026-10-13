@@ -230,7 +230,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={onMenuClick}
-            className="p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={t('header.openMenu')}
           >
             <Menu className="w-6 h-6 text-[var(--fg-2)]" />
@@ -319,7 +319,7 @@ function Header({ onMenuClick }: HeaderProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setShowNotifications(v => !v)}
-              className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+              className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
               aria-label={t('header.notifications')}
               aria-expanded={showNotifications}
             >
@@ -352,7 +352,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/cashier')}
-            className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+            className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={t('header.cashier')}
           >
             <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -363,7 +363,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleTheme}
-            className="p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={theme === 'light' ? t('header.darkTheme') : t('header.lightTheme')}
           >
             {theme === 'light' ? (
@@ -378,7 +378,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleLanguage}
-            className="px-2.5 py-1.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] flex items-center justify-center cursor-pointer text-sm font-semibold text-[var(--fg-3)] group-hover:text-[var(--primary)]"
+            className="px-2.5 py-1.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] flex items-center justify-center cursor-pointer text-sm font-semibold text-[var(--fg-3)] group-hover:text-[var(--primary)]"
             aria-label={language === 'th' ? 'Switch to English' : 'Switch to Thai'}
           >
             {language === 'th' ? 'TH' : 'EN'}
@@ -389,7 +389,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/settings')}
-            className="p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={t('header.settings')}
           >
             <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -398,7 +398,7 @@ function Header({ onMenuClick }: HeaderProps) {
           {/* User Profile */}
           <motion.div
             whileHover={{ scale: 1.02 }}
-            className="flex items-center gap-3 pl-2.5 pr-4 py-1.5 rounded-full bg-[var(--surface-2)]/60 hover:bg-[var(--surface)]/90 border border-[var(--border)]/60 hover:border-phopy-indigo/40 transition-all cursor-pointer shadow-sm"
+            className="phopy-profile-pill flex items-center gap-3 pl-2.5 pr-4 py-1.5 rounded-full transition-all cursor-pointer shadow-sm" 
             onClick={() => navigate('/settings')}
           >
             <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
