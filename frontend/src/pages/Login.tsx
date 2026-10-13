@@ -10,7 +10,7 @@ import api from '../services/api'
 import { stripNonAscii, EMAIL_REGEX } from '../utils/email'
 import SignupPlan from '../components/SignupPlan'
 
-type Mode = 'login' | 'signup' | 'submitted'
+type Mode = 'login' | 'signup'
 
 interface SignupForm {
   email: string
@@ -27,7 +27,7 @@ const STEPS: { key: keyof SignupForm; label: string; hint?: string; type: string
   { key: 'email',    label: 'อีเมลของคุณ',   hint: 'ใช้เป็นชื่อผู้ใช้สำหรับเข้าระบบ', type: 'email',    placeholder: 'you@example.com',  icon: Mail },
   { key: 'business', label: 'ชื่อธุรกิจ/ร้าน', hint: 'ชื่อกิจการที่จะแสดงในระบบ',      type: 'text',     placeholder: 'เช่น ร้านกาแฟ ABC', icon: Building2 },
   { key: 'name',     label: 'ชื่อของคุณ',     hint: 'ผู้ดูแลหลักของบัญชีนี้',          type: 'text',     placeholder: 'ชื่อ-นามสกุล',      icon: User },
-  { key: 'phone',    label: 'เบอร์ติดต่อ',    hint: 'ทีมงานจะติดต่อกลับเพื่อยืนยันการเปิดใช้', type: 'tel', placeholder: '08x-xxx-xxxx',    icon: Phone },
+  { key: 'phone',    label: 'เบอร์ติดต่อ',    hint: 'ไว้ให้ทีมงานช่วยตั้งค่าเมื่อต้องการ', type: 'tel', placeholder: '08x-xxx-xxxx',    icon: Phone },
   { key: 'password', label: 'ตั้งรหัสผ่าน',   hint: 'อย่างน้อย 8 ตัวอักษร',            type: 'password', placeholder: '••••••••',        icon: Lock },
 ]
 
@@ -35,12 +35,10 @@ function Login() {
   const { t } = useTranslation()
   const { login } = useAuth()
 
-  // มาจากปุ่มบนหน้าราคา phopy.net: ?plan=solo&cycle=monthly → เปิดหน้าสมัครพร้อมแพ็กนั้น แล้วไปจ่ายที่ Stripe
-  // ?signup=success|cancel = กลับมาจาก Stripe
+  // มาจากปุ่มบนหน้าราคา phopy.net: ?plan=solo&cycle=monthly → เปิดหน้าสมัครพร้อมแพ็กนั้น สมัครเสร็จได้ทดลองแพ็กนั้น 30 วันทันที
   const [urlParams] = useState(() => new URLSearchParams(window.location.search))
   const paidPlan = urlParams.get('plan') && urlParams.get('plan') !== 'free' ? urlParams.get('plan') : null
   const planCycle: 'monthly' | 'yearly' = urlParams.get('cycle') === 'yearly' ? 'yearly' : 'monthly'
-  const signupReturn = urlParams.get('signup')
   const [packs, setPacks] = useState<string[]>([])
   const [mode, setMode] = useState<Mode>(urlParams.get('plan') ? 'signup' : 'login')
 
@@ -113,10 +111,11 @@ function Login() {
         website: su.website, // honeypot
         ...(paidPlan ? { plan: paidPlan, cycle: planCycle, packs } : {}),
       })
-      // แพ็กเสียเงิน → ไปหน้าชำระเงินของ Stripe (บริษัทถูกสร้างให้อัตโนมัติเมื่อจ่าย/เริ่มทดลองสำเร็จ)
-      if (res.data?.data?.checkoutUrl) { window.location.href = res.data.data.checkoutUrl; return }
-      if (res.data?.success) setMode('submitted')
-      else setSuErr(res.data?.message || 'สมัครไม่สำเร็จ')
+      if (!res.data?.success) { setSuErr(res.data?.message || 'สมัครไม่สำเร็จ'); return }
+      // บริษัทเปิดแล้ว → เข้าระบบให้เลย (ล้าง ?plan= ก่อน ไม่งั้น App เด้งไปหน้าชำระเงิน)
+      window.history.replaceState(null, '', '/')
+      const r = await login(su.email.trim(), su.password)
+      if (!r.success) { setMode('login'); setEmail(su.email.trim()); setError(r.message || 'สมัครเรียบร้อย กรุณาเข้าสู่ระบบ') }
     } catch (err: any) {
       setSuErr(err?.response?.data?.message || 'สมัครไม่สำเร็จ กรุณาลองใหม่')
     } finally {
@@ -181,11 +180,6 @@ function Login() {
         {/* ==================== LOGIN ==================== */}
         {mode === 'login' && (
           <>
-            {signupReturn === 'success' && (
-              <div className="mb-6 p-3 bg-[var(--success-soft)] border border-success/30 rounded-lg text-[var(--success)] text-sm">
-                สมัครเรียบร้อย เข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ตั้งไว้ได้เลย (ถ้ายังเข้าไม่ได้ รอสักครู่แล้วลองใหม่)
-              </div>
-            )}
             {error && (
               <div className="mb-6 p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-danger text-sm">
                 {error}
@@ -246,9 +240,6 @@ function Login() {
             </div>
 
             {paidPlan && <SignupPlan plan={paidPlan} cycle={planCycle} packs={packs} onPacksChange={setPacks} />}
-            {signupReturn === 'cancel' && !suErr && (
-              <div className="mb-4 p-3 bg-[var(--surface-2)] rounded-lg text-[var(--fg-2)] text-sm">ยกเลิกการชำระเงินแล้ว ยังไม่มีการตัดเงิน — สมัครใหม่ได้เลย</div>
-            )}
             {suErr && (
               <div className="mb-4 p-3 bg-[var(--danger-soft)] border border-danger/30 rounded-lg text-danger text-sm">{suErr}</div>
             )}
@@ -302,25 +293,6 @@ function Login() {
               <button type="button" onClick={backToLogin} className="text-[var(--primary)] hover:underline">เข้าสู่ระบบ</button>
             </p>
           </div>
-        )}
-
-        {/* ==================== SUBMITTED ==================== */}
-        {mode === 'submitted' && (
-          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
-            <div className="w-16 h-16 rounded-full bg-[var(--success-soft)] flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-8 h-8 text-[var(--success)]" />
-            </div>
-            <h2 className="text-xl font-bold text-[var(--fg-1)] mb-2">ส่งคำขอสมัครแล้ว 🎉</h2>
-            <p className="text-sm text-[var(--fg-3)] leading-relaxed mb-2">
-              ทีมงานจะตรวจสอบและติดต่อกลับที่เบอร์ <b className="text-[var(--fg-1)]">{su.phone || '-'}</b> เพื่อยืนยันการเปิดใช้งาน
-            </p>
-            <p className="text-xs text-[var(--fg-4)] mb-6">
-              เมื่อได้รับการอนุมัติ คุณจะเข้าสู่ระบบได้ทันทีด้วยอีเมล <b>{su.email}</b> และรหัสผ่านที่ตั้งไว้
-            </p>
-            <button type="button" onClick={backToLogin} className="w-full phopy-btn-primary flex items-center justify-center gap-2">
-              <ArrowLeft className="w-4 h-4" /> กลับไปหน้าเข้าสู่ระบบ
-            </button>
-          </motion.div>
         )}
 
         {/* Footer */}

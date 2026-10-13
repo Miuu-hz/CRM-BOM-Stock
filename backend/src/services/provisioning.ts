@@ -1,6 +1,6 @@
-// Shared tenant provisioning — creates an ERP tenant (company_settings + free
-// subscription + ADMIN user). Used by BOTH the Master panel (POST /master/tenants)
-// and the self-service signup-approval flow (POST /master/signup-requests/:id/approve).
+// Shared tenant provisioning — creates an ERP tenant (company_settings + free/trial
+// subscription + ADMIN user). Used by the Master panel (POST /master/tenants) and by
+// self-service signup (POST /api/auth/register), which opens the tenant immediately.
 //
 // It does NOT touch Phopy Kanban: the Master path passes the plaintext password to
 // provisionKanban() to sync the same password; the signup-approval path has only a
@@ -10,6 +10,9 @@
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/sqlite'
 import { seedChartOfAccounts } from '../config/chartOfAccounts'
+import type { Selection } from './billing.catalog'
+
+export const TRIAL_DAYS = 30
 
 // คืนค่าว่างได้ถ้าชื่อไม่เหลือตัวอักษร ASCII เลย (เช่นชื่อไทยล้วน) — ผู้เรียกตัดสินเองว่าจะใช้อะไรแทน
 export function slugify(text: string): string {
@@ -36,6 +39,7 @@ export interface ProvisionInput {
   adminName: string
   adminPasswordHash: string // already bcrypt-hashed
   customTenantId?: string
+  trial?: Selection // สมัครเองแบบเลือกแพ็กเสียเงิน → ใช้แพ็กนั้นได้ TRIAL_DAYS วัน ไม่มี = Free
 }
 
 export interface ProvisionResult {
@@ -66,11 +70,17 @@ export function provisionTenant(input: ProvisionInput): ProvisionResult {
     tenantId,
     input.businessName,
   )
-  // New tenants start on the Free plan (no expiry) — MASTER upgrades later.
+  // Free = ไม่หมดอายุ · ทดลองแพ็กเสียเงิน = TRIAL ถึงวันครบกำหนด แล้ว getSubscription ปล่อยลงเป็น Free เอง
+  const t = input.trial
   db.prepare(
-    `INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, current_period_start)
-     VALUES (?, ?, 'free', 'FREE', ?)`,
-  ).run(randomBytes(8).toString('hex'), tenantId, now)
+    `INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, billing_cycle, current_period_start, current_period_end, packs, addons)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    randomBytes(8).toString('hex'), tenantId,
+    t ? t.plan : 'free', t ? 'TRIAL' : 'FREE', t ? t.cycle : null, now,
+    t ? new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString() : null,
+    JSON.stringify(t ? t.packs : []), JSON.stringify(t ? t.addons : {}),
+  )
   db.prepare(
     `INSERT INTO users (id, email, password, name, role, tenant_id, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'ADMIN', ?, 'active', ?, ?)`,

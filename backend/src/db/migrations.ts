@@ -1653,6 +1653,33 @@ export function runMigrations(db: any): void {
     }
   } catch (e) { console.error('⚠️ goods_receipts invoiced_at migration error:', e) }
 
+  // ==================== SUBSCRIPTION PLANS v2.1 — Phopy_Price.xlsx 2026-10-13 ====================
+  // Business 2 Pack + Multi-Currency, Business+ ฿990 3 Pack + Smart Unit/Multi-Currency/Backup,
+  // Pro + Multi-Currency/Subcontract. เพิ่มฟีเจอร์แบบ set (รันซ้ำได้) และแก้ราคาเฉพาะถ้ายังเป็นค่าเดิม
+  // ไม่งั้นจะทับราคาที่ MASTER แก้ผ่าน /api/master/plans
+  try {
+    const add: Record<string, string[]> = {
+      business: ['multi_currency'],
+      business_plus: ['smart_unit', 'multi_currency', 'backup'],
+      pro: ['multi_currency', 'subcontract'],
+    }
+    const get = db.prepare(`SELECT features FROM subscription_plans WHERE code = ?`)
+    const setF = db.prepare(`UPDATE subscription_plans SET features = ?, updated_at = CURRENT_TIMESTAMP WHERE code = ?`)
+    db.transaction(() => {
+      for (const [code, feats] of Object.entries(add)) {
+        const row = get.get(code) as any
+        if (!row) continue
+        const f = new Set<string>(JSON.parse(row.features || '[]'))
+        const before = f.size
+        feats.forEach(x => f.add(x))
+        if (f.size !== before) setF.run(JSON.stringify([...f]), code)
+      }
+      db.prepare(`UPDATE subscription_plans SET price_monthly = 990, price_yearly = 9900, description = '5 ผู้ใช้ + เลือก 3 Pack'
+                  WHERE code = 'business_plus' AND price_monthly = 950`).run()
+      db.prepare(`UPDATE subscription_plans SET description = '3 ผู้ใช้ + เลือก 2 Pack' WHERE code = 'business' AND description = '3 ผู้ใช้ + เลือก 1 Pack'`).run()
+    })()
+  } catch (e) { console.error('⚠️ subscription plans v2.1 error:', e) }
+
   // ==================== purchase_price / purchase_unit (stock_items) ====================
   // Shop owners only know what they PAID per purchased unit ("1 pack of eggs = 133 บาท"),
   // never the derived price-per-base-unit ("4.4333 บาท/ฟอง") — the UI label said "ต่อ แพ็ค"

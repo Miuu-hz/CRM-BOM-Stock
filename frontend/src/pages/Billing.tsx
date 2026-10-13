@@ -187,7 +187,9 @@ export default function Billing() {
   const isCurrent = current.hasSubscription && current.planCode === plan && current.cycle === cycle &&
     JSON.stringify([...current.packs].sort()) === JSON.stringify([...packs].sort()) &&
     JSON.stringify(current.addons) === JSON.stringify(addons)
-  const submitLabel = current.hasSubscription ? 'เปลี่ยนแพ็กเกจ' : trialEligible ? 'เริ่มทดลองใช้ฟรี 30 วัน' : 'ไปชำระเงิน'
+  const submitLabel = current.hasSubscription ? 'เปลี่ยนแพ็กเกจ'
+    : current.status === 'TRIAL' ? (trialEligible ? 'สมัครแพ็กนี้ (ยังไม่ตัดเงินจนครบช่วงทดลอง)' : 'ไปชำระเงิน')
+    : trialEligible ? 'เริ่มทดลองใช้ฟรี 30 วัน' : 'ไปชำระเงิน'
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -198,6 +200,7 @@ export default function Billing() {
             ตอนนี้ใช้ <b className="text-[var(--fg-1)]">{current.planName}</b>
             {current.packs.length > 0 && <> · Pack: {current.packs.join(', ')}</>}
             {current.currentPeriodEnd && current.status === 'ACTIVE' && <> · ใช้ได้ถึง {new Date(current.currentPeriodEnd).toLocaleDateString('th-TH')}</>}
+            {current.currentPeriodEnd && current.status === 'TRIAL' && <b className="text-[var(--warning)]"> · ทดลองใช้ฟรีถึง {new Date(current.currentPeriodEnd).toLocaleDateString('th-TH')} (ไม่สมัครต่อ = กลับเป็น Free ข้อมูลอยู่ครบ)</b>}
             {current.status === 'EXPIRED' && <b className="text-[var(--danger)]"> · หมดอายุแล้ว</b>}
           </p>
         </div>

@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit'
 import { getDb } from '../db/sqlite'
 import { randomBytes } from 'crypto'
 import { BillingError, parseSelection, Selection } from '../services/billing.catalog'
-import { signupCheckout } from '../services/billing.service'
+import { provisionTenant, ProvisionError, TRIAL_DAYS } from '../services/provisioning'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 
 const router = Router()
@@ -57,8 +57,8 @@ const loginIpLimiter = rateLimit({
   message: { success: false, message: 'คำขอมากเกินไป กรุณารอ 15 นาที แล้วลองใหม่' },
 })
 
-// Public self-service signup: 5 requests per IP per hour (spam guard; Master still
-// reviews every request before a tenant is created).
+// Public self-service signup: 5 requests per IP per hour. Signup opens a tenant immediately
+// (no Master review), so this limiter + the honeypot are the spam guard.
 const registerIpLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5,
@@ -283,21 +283,29 @@ router.post('/refresh', async (req, res) => {
 })
 
 // @route   POST /api/auth/register
-// @desc    Public self-service signup. Creates a PENDING signup request (no tenant
-//          yet) that a Master must approve. The applicant sets their own password.
-//          With a paid `plan` (from the phopy.net pricing page) it instead goes
-//          straight to Stripe Checkout; the webhook provisions the tenant on success.
+// @desc    Public self-service signup — opens the company immediately (no Master approval).
+//          No plan / 'free' → Free forever. A paid `plan` (from the phopy.net pricing page)
+//          → that plan + chosen Packs as a TRIAL for TRIAL_DAYS, then falls back to Free
+//          unless the admin subscribes via Settings → แพ็กเกจ (Stripe).
 //          Spam guards: IP rate-limit + honeypot field (`website`) + duplicate checks.
+//          The row in signup_requests is kept (status approved, reviewed_by 'self') so
+//          Master still sees who signed up and their phone number.
 router.post('/register', registerIpLimiter, async (req, res) => {
   try {
     const { businessName, adminName, password, phone, website, plan } = req.body
     const email = typeof req.body?.email === 'string' ? req.body.email.trim() : req.body?.email
 
     // Honeypot: real users never fill `website`; bots do → pretend success, do nothing.
-    if (website) return res.json({ success: true, data: { pending: true } })
+    if (website) return res.json({ success: true, data: { activated: true } })
 
     if (!businessName || !adminName || !email || !password) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบ' })
+    }
+    // public endpoint ที่เปิดบริษัทได้ทันที — รับเฉพาะข้อความความยาวพอดี
+    const textOk = (v: unknown, max: number) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
+    if (!textOk(businessName, 100) || !textOk(adminName, 100) || (phone != null && phone !== '' && !textOk(phone, 30)) ||
+        typeof password !== 'string' || password.length > 128 || typeof email !== 'string' || email.length > 254) {
+      return res.status(400).json({ success: false, message: 'ข้อมูลไม่ถูกต้องหรือยาวเกินไป' })
     }
     if (!EMAIL_REGEX.test(email)) {
       return res.status(400).json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง (ใช้ตัวอักษรภาษาอังกฤษเท่านั้น)' })
@@ -323,29 +331,21 @@ router.post('/register', registerIpLimiter, async (req, res) => {
     if (existingUser) {
       return res.status(409).json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว กรุณาเข้าสู่ระบบ' })
     }
-    const existingPending = db.prepare(
-      `SELECT id FROM signup_requests WHERE email = ? COLLATE NOCASE AND status = 'pending'`,
-    ).get(email)
-    if (existingPending && !selection) {
-      return res.status(409).json({ success: false, message: 'มีคำขอสมัครด้วยอีเมลนี้อยู่แล้ว กรุณารอผู้ดูแลอนุมัติ' })
-    }
-
     const passwordHash = await bcrypt.hash(password, 10)
-    const id = randomBytes(12).toString('hex')
-    // 'checkout' = รอจ่ายที่ Stripe (ไม่โผล่ในคิวอนุมัติของ MASTER) — สมัครแบบเสียเงินแทนคำขอเดิมที่ค้างอยู่
-    // (ทิ้ง checkout กลางทาง / คำขอ Free ที่ยังไม่อนุมัติ) จึงกดสมัครซ้ำด้วยอีเมลเดิมได้
-    if (selection) db.prepare(`DELETE FROM signup_requests WHERE email = ? COLLATE NOCASE AND status IN ('checkout', 'pending')`).run(email)
-    db.prepare(
-      `INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-    ).run(id, businessName, adminName, email, passwordHash, phone || null, selection ? 'checkout' : 'pending')
-
-    if (selection) {
-      const { url } = await signupCheckout(id, email, selection)
-      return res.json({ success: true, data: { checkoutUrl: url } })
-    }
-    res.json({ success: true, data: { pending: true } })
+    const result = db.transaction(() => {
+      // คำขอเก่าที่ค้างจากระบบรออนุมัติ — ไม่ต้องรอแล้ว
+      db.prepare(`DELETE FROM signup_requests WHERE email = ? COLLATE NOCASE AND status IN ('checkout', 'pending')`).run(email)
+      const { tenantId } = provisionTenant({ businessName: businessName.trim(), adminEmail: email, adminName: adminName.trim(), adminPasswordHash: passwordHash, trial: selection ? { ...selection, addons: {} } : undefined })  // ทดลอง = แพ็ก + Pack เท่านั้น Add-on ต้องซื้อ
+      db.prepare(
+        `INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, tenant_id, reviewed_by, reviewed_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 'self', datetime('now'), datetime('now'))`,
+      ).run(randomBytes(12).toString('hex'), businessName, adminName, email, passwordHash, phone || null, tenantId)
+      return tenantId
+    })()
+    console.log(`[signup] ${email} → ${result} (${selection ? `ทดลอง ${selection.plan} ${TRIAL_DAYS} วัน` : 'free'})`)
+    res.json({ success: true, data: { activated: true, plan: selection?.plan ?? 'free', trialDays: selection ? TRIAL_DAYS : 0 } })
   } catch (error) {
+    if (error instanceof ProvisionError) return res.status(error.status).json({ success: false, message: error.message })
     console.error('Register error:', error)
     res.status(500).json({ success: false, message: 'สมัครไม่สำเร็จ' })
   }

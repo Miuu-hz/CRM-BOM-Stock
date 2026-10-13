@@ -7,7 +7,7 @@ export interface SubscriptionInfo {
   tenantId: string
   planCode: string
   planName: string
-  status: 'FREE' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'NONE'
+  status: 'FREE' | 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'NONE'
   currentPeriodEnd: string | null
   features: string[]
   packs: string[]
@@ -36,17 +36,26 @@ function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   try { return raw ? JSON.parse(raw) : fallback } catch { return fallback }
 }
 
+const PLAN_COLS = 'p.code AS plan_code, p.name AS plan_name, p.features, p.max_users, p.max_products, p.max_pos_shifts'
+
 export function getSubscription(tenantId: string): SubscriptionInfo {
   const db = getDb()
-  const row = db.prepare(`
-    SELECT s.plan_code, s.status, s.current_period_end, s.packs, s.addons,
-           p.name AS plan_name, p.features, p.max_users, p.max_products, p.max_pos_shifts
+  let row = db.prepare(`
+    SELECT s.status, s.current_period_end, s.packs, s.addons, ${PLAN_COLS}
     FROM tenant_subscriptions s
     JOIN subscription_plans p ON p.code = s.plan_code
     WHERE s.tenant_id = ?
   `).get(tenantId) as any
 
   if (!row) return FULL_ACCESS(tenantId)
+
+  // ทดลองใช้ (สมัครเองจากหน้าเว็บ) ครบกำหนดแล้วยังไม่จ่าย → ใช้ต่อแบบ Free ข้อมูลอยู่ครบ (ไม่ล็อกบริษัท)
+  // ponytail: lazy เหมือน ACTIVE ไม่มี cron — แถวใน DB ยังเป็น TRIAL ไว้ให้ checkout รู้ว่าใช้สิทธิ์ทดลองไปแล้ว
+  if (row.status === 'TRIAL' && row.current_period_end &&
+      new Date(row.current_period_end).getTime() < Date.now()) {
+    const free = db.prepare(`SELECT ${PLAN_COLS} FROM subscription_plans p WHERE p.code = 'free'`).get() as any
+    row = { ...free, status: 'FREE', current_period_end: null, packs: '[]', addons: '{}' }
+  }
 
   let status = row.status as SubscriptionInfo['status']
   // Lazy expiry: ACTIVE ที่เลย current_period_end ถือเป็น EXPIRED ทันที (ไม่ต้อง cron)

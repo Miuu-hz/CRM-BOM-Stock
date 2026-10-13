@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getSubscription } from '../services/subscription.service'
 import { BillingError, publicCatalog } from '../services/billing.catalog'
-import { checkout, handleEvent, portal, previewChange } from '../services/billing.service'
+import { checkout, handleEvent, portal, previewChange, trialFor } from '../services/billing.service'
 import { getDb } from '../db/sqlite'
 
 const router = Router()
@@ -55,7 +55,7 @@ const fail = (res: Response, err: unknown, fallback: string) => {
 router.get('/', (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId
   const sub = getSubscription(tenantId)
-  const row = getDb().prepare('SELECT billing_cycle, stripe_customer_id, stripe_subscription_id FROM tenant_subscriptions WHERE tenant_id = ?')
+  const row = getDb().prepare('SELECT billing_cycle, stripe_customer_id, stripe_subscription_id, status, current_period_end FROM tenant_subscriptions WHERE tenant_id = ?')
     .get(tenantId) as any
   res.json({
     success: true,
@@ -71,7 +71,7 @@ router.get('/', (req: Request, res: Response) => {
         hasSubscription: !!row?.stripe_subscription_id,
         hasCustomer: !!row?.stripe_customer_id,
       },
-      trialEligible: !row?.stripe_customer_id,
+      trialEligible: trialFor(row ?? { stripe_customer_id: null, status: null, current_period_end: null }) !== null,
       catalog: publicCatalog(),
     },
   })

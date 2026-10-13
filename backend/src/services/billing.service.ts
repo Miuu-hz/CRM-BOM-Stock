@@ -2,7 +2,7 @@ import Stripe from 'stripe'
 import { randomBytes } from 'crypto'
 import { getDb } from '../db/sqlite'
 import { BillingError, lineItems, parseSelection, Selection } from './billing.catalog'
-import { provisionTenant, ProvisionError } from './provisioning'
+import { TRIAL_DAYS } from './provisioning'
 
 let client: Stripe | null = null
 export function stripe(): Stripe {
@@ -17,7 +17,8 @@ export function stripe(): Stripe {
 export const APP_URL = process.env.APP_URL || 'https://erp.phopy.net'
 // webhook มาช้าหรือ Stripe ตัดบัตรซ้ำไม่ผ่านรอบแรก — เผื่อไว้ 1 วันก่อน lazy expiry ล็อกระบบ
 const GRACE_MS = 86400000
-const TRIAL_DAYS = 30
+// Stripe ไม่รับ trial_end ที่ใกล้กว่า 48 ชม.
+const MIN_TRIAL_MS = 48 * 3600000
 
 // metadata ของ subscription คือที่เก็บ "ลูกค้าซื้ออะไร" — ตั้งตอน checkout/เปลี่ยนแพ็กผ่าน API ของเราเท่านั้น
 // (Customer Portal ตั้งค่าให้เปลี่ยนแพ็กไม่ได้ ดู scripts/stripeSetup) จึงไม่ต้องแกะจาก price ของแต่ละ item
@@ -97,46 +98,12 @@ function upsert(tenantId: string, fields: Record<string, string | null>): void {
   `).run(randomBytes(8).toString('hex'), tenantId, new Date().toISOString(), ...Object.values(fields))
 }
 
-// สมัครใหม่จากหน้าราคา: จ่าย/เริ่มทดลองสำเร็จ = เปิดบริษัทให้เลย ไม่ต้องรอ MASTER อนุมัติ
-// (ด่านกันบอทคือหน้า Checkout ของ Stripe + rate limit ของ /auth/register)
-// เรียกซ้ำได้: อนุมัติไปแล้วคืน tenant เดิม
-export function provisionFromSignup(signupId: string): string | null {
-  const db = getDb()
-  const row = db.prepare('SELECT * FROM signup_requests WHERE id = ?').get(signupId) as any
-  if (!row) return null
-  if (row.status === 'approved') return row.tenant_id
-  if (row.status !== 'checkout') return null
-  try {
-    return db.transaction(() => {
-      const { tenantId } = provisionTenant({
-        businessName: row.business_name,
-        adminEmail: row.email,
-        adminName: row.admin_name,
-        adminPasswordHash: row.password_hash,
-      })
-      db.prepare(`UPDATE signup_requests SET status = 'approved', tenant_id = ?, reviewed_by = 'stripe', reviewed_at = datetime('now') WHERE id = ?`)
-        .run(tenantId, signupId)
-      return tenantId
-    })()
-  } catch (err) {
-    if (!(err instanceof ProvisionError)) throw err
-    // เช่นอีเมลถูกใช้ไประหว่างรอจ่าย — ลูกค้าจ่ายแล้วแต่เปิดบริษัทไม่ได้ ต้องให้คนดูต่อ
-    console.error(`[billing] เปิดบริษัทจาก signup ${signupId} (${row.email}) ไม่ได้: ${err.message} — ตรวจใน MasterPanel/Stripe`)
-    db.prepare(`UPDATE signup_requests SET status = 'rejected', reject_reason = ? WHERE id = ?`)
-      .run(`จ่ายผ่าน Stripe แล้วแต่เปิดบริษัทไม่ได้: ${err.message}`, signupId)
-    return null
-  }
-}
-
 export interface EventDeps {
   retrieve: (id: string) => Promise<SubscriptionLike>
-  // ใส่ tenant_id ลง metadata ของ subscription ที่เกิดจากการสมัครใหม่ (ตอนสร้างยังไม่มี tenant)
-  attachTenant: (subscriptionId: string, tenantId: string) => Promise<void>
 }
 
 const stripeDeps: EventDeps = {
   retrieve: async id => (await stripe().subscriptions.retrieve(id)) as unknown as SubscriptionLike,
-  attachTenant: async (id, tenantId) => { await stripe().subscriptions.update(id, { metadata: { tenant_id: tenantId } }) },
 }
 
 // ponytail: ไม่มีตารางกัน event ซ้ำ — ทุก event ดึง subscription ล่าสุดจาก Stripe แล้วเขียนทับ
@@ -148,13 +115,7 @@ export async function handleEvent(event: Stripe.Event, deps: EventDeps = stripeD
       const session = event.data.object as Stripe.Checkout.Session
       if (session.mode !== 'subscription' || !session.subscription) return
       subscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription.id
-      let tenantId = session.client_reference_id
-      const signupId = session.metadata?.signup_request_id
-      if (signupId) {
-        tenantId = provisionFromSignup(signupId)
-        if (!tenantId) return
-        await deps.attachTenant(subscriptionId, tenantId)
-      }
+      const tenantId = session.client_reference_id
       // ผูก subscription ใหม่กับ tenant ก่อน apply เพื่อให้ผ่านด่าน "subscription เก่าห้ามทับตัวใหม่"
       if (tenantId) {
         getDb().prepare('UPDATE tenant_subscriptions SET stripe_subscription_id = ? WHERE tenant_id = ?').run(subscriptionId, tenantId)
@@ -178,11 +139,28 @@ export async function handleEvent(event: Stripe.Event, deps: EventDeps = stripeD
   if (subscriptionId) applySubscription(await deps.retrieve(subscriptionId))
 }
 
-interface TenantBilling { stripe_customer_id: string | null; stripe_subscription_id: string | null }
+interface TenantBilling {
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  status: string | null
+  current_period_end: string | null
+}
 
 function tenantBilling(tenantId: string): TenantBilling {
-  return (getDb().prepare('SELECT stripe_customer_id, stripe_subscription_id FROM tenant_subscriptions WHERE tenant_id = ?')
-    .get(tenantId) as TenantBilling | undefined) ?? { stripe_customer_id: null, stripe_subscription_id: null }
+  return (getDb().prepare('SELECT stripe_customer_id, stripe_subscription_id, status, current_period_end FROM tenant_subscriptions WHERE tenant_id = ?')
+    .get(tenantId) as TenantBilling | undefined) ?? { stripe_customer_id: null, stripe_subscription_id: null, status: null, current_period_end: null }
+}
+
+// สิทธิ์ทดลอง 30 วันมีครั้งเดียวต่อบริษัท:
+// - เคยเป็นลูกค้า Stripe แล้ว → ไม่มี
+// - กำลังทดลองจากการสมัครเอง (TRIAL) → ทดลองต่อใน Stripe ถึงวันเดิม (ไม่ต่อเพิ่มอีก 30 วัน) เหลือไม่ถึง 48 ชม. = เก็บเงินเลย
+// - ทดลองไปแล้วจนหมด (แถวยังเป็น TRIAL) → ไม่มี
+// - Free ที่ไม่เคยทดลอง → 30 วันเต็ม
+export function trialFor(b: Pick<TenantBilling, 'stripe_customer_id' | 'status' | 'current_period_end'>, now = Date.now()): SessionOptions['trial'] {
+  if (b.stripe_customer_id) return null
+  if (b.status !== 'TRIAL') return { days: TRIAL_DAYS }
+  const end = b.current_period_end ? new Date(b.current_period_end).getTime() : 0
+  return end - now >= MIN_TRIAL_MS ? { end: Math.floor(end / 1000) } : null
 }
 
 async function resolvePrices(sel: Selection): Promise<{ price: string; quantity: number }[]> {
@@ -223,7 +201,7 @@ export async function checkout(tenantId: string, email: string, input: unknown):
   }
 
   return createSession({
-    items, metadata, email, customer: billing.stripe_customer_id, clientReferenceId: tenantId,
+    items, metadata, email, customer: billing.stripe_customer_id, clientReferenceId: tenantId, trial: trialFor(billing),
     successUrl: `${APP_URL}/settings?tab=subscription&status=success`,
     cancelUrl: `${APP_URL}/settings?tab=subscription&status=cancel`,
   })
@@ -294,18 +272,6 @@ export async function previewChange(tenantId: string, input: unknown): Promise<C
   }
 }
 
-// สมัครใหม่จากหน้าราคา phopy.net — ยังไม่มี tenant, webhook เปิดบริษัทให้ตอน checkout เสร็จ (provisionFromSignup)
-export async function signupCheckout(signupId: string, email: string, sel: Selection): Promise<{ url: string }> {
-  return createSession({
-    items: await resolvePrices(sel),
-    metadata: { ...toMetadata('', sel), signup_request_id: signupId },
-    sessionMetadata: { signup_request_id: signupId },
-    email, customer: null, clientReferenceId: null,
-    successUrl: `${APP_URL}/?signup=success`,
-    cancelUrl: `${APP_URL}/?signup=cancel&plan=${sel.plan}&cycle=${sel.cycle}`,
-  })
-}
-
 interface SessionOptions {
   items: { price: string; quantity: number }[]
   metadata: Record<string, string>         // ติดไปกับ subscription
@@ -313,13 +279,12 @@ interface SessionOptions {
   email: string
   customer: string | null
   clientReferenceId: string | null
+  trial: { days: number } | { end: number } | null // null = เก็บเงินทันที ต้องใส่บัตร
   successUrl: string
   cancelUrl: string
 }
 
 async function createSession(o: SessionOptions): Promise<{ url: string }> {
-  // ทดลองฟรี 30 วัน ไม่ต้องใส่บัตร — ครั้งแรกครั้งเดียวต่อบริษัท (เคยเป็นลูกค้า Stripe แล้ว = ใช้สิทธิ์ไปแล้ว)
-  const firstTime = !o.customer
   const session = await stripe().checkout.sessions.create({
     mode: 'subscription',
     line_items: o.items,
@@ -331,12 +296,13 @@ async function createSession(o: SessionOptions): Promise<{ url: string }> {
     // ใบกำกับภาษีเต็มรูปต้องมีชื่อ ที่อยู่ เลขผู้เสียภาษีของผู้ซื้อ
     billing_address_collection: 'required',
     tax_id_collection: { enabled: true },
-    payment_method_collection: firstTime ? 'if_required' : 'always',
+    // ช่วงทดลองไม่ต้องใส่บัตร — ไม่ใส่จนครบกำหนด Stripe ยกเลิกเอง แล้ว applySubscription ปล่อยลงเป็น Free
+    payment_method_collection: o.trial ? 'if_required' : 'always',
     subscription_data: {
       metadata: o.metadata,
       default_tax_rates: [await vatRate()],
-      ...(firstTime ? {
-        trial_period_days: TRIAL_DAYS,
+      ...(o.trial ? {
+        ...('days' in o.trial ? { trial_period_days: o.trial.days } : { trial_end: o.trial.end }),
         trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } },
       } : {}),
     },

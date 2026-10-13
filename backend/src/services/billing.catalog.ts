@@ -29,15 +29,15 @@ export const PLAN_PRICING: Record<string, PlanPricing> = {
   },
   business: {
     name: 'Business', monthly: 690, includedPacks: 2, canBuyPacks: true,
-    extraUser: { price: 150, maxExtra: 2 }, addons: { backup: 99 },
+    extraUser: { price: 150, maxExtra: 2 }, addons: { backup: 99, smart_unit: 290 },
   },
   business_plus: {
-    name: 'Business+', monthly: 950, includedPacks: 3, canBuyPacks: true,
-    extraUser: { price: 150, maxExtra: 5 }, addons: { smart_unit: 190, multi_currency: 390, subcontract: 290 },
+    name: 'Business+', monthly: 990, includedPacks: 3, canBuyPacks: true,
+    extraUser: { price: 150, maxExtra: 5 }, addons: { subcontract: 290 },
   },
   pro: {
     name: 'Pro', monthly: 1950, includedPacks: 'all', canBuyPacks: false,
-    extraUser: { price: 120, maxExtra: 100 }, addons: { multi_currency: 390, subcontract: 290, api_access: 590 },
+    extraUser: { price: 120, maxExtra: 100 }, addons: { api_access: 590 },
   },
   enterprise_ai: {
     name: 'Enterprise AI', monthly: 3490, includedPacks: 'all', canBuyPacks: false,

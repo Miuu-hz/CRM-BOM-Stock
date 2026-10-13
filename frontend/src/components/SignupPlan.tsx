@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../services/api'
 
-// แถบแพ็กที่เลือกมาจากหน้าราคา phopy.net (?plan=) — โชว์ราคา + ให้เลือก Pack ก่อนไปจ่ายที่ Stripe
+// แถบแพ็กที่เลือกมาจากหน้าราคา phopy.net (?plan=) — โชว์ราคา + ให้เลือก Pack แล้วทดลองแพ็กนั้นได้ทันที 30 วัน
 interface CatalogPlan { code: string; name: string; monthly: number; includedPacks: number | 'all'; canBuyPacks: boolean }
 interface Catalog { yearlyMonths: number; packPrice: number; packs: string[]; plans: CatalogPlan[] }
 
@@ -47,7 +47,7 @@ export default function SignupPlan({ plan, cycle, packs, onPacksChange }: Props)
           <span className="text-[var(--success)]">ประหยัด ฿{(p.monthly * 12 - price).toLocaleString('th-TH')}</span>
         </p>
       )}
-      <p className="text-xs text-[var(--success)] mt-1">ทดลองใช้ฟรี 30 วัน ไม่ต้องใส่บัตร · ยกเลิกได้ทุกเมื่อ</p>
+      <p className="text-xs text-[var(--success)] mt-1">ใช้ได้ทันทีฟรี 30 วัน ไม่ต้องใส่บัตร · ครบแล้วไม่สมัครต่อ = กลับเป็น Free ข้อมูลอยู่ครบ</p>
       <a href="https://phopy.net/compare/" target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--primary)] underline underline-offset-2">แพ็กนี้ได้อะไรบ้าง? ดูตารางเปรียบเทียบ</a>
       {p.canBuyPacks && included !== null && (
         <fieldset className="mt-3">

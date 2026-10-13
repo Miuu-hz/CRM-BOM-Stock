@@ -6,7 +6,7 @@ import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { getSubscription } from './subscription.service'
 import { parseSelection, lineItems, subtotal, priceDefinitions, BillingError } from './billing.catalog'
-import { applySubscription, changeParams, handleEvent, provisionFromSignup, SubscriptionLike } from './billing.service'
+import { applySubscription, changeParams, handleEvent, trialFor, SubscriptionLike } from './billing.service'
 import billingRouter from '../routes/billing.routes'
 
 const sel = (over: Record<string, unknown>) => parseSelection({ plan: 'business', cycle: 'monthly', packs: ['shop', 'maker'], addons: {}, ...over })
@@ -24,7 +24,8 @@ describe('ตรวจคำสั่งซื้อ (parseSelection)', () => {
     [{ addons: { extra_users: 1.5 } }, 'จำนวนเต็ม'],
     [{ addons: { api_access: 1 } }, 'ซื้อ Add-on "api_access" ไม่ได้'],
     [{ plan: 'business_plus', packs: ['shop', 'online', 'accounting'], addons: { subcontract: 1 } }, 'ต้องเลือก Pack Maker'],
-    [{ plan: 'business_plus', packs: ['shop', 'maker', 'online'], addons: { smart_unit: 2 } }, 'ซื้อได้ 1 ชุด'],
+    [{ plan: 'business_plus', packs: ['shop', 'maker', 'online'], addons: { subcontract: 2 } }, 'ซื้อได้ 1 ชุด'],
+    [{ plan: 'business_plus', packs: ['shop', 'maker', 'online'], addons: { smart_unit: 1 } }, 'ซื้อ Add-on "smart_unit" ไม่ได้'],  // รวมในแพ็กแล้ว
   ])('%j → ปฏิเสธ', (over, msg) => {
     expect(() => sel(over)).toThrow(BillingError)
     expect(() => sel(over)).toThrow(msg)
@@ -55,10 +56,11 @@ describe('รายการคิดเงิน (lineItems / subtotal)', () =>
   it('ราคาแพ็กตรงกับ Excel และทุก lookup key ที่ checkout ใช้มี Price ให้สร้าง', () => {
     const defs = new Map(priceDefinitions().map(d => [d.lookupKey, d.unitAmountBaht]))
     expect([...['solo', 'business', 'business_plus', 'pro', 'enterprise_ai']].map(p => defs.get(`phopy_plan_${p}_monthly`)))
-      .toEqual([299, 690, 950, 1950, 3490])
+      .toEqual([299, 690, 990, 1950, 3490])
     expect(defs.get('phopy_plan_solo_yearly')).toBe(2990)
-    const s = sel({ plan: 'business_plus', packs: ['shop', 'maker', 'online', 'accounting'], addons: { extra_users: 5, smart_unit: 1, multi_currency: 1, subcontract: 1 } })
+    const s = sel({ plan: 'business_plus', packs: ['shop', 'maker', 'online', 'accounting'], addons: { extra_users: 5, subcontract: 1 } })
     for (const item of lineItems(s)) expect(defs.has(item.lookupKey)).toBe(true)
+    expect(subtotal(sel({ addons: { smart_unit: 1 } }))).toBe(690 + 290)  // Business ซื้อ Smart Unit ได้
   })
 })
 
@@ -146,7 +148,7 @@ describe('handleEvent', () => {
     const tenantId = `t_${generateId()}`
     const latest = fakeSub(tenantId, { status: 'canceled' })
     const staleEvent = { type: 'customer.subscription.updated', data: { object: { ...latest, status: 'active' } } } as unknown as Stripe.Event
-    await handleEvent(staleEvent, { retrieve: async () => latest, attachTenant: async () => {} })
+    await handleEvent(staleEvent, { retrieve: async () => latest })
     expect(getSubscription(tenantId).planCode).toBe('free')
   })
 
@@ -156,67 +158,57 @@ describe('handleEvent', () => {
       .run(generateId(), tenantId)
     const sub = fakeSub(tenantId)
     const event = { type: 'checkout.session.completed', data: { object: { mode: 'subscription', subscription: sub.id, client_reference_id: tenantId } } } as unknown as Stripe.Event
-    await handleEvent(event, { retrieve: async () => sub, attachTenant: async () => {} })
+    await handleEvent(event, { retrieve: async () => sub })
     expect(getSubscription(tenantId).planCode).toBe('business')
   })
 
   it('event อื่นไม่สนใจ', async () => {
     const never = async () => { throw new Error('ไม่ควรถูกเรียก') }
-    await expect(handleEvent({ type: 'customer.created', data: { object: {} } } as unknown as Stripe.Event, { retrieve: never, attachTenant: never }))
+    await expect(handleEvent({ type: 'customer.created', data: { object: {} } } as unknown as Stripe.Event, { retrieve: never }))
       .resolves.toBeUndefined()
   })
 })
 
-function seedSignup(status = 'checkout', email = `buyer-${generateId()}@example.com`) {
-  const id = generateId()
-  db.prepare(`INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, status) VALUES (?, 'ร้านทดสอบ', 'เจ้าของ', ?, 'hash', ?)`)
-    .run(id, email, status)
-  return { id, email }
-}
+describe('สิทธิ์ทดลองตอนสมัคร Stripe (trialFor)', () => {
+  const now = Date.parse('2026-10-13T00:00:00Z')
+  const inDays = (d: number) => new Date(now + d * 86400000).toISOString()
+  it('Free ไม่เคยทดลอง → 30 วันเต็ม', () => {
+    expect(trialFor({ stripe_customer_id: null, status: 'FREE', current_period_end: null }, now)).toEqual({ days: 30 })
+  })
+  it('กำลังทดลองจากการสมัครเอง → ทดลองต่อถึงวันเดิม ไม่ได้เพิ่มอีก 30 วัน', () => {
+    expect(trialFor({ stripe_customer_id: null, status: 'TRIAL', current_period_end: inDays(10) }, now))
+      .toEqual({ end: Math.floor((now + 10 * 86400000) / 1000) })
+  })
+  it('เหลือไม่ถึง 48 ชม. หรือหมดแล้ว → เก็บเงินเลย', () => {
+    expect(trialFor({ stripe_customer_id: null, status: 'TRIAL', current_period_end: inDays(1) }, now)).toBeNull()
+    expect(trialFor({ stripe_customer_id: null, status: 'TRIAL', current_period_end: inDays(-5) }, now)).toBeNull()
+  })
+  it('เคยเป็นลูกค้า Stripe แล้ว → ไม่มีทดลอง', () => {
+    expect(trialFor({ stripe_customer_id: 'cus_x', status: 'FREE', current_period_end: null }, now)).toBeNull()
+  })
+})
 
-describe('สมัครใหม่จากหน้าราคา → จ่ายแล้วเปิดบริษัทอัตโนมัติ', () => {
-  it('checkout เสร็จ → สร้างบริษัท + ADMIN + เปิดแพ็กที่ซื้อ และผูก tenant กับ subscription', async () => {
-    const signup = seedSignup()
-    const sub = fakeSub('')
-    let attached: [string, string] | null = null
-    const event = { type: 'checkout.session.completed', data: { object: {
-      mode: 'subscription', subscription: sub.id, client_reference_id: null, metadata: { signup_request_id: signup.id },
-    } } } as unknown as Stripe.Event
-    await handleEvent(event, {
-      attachTenant: async (subId, tenantId) => { attached = [subId, tenantId] },
-      // Stripe คืน subscription ที่ใส่ tenant_id แล้ว
-      retrieve: async () => ({ ...sub, metadata: { ...sub.metadata, tenant_id: attached![1] } }),
-    })
-    const row = db.prepare('SELECT status, tenant_id, reviewed_by FROM signup_requests WHERE id = ?').get(signup.id) as any
-    expect(row.status).toBe('approved')
-    expect(row.reviewed_by).toBe('stripe')
-    expect(attached).toEqual([sub.id, row.tenant_id])
-    const admin = db.prepare('SELECT role, tenant_id FROM users WHERE email = ?').get(signup.email) as any
-    expect(admin).toEqual({ role: 'ADMIN', tenant_id: row.tenant_id })
-    const s = getSubscription(row.tenant_id)
+describe('ทดลองใช้ (TRIAL) ใน getSubscription', () => {
+  const seed = (end: string) => {
+    const tenantId = `t_${generateId()}`
+    db.prepare(`INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, current_period_end, packs, addons) VALUES (?, ?, 'business', 'TRIAL', ?, '["shop","accounting"]', '{}')`)
+      .run(generateId(), tenantId, end)
+    return tenantId
+  }
+  it('ระหว่างทดลอง → ได้แพ็ก + Pack ที่เลือกครบ', () => {
+    const s = getSubscription(seed(new Date(Date.now() + 86400000).toISOString()))
+    expect(s.status).toBe('TRIAL')
     expect(s.planCode).toBe('business')
-    expect(s.status).toBe('ACTIVE')
+    expect(s.features).toEqual(expect.arrayContaining(['kds', 'accounting', 'multi_currency']))
+    expect(s.maxUsers).toBe(3)
   })
-
-  it('event ซ้ำ → ไม่สร้างบริษัทซ้ำ', () => {
-    const signup = seedSignup()
-    const first = provisionFromSignup(signup.id)
-    expect(provisionFromSignup(signup.id)).toBe(first)
-    expect((db.prepare('SELECT COUNT(*) c FROM users WHERE email = ?').get(signup.email) as any).c).toBe(1)
-  })
-
-  it('คำขอ Free ที่รอ MASTER อนุมัติ เปิดผ่าน Stripe ไม่ได้', () => {
-    expect(provisionFromSignup(seedSignup('pending').id)).toBeNull()
-  })
-
-  it('อีเมลถูกใช้ไปแล้วระหว่างรอจ่าย → ไม่พัง ทำเครื่องหมายให้คนตรวจ', () => {
-    const signup = seedSignup()
-    db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'x', 'ADMIN', 'other', 'active')`)
-      .run(generateId(), signup.email)
-    expect(provisionFromSignup(signup.id)).toBeNull()
-    const row = db.prepare('SELECT status, reject_reason FROM signup_requests WHERE id = ?').get(signup.id) as any
-    expect(row.status).toBe('rejected')
-    expect(row.reject_reason).toContain('จ่ายผ่าน Stripe แล้ว')
+  it('ครบกำหนดไม่จ่าย → เหลือ Free ไม่ล็อก ไม่มี Pack', () => {
+    const s = getSubscription(seed(new Date(Date.now() - 1000).toISOString()))
+    expect(s.status).toBe('FREE')
+    expect(s.planCode).toBe('free')
+    expect(s.packs).toEqual([])
+    expect(s.features).not.toContain('accounting')
+    expect(s.maxUsers).toBe(1)
   })
 })
 

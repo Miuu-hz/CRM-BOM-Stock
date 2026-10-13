@@ -1,5 +1,5 @@
 // แพ็ก v2 = Base plan + Pack ตามประเภทธุรกิจ + Add-on (ดู Phopy_Price.xlsx ชีต Add-ons)
-// Business เลือกได้ 1 Pack, Business+ 2 Pack (ซื้อเพิ่มได้) — Pro/Enterprise AI ใส่ฟีเจอร์ทุก Pack ไว้ใน plan แล้ว
+// Business เลือกได้ 2 Pack, Business+ 3 Pack (ซื้อเพิ่มได้) — Pro/Enterprise AI ใส่ฟีเจอร์ทุก Pack ไว้ใน plan แล้ว
 // แยกไฟล์ไม่ให้แตะ DB: billing.catalog → scripts/stripeSetup import ไปใช้โดยไม่ต้องเปิด dev.db
 // ponytail: mapping อยู่ในโค้ดเพราะผูกกับ gate ใน index.ts — ถ้าต้องให้ MASTER แก้เองค่อยย้ายเป็นตาราง
 export const PACK_FEATURES: Record<string, string[]> = {
