@@ -20,7 +20,7 @@ const READ_ONLY_ALLOWLIST = new Set([
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
   'get_stock_movements', 'explode_bom',
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
-  'list_marketing_shops', 'get_customer_insights', 'get_quotations',
+  'list_marketing_shops', 'platform_month_status', 'get_customer_insights', 'get_quotations',
   'check_unit_issues', 'get_lead_source_performance',
 ])
 
@@ -31,7 +31,7 @@ const WRITE_TOOL_SAMPLE = [
   'update_po_status', 'create_goods_receipt', 'attach_document_evidence', 'create_purchase_invoice',
   'edit_purchase_invoice', 'pay_supplier', 'complete_purchase_bill', 'create_quotation',
   'set_product_image', 'record_stock_movement', 'manage_unit_conversion', 'create_work_order',
-  'update_work_order_status', 'create_bom', 'bind_document_item', 'import_marketing_csv',
+  'update_work_order_status', 'create_bom', 'bind_document_item', 'platform_submit_file',
 ]
 
 function collectToolNames(tenantId: string, userId: string): string[] {
