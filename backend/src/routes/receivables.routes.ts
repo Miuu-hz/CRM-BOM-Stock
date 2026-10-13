@@ -1,11 +1,14 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 
 const router = Router()
 
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
+
+// ยอดหนี้ทั้งบริษัท — role เดียวกับ MENU_PERMISSIONS['/receivables'] (MASTER ผ่านใน requireRole เอง)
+const companyDebts = requireRole('ADMIN', 'MANAGER', 'POWERUSER')
 
 const DAY_MS = 86_400_000
 
@@ -186,7 +189,7 @@ export function apAging(tenantId: string, asOf: string) {
   return buildAging(rows, asOf)
 }
 
-router.get('/ar-aging', async (req: Request, res: Response) => {
+router.get('/ar-aging', companyDebts, async (req: Request, res: Response) => {
   try {
     res.json({ success: true, data: arAging(req.user!.tenantId, resolveAsOf(req)) })
   } catch (error) {
@@ -197,7 +200,7 @@ router.get('/ar-aging', async (req: Request, res: Response) => {
 
 // GET /api/receivables/ap-aging — เจ้าหนี้การค้าแยกตามอายุหนี้
 // ใช้ purchase_invoices (หนี้จริงที่ตั้งไว้แล้ว) ไม่ใช่ purchase_orders ที่เป็นแค่ใบสั่งซื้อ
-router.get('/ap-aging', async (req: Request, res: Response) => {
+router.get('/ap-aging', companyDebts, async (req: Request, res: Response) => {
   try {
     res.json({ success: true, data: apAging(req.user!.tenantId, resolveAsOf(req)) })
   } catch (error) {
@@ -207,7 +210,7 @@ router.get('/ap-aging', async (req: Request, res: Response) => {
 })
 
 // GET /api/receivables/collections?months=6 — วางบิลไปเท่าไร เก็บเงินได้จริงเท่าไร
-router.get('/collections', async (req: Request, res: Response) => {
+router.get('/collections', companyDebts, async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const months = Math.min(Math.max(parseInt(req.query.months as string, 10) || 6, 1), 24)

@@ -6,7 +6,6 @@ import {
   BookOpen,
   Calculator,
   ClipboardCheck,
-  Coins,
   Factory,
   FileText,
   Landmark,
@@ -84,7 +83,6 @@ const menuItems: MenuItem[] = [
   { path: '/purchase', tKey: 'sidebar.purchase', icon: ShoppingCart, descriptionKey: 'sidebar.purchaseDesc' },
   { path: '/calculator', tKey: 'sidebar.calculator', icon: Calculator, descriptionKey: 'sidebar.calculatorDesc' },
   { path: '/sales', tKey: 'sidebar.sales', icon: TrendingUp, descriptionKey: 'sidebar.salesDesc' },
-  { path: '/receivables', tKey: 'sidebar.receivables', icon: Coins, descriptionKey: 'sidebar.receivablesDesc' },
   { path: '/marketing', tKey: 'sidebar.marketing', icon: Megaphone, descriptionKey: 'sidebar.marketingDesc' },
   { path: '/tax', tKey: 'sidebar.tax', icon: Percent, descriptionKey: 'sidebar.taxDesc', beta: true },
   {

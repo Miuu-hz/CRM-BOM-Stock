@@ -280,7 +280,8 @@ function DunModal({ party, onClose, t }: {
 }
 
 // ---- Page ----
-export default function Receivables() {
+// embedded = เป็นแท็บใน Phopy Board (หัวข้อหน้ามาจาก Board แล้ว)
+export default function Receivables({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation()
   const [side, setSide] = useState<Side>('ar')
   const [aging, setAging] = useState<Record<Side, Aging | null>>({ ar: null, ap: null })
@@ -330,7 +331,7 @@ export default function Receivables() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('receivables.title')}</h1>
+          {!embedded && <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('receivables.title')}</h1>}
           <p className="text-[var(--fg-4)] text-xs mt-1">
             {t('receivables.asOf', { date: data?.asOf ?? '—' })}
           </p>

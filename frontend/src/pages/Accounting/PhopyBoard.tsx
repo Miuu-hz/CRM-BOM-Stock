@@ -13,6 +13,10 @@ import toast from 'react-hot-toast'
 import { phopyBoardApi, PhopyBoardData } from '../../services/phopyBoard'
 import PhopyBoardExtended from './PhopyBoardExtended'
 import { unitLabel } from '../../hooks/useUnits'
+import { useSearchParams } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
+import { canViewMenu } from '../../config/menuPermissions'
+import Receivables from '../Receivables'
 
 type PeriodPreset = 'month' | 'quarter' | 'year' | 'custom'
 
@@ -76,6 +80,11 @@ function SignalDot({ status }: { status: 'ok' | 'warn' | 'danger' }) {
 const WO_COLORS = ['#6366f1', '#3b82f6', '#f59e0b', '#22c55e', '#ef4444']
 
 export default function PhopyBoard() {
+  // ลูกหนี้/เจ้าหนี้ย้ายจาก sidebar มาเป็นแท็บที่นี่ — สิทธิ์ยังตาม '/receivables' (USER ไม่เห็น)
+  const { user } = useAuth()
+  const [params, setParams] = useSearchParams()
+  const canAR = canViewMenu(user?.role, '/receivables', user?.departments)
+  const view = canAR && params.get('view') === 'receivables' ? 'receivables' : 'overview'
   const [preset, setPreset] = useState<PeriodPreset>('month')
   const [customStart, setCustomStart] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -130,7 +139,7 @@ export default function PhopyBoard() {
           <h1 className="text-2xl font-bold text-[var(--fg-1)]">Phopy Board</h1>
           <p className="text-sm text-[var(--fg-3)]">Executive overview · {data?.period.start} – {data?.period.end}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {view === 'overview' && <div className="flex flex-wrap items-center gap-2">
           {(['month', 'quarter', 'year', 'custom'] as PeriodPreset[]).map(p => (
             <button key={p} onClick={() => setPreset(p)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${preset === p ? 'bg-[var(--primary)] text-white' : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-2)] hover:border-[var(--primary)]'}`}>
@@ -151,8 +160,22 @@ export default function PhopyBoard() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             รีเฟรช
           </button>
-        </div>
+        </div>}
       </div>
+
+      {canAR && (
+        <div className="flex gap-1 border-b border-[var(--border)]" role="tablist">
+          {([['overview', 'ภาพรวม'], ['receivables', 'ลูกหนี้ / เจ้าหนี้']] as const).map(([key, label]) => (
+            <button key={key} role="tab" aria-selected={view === key}
+              onClick={() => setParams(key === 'overview' ? {} : { view: key }, { replace: true })}
+              className={`px-4 py-2 -mb-px text-sm font-semibold border-b-2 transition-colors ${view === key ? 'border-[var(--primary)] text-[var(--primary)]' : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view === 'receivables' ? <Receivables embedded /> : (<>
 
       {loading && !data && (
         <div className="flex justify-center py-20">
@@ -395,6 +418,7 @@ export default function PhopyBoard() {
         </>
       )}
       <PhopyBoardExtended startDate={getRange().startDate} endDate={getRange().endDate} />
+      </>)}
     </div>
   )
 }
