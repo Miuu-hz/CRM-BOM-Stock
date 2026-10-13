@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Settings2, CheckCircle2, X, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import PlatformMonthSale from './PlatformMonthSale'
 
 // ==================== Types (ตรงกับ backend /api/platform-settlement) ====================
 
@@ -172,6 +173,9 @@ export default function PlatformSettlement() {
           <Settings2 className="w-5 h-5" />
         </button>
       </div>
+
+      {/* เฟส 2: จับคู่ SKU + ยืนยันการขาย (ตัดสต็อก) ของรอบเดือนที่ MCP ส่งเข้ามา */}
+      <PlatformMonthSale />
 
       {/* เลือกแพลตฟอร์ม + อัพโหลดไฟล์ */}
       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">

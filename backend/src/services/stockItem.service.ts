@@ -224,3 +224,63 @@ export function aliasConflictMessage(tenantId: string, name: string): string | n
 export function dropAlias(tenantId: string, name: string): void {
   db.prepare('DELETE FROM stock_item_aliases WHERE tenant_id = ? AND name_norm = ?').run(tenantId, normName(name))
 }
+
+// ============================================================
+// Phase 2 ช่องทางขายแพลตฟอร์ม — จับคู่ SKU ผ่านตารางชื่อรองตัวเดิม (stock_item_aliases)
+// key เป็น source_ref ('<PLATFORM>:<variant_id>' หรือ '<PLATFORM>:P<product_id>') ไม่ใช่ชื่อ
+// ตั้งใจไม่เช็ค aliasEnabled()/ไม่ชนชื่อสินค้าหลัก (ทางนี้ไม่ผ่านช่องซื้อ) — toggle stock_alias_enabled
+// คุมแค่การผูกอัตโนมัติฝั่งซื้อเท่านั้น ดู carbontome.md เฟส 2
+// ============================================================
+
+/** ชื่อรองที่ผูกกับ source_ref นี้ (ถ้ามี) — ปลายทางปิดใช้ (INACTIVE) = null */
+export function findPlatformAlias(tenantId: string, sourceRef: string): AliasTarget | null {
+  const row = db.prepare(`
+    SELECT a.stock_item_id, a.source_ref, a.unit, a.factor FROM stock_item_aliases a
+    JOIN stock_items s ON s.id = a.stock_item_id AND s.tenant_id = a.tenant_id AND s.${LIVE}
+    WHERE a.tenant_id = ? AND a.source_ref = ?
+  `).get(tenantId, sourceRef) as any
+  if (!row) return null
+  const factor = Number(row.factor)
+  return { stockItemId: row.stock_item_id, sourceRef: row.source_ref, unit: row.unit || null, factor: Number.isFinite(factor) && factor > 0 ? factor : 1 }
+}
+
+/**
+ * ผูก/แก้ชื่อรองของ source_ref นี้ — ผิดกติกา (ไม่พบสินค้า/ตัวคูณไม่ถูกต้อง/ชื่อชนกับ source_ref อื่น) → StockItemRefError ข้อความไทย
+ * ชื่อฝั่งแพลตฟอร์มเปลี่ยนได้ (เปลี่ยนชื่อสินค้า/ตัวเลือก) → ลบแถวเดิมของ source_ref นี้ก่อนกันค้างเป็น orphan name_norm
+ */
+export function upsertPlatformAlias(
+  tenantId: string,
+  input: { sourceRef: string; name: string; stockItemId: string; unit: string; factor: number },
+  userId: string,
+): void {
+  const name = String(input.name || '').trim()
+  const key = normName(name)
+  if (!key) throw new StockItemRefError('ไม่มีชื่อสินค้าให้ผูก')
+  if (!db.prepare(`SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ? AND ${LIVE}`).get(input.stockItemId, tenantId)) {
+    throw new StockItemRefError('ไม่พบสินค้าในคลัง')
+  }
+  if (!(Number.isFinite(input.factor) && input.factor > 0)) {
+    throw new StockItemRefError('ตัวคูณ (factor) ต้องมากกว่า 0')
+  }
+
+  const existingByName = db.prepare('SELECT source_ref FROM stock_item_aliases WHERE tenant_id = ? AND name_norm = ?').get(tenantId, key) as any
+  if (existingByName && existingByName.source_ref !== input.sourceRef) {
+    throw new StockItemRefError(
+      `ชื่อ "${name}" ถูกใช้เป็นชื่อรองของอีกรายการอยู่แล้ว (${existingByName.source_ref || '-'}) — ชื่อสินค้าฝั่งแพลตฟอร์มซ้ำกัน ไม่สามารถผูกซ้ำได้`
+    )
+  }
+
+  const now = new Date().toISOString()
+  db.prepare('DELETE FROM stock_item_aliases WHERE tenant_id = ? AND source_ref = ? AND name_norm != ?').run(tenantId, input.sourceRef, key)
+  db.prepare(`
+    INSERT INTO stock_item_aliases (id, tenant_id, name_norm, name, stock_item_id, source_ref, unit, factor, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(tenant_id, name_norm) DO UPDATE SET
+      stock_item_id = excluded.stock_item_id, unit = excluded.unit, factor = excluded.factor,
+      name = excluded.name, source_ref = excluded.source_ref, created_by = excluded.created_by, updated_at = excluded.updated_at
+  `).run(randomUUID().replace(/-/g, '').slice(0, 25), tenantId, key, name, input.stockItemId, input.sourceRef, input.unit, input.factor, userId, now, now)
+}
+
+export function deletePlatformAlias(tenantId: string, sourceRef: string): void {
+  db.prepare('DELETE FROM stock_item_aliases WHERE tenant_id = ? AND source_ref = ?').run(tenantId, sourceRef)
+}

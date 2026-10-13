@@ -31,7 +31,7 @@ const WRITE_TOOL_SAMPLE = [
   'update_po_status', 'create_goods_receipt', 'attach_document_evidence', 'create_purchase_invoice',
   'edit_purchase_invoice', 'pay_supplier', 'complete_purchase_bill', 'create_quotation',
   'set_product_image', 'record_stock_movement', 'manage_unit_conversion', 'create_work_order',
-  'update_work_order_status', 'create_bom', 'bind_document_item', 'platform_submit_file',
+  'update_work_order_status', 'create_bom', 'bind_document_item', 'platform_submit_file', 'platform_propose_sku_mapping',
 ]
 
 function collectToolNames(tenantId: string, userId: string): string[] {

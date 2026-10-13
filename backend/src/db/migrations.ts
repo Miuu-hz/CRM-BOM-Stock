@@ -2698,6 +2698,37 @@ export function runMigrations(db: any): void {
     `)
     console.log('✅ Migration: platform_months / platform_month_products / platform_days created')
   } catch (e) { console.error('⚠️ platform_months migration error:', e) }
+
+  // ==================== เฟส 2: จับคู่ SKU + ยืนยันการขาย (2026-10-13) ====================
+  // ใช้ stock_item_aliases ตัวเดิม (ชื่อรอง) ผูก source_ref = '<PLATFORM>:<variant_id>' หรือ
+  // '<PLATFORM>:P<product_id>' (สินค้าไม่มีตัวเลือก) — ดู stockItem.service.ts findPlatformAlias/upsertPlatformAlias
+  // ไม่ผ่าน aliasEnabled() ตั้งใจ (toggle นั้นคุมแค่การผูกอัตโนมัติฝั่งซื้อ)
+  // platform_sku_proposals = ข้อเสนอจาก MCP เท่านั้น (ยังไม่ผูกจริง) รอคนยืนยันที่หน้าเว็บ
+  try {
+    const pmCols = db.prepare(`PRAGMA table_info(platform_months)`).all() as any[]
+    ;[
+      ['cogs_amount', 'REAL DEFAULT 0'],
+      ['cogs_breakdown', 'TEXT'],
+      ['sale_confirmed_at', 'TEXT'],
+      ['sale_confirmed_by', 'TEXT'],
+    ].forEach(([col, type]) => {
+      if (!pmCols.some((c: any) => c.name === col)) db.exec(`ALTER TABLE platform_months ADD COLUMN ${col} ${type}`)
+    })
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS platform_sku_proposals (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
+        stock_item_id TEXT NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+        factor REAL NOT NULL DEFAULT 1,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (tenant_id, source_ref)
+      )
+    `)
+    console.log('✅ Migration: platform_months เฟส 2 (cogs/sale_confirmed) + platform_sku_proposals created')
+  } catch (e) { console.error('⚠️ platform_months phase2 migration error:', e) }
 }
 
 /**

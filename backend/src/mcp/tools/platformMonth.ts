@@ -12,6 +12,7 @@ import {
   type AdsPayload,
   type StatsPayload,
 } from '../../services/platformMonth.service'
+import { proposeSkuMapping, getMappingSummary } from '../../services/platformMonthSale.service'
 
 // ── zod schema ต่อชนิดไฟล์ — ตรวจรูปร่าง data ให้ตรงก่อนส่งเข้า service (service ตรวจสมการเอง) ──────
 const incomeSchema = z.object({
@@ -154,7 +155,7 @@ const SCHEMA_BY_TYPE: Record<PlatformFileType, z.ZodTypeAny> = {
   stats: statsSchema,
 }
 
-export function registerPlatformMonthTools(server: IMcpServer, tenantId: string): void {
+export function registerPlatformMonthTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
   // ── platform_submit_file ──────────────────────────────────────────────────
   server.tool(
     'platform_submit_file',
@@ -224,7 +225,54 @@ month = เดือนปฏิทินของรอบ (เช่นรอ�
     },
     async (args) => {
       const status = getMonthStatus(tenantId, args.platform, args.shop_key, args.month)
-      return ok(status)
+      // เฟส 2: แปะสรุปจับคู่ SKU ต่อถ้ารอบนี้มีแล้ว (ยังไม่มี monthId ตอน products ยังไม่มาก็ไม่มีอะไรให้สรุป)
+      const mapping = status.monthId ? getMappingSummary(tenantId, status.monthId) : null
+      return ok({ ...status, mapping })
+    }
+  )
+
+  // ── platform_propose_sku_mapping ──────────────────────────────────────────
+  server.tool(
+    'platform_propose_sku_mapping',
+    `เสนอคู่จับคู่ SKU ให้ตัวเลือก/สินค้าของรอบเดือนนี้ — เป็นแค่ "ข้อเสนอ" รอคนยืนยันที่หน้าเว็บเท่านั้น
+ไม่ผูกจริง ไม่ตัดสต็อก ห้ามยืนยันเอง — แนะนำโดยเทียบชื่อตัวเลือก/สินค้ากับชื่อสินค้าในคลัง (ใกล้เคียงที่สุด)
+ระบุ variant_id (มีตัวเลือก) หรือ product_id (ไม่มีตัวเลือก) อย่างใดอย่างหนึ่งต่อคู่ · sku หรือ stock_item_id อย่างใดอย่างหนึ่ง
+factor = ตัวคูณแพ็ก เช่นตัวเลือก "หมอน 2 ใบ" ชี้ SKU "หมอน" (หน่วยฐาน ใบ) → factor = 2 (ไม่ระบุ = 1)`,
+    {
+      platform: z.enum(['SHOPEE']).describe('แพลตฟอร์ม'),
+      shop_key: z.string().min(1).describe('ชื่อ/รหัสร้านเดียวกับที่ใช้ตอนส่งไฟล์'),
+      month: z.string().regex(/^\d{4}-\d{2}$/).describe('เดือนปฏิทินของรอบ รูปแบบ YYYY-MM'),
+      pairs: z.array(z.object({
+        variant_id: z.string().nullable().optional(),
+        product_id: z.string().nullable().optional(),
+        sku: z.string().optional(),
+        stock_item_id: z.string().optional(),
+        factor: z.number().positive().default(1),
+      })).min(1),
+    },
+    async (args) => {
+      try {
+        const result = proposeSkuMapping(tenantId, {
+          platform: args.platform,
+          shopKey: args.shop_key,
+          month: args.month,
+          pairs: args.pairs.map((p: any) => ({
+            variantId: p.variant_id ?? null,
+            productId: p.product_id ?? null,
+            sku: p.sku,
+            stockItemId: p.stock_item_id,
+            factor: p.factor ?? 1,
+          })),
+        }, userId)
+        return ok({
+          success: true,
+          ...result,
+          message: `เสนอคู่แล้ว ${result.accepted} คู่ (รอคนยืนยันที่หน้าเว็บ)${result.rejected.length ? ` — ปฏิเสธ ${result.rejected.length} คู่` : ''}`,
+        })
+      } catch (err: any) {
+        const message = err instanceof PlatformMonthError ? err.message : (err?.message || String(err))
+        return ok({ success: false, message })
+      }
     }
   )
 }
