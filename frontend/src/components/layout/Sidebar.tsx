@@ -235,14 +235,14 @@ function Sidebar({ mode }: SidebarProps) {
   return (
     <aside
       className={`
-        bg-[var(--surface)] border-r border-[var(--border)] flex flex-col relative z-50
+        bg-[var(--surface)]/90 backdrop-blur-xl border-r border-[var(--border)]/40 flex flex-col relative z-50
         transition-[width] duration-200 ease-out overflow-hidden flex-shrink-0
         ${isRail ? 'w-16' : 'w-[280px]'}
       `}
       aria-label={t('sidebar.mainMenu')}
     >
       {/* Logo */}
-      <div className={`border-b border-[var(--border)] flex-shrink-0 ${isRail ? 'p-3.5 flex justify-center' : 'p-5'}`}>
+      <div className={`border-b border-[var(--border)]/35 flex-shrink-0 ${isRail ? 'p-3.5 flex justify-center' : 'p-5'}`}>
         {isRail ? (
           <div
             className="w-9 h-9 rounded-[10px] bg-white ring-1 ring-black/5 flex items-center justify-center cursor-pointer overflow-hidden"
@@ -266,7 +266,7 @@ function Sidebar({ mode }: SidebarProps) {
 
       {/* User Info — full mode only */}
       {!isRail && (
-        <div className="px-4 py-3 border-b border-[var(--border)] flex-shrink-0">
+        <div className="px-4 py-3 border-b border-[var(--border)]/35 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-none ${
               isMaster
@@ -290,10 +290,10 @@ function Sidebar({ mode }: SidebarProps) {
 
       {/* Tenant Switcher — Master only, full mode */}
       {isMaster && !isRail && (
-        <div className="px-4 py-2 border-b border-[var(--border)] flex-shrink-0 relative">
+        <div className="px-4 py-2 border-b border-[var(--border)]/35 flex-shrink-0 relative">
           <button
             onClick={() => setTenantOpen(o => !o)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-2)] hover:bg-[var(--surface)] border border-[var(--border)] transition-all text-left"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--surface-2)]/60 hover:bg-[var(--surface)] border border-[var(--border)]/40 transition-all text-left"
           >
             <Building2 className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
             <span className="flex-1 text-xs font-medium text-[var(--fg-2)] truncate">
@@ -350,7 +350,7 @@ function Sidebar({ mode }: SidebarProps) {
                 <button
                   key={item.path}
                   onClick={() => setKanbanModalOpen(true)}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all group hover:bg-[var(--surface-2)] text-[var(--fg-2)] text-left"
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all group hover:bg-[var(--surface-2)]/60 text-[var(--fg-2)] text-left"
                 >
                   <item.icon className="w-5 h-5 transition-colors text-[var(--fg-3)] group-hover:text-[var(--primary)]" />
                   <div className="flex-1">
@@ -386,7 +386,7 @@ function Sidebar({ mode }: SidebarProps) {
 
               return (
                 <div key={item.path} className="space-y-1">
-                  <div className={`flex items-center gap-3 px-4 py-3 rounded-lg ${isChildActive ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>
+                  <div className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl ${isChildActive ? 'text-[var(--primary)] font-semibold' : 'text-[var(--fg-2)]'}`}>
                     <item.icon className={`w-5 h-5 ${isChildActive ? 'text-[var(--primary)]' : 'text-[var(--fg-3)]'}`} />
                     <div className="flex-1">
                       <p className="font-semibold text-sm">{label}</p>
@@ -460,10 +460,10 @@ function Sidebar({ mode }: SidebarProps) {
                 to={item.path}
                 end={item.path === '/'}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all group ${
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all group ${
                     isActive
-                      ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
-                      : 'hover:bg-[var(--surface-2)] text-[var(--fg-2)]'
+                      ? 'bg-phopy-indigo/10 text-phopy-indigo font-semibold shadow-xs'
+                      : 'hover:bg-[var(--surface-2)]/60 text-[var(--fg-2)] hover:text-[var(--fg-1)]'
                   }`
                 }
               >
@@ -491,7 +491,7 @@ function Sidebar({ mode }: SidebarProps) {
       </nav>
 
       {/* Bottom */}
-      <div className={`border-t border-[var(--border)] flex-shrink-0 ${isRail ? 'p-1.5 space-y-1' : 'p-3'}`}>
+      <div className={`border-t border-[var(--border)]/35 flex-shrink-0 ${isRail ? 'p-1.5 space-y-1' : 'p-3'}`}>
         {isRail ? (
           <>
             <NavLink

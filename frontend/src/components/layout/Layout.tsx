@@ -34,23 +34,25 @@ function Layout({ children }: LayoutProps) {
 
       <Sidebar mode={sidebarMode} />
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="relative flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* แสงสาด Limelight Backdrop ส่องตั้งแต่ขอบบนสุดของหน้าต่าง
+            ทะลุผ่าน Frosted Header ลงมายัง Main Content อย่างต่อเนื่องเป็นผืนเดียว ไร้รอยต่อ! */}
+        {!isNoLight && (
+          <div className="phopy-limelight-backdrop" aria-hidden="true">
+            <div className="phopy-limelight-beam" />
+            <div className="phopy-aurora-blob blob-left" />
+            <div className="phopy-aurora-blob blob-center" />
+            <div className="phopy-aurora-blob blob-right" />
+          </div>
+        )}
+
         <Header onMenuClick={toggleSidebar} />
+
         <main
           id="main-content"
-          className={`relative flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
+          className={`relative z-10 flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
         >
-          {/* แสงสาดผสมกัน ~40% ของความสูงหน้าจอ + Fade Limelight */}
-          {!isNoLight && (
-            <div className="phopy-limelight-backdrop" aria-hidden="true">
-              <div className="phopy-limelight-beam" />
-              <div className="phopy-aurora-blob blob-left" />
-              <div className="phopy-aurora-blob blob-center" />
-              <div className="phopy-aurora-blob blob-right" />
-            </div>
-          )}
-
-          <div className="relative z-10 max-w-[1920px] mx-auto">
+          <div className="max-w-[1920px] mx-auto">
             {children}
           </div>
         </main>

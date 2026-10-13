@@ -222,7 +222,7 @@ function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <>
-    <header className="phopy-header border-b border-[var(--border)] px-6 py-3 sticky top-0 z-40 h-16">
+    <header className="phopy-header px-6 py-3 sticky top-0 z-40 h-16 transition-colors">
       <div className="flex items-center justify-between h-full">
         {/* Left Section */}
         <div className="flex items-center gap-4">
@@ -230,7 +230,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={onMenuClick}
-            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={t('header.openMenu')}
           >
             <Menu className="w-6 h-6 text-[var(--fg-2)]" />
@@ -238,7 +238,7 @@ function Header({ onMenuClick }: HeaderProps) {
 
           {/* Search Bar */}
           <div ref={searchRef} className="relative hidden md:block" role="search">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-4)]" aria-hidden="true" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)] pointer-events-none" aria-hidden="true" />
             <input
               ref={inputRef}
               type="search"
@@ -247,14 +247,14 @@ function Header({ onMenuClick }: HeaderProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchQuery.length >= 2 && setShowResults(true)}
-              className="phopy-input pl-10 pr-10 w-64 lg:w-96"
+              className="w-64 lg:w-96 h-10 pl-10 pr-10 text-sm rounded-full bg-[var(--surface-2)]/60 hover:bg-[var(--surface)]/90 focus:bg-[var(--surface)] border border-[var(--border)]/60 hover:border-phopy-indigo/40 focus:border-phopy-indigo text-[var(--fg-1)] placeholder-[var(--fg-4)] transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-phopy-indigo/15 shadow-sm"
             />
             {isSearching ? (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--primary)] animate-spin" aria-hidden="true" />
+              <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--primary)] animate-spin" aria-hidden="true" />
             ) : searchQuery ? (
               <button
                 onClick={clearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-[var(--surface-2)] rounded cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 hover:bg-[var(--surface-2)] rounded-full cursor-pointer"
                 aria-label={t('header.clearSearch')}
               >
                 <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />
@@ -319,7 +319,7 @@ function Header({ onMenuClick }: HeaderProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setShowNotifications(v => !v)}
-              className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+              className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
               aria-label={t('header.notifications')}
               aria-expanded={showNotifications}
             >
@@ -352,7 +352,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/cashier')}
-            className="relative p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={t('header.cashier')}
           >
             <Store className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -363,7 +363,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleTheme}
-            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={theme === 'light' ? t('header.darkTheme') : t('header.lightTheme')}
           >
             {theme === 'light' ? (
@@ -378,7 +378,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleLanguage}
-            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer text-sm font-semibold text-[var(--fg-3)] group-hover:text-[var(--primary)]"
+            className="px-2.5 py-1.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] flex items-center justify-center cursor-pointer text-sm font-semibold text-[var(--fg-3)] group-hover:text-[var(--primary)]"
             aria-label={language === 'th' ? 'Switch to English' : 'Switch to Thai'}
           >
             {language === 'th' ? 'TH' : 'EN'}
@@ -389,7 +389,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/settings')}
-            className="p-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors group min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)]/70 transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
             aria-label={t('header.settings')}
           >
             <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -398,7 +398,7 @@ function Header({ onMenuClick }: HeaderProps) {
           {/* User Profile */}
           <motion.div
             whileHover={{ scale: 1.02 }}
-            className="flex items-center gap-3 pl-3 pr-4 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--border-strong)] transition-all cursor-pointer"
+            className="flex items-center gap-3 pl-2.5 pr-4 py-1.5 rounded-full bg-[var(--surface-2)]/60 hover:bg-[var(--surface)]/90 border border-[var(--border)]/60 hover:border-phopy-indigo/40 transition-all cursor-pointer shadow-sm"
             onClick={() => navigate('/settings')}
           >
             <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
