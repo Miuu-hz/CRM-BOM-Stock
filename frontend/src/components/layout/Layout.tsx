@@ -1,4 +1,5 @@
 import { ReactNode, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import Sidebar, { SidebarMode } from './Sidebar'
 import Header from './Header'
 
@@ -8,9 +9,19 @@ interface LayoutProps {
 
 function Layout({ children }: LayoutProps) {
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('full')
+  const location = useLocation()
+  const path = location.pathname
 
   const toggleSidebar = () =>
     setSidebarMode(m => (m === 'full' ? 'rail' : 'full'))
+
+  // Tier 3: ปิดแสงสำหรับหน้าที่ต้องการความคมชัดสูงสุด / POS / จอครัว / เอกสารบัญชีภาษี
+  const noLimelightRoutes = ['/cashier', '/kds', '/accounting', '/tax']
+  const isNoLight = noLimelightRoutes.some(r => path.startsWith(r))
+
+  // Tier 2: แสงระดับนุ่มนวล (ลด opacity 50%) สำหรับหน้าทำงานข้อมูลตารางหนาแน่น
+  const subtleRoutes = ['/stock', '/sales', '/purchase', '/bom', '/work-orders', '/qc', '/crm', '/receivables']
+  const isSubtle = subtleRoutes.some(r => path.startsWith(r))
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
@@ -25,8 +36,21 @@ function Layout({ children }: LayoutProps) {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header onMenuClick={toggleSidebar} />
-        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-6">
-          <div className="max-w-[1920px] mx-auto">
+        <main
+          id="main-content"
+          className={`relative flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
+        >
+          {/* แสงสาดผสมกัน ~40% ของความสูงหน้าจอ + Fade Limelight */}
+          {!isNoLight && (
+            <div className="phopy-limelight-backdrop" aria-hidden="true">
+              <div className="phopy-limelight-beam" />
+              <div className="phopy-aurora-blob blob-left" />
+              <div className="phopy-aurora-blob blob-center" />
+              <div className="phopy-aurora-blob blob-right" />
+            </div>
+          )}
+
+          <div className="relative z-10 max-w-[1920px] mx-auto">
             {children}
           </div>
         </main>

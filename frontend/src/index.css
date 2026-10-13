@@ -229,7 +229,76 @@
     color: transparent;
   }
 
-  /* แสงฟุ้งหลังหัวหน้า (ใช้เฉพาะหน้าภาพรวม) — วางเป็นลูกตัวแรกของกล่อง relative */
+  /* ==========================================================================
+     Phopy Ambient Limelight & Aurora Mesh System
+     - แสงสาดและผสมกัน ~40% ของความสูงหน้าจอ (height: 40vh, min: 380px)
+     - Limelight Beam ส่องกรวยนุ่มลงมาจากขอบบน
+     - Blobs 3 สี (Violet, Sky Blue, Warm Peach) สาดผสมกันแบบ organic mesh
+     - Fade Limelight: ค่อยๆ จางลงสู่พื้นหลังอย่างนุ่มนวลด้วย linear-gradient mask
+     ========================================================================== */
+  .phopy-limelight-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40vh;
+    min-height: 380px;
+    max-height: 520px;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.75) 45%, rgba(0, 0, 0, 0) 100%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.75) 45%, rgba(0, 0, 0, 0) 100%);
+  }
+
+  /* ลำแสง Limelight Spotlight ส่องตรงกลางลงมา */
+  .phopy-limelight-beam {
+    position: absolute;
+    top: -20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    height: 120%;
+    background: radial-gradient(ellipse 75% 55% at 50% 0%, color-mix(in srgb, var(--primary) 20%, transparent) 0%, transparent 80%);
+  }
+
+  /* Blobs 3 สี สาดผสมกันแบบ Organic Mesh Gradient */
+  .phopy-aurora-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(85px);
+    opacity: 0.9;
+  }
+  .phopy-aurora-blob.blob-left {
+    width: 44vw;
+    height: 340px;
+    left: -5%;
+    top: -80px;
+    background: var(--blob-1);
+  }
+  .phopy-aurora-blob.blob-center {
+    width: 50vw;
+    height: 360px;
+    left: 26%;
+    top: -90px;
+    background: var(--blob-2);
+  }
+  .phopy-aurora-blob.blob-right {
+    width: 42vw;
+    height: 320px;
+    right: -5%;
+    top: -60px;
+    background: var(--blob-3);
+  }
+
+  /* ระดับแสงนุ่มนวลสำหรับหน้าทำงานเชิงตาราง (Tier 2: CRM, Stock, Sales, Purchase ฯลฯ) */
+  .limelight-subtle .phopy-limelight-backdrop {
+    opacity: 0.45;
+    height: 32vh;
+    min-height: 300px;
+  }
+
+  /* Backward compatibility for .phopy-aurora */
   .phopy-aurora {
     position: absolute; inset: -24px -24px auto -24px; height: 320px;
     z-index: 0; pointer-events: none; overflow: hidden;

@@ -289,7 +289,6 @@ export default function Dashboard() {
 
       {/* Header */}
       <motion.div variants={item} className="relative flex items-center justify-between">
-        <div className="phopy-aurora" aria-hidden="true"><i /><i /><i /></div>
         <div className="relative">
           <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('dashboard.title')}</h1>
           <p className="text-[var(--fg-4)] text-xs mt-1">{t('dashboard.updated', { time: lastUpdated.toLocaleTimeString('th-TH') })}</p>
