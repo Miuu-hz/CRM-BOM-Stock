@@ -1,10 +1,8 @@
 import { Router, Request, Response } from 'express'
-import multer from 'multer'
 import { authenticate } from '../middleware/auth.middleware'
 import {
   getFeeMappings,
   updateFeeMappings,
-  previewSettlementCsv,
   postPlatformSettlement,
   listSettlements,
   SettlementError,
@@ -13,9 +11,6 @@ import {
 
 const router = Router()
 router.use(authenticate)
-
-// เก็บไฟล์ไว้ในหน่วยความจำพอ — แค่อ่านโครงสร้างมาคำนวณ preview ไม่ต้องเก็บไฟล์ถาวรเหมือน marketing เดิม
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } })
 
 // GET /api/platform-settlement/fee-mappings
 router.get('/fee-mappings', (req: Request, res: Response) => {
@@ -52,25 +47,6 @@ router.get('/', (req: Request, res: Response) => {
   } catch (err) {
     console.error('List settlements error:', err)
     res.status(500).json({ success: false, message: 'โหลดประวัติรอบ settlement ไม่สำเร็จ' })
-  }
-})
-
-// POST /api/platform-settlement/preview  multipart: file, platform
-// อ่านไฟล์เท่านั้น ไม่ลงบัญชี — ให้คนดูก่อนว่าคอลัมน์ไหนแม็ปตรงและคอลัมน์ไหนยังไม่รู้จัก
-router.post('/preview', upload.single('file'), (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const platform = (req.body?.platform || '').toUpperCase()
-    const file = (req as any).file as { buffer: Buffer } | undefined
-    if (!platform) return res.status(400).json({ success: false, message: 'ต้องระบุแพลตฟอร์ม' })
-    if (!file) return res.status(400).json({ success: false, message: 'ไม่มีไฟล์แนบมา' })
-
-    const csvText = file.buffer.toString('utf-8')
-    const result = previewSettlementCsv(tenantId, platform, csvText)
-    res.json({ success: true, data: result })
-  } catch (err) {
-    console.error('Preview settlement error:', err)
-    res.status(500).json({ success: false, message: err instanceof Error ? err.message : 'อ่านไฟล์ไม่สำเร็จ' })
   }
 })
 

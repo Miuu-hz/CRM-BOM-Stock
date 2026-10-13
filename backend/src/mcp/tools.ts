@@ -17,6 +17,7 @@ import { registerBomTools } from './tools/bom'
 import { registerFinanceTools } from './tools/finance'
 import { registerCrmTools } from './tools/crm'
 import { registerMarketingTools } from './tools/marketing'
+import { registerPlatformMonthTools } from './tools/platformMonth'
 import { registerBindingTools } from './tools/binding'
 import { registerPurchaseBillingTools } from './tools/purchaseBilling'
 import { registerSalesBillingTools } from './tools/salesBilling'
@@ -29,7 +30,7 @@ const READ_ONLY_TOOLS = new Set([
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
   'get_stock_movements', 'explode_bom',
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
-  'list_marketing_shops', 'get_customer_insights', 'get_quotations',
+  'list_marketing_shops', 'get_customer_insights', 'get_quotations', 'platform_month_status',
   'check_unit_issues', 'get_lead_source_performance',
 ])
 
@@ -64,6 +65,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerFinanceTools(target, tenantId, callerRole)
   registerCrmTools(target, tenantId)
   registerMarketingTools(target, tenantId)
+  registerPlatformMonthTools(target, tenantId)
   registerBindingTools(target, tenantId)
   registerPurchaseBillingTools(target, tenantId, userId, callerName, callerRole)
   registerSalesBillingTools(target, tenantId, userId, callerName, callerRole)

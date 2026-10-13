@@ -2626,6 +2626,78 @@ export function runMigrations(db: any): void {
       db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pos_shifts_one_open ON pos_shifts(tenant_id) WHERE status = 'OPEN'`)
     }
   } catch (e) { console.error('⚠️ idx_pos_shifts_one_open migration error:', e) }
+
+  // ==================== ช่องทางขายแพลตฟอร์ม (Shopee/Lazada) รอบเดือน — เฟส 1 (2026-10-13) ====================
+  // ชื่อตาราง generic (platform_* ไม่ใช่ shopee_*) เพราะ Lazada จะตามมาทีหลัง
+  // platform_months 1 แถว/ร้าน/เดือน เก็บ 5 ไฟล์ที่ส่งผ่าน MCP (income/balance/ads/stats เป็น JSON,
+  // products แยกไปอยู่ตาราง platform_month_products เพราะเป็นรายแถวต่อสินค้า/ตัวเลือก)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS platform_months (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        shop_key TEXT NOT NULL,
+        month TEXT NOT NULL,
+        period_start TEXT,
+        period_end TEXT,
+        income_json TEXT,
+        balance_json TEXT,
+        ads_json TEXT,
+        stats_json TEXT,
+        products_received INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'COLLECTING',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tenant_id, platform, shop_key, month)
+      );
+
+      CREATE TABLE IF NOT EXISTS platform_month_products (
+        id TEXT PRIMARY KEY,
+        month_id TEXT NOT NULL REFERENCES platform_months(id),
+        tenant_id TEXT NOT NULL,
+        product_id TEXT,
+        variant_id TEXT,
+        level TEXT NOT NULL DEFAULT 'parent',
+        product_name TEXT,
+        variant_name TEXT,
+        sales_all REAL DEFAULT 0,
+        sales_confirmed REAL DEFAULT 0,
+        orders_all REAL DEFAULT 0,
+        orders_confirmed REAL DEFAULT 0,
+        qty_all REAL DEFAULT 0,
+        qty_confirmed REAL DEFAULT 0,
+        visitors REAL DEFAULT 0,
+        cart_visitors REAL DEFAULT 0,
+        buyers_confirmed REAL DEFAULT 0,
+        clicks REAL DEFAULT 0,
+        impressions REAL DEFAULT 0,
+        repeat_rate REAL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_platform_month_products_month ON platform_month_products(month_id);
+
+      CREATE TABLE IF NOT EXISTS platform_days (
+        id TEXT PRIMARY KEY,
+        month_id TEXT NOT NULL REFERENCES platform_months(id),
+        tenant_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        sales_all REAL DEFAULT 0,
+        orders_all REAL DEFAULT 0,
+        sales_confirmed REAL DEFAULT 0,
+        orders_confirmed REAL DEFAULT 0,
+        visitors REAL DEFAULT 0,
+        clicks REAL DEFAULT 0,
+        cancelled_orders REAL DEFAULT 0,
+        cancelled_sales REAL DEFAULT 0,
+        buyers REAL DEFAULT 0,
+        new_buyers REAL DEFAULT 0,
+        existing_buyers REAL DEFAULT 0,
+        potential_buyers REAL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_platform_days_month ON platform_days(month_id);
+    `)
+    console.log('✅ Migration: platform_months / platform_month_products / platform_days created')
+  } catch (e) { console.error('⚠️ platform_months migration error:', e) }
 }
 
 /**

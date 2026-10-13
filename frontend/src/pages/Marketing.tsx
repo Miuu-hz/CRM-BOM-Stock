@@ -113,10 +113,8 @@ function Marketing() {
   const [metrics, setMetrics] = useState<MarketingMetric[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [chartType, setChartType] = useState<'line' | 'bar' | 'area'>('line')
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
-  const [showUploadModal, setShowUploadModal] = useState(false)
   const [showAddShopModal, setShowAddShopModal] = useState(false)
   const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart')
   const [showPivotSettings, setShowPivotSettings] = useState(false)
@@ -180,35 +178,6 @@ function Marketing() {
       fetchMetrics()
     }
   }, [selectedShop, fetchMetrics])
-
-  // Handle file upload
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setUploading(true)
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('shopId', selectedShop)
-    formData.append('platform', selectedPlatform)
-    formData.append('startDate', dateRange.start)
-    formData.append('endDate', dateRange.end)
-
-    try {
-      const response = await api.post('/marketing/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-
-      toast.success(`อัพโหลดสำเร็จ! นำเข้าข้อมูล ${response.data.data.metricsCount} แถว`)
-      fetchMetrics()
-      setShowUploadModal(false)
-    } catch (error: any) {
-      console.error('Upload error:', error)
-      toast.error(error.response?.data?.message || 'อัพโหลดไฟล์ไม่สำเร็จ')
-    } finally {
-      setUploading(false)
-    }
-  }
 
   // Add new shop
   const handleAddShop = async (name: string, shopId: string) => {
@@ -405,25 +374,13 @@ function Marketing() {
             <Plus className="w-5 h-5" />
             เพิ่มร้านค้า
           </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowUploadModal(true)}
-            disabled={!selectedShop}
-            className="px-4 py-2 bg-gradient-to-r from-phopy-indigo to-success rounded-lg font-semibold hover:shadow-2 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Upload className="w-5 h-5" />
-            อัพโหลดข้อมูล
-          </motion.button>
         </div>
       </motion.div>
 
-      {/* Hint: AI-driven import now available alongside manual upload */}
-      <HintBanner id="marketing-mcp-import" title="นำเข้าข้อมูลผ่าน AI ผู้ช่วยได้แล้ว">
-        คุยกับ AI ผู้ช่วยแล้ววางข้อมูล CSV จากรายงานโฆษณา (เช่น Shopee) ลงในแชทได้เลย บอกแพลตฟอร์ม
-        ชื่อร้านค้า และช่วงวันที่ของรายงาน ระบบจะนำเข้าข้อมูลให้อัตโนมัติโดยไม่ต้องมาอัปโหลดไฟล์ที่หน้านี้
-        — ปุ่ม &quot;อัพโหลดข้อมูล&quot; ด้านบนยังใช้งานได้ตามปกติสำหรับอัปโหลดไฟล์โดยตรง
+      {/* เลิกอัปโหลด CSV แล้ว — ข้อมูลรอบเดือนของแพลตฟอร์มเข้าทาง MCP (platform_submit_file) เท่านั้น */}
+      <HintBanner id="marketing-mcp-import" title="นำเข้าข้อมูลผ่าน AI ผู้ช่วยเท่านั้น">
+        หน้านี้เลิกรับอัปโหลดไฟล์แล้ว ให้คุยกับ AI ผู้ช่วยแล้วแนบรายงานรอบเดือนจากแพลตฟอร์ม (เช่น Shopee)
+        บอกแพลตฟอร์ม ร้านค้า และเดือนของรอบ ระบบจะนำเข้าข้อมูลให้อัตโนมัติ
       </HintBanner>
 
       {/* ===== เมตริกโฆษณา / ROAS — หน้านี้ไม่แตะบัญชีและไม่แตะสต็อก ===== */}
@@ -789,31 +746,10 @@ function Marketing() {
             >
               <Upload className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-[var(--fg-3)] mb-2">ยังไม่มีข้อมูล</h3>
-              <p className="text-[var(--fg-4)] mb-6">อัพโหลดไฟล์ CSV เพื่อเริ่มวิเคราะห์ข้อมูลการตลาด</p>
-              <button
-                onClick={() => setShowUploadModal(true)}
-                className="px-6 py-3 bg-gradient-to-r from-phopy-indigo to-success rounded-lg font-semibold hover:shadow-2 transition-all"
-              >
-                อัพโหลดไฟล์
-              </button>
+              <p className="text-[var(--fg-4)] mb-6">บอก AI ผู้ช่วยให้นำเข้ารายงานรอบเดือนของแพลตฟอร์มนี้</p>
             </motion.div>
           )}
         </>
-      )}
-
-      {/* Upload Modal */}
-      {showUploadModal && (
-        <UploadModal
-          platform={selectedPlatform}
-          shops={shops}
-          selectedShop={selectedShop}
-          setSelectedShop={setSelectedShop}
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-          uploading={uploading}
-          onClose={() => setShowUploadModal(false)}
-          onUpload={handleFileUpload}
-        />
       )}
 
       {/* Add Shop Modal */}
@@ -880,122 +816,6 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         </button>
       </motion.div>
     </div>
-  )
-}
-
-function UploadModal({
-  platform,
-  shops,
-  selectedShop,
-  setSelectedShop,
-  dateRange,
-  setDateRange,
-  uploading,
-  onClose,
-  onUpload,
-}: {
-  platform: string
-  shops: Shop[]
-  selectedShop: string
-  setSelectedShop: (shopId: string) => void
-  dateRange: { start: string; end: string }
-  setDateRange: (range: { start: string; end: string }) => void
-  uploading: boolean
-  onClose: () => void
-  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
-}) {
-  useModalClose(onClose)
-  const [searchTerm, setSearchTerm] = useState('')
-
-  const filteredShops = (shops || []).filter(shop =>
-    shop.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    shop.shopId.includes(searchTerm)
-  )
-
-  const canUpload = selectedShop && dateRange.start && dateRange.end
-
-  return (
-    <Modal onClose={onClose}>
-      <h3 className="text-xl font-bold mb-4">อัพโหลดข้อมูลการตลาด</h3>
-
-      <div className="space-y-4">
-        {/* Platform */}
-        <div>
-          <label className="block text-sm text-[var(--fg-3)] mb-2">Platform</label>
-          <div className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-4 py-2 text-white">
-            {PLATFORMS.find(p => p.id === platform)?.name}
-          </div>
-        </div>
-
-        {/* Shop Selector with Search */}
-        <div>
-          <label className="block text-sm text-[var(--fg-3)] mb-2">ร้านค้า</label>
-          <input
-            type="text"
-            placeholder="ค้นหาร้านค้า..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-2 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo mb-2"
-          />
-          <select
-            value={selectedShop}
-            onChange={(e) => setSelectedShop(e.target.value)}
-            className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-2 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
-            required
-          >
-            <option value="">เลือกร้านค้า</option>
-            {(filteredShops || []).map(shop => (
-              <option key={shop.id} value={shop.id}>
-                {shop.name} ({shop.shopId})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Date Range */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">วันที่เริ่มต้น</label>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-2 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">วันที่สิ้นสุด</label>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-2 text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
-              required
-            />
-          </div>
-        </div>
-
-        {/* File Upload */}
-        <div>
-          <label className="block text-sm text-[var(--fg-3)] mb-2">ไฟล์ CSV</label>
-          <input
-            type="file"
-            accept=".csv"
-            onChange={onUpload}
-            disabled={uploading || !canUpload}
-            className="w-full p-4 border-2 border-dashed border-[var(--border)] rounded-lg bg-[var(--surface-2)] hover:border-phopy-indigo transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          {!canUpload && (
-            <p className="text-sm text-yellow-500 mt-2">กรุณาเลือกร้านค้าและวันที่ก่อนอัพโหลด</p>
-          )}
-        </div>
-
-        {uploading && (
-          <p className="text-center text-[var(--primary)] mt-4">กำลังประมวลผล...</p>
-        )}
-      </div>
-    </Modal>
   )
 }
 

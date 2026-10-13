@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Upload, Settings2, AlertTriangle, CheckCircle2, X, Plus, Trash2 } from 'lucide-react'
+import { Settings2, CheckCircle2, X, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -15,33 +15,9 @@ interface FeeMappingRow {
   isActive: boolean
 }
 
-interface PreviewColumn {
-  header: string
-  targetField: string | null
-  feeType: string | null
-  matchedTotal: number | null
-}
-
 interface ComputedFee {
   feeType: string
   amount: number
-}
-
-interface PreviewResult {
-  rowCount: number
-  headers: string[]
-  columns: PreviewColumn[]
-  unknownHeaders: string[]
-  computed: {
-    platform?: string
-    periodStart?: string
-    periodEnd?: string
-    grossSales?: number
-    vatAmount?: number
-    cogsAmount?: number
-    payoutAmount?: number
-    fees?: ComputedFee[]
-  }
 }
 
 /** แถวประวัติจาก GET /platform-settlement — คืนคอลัมน์ดิบของตาราง platform_settlements */
@@ -73,14 +49,10 @@ const receivableOf = (s: SettlementRow): number => {
 
 export default function PlatformSettlement() {
   const [platform, setPlatform] = useState<(typeof PLATFORMS)[number]>('SHOPEE')
-  const [file, setFile] = useState<File | null>(null)
-  const [previewing, setPreviewing] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [showSettings, setShowSettings] = useState(false)
 
-  // ฟอร์มยืนยัน — เติมจาก preview.computed ให้อัตโนมัติ แต่แก้มือได้เสมอ เพราะไฟล์จริงของ
-  // แต่ละแพลตฟอร์มยังไม่เคยเห็น คอลัมน์ที่แม็ปไม่ได้ต้องให้คนกรอกเองไปก่อน
+  // ฟอร์มยืนยัน — กรอกเองทุกช่อง (เลิกอ่านจากไฟล์ CSV แล้ว)
   const [periodStart, setPeriodStart] = useState('')
   const [periodEnd, setPeriodEnd] = useState('')
   const [grossSales, setGrossSales] = useState('')
@@ -117,7 +89,6 @@ export default function PlatformSettlement() {
   useEffect(() => { loadFeeMappings(); loadSettlements() }, [])
 
   const resetForm = () => {
-    setPreview(null)
     setPeriodStart('')
     setPeriodEnd('')
     setGrossSales('')
@@ -125,37 +96,6 @@ export default function PlatformSettlement() {
     setCogsAmount('')
     setPayoutAmount('')
     setFees([])
-  }
-
-  const handlePreview = async () => {
-    if (!file) { toast.error('เลือกไฟล์ก่อน'); return }
-    try {
-      setPreviewing(true)
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('platform', platform)
-      const res = await api.post('/platform-settlement/preview', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      if (res.data.success) {
-        const data: PreviewResult = res.data.data
-        setPreview(data)
-        setPeriodStart(data.computed.periodStart || '')
-        setPeriodEnd(data.computed.periodEnd || '')
-        setGrossSales(data.computed.grossSales != null ? String(data.computed.grossSales) : '')
-        setVatAmount(data.computed.vatAmount != null ? String(data.computed.vatAmount) : '')
-        setCogsAmount(data.computed.cogsAmount != null ? String(data.computed.cogsAmount) : '')
-        setPayoutAmount(data.computed.payoutAmount != null ? String(data.computed.payoutAmount) : '')
-        setFees(data.computed.fees && data.computed.fees.length > 0 ? data.computed.fees : [])
-        if (data.unknownHeaders.length > 0) {
-          toast(`มีคอลัมน์ที่ยังไม่รู้จัก ${data.unknownHeaders.length} คอลัมน์ — ไปตั้งค่าผูกคอลัมน์ก่อน หรือกรอกยอดเองด้านล่าง`, { icon: '⚠️' })
-        }
-      }
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'อ่านไฟล์ไม่สำเร็จ')
-    } finally {
-      setPreviewing(false)
-    }
   }
 
   const totalFees = fees.reduce((s, f) => s + (Number(f.amount) || 0), 0)
@@ -180,11 +120,9 @@ export default function PlatformSettlement() {
         cogsAmount: cogsAmount === '' ? undefined : Number(cogsAmount),
         fees: fees.filter((f) => f.feeType && f.amount),
         payoutAmount: payout ?? undefined,
-        sourceFilename: file?.name,
       })
       if (res.data.success) {
         toast.success('ยืนยันรอบโอนแล้ว ลงบัญชีเรียบร้อย')
-        setFile(null)
         resetForm()
         loadSettlements()
       }
@@ -254,39 +192,11 @@ export default function PlatformSettlement() {
         </div>
 
         <p className="text-xs text-[var(--fg-4)]">
-          มีไฟล์รายงานรอบ (CSV) ไหม? แนบมาเพื่อเติมตัวเลขให้อัตโนมัติ — ไม่มีก็กรอกสรุปรอบเองด้านล่างได้เลย
+          กรอกสรุปยอดของรอบนี้เอง — ข้อมูลรายเดือนจากแพลตฟอร์ม (Shopee ฯลฯ) ตอนนี้เข้าทาง AI ผู้ช่วย (MCP) แล้ว
         </p>
-
-        <div className="flex items-center gap-3">
-          <label className="flex-1 flex items-center gap-2 px-4 py-3 rounded-lg border border-dashed border-[var(--border)] text-[var(--fg-3)] cursor-pointer hover:border-[var(--fg-4)]">
-            <Upload className="w-4 h-4 shrink-0" />
-            <span className="text-sm truncate">{file ? file.name : 'แนบไฟล์รายงานรอบ (CSV) — ไม่บังคับ'}</span>
-            <input type="file" accept=".csv" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          </label>
-          <button
-            onClick={handlePreview}
-            disabled={!file || previewing}
-            className="px-4 py-3 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-sm font-medium disabled:opacity-50"
-          >
-            {previewing ? 'กำลังอ่าน...' : 'ดูตัวอย่าง'}
-          </button>
-        </div>
-
-        {preview && preview.unknownHeaders.length > 0 && (
-          <div className="flex items-start gap-3 p-3 bg-warning/10 border border-warning/30 rounded-lg text-sm">
-            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-[var(--fg-1)]">คอลัมน์ที่ยังไม่รู้จัก {preview.unknownHeaders.length} คอลัมน์</p>
-              <p className="text-[var(--fg-3)] mt-1">{preview.unknownHeaders.join(', ')}</p>
-              <p className="text-[var(--fg-4)] mt-1">ไปผูกคอลัมน์เหล่านี้ที่ปุ่มตั้งค่า (มุมขวาบน) หรือกรอกยอดด้านล่างเองไปก่อน</p>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* สรุปยอด — เห็นแต่เงิน ไม่เห็นรหัสบัญชี
-          แสดงตลอด ไม่รอไฟล์: ของจริงที่ร้านได้จากแพลตฟอร์มคือ PDF รายการ order อ่านเข้าระบบไม่ได้
-          ไฟล์ CSV จึงเป็นแค่ทางลัดเติมตัวเลขให้ ไม่ใช่ทางเข้าบังคับ */}
+      {/* สรุปยอด — เห็นแต่เงิน ไม่เห็นรหัสบัญชี */}
       {(
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -294,7 +204,7 @@ export default function PlatformSettlement() {
             <Field label="ช่วงวันที่สิ้นสุด" value={periodEnd} onChange={setPeriodEnd} type="date" />
           </div>
 
-          <Field label={preview ? `ยอดขายเต็ม (${preview.rowCount} แถว)` : 'ยอดขายเต็ม ก่อนหักอะไรทั้งสิ้น'} value={grossSales} onChange={setGrossSales} type="number" bold />
+          <Field label="ยอดขายเต็ม ก่อนหักอะไรทั้งสิ้น" value={grossSales} onChange={setGrossSales} type="number" bold />
           <Field label="ภาษีขาย (VAT) — เว้นว่างให้คำนวณอัตโนมัติ 7%" value={vatAmount} onChange={setVatAmount} type="number" />
           <Field label="ต้นทุนสินค้าที่ขายไปรอบนี้ — เว้นว่าง = ยังไม่รับรู้ต้นทุนรอบนี้" value={cogsAmount} onChange={setCogsAmount} type="number" />
 
@@ -334,7 +244,7 @@ export default function PlatformSettlement() {
 
           {/* สรุปเป็นภาษาเงิน */}
           <div className="border-t border-[var(--border)] pt-4 space-y-1.5 text-sm">
-            <Row label={preview ? `ยอดขายเต็ม (${preview.rowCount} ออเดอร์)` : 'ยอดขายเต็ม'} value={fmt(gross)} bold />
+            <Row label="ยอดขายเต็ม" value={fmt(gross)} bold />
             {fees.filter((f) => f.feeType && f.amount).map((f, i) => (
               <Row key={i} label={`  ${feeTypeOptions.find((o) => o.feeType === f.feeType)?.label || f.feeType}`} value={`−${fmt(f.amount)}`} muted />
             ))}

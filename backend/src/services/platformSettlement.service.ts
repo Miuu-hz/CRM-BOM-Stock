@@ -1,4 +1,3 @@
-import Papa from 'papaparse'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { postJournal } from './accounting.service'
@@ -329,93 +328,6 @@ export function listSettlements(tenantId: string, platform?: string) {
   }
   return db.prepare(`SELECT * FROM platform_settlements WHERE tenant_id = ? ORDER BY period_end DESC`).all(tenantId)
 }
-
-// ============================================================
-// อ่านไฟล์ CSV แบบ generic — ไม่ผูกกับโครงไฟล์ของแพลตฟอร์มไหนเป็นพิเศษ
-// header ไหนไม่รู้จักคืนกลับไปว่า "ไม่รู้จัก" แทนที่จะเงียบหรือเดา
-// ============================================================
-
-export interface PreviewColumn {
-  header: string
-  targetField: string | null // null = ไม่รู้จัก
-  feeType: string | null
-  matchedTotal: number | null // ผลรวมคอลัมน์นี้ (เฉพาะที่แม็ปได้และเป็นตัวเลข)
-}
-
-export interface PreviewResult {
-  rowCount: number
-  headers: string[]
-  columns: PreviewColumn[]
-  unknownHeaders: string[]
-  computed: Partial<SettlementBatch>
-}
-
-const norm = (s: string) => s.trim().toLowerCase()
-
-export function previewSettlementCsv(tenantId: string, platform: string, csvText: string): PreviewResult {
-  ensureDefaultFeeMappings(tenantId)
-  const mappings = getFeeMappings(tenantId)
-
-  // ดัชนี alias -> mapping แบบ normalize แล้ว (ตัดช่องว่าง/ตัวพิมพ์เล็กใหญ่ทิ้ง)
-  const aliasIndex = new Map<string, FeeMappingRow>()
-  for (const m of mappings) {
-    for (const alias of m.columnAliases) aliasIndex.set(norm(alias), m)
-  }
-
-  // ปูอัตแปลงข้อความเป็นตัวเลข (ตัดคอมมา/สัญลักษณ์เปอร์เซ็นต์แบบเดียวกับ csvParser.service.ts เดิม
-  // แต่เขียนแยกไว้ที่นี่เพราะห้ามแก้ไฟล์นั้น)
-  const toNumber = (v: any): number => {
-    if (typeof v === 'string') {
-      const cleaned = v.replace(/,/g, '').replace('%', '').trim()
-      const n = parseFloat(cleaned)
-      return isNaN(n) ? 0 : n
-    }
-    const n = parseFloat(v)
-    return isNaN(n) ? 0 : n
-  }
-
-  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true })
-  const rows: any[] = parsed.data || []
-  const headers: string[] = (parsed.meta?.fields || []) as string[]
-
-  const columns: PreviewColumn[] = []
-  const unknownHeaders: string[] = []
-  const computed: Partial<SettlementBatch> = { platform, fees: [] }
-  const feeTotals = new Map<string, number>()
-
-  for (const header of headers) {
-    const match = aliasIndex.get(norm(header))
-    if (!match) {
-      unknownHeaders.push(header)
-      columns.push({ header, targetField: null, feeType: null, matchedTotal: null })
-      continue
-    }
-
-    if (match.targetField === 'PERIOD_START' || match.targetField === 'PERIOD_END') {
-      const firstVal = rows[0]?.[header]
-      if (match.targetField === 'PERIOD_START') computed.periodStart = firstVal
-      else computed.periodEnd = firstVal
-      columns.push({ header, targetField: match.targetField, feeType: null, matchedTotal: null })
-      continue
-    }
-
-    const total = r2(rows.reduce((s, row) => s + toNumber(row[header]), 0))
-    if (match.targetField === 'GROSS_SALES') computed.grossSales = total
-    else if (match.targetField === 'VAT') computed.vatAmount = total
-    else if (match.targetField === 'COGS') computed.cogsAmount = total
-    else if (match.targetField === 'PAYOUT') computed.payoutAmount = total
-    else if (match.targetField === 'FEE' && match.feeType) {
-      feeTotals.set(match.feeType, (feeTotals.get(match.feeType) || 0) + total)
-    }
-
-    columns.push({ header, targetField: match.targetField, feeType: match.feeType, matchedTotal: total })
-  }
-
-  computed.fees = Array.from(feeTotals.entries()).map(([feeType, amount]) => ({ feeType, amount: r2(amount) }))
-
-  return { rowCount: rows.length, headers, columns, unknownHeaders, computed }
-}
-
 
 // ============================================================
 // รับเงินโอนของรอบที่ลงไว้ก่อนแล้ว — ขั้น 3 ที่มาทีหลัง
