@@ -1,201 +1,52 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
-import * as marketingRepo from '../repositories/marketing.repository'
+import { getPlatformDashboard, getDashboardShops } from '../services/platformDashboard.service'
+import { PlatformMonthError } from '../services/platformMonth.service'
 
 const router = Router()
 
 // All routes require authentication
 router.use(authenticate)
 
-/**
- * GET /api/marketing/shops
- * ดึงรายการร้านค้าทั้งหมด
- */
-router.get('/shops', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { platform, isActive } = req.query
-
-    const platformFilter = platform ? platform.toString().toUpperCase() : undefined
-    const isActiveFilter = isActive !== undefined ? isActive === 'true' : undefined
-
-    const shops = marketingRepo.getAllShops(tenantId, platformFilter, isActiveFilter)
-
-    res.json({
-      success: true,
-      data: shops,
-    })
-  } catch (error) {
-    console.error('Get shops error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch shops',
-    })
-  }
-})
+// ponytail: /shops, /metrics, /analytics/summary (ยุค CSV อัปโหลดเอง) ลบทิ้ง 2026-10-13 —
+// marketing_metrics มี 0 แถวมาตลอด, ไม่มีผู้เรียกอื่นนอกจาก Marketing.tsx เดิมที่เขียนทับไปแล้ว
+// (marketingRepo.getAllShops ยังใช้อยู่ตรงๆ จาก MCP tool list_marketing_shops — ไม่ผ่าน route นี้)
 
 /**
- * POST /api/marketing/shops
- * เพิ่มร้านค้าใหม่
+ * GET /api/marketing/platform-dashboard/shops
+ * รายชื่อ platform+shop_key+เดือนที่มีข้อมูลแล้ว — ใช้เติม selector หน้าแดชบอร์ด
  */
-router.post('/shops', (req: Request, res: Response) => {
+router.get('/platform-dashboard/shops', (req: Request, res: Response) => {
   try {
-    const { name, platform, shopId } = req.body
-
-    const newShop = marketingRepo.createShop(req.user!.tenantId, {
-      name,
-      platform: platform.toUpperCase(),
-      shopId,
-    })
-
-    res.json({
-      success: true,
-      data: newShop,
-      message: 'Shop created successfully',
-    })
+    const shops = getDashboardShops(req.user!.tenantId)
+    res.json({ success: true, data: shops })
   } catch (error: any) {
-    console.error('Create shop error:', error)
-
-    // Handle unique constraint violation
-    if (error.message && error.message.includes('UNIQUE constraint')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Shop already exists for this platform',
-      })
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create shop',
-    })
+    console.error('Get platform dashboard shops error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch shops' })
   }
 })
 
 /**
- * GET /api/marketing/metrics
- * ดึงข้อมูล metrics พร้อม filter
+ * GET /api/marketing/platform-dashboard?platform=SHOPEE&shop_key=...&end_month=YYYY-MM&range=1|3|6|12
+ * แดชบอร์ดกำไรรายสินค้า + KPI 4 หมวด ของรอบ range เดือนปฏิทิน (รวม) สิ้นสุดที่ end_month
  */
-router.get('/metrics', (req: Request, res: Response) => {
+router.get('/platform-dashboard', (req: Request, res: Response) => {
   try {
-    const { shopId, startDate, endDate, platform } = req.query
+    const platform = String(req.query.platform || '').toUpperCase()
+    const shopKey = String(req.query.shop_key || '')
+    const endMonth = String(req.query.end_month || '')
+    const range = Number(req.query.range) as 1 | 3 | 6 | 12
 
-    // Normalize dates
-    let normalizedStartDate = startDate as string
-    let normalizedEndDate = endDate as string
+    if (!platform || !shopKey) return res.status(400).json({ success: false, message: 'ต้องระบุ platform และ shop_key' })
+    if (!/^\d{4}-\d{2}$/.test(endMonth)) return res.status(400).json({ success: false, message: 'end_month ต้องเป็นรูปแบบ YYYY-MM' })
+    if (![1, 3, 6, 12].includes(range)) return res.status(400).json({ success: false, message: 'range ต้องเป็น 1, 3, 6 หรือ 12' })
 
-    if (startDate) {
-      const start = new Date(startDate as string)
-      start.setHours(0, 0, 0, 0)
-      normalizedStartDate = start.toISOString().split('T')[0]
-    }
-
-    if (endDate) {
-      const end = new Date(endDate as string)
-      end.setHours(23, 59, 59, 999)
-      normalizedEndDate = end.toISOString().split('T')[0]
-    }
-
-    const metrics = marketingRepo.getMetrics(req.user!.tenantId, {
-      shopId: shopId as string,
-      startDate: normalizedStartDate,
-      endDate: normalizedEndDate,
-      platform: platform as string,
-    })
-
-    res.json({
-      success: true,
-      data: metrics,
-    })
-  } catch (error) {
-    console.error('Get metrics error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch metrics',
-    })
-  }
-})
-
-/**
- * GET /api/marketing/analytics/summary
- * สรุปข้อมูล performance โดยรวม
- */
-router.get('/analytics/summary', (req: Request, res: Response) => {
-  try {
-    const { shopId, startDate, endDate } = req.query
-
-    // Normalize dates
-    let normalizedStartDate = startDate as string
-    let normalizedEndDate = endDate as string
-
-    if (startDate) {
-      const start = new Date(startDate as string)
-      start.setHours(0, 0, 0, 0)
-      normalizedStartDate = start.toISOString().split('T')[0]
-    }
-
-    if (endDate) {
-      const end = new Date(endDate as string)
-      end.setHours(23, 59, 59, 999)
-      normalizedEndDate = end.toISOString().split('T')[0]
-    }
-
-    const filteredMetrics: any[] = marketingRepo.getMetrics(req.user!.tenantId, {
-      shopId: shopId as string,
-      startDate: normalizedStartDate,
-      endDate: normalizedEndDate,
-    })
-
-    // Calculate summary
-    const summary = {
-      totalImpressions: 0,
-      totalClicks: 0,
-      totalOrders: 0,
-      totalSales: 0,
-      totalAdCost: 0,
-      avgCTR: 0,
-      avgConversionRate: 0,
-      totalROAS: 0,
-      totalACOS: 0,
-      recordCount: filteredMetrics.length,
-    }
-
-    if (filteredMetrics.length > 0) {
-      filteredMetrics.forEach(m => {
-        summary.totalImpressions += Number(m.impressions) || 0
-        summary.totalClicks += Number(m.clicks) || 0
-        summary.totalOrders += Number(m.orders) || 0
-        summary.totalSales += Number(m.sales) || 0
-        summary.totalAdCost += Number(m.adCost) || 0
-      })
-
-      summary.avgCTR =
-        summary.totalImpressions > 0
-          ? summary.totalClicks / summary.totalImpressions
-          : 0
-      summary.avgConversionRate =
-        summary.totalClicks > 0
-          ? summary.totalOrders / summary.totalClicks
-          : 0
-      summary.totalROAS =
-        summary.totalAdCost > 0
-          ? summary.totalSales / summary.totalAdCost
-          : 0
-      summary.totalACOS =
-        summary.totalSales > 0
-          ? summary.totalAdCost / summary.totalSales
-          : 0
-    }
-
-    res.json({
-      success: true,
-      data: summary,
-    })
-  } catch (error) {
-    console.error('Get analytics summary error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch analytics summary',
-    })
+    const data = getPlatformDashboard(req.user!.tenantId, { platform, shopKey, endMonth, range })
+    res.json({ success: true, data })
+  } catch (error: any) {
+    console.error('Get platform dashboard error:', error)
+    if (error instanceof PlatformMonthError) return res.status(400).json({ success: false, message: error.message })
+    res.status(500).json({ success: false, message: 'Failed to fetch platform dashboard' })
   }
 })
 
