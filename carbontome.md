@@ -16,7 +16,7 @@
 | **Stock** | ✅ | Inventory, Stock Movements, Low Stock Alerts |
 | **Purchase Orders** | ✅ | ใบสั่งซื้อ, Suppliers, Goods Receipt |
 | **Work Orders** | ✅ | ใบสั่งผลิต, MES เบื้องต้น |
-| **Marketing** | ✅ | Campaign Analytics (Shopee/Lazada integration) |
+| **Marketing** | 🚧 | Ads analytics จาก CSV — กำลังรื้อเป็นแดชบอร์ดรายเดือนผ่าน MCP (ดูแผน 13 ต.ค. 2026 ท้ายไฟล์) |
 | **Calculator** | ✅ | Cost & Profit Analysis |
 | **POS/Cashier** | ✅ | Open Bill System, Stock Integration, Accounting Link |
 | **POS Shift System** | ✅ | เปิด/ปิดกะ, กรอกเงินเปิดกะ, นับเงินปิดกะ, ผลต่าง |
@@ -29,7 +29,7 @@
 | **Budget vs Actual** | ✅ | ตั้งงบรายบัญชี×เดือน เทียบผลจริงจาก ledger |
 | **Multi-Currency (PO)** | ✅ | สกุลเงิน+เรท, PO แปลงเข้า THB เต็มรูปแบบ (UI เลือกสกุลเงินในฟอร์ม Sales/Purchase ยังไม่ทำ — ไฟล์ 3,800+ บรรทัด รอ refactor) |
 | **Approval System** | ✅ | Multi-level approval workflow |
-| **Platform Order Fulfillment** | ✅ | CSV Upload, SKU Matching, Auto Stock Deduction, Ad Spend JE Approval |
+| **Platform Settlement** | 🚧 | ลงบัญชี 3 ขั้นผ่าน 1181 มีแล้ว แต่รับไฟล์จริง Shopee ไม่ได้ — กำลังรื้อ (ดูแผน 13 ต.ค. 2026) · สาย Platform Order Fulfillment เดิมลบแล้ว 2026-09-22 |
 | **Sales Invoice Attachments** | ✅ | อัปโหลดรูป/ไฟล์แนบใบแจ้งหนี้ (max 10MB), gallery preview, lightbox |
 | **Invoice Detail Modal** | ✅ | redesign max-w-4xl, items table, payment history, attachment gallery |
 | **Purchase List/Card View** | ✅ | สลับ list/card view (list default), pagination 25/50/100 per page |
@@ -43,13 +43,11 @@
 
 | Feature | Status |
 |---------|--------|
-| Platform CSV Upload (Shopee Ads) | ✅ |
-| SKU Matching & Manual Linking | ✅ |
-| Auto Stock Deduction (PLATFORM_SALE) | ✅ |
-| Ad Spend → Pending JE Queue | ✅ |
-| JE Approval Workflow | ✅ |
-| Import History | ✅ |
-| Organic vs Paid Analytics | 🚧 (รอไฟล์ยอดขายรวมจาก Shopee/Lazada) |
+| Platform CSV Upload (Shopee Ads) | ⚠️ มีแต่ parser อ่านไฟล์จริงผิด — จะลบ แทนด้วย MCP |
+| ~~SKU Matching / Auto Stock Deduction / Ad Spend JE Queue / Import History~~ | 🗑️ ลบแล้ว 2026-09-22 (ไม่เคยมีข้อมูล) |
+| Platform Settlement 3 ขั้น (1181) | ⚠️ มี แต่ยังไม่เคยใช้จริง + มีบั๊ก (ดูแผน 13 ต.ค.) |
+| รอบเดือน Shopee ผ่าน MCP · จับคู่ SKU · กำไรรายสินค้า · KPI 1/3/6/12 เดือน | 📋 วางแผนแล้ว 13 ต.ค. 2026 |
+| Lazada | ⏳ รอไฟล์ตัวอย่างจากเจ้าของ — ใช้แบบ Shopee ไปก่อน |
 | Business Unit P&L (Retail/Wholesale/Online) | ✅ (Phopy Board, ledger-accurate) |
 
 ### 🚧 อยู่ระหว่างพัฒนา (In Progress)
@@ -114,10 +112,10 @@
 │  └── suppliers      │  └── tax_filings   │
 ├─────────────────────────────────────────────────────────────────┤
 │  🛒 PLATFORM (Online Channel)                                    │
-│  ├── platform_imports      (import header per CSV upload)        │
-│  ├── platform_import_items (per-SKU rows with match status)      │
-│  ├── sku_mappings          (platform SKU → stock_item mapping)   │
-│  └── platform_pending_je   (ad spend JE approval queue)          │
+│  ├── platform_settlements  (รอบลงบัญชี 3 ขั้นผ่าน 1181)            │
+│  ├── platform_fee_mappings (ค่าธรรมเนียม → บัญชี)                  │
+│  ├── shops / marketing_files / marketing_metrics (Ads CSV เดิม)    │
+│  └── (แผน) shopee_months / shopee_month_products / shopee_days    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -387,7 +385,7 @@ sales_orders → work_orders
 - [x] Credit Note (ใบลดหนี้) — เสร็จแล้ว
 - [~] Financial Statements — มี route งบดุลแล้ว ยังไม่ auto-generate เต็มรูป
 - [ ] UI เลือกสกุลเงินในฟอร์ม Sales/Purchase (รอ refactor ไฟล์ 3,800+ บรรทัด)
-- [ ] Organic vs Paid Analytics (รอไฟล์ยอดขายรวมจาก Shopee/Lazada)
+- [ ] Organic vs Paid Analytics → รวมอยู่ในแผนรอบเดือน Shopee 13 ต.ค. 2026 (ได้ไฟล์ยอดขายรวมแล้ว · Lazada ยังรอไฟล์)
 - [ ] Advanced Reports & Dashboard
 - [ ] Multi-warehouse support
 - [ ] API for external integrations
@@ -1274,3 +1272,151 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - tenant `starter` (990) ย้ายไปแพ็กไหน และ tenant enterprise 3 ราย ใช้ `enterprise_ai` แบบ grandfather ราคาเดิมหรือไม่
 - ลูกค้าเลือก Pack เองตอนสมัคร (signup) หรือ MASTER ตั้งให้
 - ล็อกเมนูแบบโชว์กุญแจ (แนะนำ) หรือซ่อน
+
+---
+
+## 📅 แผน — 13 ตุลาคม 2026 (ช่องทางขาย Shopee / Lazada: รอบเดือนผ่าน MCP แทนอัปโหลด CSV)
+
+> ต้นแบบหน้าจอ (artifact): https://claude.ai/artifact/EwQmBJcXjkEnBTPsmBmyHV — ใช้ token สีจาก `frontend/src/index.css`
+> **Lazada:** ยังไม่มีไฟล์ตัวอย่าง เจ้าของกำลังหา — ออกแบบตาม Shopee ไปก่อน โครงตาราง/MCP ต้องมีคอลัมน์ `platform` ไว้ อย่าผูกชื่อคอลัมน์ Shopee ตายตัวในตรรกะบัญชี
+
+### ข้อตกลงกับเจ้าของ
+- **ไม่อัปโหลด CSV ผ่านหน้าเว็บแล้ว** — แนบไฟล์ใน Claude แล้วส่งเข้าผ่าน MCP · ลบช่องอัปโหลดทั้งใน `Marketing.tsx` และ `Accounting/PlatformSettlement.tsx`
+- **แยกหน้าตามหน้าที่เหมือนเดิม** (Settlement แตะ GL / Marketing ดูอย่างเดียว) แต่ข้อมูลเข้าทางเดียว = "รอบเดือน" 1 รอบต่อร้านต่อเดือน
+- **MCP สร้างได้แค่ร่าง** — ตัดสต็อกและลงบัญชีต้องให้คนกดยืนยันในเว็บ
+- ส่งเข้า MCP **เฉพาะตัวเลขที่ใช้** ไม่ส่งไฟล์ทั้งไฟล์ (Income ดิบ 1,543 แถว × 48 คอลัมน์ ≈ 200k token เกินไป · ส่งแบบสรุปทั้งเดือน < 30k token)
+- ตัดออกจากขอบเขต: SOM, SAW, MER, คำแนะนำงบโฆษณาอัตโนมัติ
+
+### 5 ไฟล์ต่อเดือน (Shopee — ทุกไฟล์ช่วงเดือนปฏิทินเดียวกัน)
+| ไฟล์ | เมนู Seller Centre | ใช้ทำ |
+|---|---|---|
+| `Income.โอนเงินสำเร็จ` | การเงิน › รายรับของฉัน | ยอดขายเต็ม + ค่าธรรมเนียมทุกตัว + ชีต Adjustment |
+| `my_balance_transaction_report` | การเงิน › ยอดเงินของฉัน | ถอนเข้าธนาคาร (รายครั้ง) + ยอดกระเป๋า |
+| `parentskudetail` | ข้อมูลธุรกิจ › สินค้า | ชิ้นที่ขายแยก **รหัสตัวเลือก** → จับคู่ SKU → ตัดสต็อก → COGS + ยกเลิกรายสินค้า |
+| `ข้อมูล-Shopee-Ads` (รายเดือน) | Shopee Ads › รายงาน | ค่า Ads + ROAS (**ไม่ใช้ลงบัญชี**) |
+| `shop-stats` | ข้อมูลธุรกิจ › ภาพรวม | ยอดรายวัน, ยกเลิก, ลูกค้าใหม่/เดิม, funnel |
+| (ไม่บังคับ) GMV Max ข้อมูลเชิงลึก | Shopee Ads › GMV Max | ค่า Ads รายสินค้าแบบแม่น แทนการแบ่งตามยอดขาย |
+
+ไม่ใช้: Order "ที่ต้องจัดส่ง" (ไม่มีรหัสสินค้า มีแค่ชื่อ, ใช้แพ็กของอย่างเดียว), Keywords, กลุ่มโฆษณา
+
+### ข้อเท็จจริงจากไฟล์จริง ร้าน bebozch (10/9–12/10) — ใช้เป็น golden test
+- สมการตรวจข้ามไฟล์ (ผ่านทั้ง 4): Income `601,041 − 195,461 = 405,580` · Income โอนแล้ว = Balance เงินเข้าจากออเดอร์ `406,047 − 467` · ปรับปรุง `−486 = +535 − 1,021` · parentskudetail ยอดยืนยัน = shop-stats `586,743`
+- ค่าธรรมเนียม 32.5% ของรายได้: คอม 96,522 · บริการ 51,404 · ธุรกรรม 27,300 · **AMS (Affiliate) 11,691** · **Ads หักจาก Escrow 6,307** · โครงสร้างพื้นฐาน 1,538 · ค่าส่งสุทธิ 699
+- ค่า Ads ทั้งเดือน 66,112 แต่หักจาก Escrow แค่ 6,307 → **59,805 เติมเงินเองนอกระบบ ไม่อยู่ในไฟล์ไหน** ต้องลงจากใบเสร็จเติมเงิน
+- ถอนเข้า SCB 10 ครั้ง 402,846 · เงินค้างกระเป๋าเพิ่ม 2,248 = `405,580 − 486 − 402,846` พอดี
+- Shopee **ไม่มีรหัส SKU สักตัว** (945 ตัวเลือก) — ขายได้จริง 411 ตัวเลือก 2,228 ชิ้น
+- tenant `tenant_msqy2xbn` (หจก.เอฟแอนด์บี เบดดิ้ง, `vat_registered=1`): สินค้า 1,024 มีทุน 97 · มีสต็อก 0 · BOM 0 สูตร
+
+### บั๊ก/ช่องโหว่ที่เจอในโค้ดปัจจุบัน (ยังไม่แก้)
+- `platformSettlement.service.ts` `previewSettlementCsv` อ่านได้แค่ CSV หัวตารางแถวแรก — Income เป็น xlsx หัวแถว 6
+- alias ค่าธรรมเนียมไม่รู้จัก "ค่าธุรกรรมการชำระเงิน", "ค่าคอมมิชชั่น AMS", "เติมเงินโฆษณาจาก Escrow", "โครงสร้างพื้นฐานแพลตฟอร์ม", "จำนวนเงินทั้งหมดที่โอนแล้ว (฿)"
+- **Shopee ให้ค่าธรรมเนียมเป็นเลขติดลบ** → `totalFees > 0` เป็นเท็จ → **ข้ามการลง JV ค่าธรรมเนียมทั้งก้อน**
+- ขั้น 3 สมมติว่า 1 รอบโอน 1 ครั้ง ส่วนต่างลง 5901 เงินขาด → ของจริงจะลงเงินขาด 2,248 ผิด (เงินยังอยู่ในกระเป๋า Shopee)
+- ค่าธรรมเนียมลงค่าใช้จ่ายรวม VAT ทั้งก้อน — ถ้ามีใบกำกับภาษีจาก Shopee ต้องแยกภาษีซื้อ (ให้ phopy-accounting ตรวจ)
+- `csvParser.service.ts` อ่านชื่อแคมเปญจาก `ชื่อโฆษณา / ชื่อสินค้า` (ไฟล์กลุ่มโฆษณา) แต่ไฟล์หลักใช้ `ชื่อโฆษณา` · สถานะใช้ `สถานะ` ไม่ใช่ `สถานะโฆษณา` · ยอดทั้งเดือนถูกกระจายลงวันสุ่ม → กราฟรายวันปลอม
+- ยังไม่มีข้อมูลจริงเข้าเลย (`marketing_metrics` = 0, `platform_settlements` = 0) → รื้อได้ไม่ต้อง migrate
+
+### เฟสงาน
+| เฟส | งาน | เสร็จเมื่อ |
+|---|---|---|
+| **0** ข้อมูลตั้งต้น (ทำขนานได้) | ทุนสินค้าสำเร็จ · สต็อกยกมา · BOM ปิกนิก/ท็อปเปอร์ — งานเจ้าของ ใช้เครื่องมือนำเข้าที่มี | ไม่บล็อกเฟสอื่น แต่ถ้ายังไม่เสร็จ กำไร/COGS ไม่ใช่ตัวเลขจริง |
+| **1** ฐานข้อมูลรายเดือน + MCP | `shopee_months` (1 แถว/ร้าน/เดือน เก็บสรุป 5 ไฟล์ + ผลตรวจสมการ) · `shopee_month_products` · `shopee_days` · MCP 2 ตัว `shopee_submit_file` (ระบุชนิดไฟล์) + `shopee_month_status` · ลบช่องอัปโหลด CSV 2 หน้า | ส่ง 5 ไฟล์ ต.ค. ผ่าน MCP แล้วสมการ 4 ข้อผ่าน |
+| **2** จับคู่ SKU + ยืนยันการขาย | ใช้ `stock_item_aliases` ที่มีอยู่: `source_ref = SHOPEE:รหัสตัวเลือก`, `factor` = ตัวคูณแพ็ก (เช่น หมอน 2 ใบ) · หน้ายืนยันคู่ (MCP เสนอ คนยืนยัน) · ตัวที่ยังไม่ผูกบล็อกการยืนยันการขาย · ยืนยันแล้วตัดสต็อกทีละรายการผ่าน `applyStockMovement()` แตก BOM ด้วย `getBomIngredientsRecursive()` · อ้างอิงรอบ ยกเลิกได้ทั้งก้อน · เคารพ `allow_negative_stock` | ผูกครบ 411 ตัวเลือก ตัดสต็อกรอบ ต.ค. ได้ |
+| **3** เชื่อมบัญชี | JV ขาย (Dr 1181 / Cr รายได้+VAT) · JV ต้นทุนขาย (จากเฟส 2) · JV ค่าธรรมเนียม · JV ปรับปรุง · JV ถอนเงินรายครั้ง (Dr ธนาคาร / Cr 1181) · แก้บั๊กเลขติดลบ + ขั้นเงินโอน · ค่าธรรมเนียมประเภทใหม่ 5 ตัว · phopy-accounting ตรวจ VAT ค่าธรรมเนียม + ค่า Ads ที่เติมเอง | ยอด 1181 = ยอดในกระเป๋า Shopee |
+| **4** แดชบอร์ด | กำไรต่อชิ้นรายสินค้า (เลือกหัก: ทุน BOM / GP / Ads / Affiliate / ค่าส่งส่วนเกิน / คืนเงิน) · KPI 4 หมวด: ยอดขาย&กำไร (ยอดขาย, กำไร, มาร์จิ้น, AOV, %ยกเลิก) · ต้นทุนแพลตฟอร์ม (GP%, Affiliate, ค่าส่งส่วนเกิน) · โฆษณา (ROAS, TACoS, CTR, CPL) · ลูกค้า (CAC, AR=ทิ้งตะกร้า, CRR, CLV, CLV:CAC) · ช่วงย้อนหลัง **1/3/6/12 เดือนแบบเลื่อน** (รอบ ต.ค. 69 → 12 เดือน = พ.ย. 68–ต.ค. 69; 1 เดือน = กราฟรายวัน) · list ยกเลิกมากสุด / กำไรมากสุด / ขาดทุน | ดึงจากตารางรายเดือนเฟส 1 ไม่คำนวณไฟล์ซ้ำ |
+| **5** ส่งข้อมูลย้อนหลัง (ไม่บังคับ) | ส่ง 5 ไฟล์ 11 เดือนก่อนผ่าน MCP ตัวเดิม — เก็บเป็นสถิติอย่างเดียว ไม่ตัดสต็อก ไม่ลงบัญชีย้อนหลัง | กราฟ 12 เดือนครบ |
+
+ลำดับ: 0 ขนาน · 1 → (2 → 3) และ 1 → 4 ได้เลย (เฟส 4 ใช้แค่ข้อมูลเฟส 1 + ทุนจากเฟส 0)
+
+### ค่าประมาณที่ต้องบอกผู้ใช้บนหน้าจอ
+- GP/ค่าส่ง/คืนเงินรายสินค้า = อัตราเฉลี่ยทั้งร้าน (Income แยกเงินรายออเดอร์ แต่ไม่บอกว่าออเดอร์ขายอะไร)
+- Ads รายสินค้า = แบ่ง GMV Max ตามสัดส่วนยอดขาย (แม่นขึ้นถ้าส่งไฟล์ GMV Max ข้อมูลเชิงลึก)
+- CPL ใช้ "ผู้ที่อาจจะซื้อ" แทน Lead · CRR/CLV แม่นขึ้นเมื่อสะสมหลายเดือน
+
+---
+
+## 📅 Session Log — 13 ตุลาคม 2026 (ระบบ Subscription Phase 1-3 สำเร็จ + Security Hardening + Global Theme)
+
+### 1. ระบบจัดการแพ็กเกจและการจำกัดสิทธิ์ (Subscription System Phase 1-3)
+ดำเนินการสร้างและต่อยอดระบบแพ็กเกจ v2 ตามราคา `Phopy_Price.xlsx`:
+
+- **Phase 1 (Data Model & Catalog Engine):**
+  - ออกแบบแคตตาล็อกราคา v2 ใน `src/services/billing.catalog.ts` และ `src/services/subscription.features.ts`
+  - รองรับโครงสร้าง Base Plan (Free, Solo, Business, Business+, Pro, Enterprise AI) + 4 Pack (Shop, Online, Maker, Accounting) + Add-ons (User, Smart Unit, Multi-Currency, Subcontract, Backup, API)
+  - ปรับปรุง `tenant_subscriptions` เก็บ `packs` และ `addons` ในรูปแบบ JSON
+  - ฟังก์ชัน `getSubscription(tenantId)` คำนวณ Effective Features (Plan ∪ Packs ∪ Addons) และ `maxUsers` แบบจุดเดียว
+  - ระบบ Lazy Expiry จัดการสถานะ `ACTIVE` ที่เลยกำหนดให้เป็น `EXPIRED` ทันทีโดยไม่ต้องพึ่ง Cron
+
+- **Phase 2 (Route-level Subscription Gates ใน Backend `index.ts`):**
+  - ปรับปรุงด่านตรวจให้ตรงกับแคตตาล็อก v2:
+    - `/api/currencies`: เปลี่ยนเป็น `subscriptionGate('multi_currency')` (Add-on หรือ Business+)
+    - `/api/subcontracts`: เปลี่ยนเป็น `subscriptionGate('subcontract')` (Add-on หรือ Pro+)
+    - `/api/qc`: ปรับเป็น `subscriptionGate('work_orders')` เพื่อผูกกับ **Pack Maker**
+    - `/api/kanban`: เสริม `subscriptionGate()` เพื่อป้องกัน tenant หมดอายุออก SSO token ไป Planka
+  - เพิ่มชุดทดสอบ `src/middleware/subscription.middleware.test.ts` (5 ผ่าน 5) ครอบคลุมสิทธิ์ Master, สิทธิ์ Free ถูกล็อก 403, และการปลดล็อกตาม Pack/Add-on
+
+- **Phase 3 (Frontend รู้แพ็กเกจ & ล็อกเมนู):**
+  - **Endpoint `GET /api/subscription/me`:** สร้างใน `src/routes/subscription.routes.ts` ให้ผู้ใช้ทุก role ดึงข้อมูลแพ็กเกจ, effective features, และ limits ได้แม้หมดอายุ (เทสต์ 2 ผ่าน 2)
+  - **Menu Permission Matrix:** ใน `src/config/menuPermissions.ts` เพิ่ม `MENU_REQUIRED_FEATURES` และ `isMenuLocked` (เทสต์ 5 ผ่าน 5)
+  - **Subscription Context:** สร้าง `src/contexts/SubscriptionContext.tsx` ให้บริการ `useSubscription()` ตรวจสอบฟีเจอร์แบบเรียลไทม์
+  - **Sidebar UX:** ใน `src/components/layout/Sidebar.tsx` แสดงกุญแจ 🔒 + ป้าย "อัปเกรด" สำหรับเมนูที่ล็อก พร้อมระบบ Click Interceptor แสดง Toast และนำ Admin ไปหน้าต่ออายุ แทนการปล่อยให้เข้าหน้าว่างที่พัง 403
+  - **Settings:** ใน `src/pages/Settings.tsx` หมวดทั่วไป แสดงชื่อแพ็กเกจ, สถานะ, และป้าย Pack ที่เปิดใช้งาน
+  - **MasterPanel:** ใน `src/pages/MasterPanel.tsx` คำนวณยอดชำระโดยประมาณรายเดือนเรียลไทม์ พร้อมกล่องแนะนำ "≥ 85% ของแพ็กเกจถัดไป → แนะนำอัปเกรด" ตามสูตรคำนวณราคา
+
+### 2. ความปลอดภัย (Security Hardening บน LXC 106 และ LXC 100)
+- ติดตั้ง Real-IP restoration ผ่าน `CF-Connecting-IP` ใน Nginx reverse proxy
+- บล็อก Dotfiles (`.env`, `.git`) ทั้งหมดด้วย HTTP 404
+- ปิด `server_tokens off;`
+- ติดตั้ง Strict CORS Whitelist แบบ Regex ใน `kanban.conf`
+- MCP Server ปรับปรุงระบบยืนยันตัวตนให้อ่านจาก `Authorization: Bearer <key>` เป็นหลัก
+- กักกันไฟล์แบ็กอัปประวัติศาสตร์ฐานข้อมูล `dev.db.bak*` 71 ไฟล์ไว้ใน `storage/backups/` (สิทธิ์ 700/600)
+
+### 3. ตกแต่ง UI Global Theme & Auto Dark Mode (phopy.net, LXC 106)
+- เพิ่มเอฟเฟกต์แสง Limelight & Aurora Mesh ทั่วทั้ง 16 หน้า HTML
+- ติดตั้งระบบ Auto Dark Mode ตามค่าระบบเครื่องผู้ใช้ (`prefers-color-scheme: dark`) ควบคู่กับปุ่มสลับพระอาทิตย์/พระจันทร์ manual toggle
+
+---
+
+## 📦 สารบัญฟังก์ชันทั้งหมดของระบบและการจัดหมวดหมู่ตามแพ็กเกจ (Comprehensive Feature Catalog by Package)
+
+ตารางรวบรวมฟังก์ชันและโมดูลทั้งหมดในระบบ Phopy ERP/CRM พร้อมการแมปด่านตรวจ (Gate), เส้นทาง API (Routes), หน้าจอผู้ใช้ (Frontend), และเครื่องมือ AI (MCP Tools) เพื่อใช้เป็นเกณฑ์ในการแบ่งแพ็กเกจขายอย่างเป็นทางการ:
+
+| หมวดหมู่แพ็กเกจ | โมดูล / ฟังก์ชัน | Feature Key | Backend Routes | Frontend Menu / Page | MCP Tools ที่เกี่ยวข้อง | รายละเอียดความสามารถ |
+|---|---|---|---|---|---|---|
+| **Base Plan**<br>*(ทุกแพ็กเกจ)* | จัดการลูกค้า (CRM) | `crm` | `/api/customers`<br>`/api/customer-recommendations`<br>`/api/activities` | `/crm` | `get_customer_insights`<br>`get_lead_source_performance` | ทะเบียนลูกค้า, แท็กกลุ่มลูกค้า, บันทึกการโทร/นัดหมาย (Activity), ระบบวิเคราะห์และแนะนำสินค้า |
+| **Base Plan** | งานขาย (Sales & Invoicing) | `sales` | `/api/orders`<br>`/api/sales` (11 sub-routes) | `/sales`<br>`/receivables` | `get_sales`, `get_orders`<br>`get_sales_orders`<br>`get_quotations`<br>`create_sales_order`<br>`create_invoice` | ใบเสนอราคา (QT), ใบสั่งขาย (SO), ใบส่งของ (DO), ใบแจ้งหนี้ (INV), ใบเสร็จรับเงิน (RE), ใบลดหนี้ (CN), ระบบ Backorders |
+| **Base Plan** | งานจัดซื้อ (Purchasing) | `purchase` | `/api/purchase`<br>`/api/purchase-orders`<br>`/api/purchase-requests`<br>`/api/suppliers` | `/purchase` | `get_purchase_requests`<br>`get_suppliers`<br>`create_purchase_order`<br>`create_goods_receipt` | ใบขอซื้อ (PR), ใบสั่งซื้อ (PO), ใบรับสินค้า (GR), ใบแจ้งหนี้ผู้ขาย (PI), ทะเบียนผู้ขาย/ซัพลายเออร์, เช็คราคาซื้อย้อนหลัง |
+| **Base Plan** | สต็อก & วัตถุดิบ (Stock Inventory) | `stock` | `/api/stock`<br>`/api/materials` | `/stock` | `get_stock_movements`<br>`search`<br>`adjust_stock` | คลังสินค้า, ทะเบียนวัตถุดิบและสินค้าสำเร็จรูป, รับเข้า/เบิกออก, ตรวจนับสต็อก, จุดสั่งซื้อซ้ำ (Reorder point), ทุนซื้อจริง (purchase_price/purchase_unit) |
+| **Base Plan** | POS ขายหน้าร้าน (พื้นฐาน) | `pos` | `/api/pos` (menu, bill, shift) | `/cashier` | - | เปิดโต๊ะ/เปิดบิล, คิดเงิน, สแกน QR รับเงิน, พิมพ์ใบเสร็จ/สลิปย่อ, ลิ้นชักเก็บเงิน (จำกัด 1 กะ/วัน ใน Base) |
+| **Base Plan** | รายงาน & Dashboard | `reports` | `/api/reports`<br>`/api/dashboard`<br>`/api/receivables` | `/`<br>`/receivables` | `get_summary`<br>`get_ar_aging`<br>`get_ap_aging` | แดชบอร์ดสรุปยอดขาย, สินค้าขายดี, ยอดคงเหลือสต็อก, รายงานลูกหนี้ค้างชำระ (AR Aging), เจ้าหนี้ค้างชำระ (AP Aging) |
+| **Base Plan** | ระบบผู้ใช้ & ตั้งค่าองค์กร | *(ไม่มี gate)* | `/api/users`<br>`/api/settings`<br>`/api/data`<br>`/api/search`<br>`/api/import` | `/settings`<br>`/users` | - | ข้อมูลบริษัท, เลขประจำตัวผู้เสียภาษี, โลโก้, ฟอร์แมตเลขที่เอกสาร, นำเข้า/ส่งออกข้อมูล, ระบบสิทธิ์ตามแผนก |
+| **Pack Shop** | จอแสดงผลในครัว (KDS) | `kds` | `/api/pos/kds` | `/kds` | - | จอรับออเดอร์ในครัว/บาร์น้ำ, ลำดับคิว, นับเวลาปรุงอาหาร, แจ้งเตือนเสียง, เด้งอัปเดตสถานะปรุงเสร็จ |
+| **Pack Shop** | เปิด-ปิดกะไม่จำกัด | `pos` *(กะไม่จำกัด)* | `/api/pos` (shift routes) | `/cashier` | - | ปลดล็อกเพดานกะ (`maxPosShifts: null`), ส่งมอบกะระหว่างวัน, บันทึกเงินสดนำเข้า/นำออก (Cash In/Out) |
+| **Pack Online** | กระทบยอด Shopee / Lazada | `platform_settlement` | `/api/platform-settlement` | `/accounting/platform-settlement` | `platform_month_status`<br>`platform_submit_file`<br>`list_marketing_shops` | นำเข้ารายงานเดือน E-commerce 5 ไฟล์, สมการตรวจยอดข้ามไฟล์ 4 ข้อ, แมปรหัสตัวเลือกกับ SKU (`stock_item_aliases`), ตัดสต็อกและแตกสูตร BOM อัตโนมัติ, บันทึก JV ค่าธรรมเนียมและรายได้ |
+| **Pack Maker** | สูตรการผลิต (BOM) | `bom` | `/api/bom`<br>`/api/calculator` | `/bom`<br>`/calculator` | `explode_bom` | โครงสร้างสูตรการผลิตหลายระดับ (Multi-level BOM), คำนวณต้นทุนวัตถุดิบและค่าแรงต่อชิ้น, เครื่องคำนวณและจำลองสัดส่วนผลิต |
+| **Pack Maker** | ใบสั่งผลิต (Work Orders) | `work_orders` | `/api/work-orders` | `/work-orders` | `production.ts` tools | ออกใบสั่งผลิต (WO), จองสต็อกวัตถุดิบ, บันทึกผลการผลิตจริงและของเสีย, ตัดสต็อกวัตถุดิบและรับสินค้าสำเร็จรูปเข้าคลัง |
+| **Pack Maker** | ตรวจสอบคุณภาพ (QC) | `work_orders` | `/api/qc` | `/qc` | - | เกณฑ์การตรวจรับ (Checklists), บันทึกผลการตรวจสอบคุณภาพชิ้นงานเชื่อมโยงใบสั่งผลิตและล็อตสินค้า |
+| **Pack Accounting** | ผังบัญชี & สมุดรายวัน | `accounting` | `/api/accounts`<br>`/api/journal`<br>`/api/journal` (`/:id/source`) | `/accounting/chart-of-accounts`<br>`/accounting/journal-entries` | `get_trial_balance`<br>`get_ledger`<br>`get_financial_summary` | ผังบัญชี 5 หมวด, สมุดรายวันทั่วไป (JV), สมุดรายวันซื้อ/ขาย/รับ/จ่าย, ตรวจสอบเอกสารต้นทางย้อนกลับ (Audit Drill-down) |
+| **Pack Accounting** | ปิดงวดบัญชี & งบประมาณ | `accounting` | `/api/period-closing`<br>`/api/budgets` | `/accounting/period-closing`<br>`/accounting/budget-vs-actual` | - | ปิดงวดบัญชีรายเดือน/สิ้นปี, ล็อกการแก้ไขเอกสารย้อนหลัง, เทียบงบประมาณกับยอดใช้จริง (Budget vs Actual) |
+| **Pack Accounting** | กระทบยอดเงินโอน & ตัดรอบ POS | `accounting` | `/api/clearing`<br>`/api/bank-accounts` | `/accounting/pos-clearing`<br>`/accounting/reconcile` | - | บัญชีพักเงิน 1180, กระทบยอดสลิปโอนเงินธนาคาร, ตรวจสอบยอดเงินขาด/เกินจากเครื่อง POS และช่องทางโอน |
+| **Pack Accounting** | ภาษีมูลค่าเพิ่ม & ภาษีหัก ณ ที่จ่าย | `tax` | `/api/tax`<br>`/api/wht-certificates` | `/tax` | - | รายงานภาษีซื้อ (ภ.พ.30), รายงานภาษีขาย, ออกหนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ ภ.ง.ด.3, 53) |
+| **Pack Accounting** | Phopy Board | `accounting` | `/api/phopy-board` | `/accounting/phopy-board` | - | แดชบอร์ดสุขภาพการเงินของผู้บริหาร, วิเคราะห์รายรับ-รายจ่าย, งบกำไรขาดทุนเรียลไทม์ |
+| **Add-on** | แปลงหน่วยอัจฉริยะ (Smart Unit) | `smart_unit` | ใน `unitConversion.service.ts` | `/settings?tab=units`<br>UnitPicker modal | `check_unit_issues` | สายการแปลงหน่วยหลายทอด (ลัง → แพ็ค → โหล → ชิ้น), แยกหน่วยซื้อ vs หน่วยสต็อกอัตโนมัติ (แถมใน Pro / Enterprise AI) |
+| **Add-on** | หลายสกุลเงิน (Multi-Currency) | `multi_currency` | `/api/currencies` | `/settings?tab=currency` | - | จัดการอัตราแลกเปลี่ยน, บันทึกซื้อ/ขายด้วยเงินตราต่างประเทศ, คำนวณกำไรขาดทุนจากอัตราแลกเปลี่ยน (แถมใน Business+, Pro, Enterprise AI) |
+| **Add-on** | จ้างผลิตภายนอก (Subcontract) | `subcontract` | `/api/subcontracts` | `/stock/subcontractors` | - | ทะเบียนผู้รับจ้างผลิต, จ่ายวัตถุดิบไปภายนอก, รับงานแปรรูปกลับเข้าคลัง, ตรวจนับสต็อกค้างที่โรงงานนอก (ต้องมี Pack Maker) |
+| **Add-on** | สำรองข้อมูลบนคลาวด์ (Cloud Backup) | `backup` | `/api/backup` | `/settings?tab=backup` | - | แบ็กอัปฐานข้อมูล SQLite ส่งขึ้น Google Drive อัตโนมัติ (Daily/Weekly) (แถมใน Business+, Pro, Enterprise AI) |
+| **Add-on** | API & Webhook Access | `api_access` | `/api/mcp-settings` | `/settings?tab=mcp` | - | เชื่อมต่อโปรแกรมภายนอก, ออก API Key, ยิง Webhook (แถมใน Enterprise AI) |
+| **Add-on** | เพิ่มจำนวนผู้ใช้ (Extra Users) | `extra_users` | ใน `billing.catalog.ts` | `/settings?tab=subscription` | - | เพิ่มจำนวนที่นั่งใช้งานเกินกว่าโควตาของแพ็กเกจ (เช่น Solo +1, Business +2, Business+ +5) |
+| **ระบบเชื่อมต่อ & AI** | Phopy MCP Server | `ai` / `api_access` | `/sse`<br>`/messages` | `/settings?tab=mcp` | ครอบคลุม 30+ tools | อินเทอร์เฟซ Model Context Protocol สำหรับ Claude Desktop / Cursor / Agent ทำงานอัตโนมัติ 3 ระดับสิทธิ์ (readonly / draft / full) |
+| **ระบบเชื่อมต่อ & AI** | LINE Notification & Tasks | *(รอจัด tier)* | `/api/line` | `/settings?tab=line` | - | แจ้งเตือนงานอนุมัติเอกสารและงานเร่งด่วนผ่าน LINE Notify / LINE Bot |
+| **ระบบเชื่อมต่อ & AI** | Phopy Kanban (Planka) SSO | *(expiry gate)* | `/api/kanban/sso` | แถบเมนูด้านข้าง | - | ระบบ Single Sign-On ส่งตัวไปยังกระดานจัดการงาน Kanban (kanban.phopy.net) |
+| **Master & แอดมิน** | ระบบจัดการผู้เช่า (Master Panel) | MASTER only | `/api/master/*` | `/master` | - | จัดการ Tenant, สลับบริษัท, ตั้งแพ็กเกจและเลือก Pack/Add-on, กู้คืนฐานข้อมูล, ดูสถิติการใช้งาน |
+### สถานะ ณ 13 ต.ค. 2026 (ทำตามเฟสด้วย sub-agent + ตรวจเองทุกเฟส) — **deploy แล้ว 14 ต.ค. 2026** (backup DB: /root/dev.db.bak-platform-20261014)
+| เฟส | commit | หมายเหตุ |
+|---|---|---|
+| 1 รอบเดือน + MCP | `72355dc` `20a7a03` | ตาราง `platform_*` (ไม่ใช่ shopee_* เพื่อรองรับ Lazada) · tool `platform_submit_file` / `platform_month_status` · ลบ csvParser + upload ทั้ง 2 หน้า |
+| 2 จับคู่ SKU + ตัดสต็อก | `6a99f36` `e58a808` | alias `SHOPEE:<variant>` · `platform_propose_sku_mapping` · ไม่ใช้ `applyStockMovement()` เพราะมันลง JV 1107 เองทุก OUT · แก้บั๊กยกเลิกรอบสองคืนสต็อกซ้ำ |
+| 3 ลงบัญชี | `a8fe598` | 7 JV ผ่าน 1181 (ยอดยกมา→3103 ครั้งแรก, ขาย, ค่าส่งแยกเต็มในกระเป๋า Shopee, ต้นทุน, ค่าธรรมเนียม, ปรับปรุง, ถอนเงิน) · 1181 = 17,604.88 = ยอดกระเป๋า · ค่าส่งที่ลูกค้าจ่ายคิด VAT / เงินอุดหนุนค่าส่ง Shopee ไม่คิด VAT (Prosoft อ้าง iliketax — ให้ผู้ทำบัญชียืนยัน) · `vat_claimable` ปิดทุกตัว (ร้านยังไม่เคยขอใบกำกับจาก Shopee) · ไม่ทำ WHT |
+| 4 แดชบอร์ด | `a072e3f` | `Marketing.tsx` เขียนใหม่ 2 แท็บ · `GET /api/marketing/platform-dashboard` · ลบ /shops /metrics /analytics/summary (marketing_metrics 0 แถว) |
+| 5 ข้อมูลย้อนหลัง | — | ไม่ต้องเขียนโค้ด ส่งผ่าน MCP ตัวเดิม · **อย่ากดยืนยันการขาย/ลงบัญชีเดือนย้อนหลัง** (ปล่อย COLLECTING ไว้เป็นสถิติ) |
+
