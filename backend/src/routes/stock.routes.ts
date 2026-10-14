@@ -26,9 +26,10 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (req, _file, cb) => {
-    const ext = getSafeImageExtension(_file.originalname) || '.jpg'
-    cb(null, `${req.params.id}-${Date.now()}${ext}`)
+  // ห้ามใช้ req.params.id ในชื่อไฟล์: express ถอด %2F เป็น / ให้ → ..%2F.. เขียนไฟล์ออกนอก uploadDir ได้
+  filename: (_req, file, cb) => {
+    const ext = getSafeImageExtension(file.originalname) || '.jpg'
+    cb(null, `${randomUUID()}${ext}`)
   },
 })
 const upload = multer({
@@ -737,11 +738,15 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
     const file = req.file
     if (!file) return res.status(400).json({ success: false, message: 'No image file provided' })
 
+    // multer เขียนไฟล์ลงดิสก์ไปแล้วก่อนถึงตรงนี้ — ทุกทางที่ไม่รับต้องลบทิ้ง ไม่งั้นไฟล์ที่ยังไม่ตรวจเนื้อในค้างอยู่ใน /uploads (เปิดสาธารณะ)
+    const fullPath = path.join(uploadDir, file.filename)
     const existing = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-    if (!existing) return res.status(404).json({ success: false, message: 'Stock item not found' })
+    if (!existing) {
+      try { fs.unlinkSync(fullPath) } catch { /* ignore */ }
+      return res.status(404).json({ success: false, message: 'Stock item not found' })
+    }
 
     // Reject files whose content does not match an allowed image type.
-    const fullPath = path.join(uploadDir, file.filename)
     if (!isValidImageFile(fullPath)) {
       try { fs.unlinkSync(fullPath) } catch { /* ignore */ }
       return res.status(400).json({ success: false, message: 'Invalid image file' })

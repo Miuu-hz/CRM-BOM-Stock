@@ -19,7 +19,7 @@ const invoiceStorage = multer.diskStorage({
   destination: (_req: any, _file: any, cb: any) => cb(null, invoiceUploadDir),
   filename: (req: any, _file: any, cb: any) => {
     const ext = getSafeImageExtension(_file.originalname) || '.jpg'
-    cb(null, `inv-${req.params.id}-${Date.now()}${ext}`)
+    cb(null, `inv-${generateId()}${ext}`)
   },
 })
 
