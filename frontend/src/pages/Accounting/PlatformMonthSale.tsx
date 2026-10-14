@@ -79,6 +79,7 @@ interface PostingPreview {
   walletClosing: number
   difference: number
   expectedNetMovement: number
+  openingDecision: { shouldPost: boolean; blockedReason: string | null }
 }
 
 type Filter = 'all' | 'unmapped' | 'proposed' | 'mapped'
@@ -87,7 +88,7 @@ const fmt = (n: number | null | undefined) => `฿${(n || 0).toLocaleString('th-
 
 // ==================== Main ====================
 
-export default function PlatformMonthSale() {
+export default function PlatformMonthSale({ platform }: { platform: string }) {
   const [months, setMonths] = useState<MonthRow[]>([])
   const [monthId, setMonthId] = useState<string>('')
   const [rows, setRows] = useState<MappingRow[]>([])
@@ -104,8 +105,9 @@ export default function PlatformMonthSale() {
     try {
       const res = await api.get('/platform-settlement/months')
       if (res.data.success) {
-        setMonths(res.data.data)
-        if (!monthId && res.data.data.length > 0) setMonthId(res.data.data[0].id)
+        const list = (res.data.data as MonthRow[]).filter((m) => m.platform === platform)
+        setMonths(list)
+        if (!monthId && list.length > 0) setMonthId(list[0].id)
       }
     } catch {
       toast.error('โหลดรายการรอบเดือนไม่สำเร็จ')
@@ -231,26 +233,7 @@ export default function PlatformMonthSale() {
     }
   }
 
-  // ยังไม่มีรอบเดือน — เดิม return null ทำให้ผู้ใช้หาส่วนนี้ไม่เจอเลย โชว์วิธีเริ่มแทน
-  if (months.length === 0) {
-    return (
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-[var(--fg-1)]">รอบเดือนแพลตฟอร์ม — จับคู่ SKU · ยืนยันการขาย · ลงบัญชี</h2>
-        <p className="text-sm text-[var(--fg-3)]">
-          ยังไม่มีรอบเดือน — แนบไฟล์ Shopee ของเดือนนั้นในแชท Claude ที่เชื่อม MCP ของระบบนี้ แล้วสั่ง “ส่งรอบเดือน Shopee เดือน YYYY-MM”
-          รอบจะโผล่ที่นี่ให้จับคู่ SKU ยืนยันการขาย และลงบัญชี
-        </p>
-        <ol className="text-xs text-[var(--fg-3)] list-decimal pl-5 space-y-0.5">
-          <li>Income.โอนเงินสำเร็จ</li>
-          <li>my_balance_transaction_report</li>
-          <li>parentskudetail (ข้อมูลธุรกิจ › สินค้า)</li>
-          <li>ข้อมูล-Shopee-Ads (รายเดือน)</li>
-          <li>shop-stats</li>
-          <li>คำสั่งซื้อ (คำสั่งซื้อของฉัน › ส่งออก สถานะ “ทั้งหมด”) — ต้องมีก่อนยืนยันการขาย</li>
-        </ol>
-      </div>
-    )
-  }
+  if (months.length === 0) return <UsageGuide platform={platform} />
 
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
@@ -538,13 +521,21 @@ function PostingPanel({ monthId, status, onChanged }: { monthId: string; status:
               <span className="font-medium">
                 {preview.vatRegistered ? 'ลงบัญชีแบบจด VAT (แยกภาษีซื้อ-ขาย)' : 'ลงบัญชีแบบไม่จด VAT (ยอดเต็ม ไม่แยกภาษี)'}
               </span>
-              <span>1181 ในบัญชี (เฉพาะร้านนี้): {fmtSigned(preview.ledgerBalance1181)}</span>
+              <span>1181 {status === 'POSTED' ? 'ในบัญชี' : 'หลังลงบัญชี'} (เฉพาะร้านนี้): {fmtSigned(preview.ledgerBalance1181)}</span>
               <span>ยอดกระเป๋าแพลตฟอร์ม (closing): {fmtSigned(preview.walletClosing)}</span>
               <span className={Math.abs(preview.difference) > 1 ? 'text-warning font-medium' : ''}>
                 ส่วนต่าง: {fmtSigned(preview.difference)}
-                {Math.abs(preview.difference) > 1 ? ' — ยอดยกมาลงอัตโนมัติแล้ว ไม่ต้องปรับเอง ตรวจไฟล์ income/balance/adjustments ของรอบนี้อีกครั้ง' : ''}
+                {Math.abs(preview.difference) > 1 ? ' — ตรวจไฟล์ income/balance/adjustments ของรอบนี้อีกครั้ง' : ''}
               </span>
             </div>
+            {status === 'SALE_CONFIRMED' && preview.openingDecision?.blockedReason && (
+              <p className="text-xs text-warning flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" /> ลงบัญชีรอบนี้ยังไม่ได้: {preview.openingDecision.blockedReason}
+              </p>
+            )}
+            {status === 'SALE_CONFIRMED' && preview.openingDecision?.shouldPost && preview.journals.opening && (
+              <p className="text-xs text-[var(--fg-3)]">เดือนแรกของร้านนี้ — ลงยอดยกมาในกระเป๋าให้อัตโนมัติ (ครั้งเดียว)</p>
+            )}
 
             {preview.journals.opening && <JournalCard plan={preview.journals.opening} />}
             <JournalCard plan={preview.journals.sales} />
@@ -577,6 +568,67 @@ function PostingPanel({ monthId, status, onChanged }: { monthId: string; status:
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ==================== วิธีใช้งาน (ยังไม่มีรอบเดือนของแพลตฟอร์มนี้) ====================
+
+const SHOPEE_FILES: Array<[string, string]> = [
+  ['Income.โอนเงินสำเร็จ', 'การเงิน › รายรับของฉัน › โอนเงินสำเร็จ'],
+  ['my_balance_transaction_report', 'การเงิน › ยอดเงินของฉัน'],
+  ['parentskudetail', 'ข้อมูลธุรกิจ › สินค้า'],
+  ['ข้อมูล-Shopee-Ads (รายเดือน)', 'Shopee Ads › รายงาน'],
+  ['shop-stats', 'ข้อมูลธุรกิจ › ภาพรวม'],
+  ['คำสั่งซื้อ (สถานะ "ทั้งหมด")', 'คำสั่งซื้อของฉัน › ส่งออก'],
+]
+
+function UsageGuide({ platform }: { platform: string }) {
+  if (platform !== 'SHOPEE') {
+    return (
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 text-sm text-[var(--fg-3)]">
+        ยังไม่รองรับ {platform === 'LAZADA' ? 'Lazada' : 'TikTok Shop'} — รอไฟล์ตัวอย่างจากร้านก่อน แล้วจะเปิดใช้แบบเดียวกับ Shopee
+      </div>
+    )
+  }
+  const steps: Array<[string, React.ReactNode]> = [
+    ['ดาวน์โหลด 6 ไฟล์จาก Seller Centre', (
+      <>
+        <span>ทุกไฟล์ใช้ช่วงวันที่เดียวกัน (1 เดือนปฏิทิน)</span>
+        <ul className="mt-1.5 space-y-0.5">
+          {SHOPEE_FILES.map(([name, where]) => (
+            <li key={name} className="flex flex-wrap gap-x-2"><span className="text-[var(--fg-1)]">{name}</span><span className="text-[var(--fg-4)]">{where}</span></li>
+          ))}
+        </ul>
+      </>
+    )],
+    ['ส่งให้ AI ผ่าน MCP', (
+      <>แนบทั้ง 6 ไฟล์ในแชท Claude ที่เชื่อม MCP ของระบบนี้ (เปิดสิทธิ์ที่ ตั้งค่า › MCP/AI Connect) แล้วพิมพ์ <span className="text-[var(--fg-1)]">“ส่งรอบเดือน Shopee ร้าน &lt;ชื่อร้าน&gt; เดือน 2026-10”</span> — ระบบตรวจสมการข้ามไฟล์ ถ้าไม่ตรงจะบอกว่าไฟล์ไหนผิด</>
+    )],
+    ['จับคู่ SKU', (
+      <>รอบจะขึ้นที่หน้านี้ สั่ง AI <span className="text-[var(--fg-1)]">“เสนอคู่ SKU รอบนี้”</span> แล้วกดยอมรับ/แก้ทีละรายการ — จับคู่ครั้งเดียว เดือนต่อไปจำให้เอง</>
+    )],
+    ['ยืนยันการขาย', <>ตัดสต็อกตามจำนวนที่ขายสุทธิ (หักยกเลิก/คืนแล้ว) — ยกเลิกได้ถ้ายังไม่ลงบัญชี</>],
+    ['ลงบัญชี', <>ดูตัวอย่าง JV ก่อนกด ยอดพักลูกหนี้แพลตฟอร์ม (1181) หลังลงต้องเท่ายอดในกระเป๋า Shopee — ค่าธรรมเนียม/GP มาจากไฟล์ ไม่ต้องกรอกเอง</>],
+    ['ดูกำไรรายสินค้า', <>หน้า Marketing › แดชบอร์ด (กำไรหลังหัก GP, Ads, ค่าส่ง และ KPI 1/3/6/12 เดือน)</>],
+  ]
+  return (
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-[var(--fg-1)]">วิธีใช้งาน — ยังไม่มีรอบเดือน Shopee</h2>
+        <p className="text-xs text-[var(--fg-3)] mt-1">ทำเดือนละครั้งต่อร้าน</p>
+      </div>
+      <ol className="space-y-3">
+        {steps.map(([title, body], i) => (
+          <li key={title} className="flex gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--primary-soft)] text-[var(--fg-1)] text-xs font-semibold flex items-center justify-center">{i + 1}</span>
+            <div className="text-sm text-[var(--fg-3)]">
+              <p className="font-medium text-[var(--fg-1)]">{title}</p>
+              <div className="text-xs mt-0.5">{body}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
