@@ -231,7 +231,26 @@ export default function PlatformMonthSale() {
     }
   }
 
-  if (months.length === 0) return null // ยังไม่มีรอบเดือนไหนส่งไฟล์เข้ามาเลย — ไม่ต้องโชว์ส่วนนี้
+  // ยังไม่มีรอบเดือน — เดิม return null ทำให้ผู้ใช้หาส่วนนี้ไม่เจอเลย โชว์วิธีเริ่มแทน
+  if (months.length === 0) {
+    return (
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-[var(--fg-1)]">รอบเดือนแพลตฟอร์ม — จับคู่ SKU · ยืนยันการขาย · ลงบัญชี</h2>
+        <p className="text-sm text-[var(--fg-3)]">
+          ยังไม่มีรอบเดือน — แนบไฟล์ Shopee ของเดือนนั้นในแชท Claude ที่เชื่อม MCP ของระบบนี้ แล้วสั่ง “ส่งรอบเดือน Shopee เดือน YYYY-MM”
+          รอบจะโผล่ที่นี่ให้จับคู่ SKU ยืนยันการขาย และลงบัญชี
+        </p>
+        <ol className="text-xs text-[var(--fg-3)] list-decimal pl-5 space-y-0.5">
+          <li>Income.โอนเงินสำเร็จ</li>
+          <li>my_balance_transaction_report</li>
+          <li>parentskudetail (ข้อมูลธุรกิจ › สินค้า)</li>
+          <li>ข้อมูล-Shopee-Ads (รายเดือน)</li>
+          <li>shop-stats</li>
+          <li>คำสั่งซื้อ (คำสั่งซื้อของฉัน › ส่งออก สถานะ “ทั้งหมด”) — ต้องมีก่อนยืนยันการขาย</li>
+        </ol>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-4">
