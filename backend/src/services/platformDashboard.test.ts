@@ -187,9 +187,26 @@ describe('ข้อ 17 — repeat_rate หน่วยผิด (>1) ต้อ�
       stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 10, repeat_rate: 12.5 } },
     })
     const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
-    // ค่าที่หน่วยผิดถูกตัดออกทั้งตัวเศษและตัวหาร (ไม่ใช่ทบ 0 เข้าตัวหาร) → ไม่มีเดือนไหนใช้ได้เลย → crr=0, clv=0
+    // ค่าที่หน่วยผิดถูกตัดออกทั้งตัวเศษและตัวหาร (ไม่ใช่ทบ 0 เข้าตัวหาร) → ไม่มีเดือนไหนใช้ได้เลย → crr=0
+    // (ข้อ 9: crrDen=0 คือ "ไม่มีข้อมูล repeat_rate" จริงๆ ไม่ใช่ CRR=0 แท้ๆ → clv ต้องเป็น null ไม่ใช่ 0
+    // ซึ่งแยกไม่ออกจากกรณีมีข้อมูลแล้วคำนวณได้ 0 พอดี)
     expect(dash.kpis.customer.crr).toBe(0)
-    expect(dash.kpis.customer.clv).toBe(0)
+    expect(dash.kpis.customer.clv).toBeNull()
+  })
+})
+
+describe('ข้อ 9 — CRR >= 1 หรือไม่มีข้อมูลซ้ำเลย ต้องได้ CLV เป็น null ไม่ใช่ 0 (แยกจาก "มีข้อมูลแล้วคำนวณได้ 0")', () => {
+  it('repeat_rate=1 (ลูกค้าเก่าซื้อซ้ำ 100%) ทำ 1-crr=0 (หารด้วย 0) → clv ต้องเป็น null', () => {
+    const tenantId = newTenant()
+    makeMonth(tenantId, '2026-10', {
+      income: { total_income: 100, commission: 0, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 10, repeat_rate: 1 } },
+    })
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.kpis.customer.crr).toBe(100)
+    expect(dash.kpis.customer.clv).toBeNull()
+    expect(dash.kpis.customer.clvCac).toBeNull()
   })
 })
 
@@ -264,5 +281,91 @@ describe('เช็คเพิ่ม — monthsWithData ต้องไม่�
     `).run(generateId(), tenantId)
     const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
     expect(dash.monthsWithData).toBe(0)
+  })
+})
+
+describe('ข้อ 12 — hasData ต้องตรงกับกฎ monthsWithData (มีไฟล์รายรับ) ไม่ใช่แค่ "มีแถว platform_months"', () => {
+  it('เดือนมีแถวแต่ไม่มีไฟล์รายรับ (income_json NULL) → months[].hasData ต้องเป็น false เหมือน monthsWithData', () => {
+    const tenantId = newTenant()
+    db.prepare(`
+      INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, income_json, ads_json, stats_json, status)
+      VALUES (?, ?, 'SHOPEE', 'shop1', '2026-10', NULL, NULL, NULL, 'COLLECTING')
+    `).run(generateId(), tenantId)
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.monthsWithData).toBe(0)
+    expect(dash.months.find((m) => m.month === '2026-10')!.hasData).toBe(false)
+  })
+})
+
+describe('ข้อ 2 — COGS allocation ต้องใช้ qty_net (สุทธิ) เหมือน sales ไม่ใช่ qty_confirmed ดิบ', () => {
+  it('qty_confirmed=10 แต่ qty_net=5 (มีคืน/ยกเลิกหลังยืนยัน) → cogs ต้องคิดจาก 5 ไม่ใช่ 10', () => {
+    const tenantId = newTenant()
+    const stockItemId = makeStockItem(tenantId, 20)
+    const monthId = makeMonth(tenantId, '2026-10', {
+      income: { total_income: 1000, commission: 0, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 1000, orders_confirmed: 10, orders_all: 10, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    db.prepare(`UPDATE platform_months SET orders_json = '{}' WHERE id = ?`).run(monthId)
+    addParent(tenantId, monthId, { productId: 'P1', productName: 'สินค้า 1', salesAll: 1000, salesConfirmed: 1000, ordersAll: 10, ordersConfirmed: 10, qtyConfirmed: 5, cartVisitors: 5, buyersConfirmed: 5 })
+    // qty_confirmed ดิบ=10 แต่สุทธิหลังหักยกเลิก/คืน (ไฟล์ orders) = 5 — addParent ตั้ง qty_confirmed=qty_all=5 ไว้
+    // ทับด้วย SQL ตรงๆ ให้ qty_confirmed=10/qty_net=5 (จำลองมีออเดอร์ยกเลิกหลังยืนยันครึ่งหนึ่ง)
+    db.prepare(`UPDATE platform_month_products SET qty_confirmed = 10, qty_net = 5, sales_net = 500 WHERE month_id = ? AND product_id = 'P1'`).run(monthId)
+    confirmMapping(tenantId, { monthId, sourceRef: sourceRefOf('SHOPEE', { product_id: 'P1' }), stockItemId, factor: 1 }, 'tester')
+
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    const p1 = dash.products.find((p) => p.productId === 'P1')!
+    expect(p1.cogs).toBe(100) // 5 * 20 ไม่ใช่ 10 * 20 = 200 (ของเดิมใช้ qty_confirmed ดิบ)
+    expect(p1.qtyConfirmed).toBe(5) // ตัวหารกำไร/หน่วย (profitPerUnit) ก็ต้องเป็นสุทธิ ไม่ใช่ดิบเหมือนกัน
+  })
+})
+
+describe('ข้อ 16 (เพิ่ม) — ผู้ซื้อมากกว่าคนเข้าตะกร้า (ข้อมูลเพี้ยนข้ามไฟล์) ต้องได้ AR เป็น null ไม่ใช่ติดลบ', () => {
+  it('buyersConfirmed > cartVisitors → kpis.customer.ar = null (ไม่ใช่ -150%)', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, '2026-10', {
+      income: { total_income: 100, commission: 0, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    addParent(tenantId, monthId, { productId: 'P1', productName: 'สินค้า 1', salesAll: 100, salesConfirmed: 100, ordersAll: 1, ordersConfirmed: 1, qtyConfirmed: 1, cartVisitors: 4, buyersConfirmed: 10 })
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.kpis.customer.ar).toBeNull()
+  })
+})
+
+describe('sales_net (ไฟล์ orders) ต้องถูกใช้แทน sales_confirmed ตอนคิดกำไรรายสินค้า ถ้ามี', () => {
+  it('มี sales_net (หักยกเลิกหลังยืนยันแล้ว) ต้องใช้ sales_net ไม่ใช่ sales_confirmed ดิบ', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, '2026-10', {
+      income: { total_income: 1000, commission: -100, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 1000, orders_confirmed: 10, orders_all: 10, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    db.prepare(`UPDATE platform_months SET orders_json = '{}' WHERE id = ?`).run(monthId) // รอบนี้มีไฟล์ orders แล้ว
+    db.prepare(`
+      INSERT INTO platform_month_products
+        (id, month_id, tenant_id, product_id, level, product_name, sales_all, sales_confirmed, sales_net, qty_net, orders_all, orders_confirmed, qty_all, qty_confirmed, cart_visitors, buyers_confirmed)
+      VALUES (?, ?, ?, 'P1', 'parent', 'สินค้า 1', 1000, 1000, 700, 7, 10, 10, 10, 10, 10, 10)
+    `).run(generateId(), monthId, tenantId)
+
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.products).toHaveLength(1)
+    expect(dash.products[0].salesConfirmed).toBe(700) // ยอดสุทธิ ไม่ใช่ 1000 ที่ยืนยันดิบ (รวมยกเลิกหลังยืนยัน)
+    expect(dash.estimates).not.toContain('sales_confirmed_includes_cancelled') // เดือนนี้มีไฟล์ orders ครบ
+  })
+
+  it('เดือนเก่าไม่มีไฟล์ orders (sales_net เป็น null) ต้องตกไปใช้ sales_confirmed + ติด flag เตือน', () => {
+    const tenantId = newTenant()
+    const monthIdSep = makeMonth(tenantId, '2026-09', {
+      income: { total_income: 500, commission: -50, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 500, orders_confirmed: 5, orders_all: 5, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    addParent(tenantId, monthIdSep, { productId: 'P1', productName: 'สินค้า เก่า', salesAll: 500, salesConfirmed: 500, ordersAll: 5, ordersConfirmed: 5, qtyConfirmed: 5, cartVisitors: 5, buyersConfirmed: 5 })
+
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-09', range: 1 })
+    expect(dash.products[0].salesConfirmed).toBe(500) // ไม่มี sales_net เลย ตกไปใช้ sales_confirmed เดิม
+    expect(dash.estimates).toContain('sales_confirmed_includes_cancelled')
   })
 })

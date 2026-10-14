@@ -54,21 +54,50 @@ function makeStockItem(tenantId: string, opts: { name: string; category: string;
   return id
 }
 
-function makeMonth(tenantId: string, opts: { platform?: string; shopKey?: string; month?: string; periodEnd?: string } = {}) {
+function makeMonth(tenantId: string, opts: { platform?: string; shopKey?: string; month?: string; periodEnd?: string; noOrders?: boolean } = {}) {
   const id = generateId()
-  db.prepare(`INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status, period_start, period_end) VALUES (?, ?, ?, ?, ?, 'COLLECTING', ?, ?)`)
-    .run(id, tenantId, opts.platform || 'SHOPEE', opts.shopKey || 'ร้านหลัก', opts.month || '2026-10', opts.periodEnd ? opts.periodEnd.slice(0, 7) + '-01' : null, opts.periodEnd || null)
+  // orders_json: เทสต์ในไฟล์นี้ seed platform_month_products ตรงๆ ด้วย SQL (bypass submitFile) อยู่แล้ว —
+  // ใส่ไฟล์ orders ปลอมให้ confirmSale ไม่บล็อก (ไฟล์ orders บังคับแล้ว — ดู confirmSale) ยกเว้นเทสต์ที่ตั้งใจ
+  // เช็คการบล็อกเอง (noOrders: true)
+  db.prepare(`INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status, period_start, period_end, orders_json) VALUES (?, ?, ?, ?, ?, 'COLLECTING', ?, ?, ?)`)
+    .run(id, tenantId, opts.platform || 'SHOPEE', opts.shopKey || 'ร้านหลัก', opts.month || '2026-10', opts.periodEnd ? opts.periodEnd.slice(0, 7) + '-01' : null, opts.periodEnd || null, opts.noOrders ? null : '{}')
   return id
 }
 
-function addVariantRow(tenantId: string, monthId: string, opts: { productId: string | null; variantId: string | null; productName: string; variantName: string; qtyConfirmed: number; level?: 'parent' | 'variant' }) {
+function addVariantRow(tenantId: string, monthId: string, opts: { productId: string | null; variantId: string | null; productName: string; variantName: string; qtyConfirmed: number; qtyNet?: number; level?: 'parent' | 'variant' }) {
   db.prepare(`
-    INSERT INTO platform_month_products (id, month_id, tenant_id, product_id, variant_id, level, product_name, variant_name, qty_confirmed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(generateId(), monthId, tenantId, opts.productId, opts.variantId, opts.level || 'variant', opts.productName, opts.variantName, opts.qtyConfirmed)
+    INSERT INTO platform_month_products (id, month_id, tenant_id, product_id, variant_id, level, product_name, variant_name, qty_confirmed, qty_net)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(generateId(), monthId, tenantId, opts.productId, opts.variantId, opts.level || 'variant', opts.productName, opts.variantName, opts.qtyConfirmed, opts.qtyNet ?? opts.qtyConfirmed)
 }
 
 describe('platformMonthSale — จับคู่ SKU + ยืนยันการขาย (เฟส 2)', () => {
+  // finding #9b: unit_cost=0 (ของจริงมีต้นทุน แค่ยังไม่กรอกในคลัง — ร้านนี้มีต้นทุนแค่ 97/1,024 รายการ) ไม่บล็อก
+  // การยืนยันการขาย แต่ต้องส่ง warnings กลับมาชื่อสินค้าที่ unit_cost=0 ให้คนตามไปกรอก
+  it('ต้นทุนต่อหน่วยเป็น 0 (ยังไม่กรอกในคลัง) → ไม่บล็อก แต่ส่ง warnings กลับมาชื่อสินค้านั้น', () => {
+    const tenantId = newTenant()
+    const stockItemId = makeStockItem(tenantId, { name: 'ของยังไม่กรอกต้นทุน', category: 'FINISHED', quantity: 50, unitCost: 0 })
+    const monthId = makeMonth(tenantId)
+    const sourceRef = sourceRefOf('SHOPEE', { variant_id: 'V1' })
+    addVariantRow(tenantId, monthId, { productId: 'P1', variantId: 'V1', productName: 'ของยังไม่กรอกต้นทุน', variantName: '', qtyConfirmed: 3 })
+    confirmMapping(tenantId, { monthId, sourceRef, stockItemId, factor: 1 }, 'tester')
+
+    const result = confirmSale(tenantId, monthId, 'tester')
+    expect(result.cogsAmount).toBe(0)
+    expect(result.warnings).toContain('ของยังไม่กรอกต้นทุน')
+  })
+
+  it('ต้นทุนต่อหน่วยไม่เป็น 0 → ไม่มี warnings', () => {
+    const tenantId = newTenant()
+    const stockItemId = makeStockItem(tenantId, { name: 'ของมีต้นทุนแล้ว', category: 'FINISHED', quantity: 50, unitCost: 15 })
+    const monthId = makeMonth(tenantId)
+    const sourceRef = sourceRefOf('SHOPEE', { variant_id: 'V1' })
+    addVariantRow(tenantId, monthId, { productId: 'P1', variantId: 'V1', productName: 'ของมีต้นทุนแล้ว', variantName: '', qtyConfirmed: 3 })
+    confirmMapping(tenantId, { monthId, sourceRef, stockItemId, factor: 1 }, 'tester')
+
+    const result = confirmSale(tenantId, monthId, 'tester')
+    expect(result.warnings).toHaveLength(0)
+  })
   it('ยืนยันการขายไม่ได้ถ้ายังไม่ผูก SKU ครบ', () => {
     const tenantId = newTenant()
     const monthId = makeMonth(tenantId)
@@ -181,6 +210,11 @@ describe('platformMonthSale — จับคู่ SKU + ยืนยันก�
 
     const movement = db.prepare(`SELECT created_at FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'OUT'`).get(tenantId, stockItemId) as any
     expect(movement.created_at.startsWith('2026-10-31')).toBe(true) // ลงวันที่ปลายรอบ ไม่ใช่ตอนนี้
+
+    // finding #8: แถว UNPACK (แกะแพ็คอัตโนมัติ) ต้องลงวันที่ปลายรอบเดียวกับ OUT — เดิมใช้ now (เวลาคลิก)
+    // ทำสต็อก ณ สิ้นเดือนติดลบชั่วคราวถ้ากดยืนยันข้ามเดือน (แกะทีหลัง OUT ตามเวลาจริง แต่ OUT ลงวันที่ย้อนไป)
+    const unpackMovement = db.prepare(`SELECT created_at FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'UNPACK'`).get(tenantId, stockItemId) as any
+    expect(unpackMovement.created_at.startsWith('2026-10-31')).toBe(true)
   })
 
   // #7: NOT IN เดิมกับเซ็ตย่อยที่มี NULL ทำ parent ที่ไม่มีตัวเลือกหลุดจากรายการตัดสต็อกทั้งหมด
@@ -335,3 +369,36 @@ describe('platformMonthSale — จับคู่ SKU + ยืนยันก�
     expect(Number(alias.factor)).toBe(1)
   })
 })
+
+  // ไฟล์ orders บังคับก่อนยืนยันการขายเสมอ — ยอด "ยืนยันแล้ว" ของ Shopee ยังรวมออเดอร์ที่ยกเลิกหลังยืนยัน
+  it('ยืนยันการขายไม่ได้ถ้ายังไม่ส่งไฟล์ orders (ถึงจะผูก SKU ครบแล้วก็ตาม)', () => {
+    const tenantId = newTenant()
+    const stockItemId = makeStockItem(tenantId, { name: 'หมวก', category: 'FINISHED', quantity: 50, unitCost: 20 })
+    const monthId = makeMonth(tenantId, { noOrders: true })
+    const sourceRef = sourceRefOf('SHOPEE', { variant_id: 'V1' })
+    addVariantRow(tenantId, monthId, { productId: 'P1', variantId: 'V1', productName: 'หมวก', variantName: 'ฟรีไซส์', qtyConfirmed: 10, qtyNet: 10 })
+    confirmMapping(tenantId, { monthId, sourceRef, stockItemId, factor: 1 }, 'tester')
+
+    expect(() => confirmSale(tenantId, monthId, 'tester')).toThrow(/orders/)
+    const item = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockItemId) as any
+    expect(item.quantity).toBe(50) // ไม่ถูกตัดเลย
+  })
+
+  // qty_net = qty_confirmed - cancelled - returned (คำนวณจากไฟล์ orders) ไม่ใช่ qty_confirmed ดิบ
+  it('ยืนยันการขายตัดสต็อกตาม qty_net ไม่ใช่ qty_confirmed: ยืนยัน 10 ยกเลิก 2 คืน 1 → ตัดแค่ 7', () => {
+    const tenantId = newTenant()
+    const stockItemId = makeStockItem(tenantId, { name: 'กระติกน้ำ', category: 'FINISHED', quantity: 100, unitCost: 30 })
+    const monthId = makeMonth(tenantId)
+    const sourceRef = sourceRefOf('SHOPEE', { variant_id: 'V1' })
+    // qty_confirmed ดิบของ Shopee = 10 แต่สุทธิหลังหักยกเลิก 2 + คืน 1 (ไฟล์ orders คำนวณไว้แล้ว) = 7
+    addVariantRow(tenantId, monthId, { productId: 'P1', variantId: 'V1', productName: 'กระติกน้ำ', variantName: 'สีเงิน', qtyConfirmed: 10, qtyNet: 7 })
+    confirmMapping(tenantId, { monthId, sourceRef, stockItemId, factor: 1 }, 'tester')
+
+    const result = confirmSale(tenantId, monthId, 'tester')
+    expect(result.breakdown).toHaveLength(1)
+    expect(result.breakdown[0].qty).toBe(7)
+    expect(result.cogsAmount).toBe(210) // 7 * 30
+
+    const item = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockItemId) as any
+    expect(item.quantity).toBe(93) // 100 - 7 ไม่ใช่ 100 - 10
+  })

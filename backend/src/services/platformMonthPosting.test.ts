@@ -383,4 +383,76 @@ describe('platformMonthPosting — ลงบัญชีรอบเดือน
     const row = db.prepare(`SELECT status FROM platform_months WHERE id = ?`).get(monthId) as any
     expect(row.status).toBe('SALE_CONFIRMED')
   })
+  // ==================== เช็คงวดปิดต่อ "ทุกวันที่ของ JV" ไม่ใช่แค่ dateStr เดียว (opening/payout คาบเดือนได้) ====================
+  function closePeriod(tenantId: string, year: number, month: number) {
+    db.prepare(`INSERT INTO tax_periods (id, tenant_id, year, month, period_type, start_date, end_date, status)
+      VALUES (?, ?, ?, ?, 'MONTHLY', ?, ?, 'CLOSED')`).run(generateId(), tenantId, year, month, `${year}-01-01`, `${year}-01-31`)
+  }
+
+  it('งวดปิด: post ปฏิเสธถ้าวันที่ถอนเงินใบใดใบหนึ่งตกไปอยู่ในงวดที่ปิดแล้ว (คาบเกี่ยวเดือนถัดไป) แม้ dateStr หลักยังไม่ปิด', () => {
+    const tenantId = newTenant()
+    const lastW = BALANCE.withdrawals[BALANCE.withdrawals.length - 1]
+    const balanceLatePayout: BalancePayload = {
+      ...BALANCE,
+      withdrawals: [...BALANCE.withdrawals.slice(0, -1), { date: '2026-11-02', amount: lastW.amount }],
+    }
+    const monthId = makeMonth(tenantId, { income: INCOME, balance: balanceLatePayout, cogsAmount: 50000, month: '2026-10' })
+    closePeriod(tenantId, 2026, 11) // พ.ย. ปิดแล้ว แต่เดือนหลักของรอบนี้คือ ต.ค. (ยังไม่ปิด)
+
+    expect(() => postMonth(tenantId, monthId, 'tester')).toThrow(/11\/2026/)
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(0, 2) // ปฏิเสธก่อนเขียน DB ทั้งก้อน ไม่มีใบไหนลงเลย
+    const row = db.prepare(`SELECT status FROM platform_months WHERE id = ?`).get(monthId) as any
+    expect(row.status).toBe('SALE_CONFIRMED')
+  })
+
+  it('งวดปิด: unpost ปฏิเสธถ้าวันที่ถอนเงินใบใดใบหนึ่งอยู่ในงวดที่ปิดไปแล้ว', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, { income: INCOME, balance: BALANCE, cogsAmount: 0, month: '2026-10' })
+    postMonth(tenantId, monthId, 'tester')
+    closePeriod(tenantId, 2026, 10) // ปิดงวดหลังโพสต์แล้ว — ถอนเงินทุกใบของ BALANCE อยู่ใน ต.ค. ทั้งหมด
+
+    expect(() => unpostMonth(tenantId, monthId, 'tester')).toThrow(/10\/2026/)
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(17604.88, 2) // ไม่ถูกกลับรายการเพราะโดนปฏิเสธ
+  })
+
+  // ==================== preview (finding #14 ส่วนที่ 1-3): diff/openingDecision/opening ของเดือน POSTED ====================
+  it('preview #14.1: เดือนที่ยังไม่ลงบัญชี diff ต้องเป็น 0 เมื่อข้อมูลถูก (เดิมไม่มีวันเป็น 0 เพราะเทียบยอดก่อนลงเฉย ๆ)', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, { income: INCOME, balance: BALANCE, cogsAmount: 50000 })
+    const preview = previewPosting(tenantId, monthId)
+    expect(preview.status).toBe('SALE_CONFIRMED')
+    expect(preview.difference).toBeCloseTo(0, 1)
+  })
+
+  it('preview #14.2: โชว์ openingDecision ให้ UI อธิบายได้ว่าทำไมไม่มี/ทำไมจะถูกปฏิเสธ', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, { income: INCOME, balance: BALANCE, cogsAmount: 50000 })
+    const preview = previewPosting(tenantId, monthId)
+    expect(preview.openingDecision.shouldPost).toBe(true)
+    expect(preview.openingDecision.blockedReason).toBeNull()
+  })
+
+  it('preview #14.3: เดือนที่ POSTED แล้วมีเดือนถัดไป POSTED ต่อ ยังต้องเห็น opening ที่ลงจริงไปแล้ว (ไม่ใช่ null)', () => {
+    const tenantId = newTenant()
+    const monthOct = makeMonth(tenantId, { income: INCOME, balance: BALANCE, cogsAmount: 0, month: '2026-10' })
+    postMonth(tenantId, monthOct, 'tester') // ต.ค. เป็นเดือนแรก ได้ opening ของตัวเอง
+
+    const incomeNov: IncomePayload = { ...INCOME, period_start: '2026-11-01', period_end: '2026-11-30' }
+    const balanceNov: BalancePayload = {
+      ...BALANCE, period_start: '2026-11-01', period_end: '2026-11-30',
+      opening: 17604.88, closing: r2(17604.88 + BALANCE.money_in + BALANCE.money_out),
+    }
+    const monthNov = makeMonth(tenantId, { income: incomeNov, balance: balanceNov, cogsAmount: 0, month: '2026-11' })
+    postMonth(tenantId, monthNov, 'tester')
+
+    // resolveOpeningDecision(ต.ค.) ตอบว่าบล็อก (มี พ.ย. POSTED ต่ออยู่) — ถ้า preview ใช้ตรง ๆ จะโชว์ opening
+    // เป็น null ทั้งที่ลงจริงไปแล้ว (บั๊กเดิม) ต้องดูจาก journal_ids จริงแทน
+    const previewOct = previewPosting(tenantId, monthOct)
+    expect(previewOct.journals.opening).not.toBeNull()
+    expect(previewOct.journals.opening!.lines.find((l) => l.code === '1181')?.debit).toBeCloseTo(15356.88, 2)
+    expect(previewOct.ledgerBalance1181).toBeCloseTo(17604.88, 2)
+    expect(previewOct.difference).toBeCloseTo(0, 2)
+    // openingDecision เองยังบอกเหตุผลบล็อกไว้เหมือนเดิม (คำตอบของ "ลงบัญชีตอนนี้ได้ไหม" ไม่ใช่ "มี opening ไหม")
+    expect(previewOct.openingDecision.blockedReason).toBeTruthy()
+  })
 })

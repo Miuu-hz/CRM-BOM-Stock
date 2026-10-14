@@ -2754,6 +2754,23 @@ export function runMigrations(db: any): void {
     }
     console.log('✅ Migration: platform_months เฟส 3 (journal_ids/posted) + platform_fee_mappings.vat_claimable')
   } catch (e) { console.error('⚠️ platform_months phase3 migration error:', e) }
+
+  // ==================== เฟส 5: ไฟล์ orders (คำสั่งซื้อ) (2026-10-14) ====================
+  // Shopee ยอด "ยืนยันแล้ว" (sales_confirmed/qty_confirmed) ยังรวมออเดอร์ที่ถูกยกเลิกหลังยืนยัน + คืนสินค้า
+  // ไฟล์ orders (ส่งออกจาก Seller Centre > คำสั่งซื้อของฉัน ทุกสถานะ) จับคู่ด้วยชื่อ (ไม่มี SKU/variant_id
+  // ในไฟล์นี้) แล้วคำนวณ qty_net/sales_net ต่อแถวของ platform_month_products — ดู submitFile ใน
+  // platformMonth.service.ts (applyOrdersDerivation) confirmSale ใช้ qty_net ตัดสต็อก ไม่ใช่ qty_confirmed แล้ว
+  try {
+    const pmCols5 = db.prepare(`PRAGMA table_info(platform_months)`).all() as any[]
+    if (!pmCols5.some((c: any) => c.name === 'orders_json')) {
+      db.exec(`ALTER TABLE platform_months ADD COLUMN orders_json TEXT`)
+    }
+    const pmpCols5 = db.prepare(`PRAGMA table_info(platform_month_products)`).all() as any[]
+    ;[['qty_net', 'REAL'], ['sales_net', 'REAL']].forEach(([col, type]) => {
+      if (!pmpCols5.some((c: any) => c.name === col)) db.exec(`ALTER TABLE platform_month_products ADD COLUMN ${col} ${type}`)
+    })
+    console.log('✅ Migration: platform_months.orders_json + platform_month_products.qty_net/sales_net created')
+  } catch (e) { console.error('⚠️ platform_months phase5 (orders) migration error:', e) }
 }
 
 /**

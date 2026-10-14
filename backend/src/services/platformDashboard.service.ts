@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { findPlatformAlias } from './stockItem.service'
 import { sourceRefOf } from './platformMonthSale.service'
+import { normShopKey } from './platformMonth.service'
 
 // ============================================================
 // เฟส 4: แดชบอร์ดกำไรรายสินค้า + KPI 4 หมวด (อ่านอย่างเดียว ไม่เขียนอะไรเลย)
@@ -11,6 +12,13 @@ import { sourceRefOf } from './platformMonthSale.service'
 
 const r2 = (n: number) => Math.round((n || 0) * 100) / 100
 const safeDiv = (n: number, d: number) => (d ? n / d : 0)
+// sales_net มาจากไฟล์ orders (หักยกเลิกหลังยืนยัน/ที่ต้องชำระ/คืนสินค้าแล้ว) — เดือนเก่าที่ไม่มีไฟล์ orders
+// (ประวัติก่อนฟีเจอร์นี้) ไม่มี sales_net เลย (null) จึงต้องตกไปใช้ sales_confirmed ของ Shopee แทน (อาจรวม
+// ออเดอร์ที่ยกเลิกหลังยืนยันอยู่ — ดู estimates flag 'sales_confirmed_includes_cancelled')
+const salesNetOf = (r: any): number => (r.sales_net != null ? Number(r.sales_net) || 0 : Number(r.sales_confirmed) || 0)
+// #2: เดิม COGS allocation ยังใช้ qty_confirmed ดิบ (ของ Shopee ที่ยังรวมออเดอร์ยกเลิกหลังยืนยัน/คืนสินค้า)
+// ขณะที่ sales ใช้ sales_net แล้ว — ทุนเลยถูกคิดสูงกว่าที่ขายได้จริง กำไรต่ำกว่าจริง กฎ fallback เดียวกับ salesNetOf
+const qtyNetOf = (r: any): number => (r.qty_net != null ? Number(r.qty_net) || 0 : Number(r.qty_confirmed) || 0)
 
 export function monthsWindow(endMonth: string, range: number): string[] {
   const [ey, em] = endMonth.split('-').map(Number)
@@ -50,7 +58,9 @@ export interface DashboardParams {
 }
 
 export function getPlatformDashboard(tenantId: string, params: DashboardParams) {
-  const { platform, shopKey, endMonth, range } = params
+  // #2: กันเดือยช่องว่างจาก query string (route นี้ไม่ได้ผ่าน MCP zod) ให้ตรงกับ shop_key ที่ normalize แล้วใน DB
+  const { platform, shopKey: rawShopKey, endMonth, range } = params
+  const shopKey = normShopKey(rawShopKey)
   const windowMonths = monthsWindow(endMonth, range)
   const placeholders = windowMonths.map(() => '?').join(',')
   const monthRows = db.prepare(`
@@ -104,6 +114,7 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
   let crrNum = 0
   let crrDen = 0
   let monthsWithData = 0
+  let anyMonthMissingOrders = false
 
   const getOrCreateProduct = (productId: string, name: string): ProductAgg => {
     let p = products.get(productId)
@@ -127,7 +138,7 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
     const ads = row.ads_json ? JSON.parse(row.ads_json) : null
     // ponytail: นับว่า "มีข้อมูล" เฉพาะเดือนที่มีไฟล์รายรับแล้วจริงๆ ไม่ใช่แค่มีแถว platform_months
     // (แถวอาจถูกสร้างไว้ก่อนแล้วไฟล์ยังไม่ถูกอัปโหลด)
-    if (income) monthsWithData++
+    if (income) { monthsWithData++; if (!row.orders_json) anyMonthMissingOrders = true }
 
     let gpRateMonth = 0
     let amsMonth = 0
@@ -187,12 +198,12 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
     `).all(row.id) as any[]
     // เฉพาะแถวที่มี product_id เป็นตัวหารส่วนแบ่ง — แถวไม่มี product_id เคยอยู่ในตัวหารแต่ไม่เคยได้รับส่วนแบ่งเลย
     const eligibleParents = parentRows.filter((r) => r.product_id)
-    const eligibleSalesSum = eligibleParents.reduce((s, r) => s + (r.sales_confirmed || 0), 0)
+    const eligibleSalesSum = eligibleParents.reduce((s, r) => s + salesNetOf(r), 0)
 
     let maxShareIdx = -1, maxShareVal = -1
     const allocs = eligibleParents.map((pr, idx) => {
-      const share = eligibleSalesSum > 0 ? (pr.sales_confirmed || 0) / eligibleSalesSum : 0
-      if ((pr.sales_confirmed || 0) > maxShareVal) { maxShareVal = pr.sales_confirmed || 0; maxShareIdx = idx }
+      const share = eligibleSalesSum > 0 ? salesNetOf(pr) / eligibleSalesSum : 0
+      if (salesNetOf(pr) > maxShareVal) { maxShareVal = salesNetOf(pr); maxShareIdx = idx }
       return {
         pr,
         adsAlloc: (directAdsByProduct.get(pr.product_id) || 0) + remainingAdsPool * share,
@@ -214,7 +225,7 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
 
     let profitMonth = 0
     for (const { pr, adsAlloc, amsAlloc, shipAlloc, refundAlloc } of allocs) {
-      const gpAlloc = (pr.sales_confirmed || 0) * gpRateMonth
+      const gpAlloc = salesNetOf(pr) * gpRateMonth
 
       // ── ต้นทุน/หน่วย จากเฟส 2 (ผูก SKU) — ใช้ตัวเลือกถ้ามี ไม่มีตัวเลือกใช้แถวสินค้าเอง ──
       const variantRows = db.prepare(`
@@ -225,7 +236,7 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
       for (const cr of costRows) {
         const ref = sourceRefOf(platform, { product_id: cr.product_id, variant_id: cr.variant_id })
         const alias = findPlatformAlias(tenantId, ref)
-        const qty = cr.qty_confirmed || 0
+        const qty = qtyNetOf(cr)
         if (!alias) { if (qty > 0) unmapped = true; continue }
         const cost = unitCostOf(tenantId, alias.stockItemId) * (alias.factor || 1)
         weightedSum += cost * qty
@@ -234,8 +245,9 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
       const cogsAlloc = weightedSum
 
       const p = getOrCreateProduct(pr.product_id, pr.product_name || pr.product_id)
-      p.qtyConfirmed += pr.qty_confirmed || 0
-      p.salesConfirmed += pr.sales_confirmed || 0
+      // เช่นกัน — ตัวหารกำไร/หน่วย (profitPerUnit) ต้องเป็นจำนวนสุทธิที่ขายได้จริง ไม่ใช่ยอดยืนยันดิบ
+      p.qtyConfirmed += qtyNetOf(pr)
+      p.salesConfirmed += salesNetOf(pr)
       p.salesAll += pr.sales_all || 0
       p.ordersAll += pr.orders_all || 0
       p.ordersConfirmed += pr.orders_confirmed || 0
@@ -253,13 +265,14 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
 
       cartVisitorsTotal += pr.cart_visitors || 0
       buyersConfirmedTotal += pr.buyers_confirmed || 0
-      salesConfirmedTotal += pr.sales_confirmed || 0
+      salesConfirmedTotal += salesNetOf(pr)
 
-      const profitAlloc = (pr.sales_confirmed || 0) - cogsAlloc - gpAlloc - adsAlloc - amsAlloc - shipAlloc - refundAlloc
+      const profitAlloc = salesNetOf(pr) - cogsAlloc - gpAlloc - adsAlloc - amsAlloc - shipAlloc - refundAlloc
       profitMonth += profitAlloc
     }
 
-    const dayEntry: any = { month, hasData: true, sales_confirmed: r2(stats?.totals?.sales_confirmed || 0), ads_cost: r2(adsCostMonth), profit: r2(profitMonth) }
+    // #เพิ่มเติม: เดือนที่มีแถวแต่ยังไม่มีไฟล์รายรับต้อง hasData=false เหมือน monthsWithData ไม่ใช่ true เสมอ
+    const dayEntry: any = { month, hasData: !!income, sales_confirmed: r2(stats?.totals?.sales_confirmed || 0), ads_cost: r2(adsCostMonth), profit: r2(profitMonth) }
     if (range === 1) {
       dayEntry.daily = (db.prepare(`SELECT * FROM platform_days WHERE month_id = ? ORDER BY date`).all(row.id) as any[])
         .map((d) => ({
@@ -319,9 +332,14 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
   const aov = safeDiv(statsSalesConfirmedTotal, ordersConfirmedTotal)
   const crr = safeDiv(crrNum, crrDen)
   const cac = safeDiv(adsCostTotal + amsTotal, newBuyersTotal)
-  const clv = crr < 1 ? safeDiv(aov * contributionMargin, 1 - crr) : 0
+  // #17: crr>=1 ทำ clv=0 (หารด้วย 0 หรือลบ) ซึ่งแยกไม่ออกจาก "ไม่มีข้อมูล" — null ไว้ทั้งสองกรณี (รวมกรณี
+  // ไม่มีข้อมูล repeat_rate เลยทั้งช่วง — crrDen=0 ทำให้ crr เป็น 0 จาก safeDiv แต่ไม่ได้แปลว่า CRR แท้ๆ คือ 0)
+  const clv = (crr < 1 && crrDen > 0) ? safeDiv(aov * contributionMargin, 1 - crr) : null
   // ไม่มีคนเข้าตะกร้าเลย = ไม่มีข้อมูลให้คิด AR ไม่ใช่ "ทิ้งตะกร้า 100%"
-  const ar = cartVisitorsTotal > 0 ? r2((1 - safeDiv(buyersConfirmedTotal, cartVisitorsTotal)) * 100) : null
+  // #16: ผู้ซื้อมากกว่าคนเข้าตะกร้า (ข้อมูลเพี้ยนข้ามไฟล์) ทำ AR ติดลบ (เช่น -150%) ซึ่งไม่มีความหมาย — null ไว้
+  const ar = cartVisitorsTotal > 0 && buyersConfirmedTotal <= cartVisitorsTotal
+    ? r2((1 - safeDiv(buyersConfirmedTotal, cartVisitorsTotal)) * 100)
+    : null
 
   const kpis = {
     sales: {
@@ -348,8 +366,8 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
       cac: r2(cac),
       ar,
       crr: r2(crr * 100),
-      clv: r2(clv),
-      clvCac: r2(safeDiv(clv, cac)),
+      clv: clv == null ? null : r2(clv),
+      clvCac: clv == null ? null : r2(safeDiv(clv, cac)),
     },
   }
 
@@ -359,6 +377,7 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
   if (productList.length > 0) {
     estimates.push('ads_by_sales_share', 'affiliate_by_sales_share', 'shipping_refund_by_sales_share', 'cogs_from_unit_cost')
   }
+  if (anyMonthMissingOrders) estimates.push('sales_confirmed_includes_cancelled')
 
   return {
     months: monthsOut,

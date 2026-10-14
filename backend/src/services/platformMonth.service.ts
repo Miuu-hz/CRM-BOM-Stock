@@ -1,9 +1,10 @@
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
+import { normName } from './stockItem.service'
 
 // ============================================================
 // รอบเดือนช่องทางขายแพลตฟอร์ม (Shopee ตอนนี้ — Lazada ตามมาทีหลัง) — เฟส 1
-// รับ 5 ไฟล์ต่อรอบผ่าน MCP (ไม่อัปโหลด CSV อีกต่อไป): income, balance, products, ads, stats
+// รับ 6 ไฟล์ต่อรอบผ่าน MCP (ไม่อัปโหลด CSV อีกต่อไป): income, balance, products, ads, stats, orders
 // เก็บยอดเต็มตามที่ไฟล์สรุปให้มา ไม่คำนวณเลขเอง — ตรวจแค่ว่าตัวเลขที่ส่งมาสมการตรงกันเองและข้ามไฟล์
 //
 // กติกาเครื่องหมาย (คุยกับเจ้าของแล้ว): ค่าธรรมเนียม/รายจ่าย/เงินออกทุกตัว Shopee ให้มาเป็น "ค่าลบ" อยู่แล้ว
@@ -18,7 +19,23 @@ const TOL = 1 // บาท — ความคลาดเคลื่อนท�
 const r2 = (n: number) => Math.round((n || 0) * 100) / 100
 const near = (a: number, b: number) => Math.abs(r2(a) - r2(b)) <= TOL
 
-export type PlatformFileType = 'income' | 'balance' | 'products' | 'ads' | 'stats'
+// #2: trim + ยุบช่องว่างซ้อนให้เหลือ 1 ช่อง (เคส 'ร้านหลัก ' vs 'ร้านหลัก' ที่ทำให้สร้างรอบแยกกัน — opening
+// ถูกลงบัญชีซ้ำสองรอบ) คงตัวพิมพ์เดิมไว้ (ชื่อร้านไทยไม่มีเคสให้สลับ ไม่ทำเกินที่ต้องใช้จริงตอนนี้)
+export function normShopKey(shopKey: string): string {
+  return String(shopKey || '').trim().replace(/\s+/g, ' ')
+}
+
+// #13: วันที่ปฎิทินจริง — กัน 2026-02-30 / 2026-10-45 ที่ regex รูปแบบเฉยๆ ปล่อยผ่านได้ (Date parse แบบ
+// native จะ "เลื่อนวัน" ให้เองเงียบๆ เช่น 2026-02-30 → 2026-03-02) round-trip ผ่าน Date.UTC แล้วเทียบ Y-M-D กลับ
+export function isValidCalendarDate(dateStr: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '')
+  if (!m) return false
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3])
+  const dt = new Date(Date.UTC(y, mo - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d
+}
+
+export type PlatformFileType = 'income' | 'balance' | 'products' | 'ads' | 'stats' | 'orders'
 
 export interface IncomePayload {
   period_start: string
@@ -84,6 +101,26 @@ export interface ProductsPayload {
   rows: ProductRow[]
 }
 
+// ไฟล์ orders (คำสั่งซื้อของฉัน > ส่งออก ทุกสถานะ) — กันยอด sales_confirmed/qty_confirmed ของ Shopee ที่ยัง
+// รวมออเดอร์ที่ถูกยกเลิกหลังยืนยัน + คืนสินค้า ไม่มี product_id/variant_id ในไฟล์นี้ (ร้านไม่มีรหัส SKU) จับคู่
+// ด้วยชื่อ (product_name, variant_name) กับแถวของไฟล์ products ของรอบเดียวกันเท่านั้น — ดู matchOrdersToProducts
+export interface OrderRow {
+  product_name: string
+  variant_name?: string
+  qty_ordered: number
+  qty_cancelled: number
+  qty_unpaid: number
+  qty_returned: number
+  sales_net: number
+}
+export interface OrdersPayload {
+  period_start: string
+  period_end: string
+  rows: OrderRow[]
+  orders_total: number
+  orders_cancelled: number
+}
+
 export interface AdsCampaign {
   name: string
   ad_type: string
@@ -142,7 +179,7 @@ export interface StatsPayload {
   sources: { product_page: number; live: number; video: number; partner: number; ads_attributed: number }
 }
 
-export type PlatformFilePayload = IncomePayload | BalancePayload | ProductsPayload | AdsPayload | StatsPayload
+export type PlatformFilePayload = IncomePayload | BalancePayload | ProductsPayload | AdsPayload | StatsPayload | OrdersPayload
 
 export interface SubmitFileInput {
   platform: string
@@ -215,6 +252,9 @@ function monthKeyOf(dateStr: string): string {
 }
 function assertDateNearMonth(dateStr: string | undefined | null, month: string, label: string): void {
   if (!dateStr) return
+  if (!isValidCalendarDate(dateStr)) {
+    throw new PlatformMonthError(`${label}: วันที่ "${dateStr}" ไม่ใช่วันที่จริงในปฏิทิน`)
+  }
   const key = monthKeyOf(dateStr)
   const [y, m] = month.split('-').map(Number)
   if (!y || !m) return
@@ -244,7 +284,12 @@ function assertBalanceInternal(d: BalancePayload): void {
 
 // ไฟล์ ads: ผลรวม cost ของทุกแคมเปญ ควรเท่า total_cost (ถ้ามีแคมเปญมาด้วย) ──────────────────────
 function assertAdsInternal(d: AdsPayload): void {
-  if (!d.campaigns || d.campaigns.length === 0) return
+  if (!d.campaigns || d.campaigns.length === 0) {
+    if (!near(0, d.total_cost)) {
+      throw new PlatformMonthError(`ไฟล์ ads: ไม่มีแคมเปญเลย แต่ total_cost ไม่เป็น 0 (ได้ ${d.total_cost})`)
+    }
+    return
+  }
   const sum = r2(d.campaigns.reduce((s, c) => s + (c.cost || 0), 0))
   if (!near(sum, d.total_cost)) {
     throw new PlatformMonthError(`ไฟล์ ads: ผลรวม cost ของแคมเปญทั้งหมด ควรเท่า total_cost (คำนวณได้ ${sum} แต่ไฟล์ให้ ${d.total_cost})`)
@@ -257,7 +302,23 @@ function assertAdsInternal(d: AdsPayload): void {
 const STATS_DAILY_SUM_FIELDS = ['sales_all', 'sales_confirmed', 'orders_all', 'orders_confirmed', 'cancelled_orders', 'cancelled_sales'] as const
 function assertStatsInternal(d: StatsPayload): void {
   const daily = d.daily || []
-  if (daily.length === 0) return
+  if (daily.length === 0) {
+    const anyNonZero = STATS_DAILY_SUM_FIELDS.some((f) => Number((d.totals as any)?.[f]) !== 0)
+    if (anyNonZero) {
+      throw new PlatformMonthError('ไฟล์ stats: totals มีค่าไม่เป็นศูนย์ แต่ daily ไม่มีข้อมูลเลย — ต้องส่ง daily มาด้วย')
+    }
+    return
+  }
+  const seenDates = new Set<string>()
+  for (const day of daily) {
+    if (seenDates.has(day.date)) {
+      throw new PlatformMonthError(`ไฟล์ stats: daily มีวันที่ซ้ำกัน (${day.date})`)
+    }
+    seenDates.add(day.date)
+    if (day.date < d.period_start || day.date > d.period_end) {
+      throw new PlatformMonthError(`ไฟล์ stats: daily วันที่ ${day.date} อยู่นอกช่วง period_start..period_end (${d.period_start}..${d.period_end})`)
+    }
+  }
   for (const field of STATS_DAILY_SUM_FIELDS) {
     const sum = r2(daily.reduce((s, day) => s + (Number((day as any)[field]) || 0), 0))
     const total = (d.totals as any)?.[field]
@@ -297,6 +358,133 @@ function assertProductsInternal(rows: ProductRow[]): void {
         throw new PlatformMonthError(`ไฟล์ products: สินค้า ${productId} ผลรวม ${key} ของตัวเลือกทั้งหมด (${sum}) ไม่เท่ากับแถวสรุป (${parentVal})`)
       }
     }
+  }
+}
+
+// ไฟล์ orders: ต่อแถว qty_cancelled+qty_unpaid ต้องไม่เกิน qty_ordered, qty_returned ต้องไม่เกินส่วนที่เหลือ
+// หลังหักยกเลิก/ที่ต้องชำระ — ทั้งหมดเป็นจำนวนนับ (ไม่ใช่เงิน) จึงเทียบตรงๆ ไม่ปัดเศษ (±0)
+function assertOrdersInternal(d: OrdersPayload): void {
+  for (const row of d.rows || []) {
+    const cancelledPlusUnpaid = (row.qty_cancelled || 0) + (row.qty_unpaid || 0)
+    if (cancelledPlusUnpaid > (row.qty_ordered || 0)) {
+      throw new PlatformMonthError(
+        `ไฟล์ orders: "${row.product_name}${row.variant_name ? ' · ' + row.variant_name : ''}" qty_cancelled+qty_unpaid (${cancelledPlusUnpaid}) เกิน qty_ordered (${row.qty_ordered})`
+      )
+    }
+    const remaining = (row.qty_ordered || 0) - cancelledPlusUnpaid
+    if ((row.qty_returned || 0) > remaining) {
+      throw new PlatformMonthError(
+        `ไฟล์ orders: "${row.product_name}${row.variant_name ? ' · ' + row.variant_name : ''}" qty_returned (${row.qty_returned}) เกินจำนวนที่เหลือหลังหักยกเลิก/ที่ต้องชำระ (${remaining})`
+      )
+    }
+  }
+  if ((d.orders_cancelled || 0) > (d.orders_total || 0)) {
+    throw new PlatformMonthError(`ไฟล์ orders: orders_cancelled (${d.orders_cancelled}) เกิน orders_total (${d.orders_total})`)
+  }
+}
+
+// ── จับคู่ชื่อ orders ↔ products ของรอบเดียวกัน — ไม่มี product_id/variant_id ในไฟล์ orders ─────────────
+// variant_name ว่าง/'-' = จับคู่กับแถว parent ของสินค้าที่ไม่มีตัวเลือกเลย ไม่ใช่ parent ของสินค้าที่มีตัวเลือก
+// (สินค้ามีตัวเลือก ยอดต้องอยู่ที่แถว variant เท่านั้น — เหมือน assertProductsInternal ที่แยก parent/variant)
+function matchOrdersToProducts(orderRows: OrderRow[], productRows: any[]): { matchOf: Map<number, any>; unmatchedNames: string[]; ambiguousNames: string[] } {
+  const groups = new Map<string, { parent?: any; variants: any[] }>()
+  for (const pr of productRows) {
+    if (!pr.product_id) continue
+    const g = groups.get(pr.product_id) || { variants: [] }
+    if (pr.level === 'parent') g.parent = pr
+    else g.variants.push(pr)
+    groups.set(pr.product_id, g)
+  }
+  const variantMap = new Map<string, any>()
+  const parentNoVariantMap = new Map<string, any>()
+  // #1: สองสินค้า/ตัวเลือกคนละ product_id/variant_id แต่ชื่อรวม (normalize แล้ว) ชนกันเป๊ะ — จับคู่กับ
+  // orders ไม่ได้แน่ชัดว่าเป็นตัวไหน เก็บไว้ปฏิเสธ ไม่จับคู่มั่วเอาแถวแรกที่เจอ
+  const ambiguousKeys = new Set<string>()
+  const ambiguousNames: string[] = []
+  for (const g of groups.values()) {
+    const productName = g.parent?.product_name ?? g.variants.find((v) => v.product_name)?.product_name ?? ''
+    if (g.variants.length > 0) {
+      for (const v of g.variants) {
+        const key = normName(v.product_name || productName) + '||' + normName(v.variant_name || '')
+        if (variantMap.has(key)) {
+          if (!ambiguousKeys.has(key)) { ambiguousKeys.add(key); ambiguousNames.push([v.product_name || productName, v.variant_name].filter(Boolean).join(' · ')) }
+        } else {
+          variantMap.set(key, v)
+        }
+      }
+    } else if (g.parent) {
+      const key = normName(productName)
+      if (parentNoVariantMap.has(key)) {
+        if (!ambiguousKeys.has(key)) { ambiguousKeys.add(key); ambiguousNames.push(productName) }
+      } else {
+        parentNoVariantMap.set(key, g.parent)
+      }
+    }
+  }
+  const matchOf = new Map<number, any>()
+  const unmatchedNames: string[] = []
+  orderRows.forEach((o, idx) => {
+    const vn = normName(o.variant_name || '')
+    const isNoVariant = vn === '' || vn === '-'
+    const match = isNoVariant ? parentNoVariantMap.get(normName(o.product_name)) : variantMap.get(normName(o.product_name) + '||' + vn)
+    if (match) matchOf.set(idx, match)
+    else unmatchedNames.push([o.product_name, o.variant_name].filter(Boolean).join(' · '))
+  })
+  return { matchOf, unmatchedNames, ambiguousNames }
+}
+
+// คำนวณ qty_net/sales_net ต่อแถวของ platform_month_products จากไฟล์ orders ที่จับคู่ได้ — รันทุกครั้งที่
+// products หรือ orders ถูกส่ง/ส่งซ้ำ (products resubmit ลบแถวเดิมทั้งก้อน ต้องคำนวณใหม่เสมอ) แถวที่ไม่มีใน
+// orders เลย = ไม่มียอดขายสุทธิ (qty_net/sales_net = 0) ไม่ใช่ null (null คือ "ยังไม่มีไฟล์ orders เลย")
+function applyOrdersDerivation(monthId: string): void {
+  const month = db.prepare(`SELECT orders_json FROM platform_months WHERE id = ?`).get(monthId) as any
+  if (!month?.orders_json) return // ยังไม่มีไฟล์ orders — รอมาก่อนค่อยคำนวณ ไม่ reject ตอนนี้
+  const orders = JSON.parse(month.orders_json) as OrdersPayload
+  const productRows = db.prepare(`SELECT * FROM platform_month_products WHERE month_id = ?`).all(monthId) as any[]
+  if (productRows.length === 0) return // ยังไม่มีไฟล์ products — รอมาก่อนค่อยจับคู่
+
+  const { matchOf, unmatchedNames, ambiguousNames } = matchOrdersToProducts(orders.rows || [], productRows)
+  if (ambiguousNames.length > 0) {
+    throw new PlatformMonthError(
+      `ไฟล์ products: ชื่อสินค้า/ตัวเลือกชนกัน (คนละรหัสแต่ชื่อเหมือนกัน) จับคู่กับไฟล์ orders ไม่ได้แน่ชัด ${ambiguousNames.length} รายการ: ${ambiguousNames.slice(0, 10).join(', ')}${ambiguousNames.length > 10 ? ' ...' : ''}`
+    )
+  }
+  if (unmatchedNames.length > 0) {
+    throw new PlatformMonthError(
+      `ไฟล์ orders: จับคู่ชื่อกับสินค้าในไฟล์ products ไม่ได้ ${unmatchedNames.length} รายการ: ${unmatchedNames.slice(0, 10).join(', ')}${unmatchedNames.length > 10 ? ' ...' : ''}`
+    )
+  }
+
+  // #1: สอง order row จับคู่ไปที่แถว product เดียวกันได้ (ชื่อต่างกันแค่เว้นวรรค/ตัวพิมพ์ normalize แล้ว
+  // เหมือนกัน) — ต้องรวมยอด ไม่ใช่ set ทับ (set ทับเคยทำให้ qty_net/sales_net ตัดหายไปครึ่งหนึ่งเงียบๆ)
+  const netByRowId = new Map<string, { qtyNet: number; salesNet: number }>()
+  matchOf.forEach((productRow, orderIdx) => {
+    const o = orders.rows[orderIdx]
+    const qtyNet = (o.qty_ordered || 0) - (o.qty_cancelled || 0) - (o.qty_unpaid || 0) - (o.qty_returned || 0)
+    const prev = netByRowId.get(productRow.id)
+    if (prev) { prev.qtyNet += qtyNet; prev.salesNet += (o.sales_net || 0) }
+    else netByRowId.set(productRow.id, { qtyNet, salesNet: o.sales_net || 0 })
+  })
+  const update = db.prepare(`UPDATE platform_month_products SET qty_net = ?, sales_net = ? WHERE id = ?`)
+  for (const pr of productRows) {
+    const net = netByRowId.get(pr.id)
+    update.run(net ? net.qtyNet : 0, net ? net.salesNet : 0, pr.id)
+  }
+
+  // parent ของสินค้าที่มีตัวเลือก = sum(qty_net/sales_net ของตัวเลือกทั้งหมด) — อ่านค่าที่เพิ่ง UPDATE ไปสดๆ
+  const byProductId = new Map<string, { parent?: any; variantIds: string[] }>()
+  for (const pr of productRows) {
+    if (!pr.product_id) continue
+    const g = byProductId.get(pr.product_id) || { variantIds: [] }
+    if (pr.level === 'parent') g.parent = pr
+    else g.variantIds.push(pr.id)
+    byProductId.set(pr.product_id, g)
+  }
+  for (const { parent, variantIds } of byProductId.values()) {
+    if (!parent || variantIds.length === 0) continue
+    const placeholders = variantIds.map(() => '?').join(',')
+    const sums = db.prepare(`SELECT SUM(qty_net) AS q, SUM(sales_net) AS s FROM platform_month_products WHERE id IN (${placeholders})`).get(...variantIds) as any
+    db.prepare(`UPDATE platform_month_products SET qty_net = ?, sales_net = ? WHERE id = ?`).run(sums?.q || 0, sums?.s || 0, parent.id)
   }
 }
 
@@ -364,7 +552,10 @@ function getOrCreateMonth(tenantId: string, platform: string, shopKey: string, m
  * จะ throw แล้ว rollback ทั้งก้อน — ไม่บันทึกไฟล์ที่ทำให้ข้อมูลขัดกันเอง
  */
 export function submitFile(tenantId: string, input: SubmitFileInput): SubmitFileResult {
-  const { platform, shopKey, month, fileType, data } = input
+  const { platform, month, fileType, data } = input
+  // #2: 'ร้านหลัก ' (เว้นวรรคท้าย) เคยสร้างรอบแยกจาก 'ร้านหลัก' ทำให้ opening ถูกลงบัญชีซ้ำสองรอบ — normalize
+  // ที่ชั้น service (จุดเข้าที่เชื่อถือได้เสมอ) แม้ MCP จะ trim มาให้แล้วก็ตาม
+  const shopKey = normShopKey(input.shopKey)
   if (!/^\d{4}-\d{2}$/.test(month)) throw new PlatformMonthError('รูปแบบ month ต้องเป็น YYYY-MM')
 
   return db.transaction(() => {
@@ -386,12 +577,32 @@ export function submitFile(tenantId: string, input: SubmitFileInput): SubmitFile
       assertDateNearMonth(bd.period_end, month, 'ไฟล์ balance period_end')
       for (const w of bd.withdrawals || []) assertDateNearMonth(w.date, month, `ไฟล์ balance withdrawal วันที่ ${w.date}`)
     }
-    if (fileType === 'ads') assertAdsInternal(data as AdsPayload)
-    if (fileType === 'stats') assertStatsInternal(data as StatsPayload)
+    if (fileType === 'ads') {
+      assertAdsInternal(data as AdsPayload)
+      const ad = data as AdsPayload
+      assertDateNearMonth(ad.period_start, month, 'ไฟล์ ads period_start')
+      assertDateNearMonth(ad.period_end, month, 'ไฟล์ ads period_end')
+    }
+    if (fileType === 'stats') {
+      assertStatsInternal(data as StatsPayload)
+      const sd = data as StatsPayload
+      assertDateNearMonth(sd.period_start, month, 'ไฟล์ stats period_start')
+      assertDateNearMonth(sd.period_end, month, 'ไฟล์ stats period_end')
+    }
     if (fileType === 'products') assertProductsInternal((data as ProductsPayload).rows || [])
+    if (fileType === 'orders') {
+      assertOrdersInternal(data as OrdersPayload)
+      const od = data as OrdersPayload
+      assertDateNearMonth(od.period_start, month, 'ไฟล์ orders period_start')
+      assertDateNearMonth(od.period_end, month, 'ไฟล์ orders period_end')
+    }
 
-    const periodStart = (data as any).period_start ?? row.period_start
-    const periodEnd = (data as any).period_end ?? row.period_end
+    // #13: เฉพาะไฟล์บัญชี (income/balance) เท่านั้นที่กำหนด period_start/end ของรอบได้ — ads/stats/orders/
+    // products ก็มี period_start/end ในไฟล์เหมือนกัน แต่ COALESCE เดิมให้ไฟล์ไหนมาถึงก่อน "ชนะ" ค้างตลอดรอบ
+    // (ถ้า ads ถูกส่งก่อน income คนละปี จะทับช่วงที่ถูกไปแบบถาวร) income/balance คือยอดอ้างอิงบัญชีจริงของรอบ
+    const isAccountingFile = fileType === 'income' || fileType === 'balance'
+    const periodStart = isAccountingFile ? ((data as any).period_start ?? row.period_start) : row.period_start
+    const periodEnd = isAccountingFile ? ((data as any).period_end ?? row.period_end) : row.period_end
 
     if (fileType === 'products') {
       const rows = (data as ProductsPayload).rows || []
@@ -439,12 +650,14 @@ export function submitFile(tenantId: string, input: SubmitFileInput): SubmitFile
           period_end = COALESCE(period_end, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?
       `).run(JSON.stringify(payload), periodStart, periodEnd, row.id)
     } else {
-      const col = fileType === 'income' ? 'income_json' : fileType === 'balance' ? 'balance_json' : 'ads_json'
+      const col = fileType === 'income' ? 'income_json' : fileType === 'balance' ? 'balance_json' : fileType === 'orders' ? 'orders_json' : 'ads_json'
       db.prepare(`
         UPDATE platform_months SET ${col} = ?, period_start = COALESCE(period_start, ?),
           period_end = COALESCE(period_end, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?
       `).run(JSON.stringify(data), periodStart, periodEnd, row.id)
     }
+
+    if (fileType === 'products' || fileType === 'orders') applyOrdersDerivation(row.id)
 
     const fresh = db.prepare(`SELECT * FROM platform_months WHERE id = ?`).get(row.id) as any
     const productsSum = sumParentSalesConfirmed(row.id)
@@ -464,7 +677,7 @@ export interface MonthStatus {
   found: boolean
   monthId?: string
   status?: string
-  filesReceived: { income: boolean; balance: boolean; products: boolean; ads: boolean; stats: boolean }
+  filesReceived: { income: boolean; balance: boolean; products: boolean; ads: boolean; stats: boolean; orders: boolean }
   receivedCount: number
   checks: CheckResult[]
   allChecksPass: boolean
@@ -473,12 +686,12 @@ export interface MonthStatus {
 export function getMonthStatus(tenantId: string, platform: string, shopKey: string, month: string): MonthStatus {
   const row = db.prepare(`
     SELECT * FROM platform_months WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND month = ?
-  `).get(tenantId, platform, shopKey, month) as any
+  `).get(tenantId, platform, normShopKey(shopKey), month) as any
 
   if (!row) {
     return {
       found: false,
-      filesReceived: { income: false, balance: false, products: false, ads: false, stats: false },
+      filesReceived: { income: false, balance: false, products: false, ads: false, stats: false, orders: false },
       receivedCount: 0,
       checks: [],
       allChecksPass: false,
@@ -491,6 +704,7 @@ export function getMonthStatus(tenantId: string, platform: string, shopKey: stri
     products: !!row.products_received,
     ads: !!row.ads_json,
     stats: !!row.stats_json,
+    orders: !!row.orders_json,
   }
   const productsSum = sumParentSalesConfirmed(row.id)
   const checks = runChecks(row, productsSum)

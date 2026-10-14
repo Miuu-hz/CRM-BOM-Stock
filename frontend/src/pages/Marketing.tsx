@@ -33,7 +33,7 @@ interface Dashboard {
     sales: { grossPrice: number; storeDiscount: number; netSales: number; profit: number; margin: number; aov: number; cancelRate: number }
     platformCost: { gpPercent: number; affiliate: number; shippingExcess: number }
     ads: { roas: number; tacos: number; ctr: number; cpl: number }
-    customer: { cac: number; ar: number | null; crr: number; clv: number; clvCac: number }
+    customer: { cac: number; ar: number | null; crr: number; clv: number | null; clvCac: number | null }
   }
   products: ProductRow[]
   cancelled: CancelledRow[]
@@ -57,6 +57,18 @@ const COST_KEYS = [
   { key: 'refunds', label: 'คืนเงิน' },
 ] as const
 type CostKey = typeof COST_KEYS[number]['key']
+
+// #19: ติดป้ายทุก flag ที่ estimates ส่งมา (เดิมโชว์ประโยคตายตัวประโยคเดียว ไม่สนว่า flag ไหนติดจริง) —
+// key ที่ไม่รู้จัก (เผื่ออนาคตเพิ่ม flag ใหม่) ให้โชว์ raw key ไปตรงๆ ดีกว่าซ่อนเงียบ
+const ESTIMATE_LABELS: Record<string, string> = {
+  ads_by_sales_share: 'โฆษณาต่อสินค้าเป็นค่าประมาณจากสัดส่วนยอดขาย ไม่ใช่ตัวเลขจริงต่อชิ้น',
+  affiliate_by_sales_share: 'Affiliate ต่อสินค้าเป็นค่าประมาณจากสัดส่วนยอดขาย ไม่ใช่ตัวเลขจริงต่อชิ้น',
+  shipping_refund_by_sales_share: 'ค่าส่งส่วนเกิน/คืนเงินต่อสินค้าเป็นค่าประมาณจากสัดส่วนยอดขาย ไม่ใช่ตัวเลขจริงต่อชิ้น',
+  cogs_from_unit_cost: 'ต้นทุนคำนวณจากราคาต้นทุนในคลัง (unit_cost) ไม่ใช่ต้นทุนจริงของรอบนี้',
+  gp_percent_shopwide_avg: 'GP% เป็นค่าเฉลี่ยทั้งร้าน ไม่ใช่ต่อสินค้า',
+  crr_clv_weighted_estimate: 'CRR/CLV เป็นค่าประมาณถ่วงน้ำหนักทั้งร้าน',
+  sales_confirmed_includes_cancelled: 'บางเดือนยังไม่มีไฟล์คำสั่งซื้อ (orders) ยอดขายยืนยันแล้วอาจยังรวมออเดอร์ที่ถูกยกเลิกหลังยืนยัน',
+}
 
 function KpiCard({ label, value, formula }: { label: string; value: string; formula: string }) {
   return (
@@ -227,8 +239,8 @@ function Marketing() {
             <KpiCard label="CAC" value={money(dash.kpis.customer.cac)} formula="(โฆษณา+Affiliate) / ลูกค้าใหม่" />
             <KpiCard label="AR ทิ้งตะกร้า" value={dash.kpis.customer.ar == null ? '—' : `${num(dash.kpis.customer.ar)}%`} formula="1 − ซื้อสำเร็จ/เข้าตะกร้า" />
             <KpiCard label="CRR" value={`${num(dash.kpis.customer.crr)}%`} formula="ถ่วงน้ำหนักตามผู้ซื้อ" />
-            <KpiCard label="CLV" value={money(dash.kpis.customer.clv)} formula="AOV×กำไรขั้นต้น/(1−CRR)" />
-            <KpiCard label="CLV:CAC" value={num(dash.kpis.customer.clvCac)} formula="CLV / CAC" />
+            <KpiCard label="CLV" value={dash.kpis.customer.clv == null ? '—' : money(dash.kpis.customer.clv)} formula="AOV×กำไรขั้นต้น/(1−CRR)" />
+            <KpiCard label="CLV:CAC" value={dash.kpis.customer.clvCac == null ? '—' : num(dash.kpis.customer.clvCac)} formula="CLV / CAC" />
           </div>
 
           <div className="phopy-card p-4">
@@ -307,7 +319,9 @@ function Marketing() {
               </BarChart>
             </ResponsiveContainer>
             {dash.estimates.length > 0 && (
-              <div className="text-[10px] text-[var(--fg-4)] mt-1">* โฆษณา/Affiliate/ค่าส่งเกิน/คืนเงินต่อสินค้าเป็นค่าประมาณจากสัดส่วนยอดขาย ไม่ใช่ตัวเลขจริงต่อชิ้น</div>
+              <div className="text-[10px] text-[var(--fg-4)] mt-1 space-y-0.5">
+                {dash.estimates.map((e) => <div key={e}>* {ESTIMATE_LABELS[e] || e}</div>)}
+              </div>
             )}
           </div>
 

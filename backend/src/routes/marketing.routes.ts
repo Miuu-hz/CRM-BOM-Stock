@@ -38,7 +38,7 @@ router.get('/platform-dashboard', (req: Request, res: Response) => {
     const range = Number(req.query.range) as 1 | 3 | 6 | 12
 
     if (!platform || !shopKey) return res.status(400).json({ success: false, message: 'ต้องระบุ platform และ shop_key' })
-    if (!/^\d{4}-\d{2}$/.test(endMonth)) return res.status(400).json({ success: false, message: 'end_month ต้องเป็นรูปแบบ YYYY-MM' })
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(endMonth)) return res.status(400).json({ success: false, message: 'end_month ต้องเป็นรูปแบบ YYYY-MM (เดือน 01-12)' })
     if (![1, 3, 6, 12].includes(range)) return res.status(400).json({ success: false, message: 'range ต้องเป็น 1, 3, 6 หรือ 12' })
 
     const data = getPlatformDashboard(req.user!.tenantId, { platform, shopKey, endMonth, range })

@@ -95,4 +95,100 @@ describe('MCP platform_submit_file — zod schema (findings #7, #13, #17)', () =
     const body = parseOk(res)
     expect(body.success).toBe(false)
   })
+
+  it('orders: แถวไม่มี product_name ต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'orders',
+      data: {
+        period_start: '2026-10-01', period_end: '2026-10-31', orders_total: 1, orders_cancelled: 0,
+        rows: [{ variant_name: 'ไซส์ M', qty_ordered: 5, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 100 }],
+      },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
+
+  it('orders: rows ว่างเปล่าต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'orders',
+      data: { period_start: '2026-10-01', period_end: '2026-10-31', orders_total: 0, orders_cancelled: 0, rows: [] },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
+
+  // finding #13: วันที่ปฎิทินจริง (ไม่ใช่แค่รูปแบบ YYYY-MM-DD)
+  it('income: period_end เป็นวันที่ไม่มีจริงในปฏิทิน (2026-10-45) ต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'income',
+      data: {
+        period_start: '2026-10-01', period_end: '2026-10-45', order_count: 1, product_list_price: 1,
+        seller_discount: 0, refund_to_buyer: 0, shopee_product_discount: 0, product_sales: 1, total_income: 1,
+        shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0,
+        commission: 0, ams_commission: 0, service_fee: 0, infrastructure_fee: 0, transaction_fee: 0,
+        ads_topup_from_escrow: 0, total_expense: 0, total_transferred: 1,
+        adjustments: { total: 0, marketing: 0, shipping_claim: 0, refund_after_complete: 0, other: 0 },
+      },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
+
+  // finding #13: จำนวนนับติดลบต้องถูกปฏิเสธ (คนละกฎกับเงิน/ส่วนลดที่มีเครื่องหมายลบถูกต้องตามกติกา Shopee)
+  it('income: order_count ติดลบ (จำนวนนับ ไม่ใช่เงิน) ต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'income',
+      data: {
+        period_start: '2026-10-01', period_end: '2026-10-31', order_count: -1, product_list_price: 1,
+        seller_discount: 0, refund_to_buyer: 0, shopee_product_discount: 0, product_sales: 1, total_income: 1,
+        shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0,
+        commission: 0, ams_commission: 0, service_fee: 0, infrastructure_fee: 0, transaction_fee: 0,
+        ads_topup_from_escrow: 0, total_expense: 0, total_transferred: 1,
+        adjustments: { total: 0, marketing: 0, shipping_claim: 0, refund_after_complete: 0, other: 0 },
+      },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
+
+  it('products: qty_confirmed ติดลบต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'products',
+      data: { rows: [{ level: 'parent', product_id: 'P1', qty_confirmed: -5 }] },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
+
+  it('orders: qty_ordered ติดลบต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'orders',
+      data: {
+        period_start: '2026-10-01', period_end: '2026-10-31', orders_total: 1, orders_cancelled: 0,
+        rows: [{ product_name: 'สินค้า A', qty_ordered: -5, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 100 }],
+      },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
+
+  it('ads: clicks ของแคมเปญติดลบต้องถูกปฏิเสธ', async () => {
+    const res = await submit({
+      ...BASE,
+      file_type: 'ads',
+      data: {
+        period_start: '2026-10-01', period_end: '2026-10-31',
+        campaigns: [{ name: 'c1', ad_type: 'x', status: 'y', impressions: 10, clicks: -1, orders: 0, direct_orders: 0, items_sold: 0, sales: 0, direct_sales: 0, cost: 0 }],
+        total_cost: 0,
+      },
+    })
+    const body = parseOk(res)
+    expect(body.success).toBe(false)
+  })
 })

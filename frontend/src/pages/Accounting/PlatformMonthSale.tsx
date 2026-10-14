@@ -19,7 +19,7 @@ interface MappingRow {
   sourceRef: string
   productName: string | null
   variantName: string | null
-  qtyConfirmed: number
+  qtyNet: number
   mapped: boolean
   stockItemId: string | null
   sku: string | null
@@ -27,7 +27,6 @@ interface MappingRow {
   unit: string | null
   unitCost: number | null
   quantity: number | null
-  hasBom: boolean
   factor: number | null
   proposed: boolean
   proposedStockItemId: string | null
@@ -200,6 +199,11 @@ export default function PlatformMonthSale() {
       const res = await api.post(`/platform-settlement/months/${monthId}/confirm-sale`)
       if (res.data.success) {
         toast.success(res.data.message || 'ยืนยันการขายแล้ว')
+        // #9: unit_cost=0 ไม่บล็อกการยืนยัน แต่เตือนไว้ให้คนตามไปกรอกต้นทุน (ร้านนี้มีต้นทุนแค่ 97/1,024 รายการ)
+        const warnings: string[] = res.data.data?.warnings || []
+        if (warnings.length > 0) {
+          toast(`ยังไม่มีต้นทุน (unit_cost=0) ${warnings.length} รายการ: ${warnings.slice(0, 5).join(', ')}${warnings.length > 5 ? ' ...' : ''}`, { icon: '⚠️', duration: 8000 })
+        }
         loadMonths()
         loadMapping(monthId)
       }
@@ -344,16 +348,21 @@ function MappingRowItem({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <p className="text-sm font-medium text-[var(--fg-1)]">{row.productName} {row.variantName ? `· ${row.variantName}` : ''}</p>
-          <p className="text-xs text-[var(--fg-4)]">ขายแล้ว {row.qtyConfirmed} ชิ้น (ยืนยัน)</p>
+          <p className="text-xs text-[var(--fg-4)]">ขายแล้ว {row.qtyNet} ชิ้น (สุทธิ หลังหักยกเลิก/คืน)</p>
         </div>
         {row.mapped ? (
           <span className="text-xs text-success flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> {row.sku} · {row.stockItemName} {row.hasBom ? '(มีสูตร BOM)' : ''}
+            <CheckCircle2 className="w-3.5 h-3.5" /> {row.sku} · {row.stockItemName}
             {row.factor && row.factor !== 1 ? ` · ×${row.factor}` : ''}
           </span>
         ) : row.proposed && !editing ? (
           <span className="text-xs text-warning">ข้อเสนอ: {row.proposedSku} · {row.proposedStockItemName}</span>
         ) : null}
+        {row.mapped && row.unitCost === 0 && (
+          <span className="text-xs text-warning flex items-center gap-1">
+            <AlertTriangle className="w-3.5 h-3.5" /> ยังไม่มีต้นทุน (unit_cost=0)
+          </span>
+        )}
         {(!row.mapped || editing) && (
           <button onClick={() => setEditing((v) => !v)} className="text-xs text-[var(--primary)] hover:underline">
             {editing ? 'ปิด' : row.proposed ? 'แก้/ยืนยันเอง' : 'ผูก SKU'}

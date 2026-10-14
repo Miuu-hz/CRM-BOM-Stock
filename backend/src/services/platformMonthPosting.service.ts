@@ -373,6 +373,8 @@ export interface PostingPreviewResult {
   monthId: string
   status: string
   vatRegistered: boolean
+  /** เหตุผลว่าทำไมเดือนนี้ไม่มี/จะไม่มี JV ยอดยกมา หรือทำไมลงบัญชีจะถูกปฏิเสธ — ให้ UI อธิบายผู้ใช้ */
+  openingDecision: OpeningDecision
   journals: {
     opening: JournalPlan | null
     sales: JournalPlan
@@ -402,10 +404,13 @@ function withAccountNames(tenantId: string, plan: JournalPlan | null): JournalPl
 
 /** ยอดเคลื่อนไหวสะสมของ 1181 เฉพาะ JV ที่มาจากเดือนของร้านนี้ (ไม่ปนร้าน/แพลตฟอร์มอื่นใน tenant เดียวกัน)
  *  — referenceId ของทุก JV ในโมดูลนี้ขึ้นต้นด้วย monthId เสมอ (ดู postMonth/unpostMonth) ใช้ LIKE ไล่ทุกเดือน
- *  ของร้านนี้แทนการกรองด้วยวันที่ (period_end อาจไม่ตรงลำดับการโพสต์จริง) — ตัวเลือกที่ง่ายและถูกที่สุด */
-function shop1181Balance(tenantId: string, platform: string, shopKey: string): number {
+ *  ของร้านนี้แทนการกรองด้วยวันที่ (period_end อาจไม่ตรงลำดับการโพสต์จริง) — ตัวเลือกที่ง่ายและถูกที่สุด
+ *  uptoMonth = ตัดเอาเฉพาะเดือน ≤ ค่านี้ (รวมเดือนนั้น) — ไม่ใส่ = ทุกเดือนของร้าน (ลำดับ POSTED ของร้านเดียว
+ *  เป็น prefix ต่อเนื่องเสมอ — postMonth/unpostMonth บังคับลง/เลิกตามลำดับเดือน ดู resolveOpeningDecision) */
+function shop1181Balance(tenantId: string, platform: string, shopKey: string, uptoMonth?: string): number {
   const monthIds = (
-    db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ? AND platform = ? AND shop_key = ?`).all(tenantId, platform, shopKey) as any[]
+    db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ? AND platform = ? AND shop_key = ? ${uptoMonth ? 'AND month <= ?' : ''}`)
+      .all(...(uptoMonth ? [tenantId, platform, shopKey, uptoMonth] : [tenantId, platform, shopKey])) as any[]
   ).map((r) => r.id)
   if (monthIds.length === 0) return 0
 
@@ -421,6 +426,27 @@ function shop1181Balance(tenantId: string, platform: string, shopKey: string): n
   return r2(row?.bal || 0)
 }
 
+/** เดือนนี้มี JV ยอดยกมา (PLATFORM_MONTH_OPENING) ลงจริงไปแล้วไหม — เช็คจาก journal_entries ตรง ๆ ไม่ใช้
+ *  resolveOpeningDecision เพราะฟังก์ชันนั้นตอบคำถาม "ลงตอนนี้ได้ไหม" (เดือนที่มีเดือนถัดไป POSTED ต่ออยู่
+ *  จะโดนบล็อกเสมอ ถูกแล้วสำหรับตอนลงบัญชีจริง) แต่พรีวิวของเดือนที่ POSTED ไปแล้วต้องโชว์ตามที่เกิดขึ้นจริง
+ *  (finding #14 ส่วนที่ 3 — เดิมโชว์ opening เป็น null ผิด ๆ สำหรับเดือนที่มีเดือนถัดไป POSTED ต่อ) */
+function monthHasOpeningJournal(tenantId: string, monthId: string): boolean {
+  return !!db.prepare(`
+    SELECT 1 FROM journal_entries WHERE tenant_id = ? AND reference_type = 'PLATFORM_MONTH_OPENING' AND reference_id LIKE ?
+  `).get(tenantId, `${monthId}:%`)
+}
+
+/** ยอดเคลื่อนไหวของ 1181 รวมทุกบรรทัดในแผน JV ที่ส่งมา — ใช้ตอบ "ถ้าลงบัญชีรอบนี้จริง 1181 จะขยับเท่าไร"
+ *  ก่อนกดลงจริง (นับ opening ด้วยถ้าจะลง, plan ที่เป็น null ข้ามไปเฉย ๆ) */
+function plannedMovement1181(plans: Array<JournalPlan | null>): number {
+  let mv = 0
+  for (const p of plans) {
+    if (!p) continue
+    for (const l of p.lines) if (l.code === ACC.PLATFORM_CLEARING) mv += l.debit - l.credit
+  }
+  return r2(mv)
+}
+
 export function previewPosting(tenantId: string, monthId: string): PostingPreviewResult {
   const month = getMonthRow(tenantId, monthId)
   const { income, balance } = parseIncomeBalance(month)
@@ -428,9 +454,11 @@ export function previewPosting(tenantId: string, monthId: string): PostingPrevie
 
   const vatOn = isVatRegistered(tenantId)
   const dateStr = income.period_end || month.period_end || new Date().toISOString().substring(0, 10)
+  const isPosted = month.status === 'POSTED'
 
   const openingDecision = resolveOpeningDecision(tenantId, month, balance)
-  const opening = buildOpeningPlan(month, balance, balance.period_start || dateStr, openingDecision.shouldPost)
+  const openingShouldShow = isPosted ? monthHasOpeningJournal(tenantId, monthId) : openingDecision.shouldPost
+  const opening = buildOpeningPlan(month, balance, balance.period_start || dateStr, openingShouldShow)
   const sales = buildSalesPlan(month, income, vatOn, dateStr)
   const shipping = buildShippingPlan(tenantId, month, income, vatOn, dateStr)
   const cogs = buildCogsPlan(month, dateStr)
@@ -439,14 +467,21 @@ export function previewPosting(tenantId: string, monthId: string): PostingPrevie
   const payouts = buildPayoutPlans(month, balance)
 
   // เดิม query ข้ามทั้ง tenant (ทุกร้าน/ทุกแพลตฟอร์ม) มาเทียบกับ closing ของร้านเดียว — ถ้า tenant มี
-  // มากกว่า 1 ร้าน diff ที่โชว์ไม่มีความหมายเลย (finding #14) แก้ให้กรองเฉพาะ JV ของเดือนที่เป็นร้านนี้
-  const ledgerBalance1181 = shop1181Balance(tenantId, month.platform, month.shop_key)
+  // มากกว่า 1 ร้าน diff ที่โชว์ไม่มีความหมายเลย (finding #14 ส่วนที่ 1) ส่วนความหมายของ diff เอง: เดือนที่
+  // ยังไม่ POSTED เทียบ "ยอดสะสมเดิมของร้าน + ผลถ้าลงรอบนี้จริง" กับ closing (เดิมเทียบยอดสะสมเดิมเฉย ๆ
+  // ซึ่งไม่มีวันเท่า closing เพราะยังไม่รวมผลของรอบนี้ — เตือนเหลืองค้างตลอดแม้ข้อมูลถูก) เดือนที่ POSTED
+  // แล้วเทียบยอดจริงสะสมถึงเดือนนี้ (ไม่รวมเดือนถัดไปที่อาจ POSTED ต่อ) กับ closing ตรง ๆ
+  const shopLedgerAsOfThisMonth = shop1181Balance(tenantId, month.platform, month.shop_key, month.month)
+  const ledgerBalance1181 = isPosted
+    ? shopLedgerAsOfThisMonth
+    : r2(shopLedgerAsOfThisMonth + plannedMovement1181([opening, sales, shipping, cogs, fees, adjust, ...payouts]))
   const walletClosing = r2(balance.closing)
 
   return {
     monthId,
     status: month.status,
     vatRegistered: vatOn,
+    openingDecision,
     journals: {
       opening: withAccountNames(tenantId, opening),
       sales: withAccountNames(tenantId, sales) as JournalPlan,
@@ -480,8 +515,6 @@ export function postMonth(tenantId: string, monthId: string, userId: string): { 
 
   const vatOn = isVatRegistered(tenantId)
   const dateStr = income.period_end || month.period_end || new Date().toISOString().substring(0, 10)
-  const closed = closedPeriodLabel(tenantId, dateStr)
-  if (closed) throw new PlatformMonthError(`งวด ${closed} ปิดแล้ว ลงบัญชีรอบนี้ไม่ได้`)
 
   const openingDecision = resolveOpeningDecision(tenantId, month, balance)
   if (openingDecision.blockedReason) throw new PlatformMonthError(openingDecision.blockedReason)
@@ -492,6 +525,15 @@ export function postMonth(tenantId: string, monthId: string, userId: string): { 
   const fees = buildFeesPlan(tenantId, month, income, vatOn, dateStr)
   const adjust = buildAdjustPlan(tenantId, month, income, dateStr)
   const payouts = buildPayoutPlans(month, balance)
+
+  // เช็คงวดปิดทุกวันที่ของ JV ที่จะลงจริง ไม่ใช่แค่ dateStr ตัวเดียว — opening ลงวันที่ period_start,
+  // payout ลงวันที่โอนเงินจริง (คาบเกี่ยวเดือนถัดไปได้) ถ้าวันไหนอยู่ในงวดที่ปิดแล้วต้องปฏิเสธทั้งหมด
+  // ก่อนเขียน DB (เดิมเช็คแค่ dateStr เดียว เลยหลุด opening/payout ที่อยู่ในงวดปิดไปเงียบๆ)
+  const jvDates = Array.from(new Set([dateStr, ...(opening ? [opening.date] : []), ...payouts.map((p) => p.date)]))
+  for (const d of jvDates) {
+    const closed = closedPeriodLabel(tenantId, d)
+    if (closed) throw new PlatformMonthError(`งวด ${closed} ปิดแล้ว ลงบัญชีรอบนี้ไม่ได้ (รายการวันที่ ${d})`)
+  }
 
   return db.transaction((): { journalIds: string[] } => {
     const now = new Date().toISOString()
@@ -578,8 +620,16 @@ export function unpostMonth(tenantId: string, monthId: string, userId: string): 
 
   const { income, balance } = parseIncomeBalance(month)
   const dateStr = income?.period_end || month.period_end || new Date().toISOString().substring(0, 10)
-  const closed = closedPeriodLabel(tenantId, dateStr)
-  if (closed) throw new PlatformMonthError(`งวด ${closed} ปิดแล้ว ยกเลิกการลงบัญชีไม่ได้`)
+  const withdrawals = balance?.withdrawals || []
+
+  // เช็คงวดปิดทุกวันที่ที่จะใช้ลงรายการกลับ — dateStr ของ JV หลัก + วันที่ถอนเงินจริงของแต่ละใบ (ตัวที่
+  // ใช้ลงใบ PAYOUT ตอน post จริง ดู buildPayoutPlans) อาจอยู่คนละเดือนกับ dateStr (เดิมเช็คแค่ dateStr
+  // เดียวเลยปล่อยให้ยกเลิกรายการถอนเงินที่อยู่ในงวดปิดแล้วหลุดไปเงียบๆ)
+  const jvDates = Array.from(new Set([dateStr, ...withdrawals.map((w) => w.date)]))
+  for (const d of jvDates) {
+    const closed = closedPeriodLabel(tenantId, d)
+    if (closed) throw new PlatformMonthError(`งวด ${closed} ปิดแล้ว ยกเลิกการลงบัญชีไม่ได้ (รายการวันที่ ${d})`)
+  }
 
   const token = month.posted_at // ต้องเหมือนตัวที่ใช้ตอน post เป๊ะ — อ่านจากคอลัมน์ที่ post เขียนไว้
   db.transaction(() => {
@@ -589,9 +639,10 @@ export function unpostMonth(tenantId: string, monthId: string, userId: string): 
     for (const t of FIXED_REFERENCE_TYPES) {
       reverseJournalEntryForReference(tenantId, t, `${t}_UNPOST`, `${monthId}:${token}`, desc, userId, dateStr)
     }
-    const withdrawals = balance?.withdrawals || []
+    // ใบถอนเงินกลับรายการด้วยวันที่ของมันเอง (w.date) ให้ตรงกับวันที่ลงจริงตอน post — ไม่ใช่ dateStr
+    // รวมของทั้งเดือน (เดิมใช้ dateStr ทุกใบ ทำให้เช็คงวดปิดข้างบนไม่มีความหมายสำหรับ payout เลย)
     withdrawals.forEach((w, idx) => {
-      reverseJournalEntryForReference(tenantId, 'PLATFORM_MONTH_PAYOUT', 'PLATFORM_MONTH_PAYOUT_UNPOST', `${monthId}:W${idx}:${token}`, desc, userId, dateStr)
+      reverseJournalEntryForReference(tenantId, 'PLATFORM_MONTH_PAYOUT', 'PLATFORM_MONTH_PAYOUT_UNPOST', `${monthId}:W${idx}:${token}`, desc, userId, w.date)
     })
 
     db.prepare(`

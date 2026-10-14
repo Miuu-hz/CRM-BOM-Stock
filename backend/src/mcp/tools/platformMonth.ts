@@ -5,12 +5,14 @@ import {
   submitFile,
   getMonthStatus,
   PlatformMonthError,
+  isValidCalendarDate,
   type PlatformFileType,
   type IncomePayload,
   type BalancePayload,
   type ProductsPayload,
   type AdsPayload,
   type StatsPayload,
+  type OrdersPayload,
 } from '../../services/platformMonth.service'
 import { proposeSkuMapping, getMappingSummary } from '../../services/platformMonthSale.service'
 
@@ -18,16 +20,22 @@ import { proposeSkuMapping, getMappingSummary } from '../../services/platformMon
 // num(): กันเลข NaN/Infinity ที่ parser พลาดหลุดมา (.finite()) + กันเลขหลุดโลก (เกินหมื่นล้านบาท ไม่มีจริง
 // ในรอบเดือนร้านเดียว) — เดิม z.number() เฉยๆ ปล่อยทั้ง Infinity และเลขมหาศาลผ่านได้หมด
 const num = () => z.number().finite().min(-1e10).max(1e10)
+// cnt(): จำนวนนับ/นับจำนวนครั้ง (ไม่ใช่เงิน) ต้องไม่ติดลบ — order_count, qty_*, impressions/clicks/orders ฯลฯ
+// (เงิน/ส่วนลด/ค่าธรรมเนียมยังใช้ num() เดิม เพราะมีเครื่องหมายลบที่ถูกต้องตามกติกาของ Shopee)
+const cnt = () => z.number().finite().min(0).max(1e10)
 // fraction(): สัดส่วน 0-1 (ไม่ใช่เปอร์เซ็นต์) ใช้กับ repeat_rate เท่านั้น
 const fraction = () => z.number().finite().min(0).max(1)
-// dateStr(): ต้องเป็น YYYY-MM-DD เป๊ะ — กันรูปแบบ dd/mm/yyyy หลุดเข้ามาเป็นวันที่ JV ตรงๆ (payout date ที่ผิด
-// รูปแบบเคยหลุดผ่าน z.string() เฉยๆ มาก่อน)
-const dateStr = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ต้องเป็นรูปแบบ YYYY-MM-DD')
+// dateStr(): ต้องเป็น YYYY-MM-DD เป๊ะ + เป็นวันที่จริงในปฏิทิน — กันรูปแบบ dd/mm/yyyy หลุดเข้ามาเป็นวันที่ JV
+// ตรงๆ (payout date ที่ผิดรูปแบบเคยหลุดผ่าน z.string() เฉยๆ มาก่อน) และกัน 2026-02-30/2026-10-45 ที่ regex
+// รูปแบบเฉยๆ ปล่อยผ่านได้ (ใช้ตัวเช็คเดียวกับ assertDateNearMonth ในชั้น service — ชั้นป้องกันที่สอง)
+const dateStr = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ต้องเป็นรูปแบบ YYYY-MM-DD').refine(isValidCalendarDate, 'วันที่นี้ไม่มีอยู่จริงในปฏิทิน')
+// shopKeyStr(): trim + ยุบช่องว่างซ้อน — กัน 'ร้านหลัก ' (เว้นวรรคท้าย) สร้างรอบแยกจาก 'ร้านหลัก' (finding #2)
+const shopKeyStr = () => z.string().min(1).transform((s) => s.trim().replace(/\s+/g, ' '))
 
 const incomeSchema = z.object({
   period_start: dateStr(),
   period_end: dateStr(),
-  order_count: num(),
+  order_count: cnt(),
   product_list_price: num(),
   seller_discount: num(),
   refund_to_buyer: num(),
@@ -83,8 +91,8 @@ const productRowSchema = z.object({
   sales_confirmed: num().optional(),
   orders_all: num().optional(),
   orders_confirmed: num().optional(),
-  qty_all: num().optional(),
-  qty_confirmed: num().optional(),
+  qty_all: cnt().optional(),
+  qty_confirmed: cnt().optional(),
   visitors: num().optional(),
   cart_visitors: num().optional(),
   buyers_confirmed: num().optional(),
@@ -106,11 +114,11 @@ const adsCampaignSchema = z.object({
   ad_type: z.string(),
   status: z.string(),
   product_id: z.string().nullable().optional(),
-  impressions: num(),
-  clicks: num(),
-  orders: num(),
-  direct_orders: num(),
-  items_sold: num(),
+  impressions: cnt(),
+  clicks: cnt(),
+  orders: cnt(),
+  direct_orders: cnt(),
+  items_sold: cnt(),
   sales: num(),
   direct_sales: num(),
   cost: num(),
@@ -125,17 +133,17 @@ const adsSchema = z.object({
 const dayRowSchema = z.object({
   date: dateStr(),
   sales_all: num(),
-  orders_all: num(),
+  orders_all: cnt(),
   sales_confirmed: num(),
-  orders_confirmed: num(),
-  visitors: num(),
-  clicks: num(),
-  cancelled_orders: num(),
+  orders_confirmed: cnt(),
+  visitors: cnt(),
+  clicks: cnt(),
+  cancelled_orders: cnt(),
   cancelled_sales: num(),
-  buyers: num(),
-  new_buyers: num(),
-  existing_buyers: num(),
-  potential_buyers: num(),
+  buyers: cnt(),
+  new_buyers: cnt(),
+  existing_buyers: cnt(),
+  potential_buyers: cnt(),
 })
 const statsSchema = z.object({
   period_start: dateStr(),
@@ -143,16 +151,16 @@ const statsSchema = z.object({
   totals: z.object({
     sales_all: num(),
     sales_confirmed: num(),
-    orders_all: num(),
-    orders_confirmed: num(),
-    visitors: num(),
-    clicks: num(),
-    cancelled_orders: num(),
+    orders_all: cnt(),
+    orders_confirmed: cnt(),
+    visitors: cnt(),
+    clicks: cnt(),
+    cancelled_orders: cnt(),
     cancelled_sales: num(),
-    buyers: num(),
-    new_buyers: num(),
-    existing_buyers: num(),
-    potential_buyers: num(),
+    buyers: cnt(),
+    new_buyers: cnt(),
+    existing_buyers: cnt(),
+    potential_buyers: cnt(),
     repeat_rate: fraction().describe('อัตราการซื้อซ้ำ เป็นสัดส่วน 0-1 (เช่น 35% ให้ส่ง 0.35 ไม่ใช่ 35)'),
   }),
   daily: z.array(dayRowSchema),
@@ -165,12 +173,33 @@ const statsSchema = z.object({
   }),
 })
 
+// orders: ไฟล์คำสั่งซื้อ (Seller Centre > คำสั่งซื้อของฉัน > ส่งออก ทุกสถานะ) — ไม่มี product_id/variant_id
+// (ร้านไม่มีรหัส SKU) จับคู่กับไฟล์ products ด้วยชื่อ (product_name, variant_name) เท่านั้น — ไคลเอนต์รวม
+// (aggregate) ต่อ (product_name, variant_name) มาก่อนส่ง ไม่ส่งทีละแถวออเดอร์ดิบ (เดือนหนึ่งมีได้ ~1,700 แถว)
+const orderRowSchema = z.object({
+  product_name: z.string().min(1),
+  variant_name: z.string().optional().describe("ว่าง หรือ '-' = สินค้าไม่มีตัวเลือก"),
+  qty_ordered: cnt(),
+  qty_cancelled: cnt(),
+  qty_unpaid: cnt(),
+  qty_returned: cnt(),
+  sales_net: num(),
+})
+const ordersSchema = z.object({
+  period_start: dateStr(),
+  period_end: dateStr(),
+  rows: z.array(orderRowSchema).min(1, 'ต้องมีอย่างน้อย 1 แถว'),
+  orders_total: cnt(),
+  orders_cancelled: cnt(),
+})
+
 const SCHEMA_BY_TYPE: Record<PlatformFileType, z.ZodTypeAny> = {
   income: incomeSchema,
   balance: balanceSchema,
   products: productsSchema,
   ads: adsSchema,
   stats: statsSchema,
+  orders: ordersSchema,
 }
 
 export function registerPlatformMonthTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
@@ -178,7 +207,7 @@ export function registerPlatformMonthTools(server: IMcpServer, tenantId: string,
   server.tool(
     'platform_submit_file',
     `ส่งไฟล์รายงานรอบเดือนของช่องทางขายแพลตฟอร์ม (ตอนนี้รองรับ Shopee — Lazada จะตามมาทีหลัง) เข้าสู่รอบเดือน
-ต้องส่งแยกเป็น 5 ไฟล์ ไฟล์ไหนมาก่อนส่งก่อนได้ (file_type):
+ต้องส่งแยกเป็น 6 ไฟล์ ไฟล์ไหนมาก่อนส่งก่อนได้ (file_type):
   1) income    — Seller Centre > การเงินของฉัน > รายรับ — อ่านยอดจาก "ชีตสรุป (Summary)" เท่านั้น ห้ามรวมเองจากแถวย่อย
   2) balance   — Seller Centre > การเงินของฉัน > ยอดคงเหลือ (เงินเข้า/ออก/ถอน)
   3) products  — Seller Centre > ข้อมูลเชิงลึกของธุรกิจ > สินค้า — ต้องมีทั้งแถวสรุปต่อสินค้า (level="parent")
@@ -203,6 +232,21 @@ export function registerPlatformMonthTools(server: IMcpServer, tenantId: string,
      อัตราการกลับมาซื้อซ้ำ→repeat_rate (แปลง % เป็นสัดส่วน 0-1 เช่น 8.43% ส่งเป็น 0.0843)
      หมายเหตุ: daily[] (รายวันต่อแถว) และ sources (product_page/live/video/partner/ads_attributed) ยังไม่มี
      แม็บคอลัมน์ต้นทางที่ยืนยันแล้ว — กรอกเท่าที่หาได้จากรายงาน ถ้าหาไม่ได้ให้ใส่ 0 ห้ามเดาตัวเลข
+  6) orders     — Seller Centre > คำสั่งซื้อของฉัน > ส่งออก — ต้องส่งออกทุกสถานะ (ไม่กรองสถานะ) ช่วงวันที่
+     เดียวกับที่ใช้ตอนส่งออกไฟล์ products (parentskudetail) จำเป็นก่อนกดยืนยันการขาย (confirm-sale) เสมอ
+     เพราะยอด "ยืนยันแล้ว" ของ Shopee (sales_confirmed/qty_confirmed ในไฟล์ products) ยังรวมออเดอร์ที่ถูก
+     ยกเลิกหลังยืนยัน + คืนสินค้าอยู่ — ไฟล์นี้เอาไว้หักยอดจริงออกมา (qty_net/sales_net)
+     ไฟล์นี้ไม่มีรหัสสินค้า/ตัวเลือก (ร้านไม่มีรหัส SKU) จึงจับคู่ด้วย "ชื่อ" กับไฟล์ products ของรอบเดียวกัน
+     แทน — ก่อนส่ง ให้รวม (aggregate) ทุกแถวออเดอร์ (เดือนหนึ่งมีได้ ~1,700 แถว) เป็นแถวเดียวต่อ
+     (product_name, variant_name) ก่อนส่ง (payload เหลือ ~400 แถว) ไม่ส่งแถวออเดอร์ดิบทีละรายการ
+     แม็บคอลัมน์→ฟิลด์ (รวมแล้วต่อ product_name+variant_name): ชื่อสินค้า→product_name,
+     ชื่อตัวเลือก→variant_name (ว่าง/'-' = ไม่มีตัวเลือก ต้องตรงกับ product_name ของแถว parent ที่ไม่มี
+     ตัวเลือกในไฟล์ products), จำนวน→qty_ordered = sum "จำนวน" ของทุกแถวออเดอร์ (ทุกสถานะ)
+     qty_cancelled = sum "จำนวน" เฉพาะแถวที่ "สถานะการสั่งซื้อ" มีคำว่า "ยกเลิก"
+     qty_unpaid = sum "จำนวน" เฉพาะแถวสถานะ "ที่ต้องชำระ"
+     qty_returned = sum "จำนวนที่ส่งคืน" เฉพาะแถวที่ไม่ได้ถูกยกเลิก
+     sales_net = sum "ราคาขายสุทธิ" เฉพาะแถวที่ไม่ได้ถูกยกเลิก/ที่ต้องชำระ
+     orders_total/orders_cancelled = จำนวน "หมายเลขคำสั่งซื้อ" ที่ไม่ซ้ำกัน (ทั้งหมด / เฉพาะที่ยกเลิก)
 
 กฎสำคัญ: ดึงเฉพาะตัวเลขตามฟิลด์ที่กำหนดไว้ ห้ามแนบไฟล์ดิบ ห้ามคำนวณเลขเอง ใช้ยอดที่ไฟล์สรุปให้มาตรงๆ
 month = เดือนปฏิทินของรอบ (เช่นรอบตุลาคม 2026 ให้ month="2026-10") แม้ไฟล์จะมีช่วงวันที่ไม่ตรงเดือนเต็มก็ตาม
@@ -213,9 +257,9 @@ month = เดือนปฏิทินของรอบ (เช่นรอ�
 ถ้าไฟล์ที่ส่งทำให้สมการภายในไฟล์หรือข้ามไฟล์ (กับไฟล์ที่เคยส่งแล้ว) ไม่ตรง ระบบจะปฏิเสธและบอกว่าสมการไหนพัง`,
     {
       platform: z.enum(['SHOPEE']).describe('แพลตฟอร์ม — รองรับ Shopee ก่อน'),
-      shop_key: z.string().min(1).describe('ชื่อ/รหัสร้านที่คงที่ — กันข้อมูลชนกันถ้ามีหลายร้าน'),
+      shop_key: shopKeyStr().describe('ชื่อ/รหัสร้านที่คงที่ — กันข้อมูลชนกันถ้ามีหลายร้าน'),
       month: z.string().regex(/^\d{4}-\d{2}$/).describe('เดือนปฏิทินของรอบ รูปแบบ YYYY-MM'),
-      file_type: z.enum(['income', 'balance', 'products', 'ads', 'stats']).describe('ชนิดไฟล์ที่ส่ง'),
+      file_type: z.enum(['income', 'balance', 'products', 'ads', 'stats', 'orders']).describe('ชนิดไฟล์ที่ส่ง'),
       data: z.record(z.any()).describe('ข้อมูลตัวเลขของไฟล์นั้น — รูปร่างขึ้นกับ file_type (ดูคำอธิบาย tool)'),
     },
     async (args) => {
@@ -234,7 +278,7 @@ month = เดือนปฏิทินของรอบ (เช่นรอ�
           shopKey: args.shop_key,
           month: args.month,
           fileType: args.file_type,
-          data: parsedData.data as IncomePayload | BalancePayload | ProductsPayload | AdsPayload | StatsPayload,
+          data: parsedData.data as IncomePayload | BalancePayload | ProductsPayload | AdsPayload | StatsPayload | OrdersPayload,
         })
         return ok({
           success: true,
@@ -251,12 +295,12 @@ month = เดือนปฏิทินของรอบ (เช่นรอ�
   // ── platform_month_status ───────────────────────────────────────────────────
   server.tool(
     'platform_month_status',
-    `เช็คสถานะรอบเดือนของช่องทางขายแพลตฟอร์ม — ไฟล์ไหนส่งแล้ว (5 ไฟล์: income/balance/products/ads/stats)
+    `เช็คสถานะรอบเดือนของช่องทางขายแพลตฟอร์ม — ไฟล์ไหนส่งแล้ว (6 ไฟล์: income/balance/products/ads/stats/orders)
 ไฟล์ไหนยังไม่มา และผลตรวจสมการแต่ละข้อ (ชื่อ, ค่าที่คาด, ค่าจริง, ผ่าน/ไม่ผ่าน)
 ใช้ก่อนส่งไฟล์เพื่อดูว่าขาดไฟล์ไหน หรือหลังส่งครบเพื่อสรุปว่าสมการตรงทุกข้อหรือยัง`,
     {
       platform: z.enum(['SHOPEE']).describe('แพลตฟอร์ม'),
-      shop_key: z.string().min(1).describe('ชื่อ/รหัสร้านเดียวกับที่ใช้ตอนส่งไฟล์'),
+      shop_key: shopKeyStr().describe('ชื่อ/รหัสร้านเดียวกับที่ใช้ตอนส่งไฟล์'),
       month: z.string().regex(/^\d{4}-\d{2}$/).describe('เดือนปฏิทินของรอบ รูปแบบ YYYY-MM'),
     },
     async (args) => {

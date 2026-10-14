@@ -142,7 +142,7 @@ describe('platform_months — รอบเดือนแพลตฟอร์�
 
     const status = getMonthStatus(tenantId, base.platform, base.shopKey, base.month)
     expect(status.found).toBe(true)
-    expect(status.filesReceived).toEqual({ income: true, balance: true, products: true, ads: true, stats: true })
+    expect(status.filesReceived).toEqual({ income: true, balance: true, products: true, ads: true, stats: true, orders: false })
     expect(status.receivedCount).toBe(5)
     expect(status.allChecksPass).toBe(true)
     expect(status.checks.length).toBeGreaterThanOrEqual(8)
@@ -235,4 +235,215 @@ describe('platform_months — รอบเดือนแพลตฟอร์�
     }
     expect(() => submitFile(tenantId, { ...base, fileType: 'products', data: bad })).toThrow(PlatformMonthError)
   })
+
+  // ==================== finding #13: วันที่ปฎิทินจริง + ads/stats เฉพาะเรื่อง ====================
+  it('period_end เป็นวันที่ไม่มีจริงในปฏิทิน (2026-02-30) ต้องถูกปฏิเสธ', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-02' }
+    const bad: IncomePayload = { ...INCOME, period_start: '2026-02-01', period_end: '2026-02-30' }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'income', data: bad })).toThrow(/ไม่ใช่วันที่จริง/)
+  })
+
+  it('ไฟล์ ads: ไม่มีแคมเปญเลยแต่ total_cost ไม่เป็น 0 ต้องถูกปฏิเสธ', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: AdsPayload = { period_start: '2026-10-01', period_end: '2026-10-31', campaigns: [], total_cost: 999 }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'ads', data: bad })).toThrow(PlatformMonthError)
+  })
+
+  it('ไฟล์ stats: daily ว่างเปล่าแต่ totals ไม่เป็น 0 ต้องถูกปฏิเสธ (เดิมปล่อยผ่านเงียบๆ)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: StatsPayload = { ...STATS, daily: [] }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'stats', data: bad })).toThrow(PlatformMonthError)
+  })
+
+  it('ไฟล์ stats: daily มีวันที่ซ้ำกันต้องถูกปฏิเสธ', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: StatsPayload = { ...STATS, daily: [...STATS.daily, STATS.daily[0]] }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'stats', data: bad })).toThrow(/ซ้ำ/)
+  })
+
+  it('ไฟล์ stats: daily มีวันที่นอกช่วง period_start..period_end ต้องถูกปฏิเสธ', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: StatsPayload = { ...STATS, daily: [...STATS.daily.slice(0, 2), { ...STATS.daily[2], date: '2026-11-15' }] }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'stats', data: bad })).toThrow(/นอกช่วง/)
+  })
+
+  it('เฉพาะไฟล์บัญชี (income/balance) เท่านั้นที่กำหนด period_start/end ของรอบ — ads ส่งมาก่อนต้องไม่ล็อกช่วงไว้ถาวร', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    submitFile(tenantId, { ...base, fileType: 'ads', data: ADS }) // ADS period 2026-10-01..2026-10-31
+
+    let row = db.prepare(`SELECT period_start, period_end FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any
+    expect(row.period_start).toBeNull()
+    expect(row.period_end).toBeNull()
+
+    const income2 = { ...INCOME, period_start: '2026-10-02', period_end: '2026-10-30' }
+    submitFile(tenantId, { ...base, fileType: 'income', data: income2 })
+    row = db.prepare(`SELECT period_start, period_end FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any
+    expect(row.period_start).toBe('2026-10-02')
+    expect(row.period_end).toBe('2026-10-30')
+  })
+
+  // ==================== finding #2: shop_key normalize ====================
+  it('shop_key เว้นวรรคท้าย/ช่องว่างซ้อน ต้อง normalize เข้ารอบเดียวกัน ไม่สร้างรอบแยก', () => {
+    const tenantId = newTenant()
+    submitFile(tenantId, { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10', fileType: 'income', data: INCOME })
+    submitFile(tenantId, { platform: 'SHOPEE', shopKey: 'ร้านหลัก ', month: '2026-10', fileType: 'balance', data: BALANCE }) // เว้นวรรคท้าย
+    submitFile(tenantId, { platform: 'SHOPEE', shopKey: 'ร้านหลัก  ', month: '2026-10', fileType: 'ads', data: ADS }) // ช่องว่างซ้อน
+
+    const rows = db.prepare(`SELECT COUNT(*) AS c FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any
+    expect(rows.c).toBe(1) // ไม่ใช่ 3 รอบแยกกัน
+
+    const status = getMonthStatus(tenantId, 'SHOPEE', 'ร้านหลัก', '2026-10')
+    expect(status.filesReceived).toEqual({ income: true, balance: true, products: false, ads: true, stats: false, orders: false })
+  })
 })
+
+  // ==================== ไฟล์ orders — กันยอด "ยืนยันแล้ว" ของ Shopee รวมออเดอร์ที่ยกเลิกหลังยืนยัน/คืนสินค้า ====================
+  describe('ไฟล์ orders — จับคู่ชื่อกับ products + คำนวณ qty_net/sales_net', () => {
+    const productsForOrders: ProductsPayload = {
+      rows: [
+        { level: 'parent', product_id: 'P1', product_name: 'สินค้า A', qty_all: 100, qty_confirmed: 96 },
+        { level: 'variant', product_id: 'P1', variant_id: 'V1', product_name: 'สินค้า A', variant_name: 'ไซส์ M', qty_all: 50, qty_confirmed: 48 },
+        { level: 'variant', product_id: 'P1', variant_id: 'V2', product_name: 'สินค้า A', variant_name: 'ไซส์ L', qty_all: 50, qty_confirmed: 48 },
+        { level: 'parent', product_id: 'P2', product_name: 'สินค้า B', qty_all: 20, qty_confirmed: 20 }, // ไม่มีตัวเลือก
+      ],
+    }
+    const ordersBase = {
+      period_start: '2026-10-01', period_end: '2026-10-31',
+      orders_total: 3, orders_cancelled: 1,
+      rows: [
+        { product_name: 'สินค้า A', variant_name: 'ไซส์ M', qty_ordered: 50, qty_cancelled: 2, qty_unpaid: 0, qty_returned: 0, sales_net: 14000 },
+        { product_name: 'สินค้า A', variant_name: 'ไซส์ L', qty_ordered: 50, qty_cancelled: 0, qty_unpaid: 2, qty_returned: 1, sales_net: 13000 },
+        { product_name: 'สินค้า B', variant_name: '', qty_ordered: 20, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 5000 },
+      ],
+    }
+
+    it('ส่ง products ก่อนแล้วตามด้วย orders → qty_net/sales_net คำนวณถูกทั้ง variant และ parent (รวมพาเร้นท์ไม่มีตัวเลือก)', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+      submitFile(tenantId, { ...base, fileType: 'products', data: productsForOrders })
+      submitFile(tenantId, { ...base, fileType: 'orders', data: ordersBase })
+
+      const monthId = (db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any).id
+      const rows = db.prepare(`SELECT level, variant_id, qty_net, sales_net FROM platform_month_products WHERE month_id = ?`).all(monthId) as any[]
+      const v1 = rows.find(r => r.variant_id === 'V1')!
+      const v2 = rows.find(r => r.variant_id === 'V2')!
+      expect(v1.qty_net).toBe(48) // 50 - 2 ยกเลิก
+      expect(v1.sales_net).toBe(14000)
+      expect(v2.qty_net).toBe(47) // 50 - 2 ที่ต้องชำระ - 1 คืน
+      expect(v2.sales_net).toBe(13000)
+
+      const sums = db.prepare(`SELECT product_id, qty_net, sales_net FROM platform_month_products WHERE month_id = ? AND level = 'parent'`).all(monthId) as any[]
+      const p1 = sums.find(r => r.product_id === 'P1')!
+      const p2 = sums.find(r => r.product_id === 'P2')!
+      expect(p1.qty_net).toBe(95) // sum(48, 47) — parent มีตัวเลือก = รวมตัวเลือก
+      expect(p1.sales_net).toBe(27000)
+      expect(p2.qty_net).toBe(20) // parent ไม่มีตัวเลือก = ใช้ของตัวเอง
+      expect(p2.sales_net).toBe(5000)
+    })
+
+    it('ส่ง orders ก่อน products (คนละลำดับ) ก็ต้องคำนวณ qty_net ถูกเหมือนกัน', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-11' }
+      const orders2 = { ...ordersBase, period_start: '2026-11-01', period_end: '2026-11-30' }
+      submitFile(tenantId, { ...base, fileType: 'orders', data: orders2 })
+      submitFile(tenantId, { ...base, fileType: 'products', data: productsForOrders })
+
+      const monthId = (db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any).id
+      const v2 = db.prepare(`SELECT qty_net FROM platform_month_products WHERE month_id = ? AND variant_id = 'V2'`).get(monthId) as any
+      expect(v2.qty_net).toBe(47)
+    })
+
+    it('ชื่อในไฟล์ orders จับคู่กับ products ไม่ได้ ต้องถูกปฏิเสธพร้อมบอกชื่อที่จับคู่ไม่ได้', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-12' }
+      submitFile(tenantId, { ...base, fileType: 'products', data: productsForOrders })
+      const badOrders = {
+        ...ordersBase,
+        period_start: '2026-12-01', period_end: '2026-12-31',
+        rows: [{ product_name: 'สินค้าไม่มีจริง', variant_name: 'สีที่ไม่มี', qty_ordered: 5, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 1000 }],
+      }
+      expect(() => submitFile(tenantId, { ...base, fileType: 'orders', data: badOrders })).toThrow(/จับคู่/)
+
+      // ไฟล์ orders ที่จับคู่ไม่ได้ต้องไม่ถูกบันทึก (rollback)
+      const month = db.prepare(`SELECT orders_json FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any
+      expect(month.orders_json).toBeNull()
+    })
+
+    it('qty_cancelled+qty_unpaid เกิน qty_ordered ต้องถูกปฏิเสธตั้งแต่ชั้น in-file', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2027-02' }
+      const bad = {
+        period_start: '2027-02-01', period_end: '2027-02-28', orders_total: 1, orders_cancelled: 1,
+        rows: [{ product_name: 'สินค้า A', variant_name: 'ไซส์ M', qty_ordered: 5, qty_cancelled: 4, qty_unpaid: 2, qty_returned: 0, sales_net: 0 }],
+      }
+      expect(() => submitFile(tenantId, { ...base, fileType: 'orders', data: bad })).toThrow(PlatformMonthError)
+    })
+
+    it('ส่ง products ซ้ำ (resubmit) หลังมีไฟล์ orders แล้ว ยังคำนวณ qty_net ถูกเหมือนเดิม', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2027-03' }
+      const orders3 = { ...ordersBase, period_start: '2027-03-01', period_end: '2027-03-31' }
+      submitFile(tenantId, { ...base, fileType: 'orders', data: orders3 })
+      submitFile(tenantId, { ...base, fileType: 'products', data: productsForOrders })
+      submitFile(tenantId, { ...base, fileType: 'products', data: productsForOrders }) // resubmit ก้อนเดิม
+
+      const monthId = (db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any).id
+      const v1 = db.prepare(`SELECT qty_net, sales_net FROM platform_month_products WHERE month_id = ? AND variant_id = 'V1'`).get(monthId) as any
+      expect(v1.qty_net).toBe(48)
+      expect(v1.sales_net).toBe(14000)
+    })
+
+    // finding #1: สอง order row จับคู่ไปที่สินค้าเดียวกัน (ชื่อต่างกันแค่ช่องว่างซ้อน normalize แล้วเหมือนกัน)
+    // ต้องรวมยอด ไม่ใช่ set ทับ (set ทับเคยทำให้ qty_net/sales_net ตัดหายไปครึ่งหนึ่งเงียบๆ)
+    it('สองแถวในไฟล์ orders จับคู่ไปที่สินค้าเดียวกัน (ชื่อต่างกันแค่ช่องว่าง) → ต้องรวมยอด ไม่ใช่ set ทับ', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2027-04' }
+      const products: ProductsPayload = {
+        rows: [
+          { level: 'parent', product_id: 'P1', product_name: 'สินค้า A', qty_all: 20, qty_confirmed: 20 },
+          { level: 'variant', product_id: 'P1', variant_id: 'V1', product_name: 'สินค้า A', variant_name: 'ไซส์ M', qty_all: 20, qty_confirmed: 20 },
+        ],
+      }
+      submitFile(tenantId, { ...base, fileType: 'products', data: products })
+      const orders = {
+        period_start: '2027-04-01', period_end: '2027-04-30', orders_total: 2, orders_cancelled: 0,
+        rows: [
+          { product_name: 'สินค้า A', variant_name: 'ไซส์ M', qty_ordered: 10, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 3000 },
+          { product_name: 'สินค้า A', variant_name: 'ไซส์  M', qty_ordered: 10, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 3000 },
+        ],
+      }
+      submitFile(tenantId, { ...base, fileType: 'orders', data: orders })
+
+      const monthId2 = (db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any).id
+      const v1b = db.prepare(`SELECT qty_net, sales_net FROM platform_month_products WHERE month_id = ? AND variant_id = 'V1'`).get(monthId2) as any
+      expect(v1b.qty_net).toBe(20) // 10+10 รวมกัน ไม่ใช่เหลือ 10 จาก set ทับ
+      expect(v1b.sales_net).toBe(6000)
+    })
+
+    // finding #1: สองตัวเลือกคนละ product_id/variant_id แต่ชื่อรวมเหมือนกันเป๊ะ — จับคู่กับ orders ไม่ได้
+    // แน่ชัดว่าเป็นตัวไหน ต้องปฏิเสธ ไม่จับคู่มั่วเอาแถวแรกที่เจอ
+    it('products: สองตัวเลือกคนละ product_id แต่ชื่อรวมเหมือนกันเป๊ะ → ไฟล์ orders จับคู่ไม่ได้แน่ชัด ต้องถูกปฏิเสธ', () => {
+      const tenantId = newTenant()
+      const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2027-05' }
+      const ambiguousProducts: ProductsPayload = {
+        rows: [
+          { level: 'parent', product_id: 'P1', product_name: 'สินค้า X', qty_all: 10, qty_confirmed: 10 },
+          { level: 'variant', product_id: 'P1', variant_id: 'V1', product_name: 'สินค้า X', variant_name: 'สีฟ้า', qty_all: 10, qty_confirmed: 10 },
+          { level: 'parent', product_id: 'P2', product_name: 'สินค้า X', qty_all: 10, qty_confirmed: 10 },
+          { level: 'variant', product_id: 'P2', variant_id: 'V2', product_name: 'สินค้า X', variant_name: 'สีฟ้า', qty_all: 10, qty_confirmed: 10 },
+        ],
+      }
+      submitFile(tenantId, { ...base, fileType: 'products', data: ambiguousProducts })
+      const ambiguousOrders = {
+        period_start: '2027-05-01', period_end: '2027-05-31', orders_total: 1, orders_cancelled: 0,
+        rows: [{ product_name: 'สินค้า X', variant_name: 'สีฟ้า', qty_ordered: 5, qty_cancelled: 0, qty_unpaid: 0, qty_returned: 0, sales_net: 1000 }],
+      }
+      expect(() => submitFile(tenantId, { ...base, fileType: 'orders', data: ambiguousOrders })).toThrow(/ชนกัน/)
+    })
+  })

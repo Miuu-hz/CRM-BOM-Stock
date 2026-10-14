@@ -2,7 +2,6 @@ import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { PlatformMonthError } from './platformMonth.service'
 import { findPlatformAlias, upsertPlatformAlias, deletePlatformAlias, StockItemRefError, isServiceItem } from './stockItem.service'
-import { resolveMenuBomId } from './pos-stock.service'
 import { autoUnpackIfNeeded } from './unitConversion.service'
 import { roundQty } from '../utils/qty'
 import { ACC } from '../config/accountCodes'
@@ -28,8 +27,9 @@ function getMonthRow(tenantId: string, monthId: string): any {
 }
 
 /**
- * แถวที่ "ต้องมีการจับคู่ SKU" ของรอบนี้ — ตัวเลือก (variant) ที่ขายได้ (qty_confirmed > 0) ทุกตัว
- * บวกสินค้าที่ไม่มีตัวเลือกเลย (parent ที่ขายได้ แต่ไม่มีแถว variant ของสินค้านั้นในรอบเดียวกัน)
+ * แถวที่ "ต้องมีการจับคู่ SKU" ของรอบนี้ — ตัวเลือก (variant) ที่ขายได้สุทธิ (qty_net > 0 — หลังหักยกเลิก/
+ * ที่ต้องชำระ/คืนสินค้าจากไฟล์ orders แล้ว ไม่ใช่ qty_confirmed ดิบของ Shopee) ทุกตัว บวกสินค้าที่ไม่มี
+ * ตัวเลือกเลย (parent ที่ขายได้สุทธิ แต่ไม่มีแถว variant ของสินค้านั้นในรอบเดียวกัน)
  */
 function neededRows(monthId: string): any[] {
   // ponytail: ใช้ NOT EXISTS (correlated) แทน NOT IN — NOT IN กับเซ็ตย่อยที่มี NULL (variant
@@ -38,8 +38,8 @@ function neededRows(monthId: string): any[] {
   return db.prepare(`
     SELECT * FROM platform_month_products p
     WHERE p.month_id = ? AND (
-      (p.level = 'variant' AND p.qty_confirmed > 0)
-      OR (p.level = 'parent' AND p.qty_confirmed > 0 AND NOT EXISTS (
+      (p.level = 'variant' AND p.qty_net > 0)
+      OR (p.level = 'parent' AND p.qty_net > 0 AND NOT EXISTS (
         SELECT 1 FROM platform_month_products v
         WHERE v.month_id = p.month_id AND v.level = 'variant' AND v.product_id = p.product_id
       ))
@@ -54,7 +54,7 @@ export interface MappingRow {
   level: 'parent' | 'variant'
   productName: string | null
   variantName: string | null
-  qtyConfirmed: number
+  qtyNet: number
   mapped: boolean
   stockItemId: string | null
   sku: string | null
@@ -62,7 +62,6 @@ export interface MappingRow {
   unit: string | null
   unitCost: number | null
   quantity: number | null
-  hasBom: boolean
   factor: number | null
   proposed: boolean
   proposedStockItemId: string | null
@@ -92,7 +91,7 @@ export function getMappingRows(tenantId: string, monthId: string): MappingRow[] 
       level: r.level,
       productName: r.product_name,
       variantName: r.variant_name,
-      qtyConfirmed: Number(r.qty_confirmed) || 0,
+      qtyNet: Number(r.qty_net) || 0,
       mapped: !!stockItem,
       stockItemId: stockItem?.id ?? null,
       sku: stockItem?.sku ?? null,
@@ -100,7 +99,6 @@ export function getMappingRows(tenantId: string, monthId: string): MappingRow[] 
       unit: stockItem ? (stockItem.base_unit || stockItem.unit) : null,
       unitCost: stockItem ? Number(stockItem.unit_cost) || 0 : null,
       quantity: stockItem ? Number(stockItem.quantity) || 0 : null,
-      hasBom: stockItem ? !!resolveMenuBomId(tenantId, null, stockItem.id) : false,
       factor: alias?.factor ?? null,
       proposed: !!proposal && !stockItem,
       proposedStockItemId: proposedItem?.id ?? null,
@@ -223,11 +221,14 @@ export interface CogsLine {
 
 const REF_PREFIX = 'PLATFORM_MONTH:'
 
-export function confirmSale(tenantId: string, monthId: string, userId: string): { cogsAmount: number; breakdown: CogsLine[] } {
+export function confirmSale(tenantId: string, monthId: string, userId: string): { cogsAmount: number; breakdown: CogsLine[]; warnings: string[] } {
   const month = getMonthRow(tenantId, monthId)
   // #1: เดิมเช็คแค่ === 'SALE_CONFIRMED' ไม่กัน POSTED — ยืนยันซ้ำหลังโพสต์แล้วตัดสต็อกซ้ำ
   // + ย้อนสถานะกลับ SALE_CONFIRMED ทั้งที่ posted_at/journal_ids ยังอยู่ (JV ลอยค้าง GL)
   if (month.status !== 'COLLECTING') throw new PlatformMonthError(`ยืนยันการขายไม่ได้ — รอบนี้อยู่ในสถานะ ${month.status} แล้ว`)
+  // ยอด "ยืนยันแล้ว" ของ Shopee (qty_confirmed) ยังรวมออเดอร์ที่ถูกยกเลิกหลังยืนยัน + คืนสินค้า — ต้องมีไฟล์
+  // orders มาคำนวณ qty_net ก่อนเสมอ ไม่งั้นตัดสต็อกเกินจริง (ดู applyOrdersDerivation ใน platformMonth.service.ts)
+  if (!month.orders_json) throw new PlatformMonthError('ต้องส่งไฟล์คำสั่งซื้อ (orders) ก่อนยืนยันการขาย — ยอด "ยืนยันแล้ว" ของ Shopee ยังรวมออเดอร์ที่ยกเลิกหลังยืนยัน')
 
   const rows = neededRows(monthId)
   if (rows.length === 0) throw new PlatformMonthError('รอบนี้ไม่มีรายการขายที่ต้องตัดสต็อก')
@@ -242,7 +243,7 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
       unmapped.push([r.product_name, r.variant_name].filter(Boolean).join(' · ') || sourceRef)
       continue
     }
-    lines.push({ sourceRef, qty: Number(r.qty_confirmed) || 0, alias })
+    lines.push({ sourceRef, qty: Number(r.qty_net) || 0, alias })
   }
   if (unmapped.length > 0) {
     throw new PlatformMonthError(`ยืนยันการขายไม่ได้ — ยังไม่ผูก SKU ${unmapped.length} รายการ: ${unmapped.slice(0, 10).join(', ')}${unmapped.length > 10 ? ' ...' : ''}`)
@@ -272,6 +273,7 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
     const reference = `${REF_PREFIX}${monthId}`
     const breakdown: CogsLine[] = []
     const shortfalls: string[] = []
+    const warnings: string[] = []
 
     for (const [stockItemId, qty] of deduction) {
       const item = db.prepare('SELECT id, name, category, quantity, sealed_qty, base_unit, unit, display_unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
@@ -294,7 +296,9 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
             INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
             VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
           `).run(id25(), tenantId, stockItemId, released, item.display_unit || null, unpack.unpackedPacks, reference,
-            `แกะอัตโนมัติ (รอบ ${month.platform} ${month.month}) ${unpack.unpackedPacks} ${item.display_unit || ''} → +${released} ${item.base_unit || item.unit}`, now, userId)
+            // #8: ใช้ createdAt (ปลายรอบ) เหมือนแถว OUT ที่ตามมา — เดิมใช้ now (เวลาคลิก) ทำสต็อก ณ สิ้นเดือน
+            // ติดลบชั่วคราวถ้ากดยืนยันข้ามเดือน (แกะแพ็คทีหลัง OUT ตามเวลาจริง แต่ OUT ลงวันที่ย้อนไปปลายรอบ)
+            `แกะอัตโนมัติ (รอบ ${month.platform} ${month.month}) ${unpack.unpackedPacks} ${item.display_unit || ''} → +${released} ${item.base_unit || item.unit}`, createdAt, userId)
           quantity = unpack.quantity
           sealedQty = unpack.sealed_qty
         }
@@ -307,6 +311,9 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
       // #9: ใช้ stock_items.unit_cost เหมือน POS (deductStockOnPayment)/dashboard — ไม่ใช่
       // getCostBasis().weightedAvg (เฉลี่ยถ่วงน้ำหนักตลอดชีพจากประวัติรับของ) ซึ่งเป็นคนละตัวเลข
       const unitCost = Number(item.unit_cost) || 0
+      // #9: unit_cost=0 ทำ COGS=0 เงียบๆ (ของจริงมีต้นทุน แค่ยังไม่กรอกในคลัง) — ไม่บล็อก (ร้านนี้มีต้นทุน
+      // แค่ 97/1,024 รายการ) แต่เตือนไว้ให้คนตามไปกรอก
+      if (unitCost === 0) warnings.push(item.name)
       const amount = Math.round(roundedQty * unitCost * 100) / 100
       const inventoryAccount = ['FINISHED', 'WIP'].includes(String(item.category || '').toUpperCase()) ? ACC.INVENTORY : ACC.RAW_MATERIAL
 
@@ -334,7 +341,7 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
     `).run(cogsAmount, JSON.stringify(breakdown), now, userId, now, monthId)
     if (upd.changes !== 1) throw new PlatformMonthError('ยืนยันการขายไม่ได้ — รอบนี้ถูกยืนยัน/เปลี่ยนสถานะไปแล้วจากคำขออื่นพร้อมกัน')
 
-    return { cogsAmount, breakdown }
+    return { cogsAmount, breakdown, warnings }
   })()
 }
 

@@ -188,6 +188,11 @@ export function saveAlias(
 const SHADOW_FREE = `AND NOT EXISTS (SELECT 1 FROM stock_items x WHERE x.tenant_id = a.tenant_id AND x.${LIVE} AND LOWER(TRIM(x.name)) = a.name_norm)`
 
 /** ชื่อรองทั้งหมด (หรือเฉพาะของสินค้าตัวเดียว) — ปลายทางที่ปิดใช้ไม่เอา · ปิดฟีเจอร์ = ว่าง */
+// คู่แพลตฟอร์ม (name_norm = '__platform__:...') ไม่ใช่ชื่อที่คนพิมพ์ — ห้ามโผล่ในช่องค้นหา/จัดการชื่อรองทั่วไป
+// (บั๊ก: เคยโผล่พร้อม factor ของ Shopee ทำให้ตั้งราคาเพี้ยนจากตัวคูณที่ตัดสต็อกจริงใช้) ผูก/ลบได้แค่ทาง
+// findPlatformAlias/upsertPlatformAlias/deletePlatformAlias เท่านั้น
+const NOT_PLATFORM = `AND a.name_norm NOT LIKE '__platform__:%'`
+
 export function listAliases(tenantId: string, stockItemId?: string): any[] {
   if (!aliasEnabled(tenantId)) return []
   const params = stockItemId ? [tenantId, stockItemId] : [tenantId]
@@ -196,13 +201,16 @@ export function listAliases(tenantId: string, stockItemId?: string): any[] {
            s.name AS stock_item_name, s.sku, COALESCE(NULLIF(s.base_unit, ''), s.unit) AS base_unit, s.unit_price, s.category
     FROM stock_item_aliases a
     JOIN stock_items s ON s.id = a.stock_item_id AND s.tenant_id = a.tenant_id AND s.${LIVE}
-    WHERE a.tenant_id = ? ${stockItemId ? 'AND a.stock_item_id = ?' : SHADOW_FREE}
+    WHERE a.tenant_id = ? ${NOT_PLATFORM} ${stockItemId ? 'AND a.stock_item_id = ?' : SHADOW_FREE}
     ORDER BY a.name
   `).all(...params)
 }
 
 export function deleteAliasById(tenantId: string, id: string): boolean {
-  return db.prepare('DELETE FROM stock_item_aliases WHERE id = ? AND tenant_id = ?').run(id, tenantId).changes > 0
+  // DELETE ไม่มี alias ตาราง a. (ไม่เหมือน listAliases ที่ JOIN) — เช็ค name_norm ตรง ๆ ไม่ใช้ NOT_PLATFORM
+  return db.prepare(`
+    DELETE FROM stock_item_aliases WHERE id = ? AND tenant_id = ? AND name_norm NOT LIKE '__platform__:%'
+  `).run(id, tenantId).changes > 0
 }
 
 /**
