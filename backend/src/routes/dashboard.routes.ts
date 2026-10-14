@@ -12,7 +12,19 @@ const pad2 = (n: number) => String(n).padStart(2, '0')
 const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 // เซิร์ฟเวอร์รัน UTC — ก่อน 7 โมงเช้าไทย new Date() ยังเป็น "เมื่อวาน" ทำให้แท็บวันนี้โชว์ยอดเมื่อวาน
 // ทุกช่วงเวลาบนแดชบอร์ดจึงต้องคิดจากเวลาไทย
-export const thaiNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }))
+export const thaiNow = () => {
+  const now = new Date()
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000)
+  return new Date(utc + (7 * 3600000))
+}
+
+function isFinancialAllowed(user: any): boolean {
+  if (!user) return false
+  if (user.role === 'MASTER' || user.role === 'ADMIN' || user.role === 'MANAGER' || user.role === 'POWERUSER') return true
+  const deps = user.departments || (user.department ? [user.department] : [])
+  if (deps.some((d: string) => ['CEO', 'CTO', 'IT', 'ACCOUNTING', 'SALES'].includes(d))) return true
+  return false
+}
 
 // ช่วงเวลาปัจจุบัน (offset=0) และช่วงเทียบก่อนหน้า (offset=1) — ต้อง "ยาวเท่ากันเสมอ"
 // ทั้งสองฝั่ง ไม่งั้น % เปลี่ยนแปลงจะเพี้ยน (บั๊ก B3 เดิม: 'month' เทียบเดือนปฏิทิน
@@ -38,7 +50,9 @@ export function getRange(period: string, offset: number = 0): { start: string; e
   } else { // year: year-to-date เทียบกับช่วงเดียวกันของปีก่อน (ไม่ใช่ทั้งปีเต็ม)
     const y = now.getFullYear() - offset
     const start = new Date(y, 0, 1)
-    const end = new Date(y, now.getMonth(), now.getDate())
+    const maxDays = new Date(y, now.getMonth() + 1, 0).getDate()
+    const day = Math.min(now.getDate(), maxDays)
+    const end = new Date(y, now.getMonth(), day)
     return { start: ymd(start), end: ymd(end) }
   }
 }
@@ -84,14 +98,32 @@ router.get('/low-stock', async (req: Request, res: Response) => {
     // An unopened pack is still stock. Items whose loose quantity is low but
     // that still hold sealed packs are not actually short, so drop them here
     // instead of nagging the owner to reorder what is already on the shelf.
+    // Preload conversions for tenant to prevent N+1 queries
+    const conversions = db.prepare(`
+      SELECT from_unit, to_unit, conversion_factor, material_id
+      FROM unit_conversions
+      WHERE tenant_id = ? OR is_global = 1
+    `).all(tenantId) as any[]
+    const convMap = new Map<string, number>()
+    for (const c of conversions) {
+      convMap.set(`${c.material_id || '*'}:${normalizeUnit(c.from_unit)}->${normalizeUnit(c.to_unit)}`, Number(c.conversion_factor))
+    }
+
     const items = rows
       .map((r: any) => {
         const baseUnit = r.base_unit || r.unit
         const displayUnit = r.display_unit || r.unit
         let packFactor: number | null = null
         if (baseUnit && displayUnit && normalizeUnit(baseUnit) !== normalizeUnit(displayUnit)) {
-          const c = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, r.id)
-          if (c && c.factor > 0) packFactor = c.factor
+          const normFrom = normalizeUnit(displayUnit)
+          const normTo = normalizeUnit(baseUnit)
+          const matFactor = convMap.get(`${r.id}:${normFrom}->${normTo}`)
+          const globFactor = convMap.get(`*:${normFrom}->${normTo}`)
+          packFactor = matFactor ?? globFactor ?? null
+          if (!packFactor) {
+            const c = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, r.id)
+            if (c && c.factor > 0) packFactor = c.factor
+          }
         }
         const available = r.quantity + (packFactor ? (r.sealed_qty || 0) * packFactor : 0)
         return { ...r, minStock: r.min_stock, available, pack_factor: packFactor }
@@ -110,6 +142,9 @@ router.get('/low-stock', async (req: Request, res: Response) => {
 // Revenue & Gross Profit comparison by period
 router.get('/revenue', async (req: Request, res: Response) => {
   try {
+    if (!isFinancialAllowed(req.user)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลการเงินของระบบ' })
+    }
     const tenantId = req.user!.tenantId
     const period = (req.query.period as string) || 'month'
 
@@ -149,6 +184,9 @@ router.get('/revenue', async (req: Request, res: Response) => {
 // Cash flow forecast — AR and AP grouped by due date
 router.get('/cashflow-forecast', async (req: Request, res: Response) => {
   try {
+    if (!isFinancialAllowed(req.user)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลการเงินของระบบ' })
+    }
     const tenantId = req.user!.tenantId
 
     const now = thaiNow()
@@ -179,7 +217,7 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
       SELECT pi.id, pi.pi_number as doc_number,
         pi.due_date, pi.balance_amount as amount,
         s.name as party_name
-      FROM purchase_invoices pi JOIN suppliers s ON pi.supplier_id = s.id
+      FROM purchase_invoices pi JOIN suppliers s ON pi.supplier_id = s.id AND s.tenant_id = pi.tenant_id
       WHERE pi.tenant_id = ?
         AND pi.status NOT IN ('CANCELLED','DRAFT')
         AND pi.payment_status <> 'PAID'
@@ -324,9 +362,9 @@ router.get('/pipeline', async (req: Request, res: Response) => {
 
     const quotations = db.prepare(`
       SELECT q.id, q.status, q.total_amount,
-        EXISTS(SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id AND so.status NOT IN ('CANCELLED')) AS has_so
+        EXISTS(SELECT 1 FROM sales_orders so WHERE so.quotation_id = q.id AND so.tenant_id = ? AND so.status NOT IN ('CANCELLED')) AS has_so
       FROM quotations q WHERE q.tenant_id = ? AND q.status <> 'DRAFT'
-    `).all(tenantId) as any[]
+    `).all(tenantId, tenantId) as any[]
 
     const stages = {
       quoting:  { count: 0, value: 0 }, // ยื่นไปแล้ว ยังไม่รู้ผล
@@ -436,18 +474,19 @@ router.get('/pipeline', async (req: Request, res: Response) => {
 router.get('/recent-orders', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const limit = Math.min(Number(req.query.limit) || 5, 50)
+    const rawLimit = Number(req.query.limit)
+    const limit = (!isNaN(rawLimit) && rawLimit > 0) ? Math.min(rawLimit, 50) : 5
 
     const rows = db.prepare(`
       SELECT so.id, so.so_number, so.order_date, so.delivery_date,
              so.total_amount, so.status, so.payment_status,
              c.id as customer_id, c.name as customer_name
       FROM sales_orders so
-      LEFT JOIN customers c ON so.customer_id = c.id
+      LEFT JOIN customers c ON so.customer_id = c.id AND c.tenant_id = ?
       WHERE so.tenant_id = ?
       ORDER BY so.created_at DESC, so.order_date DESC
       LIMIT ?
-    `).all(tenantId, limit)
+    `).all(tenantId, tenantId, limit)
 
     res.json({ success: true, data: rows })
   } catch (error) {

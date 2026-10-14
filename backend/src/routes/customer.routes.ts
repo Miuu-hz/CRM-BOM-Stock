@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { authenticate, requireRole } from '../middleware/auth.middleware'
+import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 
@@ -7,6 +7,23 @@ const router = Router()
 
 // โหมด VAT ที่ยอมรับตอนตั้ง/แก้ลูกค้า — ค่าอื่นถือเป็นข้อมูลผิด ปฏิเสธด้วย 400
 const VALID_VAT_MODES = ['NONE', 'INCLUSIVE', 'EXCLUSIVE']
+
+function isAdminOrOwner(user?: Express.Request['user'] & { isMaster?: boolean }): boolean {
+  if (!user) return false
+  const role = user.role as string
+  if (role === 'ADMIN' || role === 'OWNER' || role === 'MASTER') return true
+  if ((user as any).isMaster) return true
+  return false
+}
+
+function canAdjustLoyalty(user?: Express.Request['user'] & { isMaster?: boolean }): boolean {
+  if (!user) return false
+  const role = user.role as string
+  if (role === 'ADMIN' || role === 'MANAGER' || role === 'CASHIER' || role === 'OWNER' || role === 'MASTER') return true
+  if ((user as any).isMaster) return true
+  if (user.department === 'POS' || (user.departments && user.departments.includes('POS'))) return true
+  return false
+}
 
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
@@ -49,6 +66,7 @@ router.get('/search', (req: Request, res: Response) => {
     }
 
     const term = `%${q.trim()}%`
+    const parsedLimit = Math.min(100, Math.max(1, parseInt(limit as string) || 10))
     // ค้นด้วยเลขผู้เสียภาษีได้ด้วย และคืน tax_id/address/tax_branch มาเลย — โมดัล "ออกใบกำกับภาษี"
     // ในหน้า POS ต้องให้แคชเชียร์ยืนยันข้อมูลผู้ซื้อก่อนกดออกใบ ไม่ใช่เห็นแค่ชื่อกับเบอร์
     const customers = db.prepare(`
@@ -60,7 +78,7 @@ router.get('/search', (req: Request, res: Response) => {
         AND (name LIKE ? OR contact_name LIKE ? OR phone LIKE ? OR code LIKE ? OR tax_id LIKE ?)
       ORDER BY name ASC
       LIMIT ?
-    `).all(tenantId, term, term, term, term, term, parseInt(limit as string)) as any[]
+    `).all(tenantId, term, term, term, term, term, parsedLimit) as any[]
 
     res.json({ success: true, data: customers })
   } catch (error) {
@@ -145,6 +163,14 @@ router.post('/', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
     }
 
+    const numCreditLimit = Number(creditLimit) || 0
+    if (numCreditLimit > 0 && !isAdminOrOwner(req.user as any)) {
+      return res.status(403).json({
+        success: false,
+        message: 'การกำหนดวงเงินเครดิตต้องได้รับอนุมัติจากผู้ดูแลระบบ (Admin) ขึ้นไป'
+      })
+    }
+
     const resolvedContactName = contactName || name
 
     // Auto-generate code เมื่อไม่ส่งมา (แพทเทิร์นเดียวกับที่ใช้ในเทสต์: 'CUS-' + 8 ตัวแรกของ id)
@@ -170,7 +196,7 @@ router.post('/', (req: Request, res: Response) => {
     db.prepare(`
       INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, address, tax_id, tax_branch, credit_limit, vat_mode, lead_source, campaign, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', creditLimit, vatMode || null, leadSource || null, campaign || null, now, now)
+    `).run(id, tenantId, resolvedCode, name, type, resolvedContactName, email || '', phone || '', city || '', address || null, taxId || null, taxBranch || 'สำนักงานใหญ่', numCreditLimit, vatMode || null, leadSource || null, campaign || null, now, now)
 
     res.status(201).json({
       success: true,
@@ -188,7 +214,8 @@ router.put('/:id', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { id } = req.params
-    const { name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, vatMode, leadSource, campaign } = req.body
+    const body = req.body
+    const { name, companyName, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, status, vatMode, leadSource, campaign } = body
 
     // เลขผู้เสียภาษี: เช็คแค่รูปแบบเมื่อส่งมา ไม่บังคับต้องส่ง (เหมือนตอนสร้าง)
     if (taxId && !/^\d{13}$/.test(taxId)) {
@@ -199,33 +226,66 @@ router.put('/:id', (req: Request, res: Response) => {
     }
 
     // Check if customer exists and belongs to this tenant
-    const existing = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?')
-      .get(id, tenantId)
+    const existing = db.prepare('SELECT * FROM customers WHERE id = ? AND tenant_id = ?')
+      .get(id, tenantId) as any
     
     if (!existing) {
       return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
     }
-    
+
+    // Sensitive field changes require Admin / Owner / Master
+    const targetName = name !== undefined ? name : companyName
+    const isNameChanged = targetName !== undefined && targetName !== existing.name
+    const isPhoneChanged = phone !== undefined && phone !== (existing.phone || '')
+    const isCreditLimitChanged = creditLimit !== undefined && Number(creditLimit) !== Number(existing.credit_limit || 0)
+
+    if ((isNameChanged || isPhoneChanged || isCreditLimitChanged) && !isAdminOrOwner(req.user as any)) {
+      return res.status(403).json({
+        success: false,
+        message: 'การเปลี่ยนแปลงข้อมูลสำคัญ (ชื่อบริษัท, เบอร์โทร, วงเงินเครดิต) ต้องได้รับอนุมัติจากผู้ดูแลระบบ (Admin) ขึ้นไป'
+      })
+    }
+
+    const resolvedName = targetName !== undefined ? targetName : existing.name
+    const resolvedContactName = contactName !== undefined ? contactName : existing.contact_name
+    const resolvedEmail = email !== undefined ? email : existing.email
+    const resolvedPhone = phone !== undefined ? phone : existing.phone
+    const resolvedCity = city !== undefined ? city : existing.city
+    // ponytail: fix COALESCE bug — allow null or empty string to clear optional fields if explicitly passed
+    const resolvedAddress = 'address' in body ? (address || null) : existing.address
+    const resolvedTaxId = 'taxId' in body ? (taxId || null) : existing.tax_id
+    const resolvedTaxBranch = 'taxBranch' in body ? (taxBranch || 'สำนักงานใหญ่') : existing.tax_branch
+    const resolvedCreditLimit = creditLimit !== undefined ? Number(creditLimit) : existing.credit_limit
+    const resolvedVatMode = 'vatMode' in body ? (vatMode || null) : existing.vat_mode
+    const resolvedLeadSource = 'leadSource' in body ? (leadSource || null) : existing.lead_source
+    const resolvedCampaign = 'campaign' in body ? (campaign || null) : existing.campaign
+    const resolvedStatus = status !== undefined ? status : existing.status
+
     const now = new Date().toISOString()
     
     db.prepare(`
       UPDATE customers 
-      SET name = COALESCE(?, name),
-          contact_name = COALESCE(?, contact_name),
-          email = COALESCE(?, email),
-          phone = COALESCE(?, phone),
-          city = COALESCE(?, city),
-          address = COALESCE(?, address),
-          tax_id = COALESCE(?, tax_id),
-          tax_branch = COALESCE(?, tax_branch),
-          credit_limit = COALESCE(?, credit_limit),
-          vat_mode = COALESCE(?, vat_mode),
-          lead_source = COALESCE(?, lead_source),
-          campaign = COALESCE(?, campaign),
-          status = COALESCE(?, status),
+      SET name = ?,
+          contact_name = ?,
+          email = ?,
+          phone = ?,
+          city = ?,
+          address = ?,
+          tax_id = ?,
+          tax_branch = ?,
+          credit_limit = ?,
+          vat_mode = ?,
+          lead_source = ?,
+          campaign = ?,
+          status = ?,
           updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, contactName, email, phone, city, address, taxId, taxBranch, creditLimit, vatMode, leadSource, campaign, status, now, id, tenantId)
+    `).run(
+      resolvedName, resolvedContactName, resolvedEmail, resolvedPhone, resolvedCity,
+      resolvedAddress, resolvedTaxId, resolvedTaxBranch, resolvedCreditLimit,
+      resolvedVatMode, resolvedLeadSource, resolvedCampaign, resolvedStatus,
+      now, id, tenantId
+    )
     
     res.json({ success: true, message: 'อัปเดตลูกค้าสำเร็จ' })
   } catch (error) {
@@ -235,8 +295,12 @@ router.put('/:id', (req: Request, res: Response) => {
 })
 
 // Delete customer (ตรวจสอบว่าเป็นของบริษัทนี้ก่อน)
-router.delete('/:id', requireRole('ADMIN', 'MANAGER'), (req: Request, res: Response) => {
+router.delete('/:id', (req: Request, res: Response) => {
   try {
+    if (!isAdminOrOwner(req.user as any)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
+    }
+
     const tenantId = req.user!.tenantId
     const { id } = req.params
     
@@ -248,13 +312,17 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), (req: Request, res: Respo
       return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
     }
     
-    // Check if customer has orders
+    // Check if customer has ANY transaction records in system:
+    // sales_orders, invoices, pos_running_bills, orders
+    const hasSO = db.prepare('SELECT COUNT(*) as count FROM sales_orders WHERE tenant_id = ? AND customer_id = ?').get(tenantId, id) as any
+    const hasInv = db.prepare('SELECT COUNT(*) as count FROM invoices WHERE tenant_id = ? AND customer_id = ?').get(tenantId, id) as any
+    const hasPos = db.prepare('SELECT COUNT(*) as count FROM pos_running_bills WHERE tenant_id = ? AND customer_id = ?').get(tenantId, id) as any
     const hasOrders = db.prepare('SELECT COUNT(*) as count FROM orders WHERE customer_id = ?').get(id) as any
-    
-    if (hasOrders.count > 0) {
+
+    if ((hasSO?.count || 0) > 0 || (hasInv?.count || 0) > 0 || (hasPos?.count || 0) > 0 || (hasOrders?.count || 0) > 0) {
       return res.status(400).json({ 
         success: false, 
-        message: 'ไม่สามารถลบลูกค้าได้เนื่องจากมีประวัติการสั่งซื้อ' 
+        message: 'ไม่สามารถลบลูกค้าได้เนื่องจากมีประวัติธุรกรรม (SO, ใบแจ้งหนี้ หรือ บิล POS) ในระบบ' 
       })
     }
     
@@ -297,7 +365,7 @@ router.get('/:id/insights', (req: Request, res: Response) => {
     const invStats = db.prepare(`
       SELECT COUNT(*) as totalInvoices,
         COALESCE(SUM(total_amount), 0) as totalInvoiced,
-        COALESCE(SUM(CASE WHEN status = 'PAID' THEN total_amount ELSE 0 END), 0) as totalPaid,
+        COALESCE(SUM(paid_amount), 0) as totalPaid,
         COALESCE(SUM(CASE WHEN status IN ('ISSUED','PARTIAL','OVERDUE') THEN balance_amount ELSE 0 END), 0) as totalOutstanding
       FROM invoices WHERE customer_id = ? AND tenant_id = ?
     `).get(id, tenantId) as any
@@ -348,7 +416,7 @@ router.get('/:id/insights', (req: Request, res: Response) => {
           soi.quantity as qty, soi.total_price as revenue
         FROM sales_order_items soi
         JOIN sales_orders so ON soi.sales_order_id = so.id
-        LEFT JOIN stock_items si ON soi.stock_item_id = si.id
+        LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = so.tenant_id
         WHERE so.customer_id = ? AND so.tenant_id = ? AND so.status != 'CANCELLED'
         UNION ALL
         SELECT pbi.product_name as name, 'POS' as category,
@@ -365,16 +433,27 @@ router.get('/:id/insights', (req: Request, res: Response) => {
     const autoRecommendations = db.prepare(`
       SELECT si.id as productId, si.name, si.category, si.sku,
         si.quantity as stockQty, si.unit,
-        COUNT(DISTINCT oi.order_id) as popularity
+        (
+          COUNT(DISTINCT CASE WHEN so.id IS NOT NULL THEN so.id END) +
+          COUNT(DISTINCT CASE WHEN oi.order_id IS NOT NULL THEN oi.order_id END)
+        ) as popularity
       FROM stock_items si
-      JOIN order_items oi ON si.id = oi.product_id
+      LEFT JOIN sales_order_items soi ON (si.id = soi.stock_item_id)
+      LEFT JOIN sales_orders so ON (soi.sales_order_id = so.id AND so.tenant_id = si.tenant_id AND so.status != 'CANCELLED')
+      LEFT JOIN order_items oi ON si.id = oi.product_id
       WHERE si.tenant_id = ?
         AND si.id NOT IN (
+          SELECT DISTINCT soi2.stock_item_id FROM sales_order_items soi2
+          JOIN sales_orders so2 ON soi2.sales_order_id = so2.id
+          WHERE so2.customer_id = ? AND so2.tenant_id = ? AND so2.status != 'CANCELLED' AND soi2.stock_item_id IS NOT NULL
+          UNION
           SELECT DISTINCT oi2.product_id FROM order_items oi2
           JOIN orders o2 ON oi2.order_id = o2.id WHERE o2.customer_id = ?
         )
-      GROUP BY si.id ORDER BY popularity DESC LIMIT 5
-    `).all(tenantId, id) || []
+      GROUP BY si.id
+      HAVING popularity > 0
+      ORDER BY popularity DESC LIMIT 5
+    `).all(tenantId, id, tenantId, id) || []
 
     // ── Quotations from Sales module (proposals tab) ───────────────────────────
     const quotations = db.prepare(`
@@ -511,7 +590,7 @@ router.get('/:id/orders', (req: Request, res: Response) => {
 })
 
 // Get customer summary (เฉพาะของบริษัทนี้)
-router.get('/summary/stats', (req: Request, res: Response) => {
+const handleCustomerStats = (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     
@@ -535,22 +614,26 @@ router.get('/summary/stats', (req: Request, res: Response) => {
     `).get(tenantId) as any
 
     const soStats = db.prepare(`
-      SELECT
-        COUNT(*) as total_so,
-        COALESCE(SUM(paid_amount), 0) as total_paid
+      SELECT COUNT(*) as total_so
+      FROM sales_orders
+      WHERE tenant_id = ? AND status != 'CANCELLED'
+    `).get(tenantId) as any
+
+    const invStats = db.prepare(`
+      SELECT COALESCE(SUM(paid_amount), 0) as total_paid
       FROM invoices
       WHERE tenant_id = ?
     `).get(tenantId) as any
 
-    const combinedOrders = (orderStats.total_orders || 0) + (soStats.total_so || 0)
-    const combinedRevenue = (orderStats.total_revenue || 0) + (soStats.total_paid || 0)
+    const combinedOrders = (orderStats?.total_orders || 0) + (soStats?.total_so || 0)
+    const combinedRevenue = (orderStats?.total_revenue || 0) + (invStats?.total_paid || 0)
     const avgOrderValue = combinedOrders > 0 ? combinedRevenue / combinedOrders : 0
 
     res.json({
       success: true,
       data: {
-        total_customers: customerStats.total_customers,
-        active_customers: customerStats.active_customers,
+        total_customers: customerStats?.total_customers || 0,
+        active_customers: customerStats?.active_customers || 0,
         total_orders: combinedOrders,
         total_revenue: combinedRevenue,
         avg_customer_value: avgOrderValue
@@ -560,7 +643,10 @@ router.get('/summary/stats', (req: Request, res: Response) => {
     console.error('Get customer stats error:', error)
     res.status(500).json({ success: false, message: 'ไม่สามารถดึงข้อมูลสถิติได้' })
   }
-})
+}
+
+router.get('/summary/stats', handleCustomerStats)
+router.get('/stats', handleCustomerStats)
 
 // ── Loyalty Points ────────────────────────────────────────────────────────────
 // Init table at startup
@@ -601,22 +687,39 @@ router.get('/:id/loyalty', (req: Request, res: Response) => {
 // POST /customers/:id/loyalty/earn
 router.post('/:id/loyalty/earn', (req: Request, res: Response) => {
   try {
+    if (!canAdjustLoyalty(req.user as any)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ปรับปรุงแต้มสะสม' })
+    }
+
     const tenantId = req.user!.tenantId
     const { id } = req.params
     const { points, note, reference_type = 'MANUAL', reference_id } = req.body
     const pts = parseInt(points)
     if (!pts || pts <= 0) return res.status(400).json({ success: false, message: 'จำนวนแต้มต้องมากกว่า 0' })
-    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
-      .get(id, tenantId) as any
-    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
-    const balanceAfter = (customer.loyalty_points || 0) + pts
-    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
-    const txId = randomUUID().replace(/-/g, '').substring(0, 25)
-    db.prepare(`
-      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
-      VALUES (?, ?, ?, 'EARN', ?, ?, ?, ?, ?, ?, ?)
-    `).run(txId, tenantId, id, pts, balanceAfter, reference_type, reference_id || null, note || null, (req.user as any)?.email || null, new Date().toISOString())
-    res.json({ success: true, data: { points: balanceAfter } })
+
+    const earnTx = db.transaction(() => {
+      const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+        .get(id, tenantId) as any
+      if (!customer) return { error: 'NOT_FOUND' as const }
+
+      const balanceAfter = (customer.loyalty_points || 0) + pts
+      db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
+
+      const txId = randomUUID().replace(/-/g, '').substring(0, 25)
+      db.prepare(`
+        INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+        VALUES (?, ?, ?, 'EARN', ?, ?, ?, ?, ?, ?, ?)
+      `).run(txId, tenantId, id, pts, balanceAfter, reference_type, reference_id || null, note || null, (req.user as any)?.email || null, new Date().toISOString())
+
+      return { success: true as const, balanceAfter }
+    })
+
+    const result = earnTx()
+    if (result.error === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    }
+
+    res.json({ success: true, data: { points: result.balanceAfter } })
   } catch (error) {
     console.error('Earn loyalty error:', error)
     res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })
@@ -626,23 +729,54 @@ router.post('/:id/loyalty/earn', (req: Request, res: Response) => {
 // POST /customers/:id/loyalty/redeem
 router.post('/:id/loyalty/redeem', (req: Request, res: Response) => {
   try {
+    if (!canAdjustLoyalty(req.user as any)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ปรับปรุงแต้มสะสม' })
+    }
+
     const tenantId = req.user!.tenantId
     const { id } = req.params
     const { points, note } = req.body
     const pts = parseInt(points)
     if (!pts || pts <= 0) return res.status(400).json({ success: false, message: 'จำนวนแต้มต้องมากกว่า 0' })
-    const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
-      .get(id, tenantId) as any
-    if (!customer) return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
-    if ((customer.loyalty_points || 0) < pts) return res.status(400).json({ success: false, message: 'แต้มไม่เพียงพอ' })
-    const balanceAfter = (customer.loyalty_points || 0) - pts
-    db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?').run(balanceAfter, id, tenantId)
-    const txId = randomUUID().replace(/-/g, '').substring(0, 25)
-    db.prepare(`
-      INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
-      VALUES (?, ?, ?, 'REDEEM', ?, ?, 'MANUAL', NULL, ?, ?, ?)
-    `).run(txId, tenantId, id, -pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
-    res.json({ success: true, data: { points: balanceAfter } })
+
+    const redeemTx = db.transaction(() => {
+      const customer = db.prepare('SELECT id, loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+        .get(id, tenantId) as any
+      if (!customer) return { error: 'NOT_FOUND' as const }
+
+      // Atomic SQL decrement with point check
+      const updateResult = db.prepare(`
+        UPDATE customers
+        SET loyalty_points = loyalty_points - ?
+        WHERE id = ? AND tenant_id = ? AND loyalty_points >= ?
+      `).run(pts, id, tenantId, pts)
+
+      if (updateResult.changes === 0) {
+        return { error: 'INSUFFICIENT_POINTS' as const }
+      }
+
+      const updatedCustomer = db.prepare('SELECT loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+        .get(id, tenantId) as any
+      const balanceAfter = updatedCustomer?.loyalty_points ?? ((customer.loyalty_points || 0) - pts)
+
+      const txId = randomUUID().replace(/-/g, '').substring(0, 25)
+      db.prepare(`
+        INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+        VALUES (?, ?, ?, 'REDEEM', ?, ?, 'MANUAL', NULL, ?, ?, ?)
+      `).run(txId, tenantId, id, -pts, balanceAfter, note || null, (req.user as any)?.email || null, new Date().toISOString())
+
+      return { success: true as const, balanceAfter }
+    })
+
+    const result = redeemTx()
+    if (result.error === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
+    }
+    if (result.error === 'INSUFFICIENT_POINTS') {
+      return res.status(400).json({ success: false, message: 'แต้มสะสมไม่เพียงพอ' })
+    }
+
+    res.json({ success: true, data: { points: result.balanceAfter } })
   } catch (error) {
     console.error('Redeem loyalty error:', error)
     res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด' })

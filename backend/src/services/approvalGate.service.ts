@@ -25,28 +25,30 @@ export interface GateUser {
   customPermissions?: Record<string, boolean>
 }
 
-const APPROVER_ROLES = new Set(['ADMIN', 'MASTER'])
+const APPROVER_ROLES = new Set(['ADMIN', 'MASTER', 'OWNER'])
 
 // หมวดอนุมัติ → resource ในระบบสิทธิ์เดิม (Settings > สิทธิ์การใช้งาน) ที่ถือว่า "ผูกกัน"
-// คนที่มี action 'approve' บน resource นี้อยู่แล้ว (จาก role+department หรือ customPermissions)
-// ไม่ต้องมาตั้ง can_bypass ซ้ำอีกชั้น
 const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   stock_adjust: 'stock',
   pos_void: 'orders',
   doc_edit: 'purchase',
-  // ยืนยัน SO ก็เป็นงานขาย/ออเดอร์เหมือน pos_void — ใช้ resource 'orders' ร่วมกัน
-  // (แผนก SALES มีสิทธิ์ 'orders' อยู่แล้วใน departmentResources)
   sales_order: 'orders',
-  // ออก/แก้/ยกเลิกใบกำกับภาษีจากบิล POS — เป็นงานฝั่งขายเหมือน pos_void/sales_order จึงผูก resource 'orders' ร่วมกัน
   pos_invoice: 'orders',
 }
 
-/** ADMIN/MASTER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน */
-export function canApprove(tenantId: string, user: GateUser): boolean {
+/** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท */
+export function canApprove(tenantId: string, user: GateUser, moduleType?: string, amount = 0): boolean {
   if (APPROVER_ROLES.has(user.role)) return true
-  const perm = db.prepare(
-    'SELECT 1 FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND can_approve = 1 LIMIT 1'
-  ).get(tenantId, user.userId)
+  // Non-admins capped at 5,000 THB max
+  if (amount > 5000) return false
+
+  let query = 'SELECT 1 FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND can_approve = 1'
+  const params: any[] = [tenantId, user.userId]
+  if (moduleType) {
+    query += ' AND (module_type = ? OR module_type IS NULL)'
+    params.push(moduleType)
+  }
+  const perm = db.prepare(query + ' LIMIT 1').get(...params)
   return !!perm
 }
 

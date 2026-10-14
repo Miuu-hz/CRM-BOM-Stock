@@ -187,9 +187,9 @@ function CRM() {
       setShowModal(false)
       setSelectedCustomerId(null)
       loadData()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Delete customer failed', err)
-      alert(t('crm.deleteFailed'))
+      alert(err.response?.data?.message || t('crm.deleteFailed'))
     }
   }
 
@@ -657,6 +657,9 @@ function CRM() {
             setShowCustomerModal(true)
           }}
           onDelete={handleDeleteCustomer}
+          onCustomerUpdate={(updated) => {
+            setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c))
+          }}
           orderPage={orderPage}
           orderPageNum={orderPageNum}
           orderLimit={orderLimit}
@@ -799,13 +802,13 @@ function CustomerModal({ open, customer, onClose, onSave }: {
                   <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.contactName')}</label>
                   <input type="text" value={form.contactName}
                     onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-                    className="phopy-input w-full" required placeholder={t('crm.modal.contactPlaceholder')} />
+                    className="phopy-input w-full" placeholder={t('crm.modal.contactPlaceholder')} />
                 </div>
                 <div>
                   <label className="block text-sm text-[var(--fg-3)] mb-2">{t('crm.modal.phone')}</label>
                   <input type="text" value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="phopy-input w-full" required placeholder={t('crm.modal.phonePlaceholder')} />
+                    className="phopy-input w-full" placeholder={t('crm.modal.phonePlaceholder')} />
                 </div>
               </div>
 
@@ -904,6 +907,7 @@ function CustomerDetailModal({
   onOrderLimitChange,
   onEdit,
   onDelete,
+  onCustomerUpdate,
 }: {
   customer: Customer
   insights: CustomerInsights | null
@@ -921,9 +925,22 @@ function CustomerDetailModal({
   onOrderLimitChange: (l: number) => void
   onEdit: () => void
   onDelete: () => void
+  onCustomerUpdate?: (updated: Customer) => void
 }) {
   const { t } = useTranslation()
   useModalClose(onClose)
+  // State for loyalty points sync
+  const [loyaltyPoints, setLoyaltyPoints] = useState(customer.loyalty_points ?? 0)
+  useEffect(() => {
+    setLoyaltyPoints(customer.loyalty_points ?? 0)
+  }, [customer.id, customer.loyalty_points])
+
+  const handlePointsChange = (pts: number) => {
+    setLoyaltyPoints(pts)
+    customer.loyalty_points = pts
+    onCustomerUpdate?.({ ...customer, loyalty_points: pts })
+  }
+
   // State for recommendations
   const [recommendations, setRecommendations] = useState<any[]>([])
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
@@ -1189,7 +1206,7 @@ function CustomerDetailModal({
                 <p className="text-[10px] text-[var(--fg-4)] flex items-center gap-1"><Star className="w-3 h-3 text-warning" />{t('crm.detail.tabs.loyalty')}</p>
                 <span className="text-[10px] text-warning/60">{t('crm.detail.clickForDetails')}</span>
               </div>
-              <p className="text-xl font-bold text-warning">{(customer.loyalty_points ?? 0).toLocaleString()}</p>
+              <p className="text-xl font-bold text-warning">{(loyaltyPoints ?? 0).toLocaleString()}</p>
               <p className="text-[10px] text-[var(--fg-4)]">แต้ม</p>
             </button>
           </div>
@@ -1550,7 +1567,7 @@ function CustomerDetailModal({
           )}
 
           {activeTab === 'loyalty' && (
-            <LoyaltyTab customerId={customer.id} initialPoints={customer.loyalty_points ?? 0} />
+            <LoyaltyTab customerId={customer.id} initialPoints={loyaltyPoints} onPointsChange={handlePointsChange} />
           )}
         </div>
         {/* end tab content */}
@@ -1597,16 +1614,19 @@ function ActivityLogTab({
     NOTE:    { label: 'crm.activityTab.types.note',icon: MessageSquare,dot: 'bg-gray-500',  border: 'border-l-gray-500',   badge: 'bg-gray-500/10 text-[var(--fg-3)]',   iconColor: 'text-[var(--fg-3)]'   },
   } as const
 
-  const timeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime()
+  const timeAgo = (dateStr?: string) => {
+    if (!dateStr) return '-'
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return '-'
+    const diff = Date.now() - d.getTime()
     const m = Math.floor(diff / 60000)
     if (m < 1)  return 'เมื่อสักครู่'
     if (m < 60) return `${m} นาทีที่แล้ว`
     const h = Math.floor(m / 60)
     if (h < 24) return `${h} ชั่วโมงที่แล้ว`
-    const d = Math.floor(h / 24)
-    if (d < 30) return `${d} วันที่แล้ว`
-    return new Date(dateStr).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+    const day = Math.floor(h / 24)
+    if (day < 30) return `${day} วันที่แล้ว`
+    return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
   }
 
   const filtered = (activities || []).filter(a => filter === 'ALL' || a.type === filter)
@@ -2083,7 +2103,7 @@ interface LoyaltyTransaction {
   created_at: string
 }
 
-function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initialPoints: number }) {
+function LoyaltyTab({ customerId, initialPoints, onPointsChange }: { customerId: string; initialPoints: number; onPointsChange?: (points: number) => void }) {
   const { t } = useTranslation()
   const [points, setPoints] = useState(initialPoints)
   const [transactions, setTransactions] = useState<LoyaltyTransaction[]>([])
@@ -2094,6 +2114,10 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    setPoints(initialPoints)
+  }, [initialPoints])
 
   // Read loyalty config from localStorage (same as Settings page)
   const loyaltyCfg = (() => {
@@ -2107,8 +2131,10 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
     setLoading(true)
     try {
       const res = await api.get(`/customers/${customerId}/loyalty`)
-      setPoints(res.data.data.points)
+      const fetchedPoints = res.data.data.points
+      setPoints(fetchedPoints)
       setTransactions(res.data.data.transactions)
+      onPointsChange?.(fetchedPoints)
     } catch (e) {
       console.error(e)
     } finally {
@@ -2127,7 +2153,10 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
     if (!pts || pts <= 0) { setError(t('crm.loyaltyTab.errors.invalidPoints')); return }
     setSaving(true); setError('')
     try {
-      await api.post(`/customers/${customerId}/loyalty/earn`, { points: pts, note })
+      const res = await api.post(`/customers/${customerId}/loyalty/earn`, { points: pts, note })
+      const newPts = res.data?.data?.points ?? (points + pts)
+      setPoints(newPts)
+      onPointsChange?.(newPts)
       await fetchLoyalty()
       setMode(null); setInputPoints(''); setInputAmount(''); setNote('')
     } catch (e: any) {
@@ -2142,7 +2171,10 @@ function LoyaltyTab({ customerId, initialPoints }: { customerId: string; initial
     if (pts > points) { setError(t('crm.loyaltyTab.errors.insufficient')); return }
     setSaving(true); setError('')
     try {
-      await api.post(`/customers/${customerId}/loyalty/redeem`, { points: pts, note })
+      const res = await api.post(`/customers/${customerId}/loyalty/redeem`, { points: pts, note })
+      const newPts = res.data?.data?.points ?? (points - pts)
+      setPoints(newPts)
+      onPointsChange?.(newPts)
       await fetchLoyalty()
       setMode(null); setInputPoints(''); setNote('')
     } catch (e: any) {

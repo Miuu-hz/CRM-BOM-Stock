@@ -356,6 +356,12 @@ function DetailModal({ req, onApprove, onReject, actionLoading, onClose }: Detai
             {req.status !== 'PENDING' && decided.name && (
               <Fact label={req.status === 'AUTO' ? 'ทำโดย' : 'ผู้ตัดสินใจ'} value={`${decided.name}${decided.at ? ' · ' + fmtDate(decided.at) : ''}`} />
             )}
+            {req.comment && (
+              <div className="col-span-2 sm:col-span-3 bg-[var(--danger-soft)]/40 border border-danger/30 rounded-lg p-2.5">
+                <span className="text-xs font-semibold text-danger block mb-0.5">เหตุผล / หมายเหตุ:</span>
+                <span className="text-xs text-[var(--fg-1)]">{req.comment}</span>
+              </div>
+            )}
           </div>
 
           {req.description && (

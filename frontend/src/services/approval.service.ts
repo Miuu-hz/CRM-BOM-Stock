@@ -23,6 +23,7 @@ export interface ApprovalRequest {
   // (/pending, /my-requests คืน ar.* ดิบ ไม่มี 2 ฟิลด์นี้ ต้องประกอบเองจาก approver_1/2_*)
   approver_name?: string
   decided_at?: string
+  comment?: string
   created_at: string
   updated_at?: string
 }

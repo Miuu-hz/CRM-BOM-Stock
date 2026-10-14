@@ -1,25 +1,5 @@
 import api from './api'
 
-// Legacy types
-export interface KDSItem {
-    id: string
-    pos_menu_id: string
-    product_name: string
-    image_url: string | null
-    quantity: number
-    special_instructions: string | null
-    status: 'PENDING' | 'PREPARING' | 'READY' | 'SERVED'
-    added_at: string
-}
-
-export interface KDSOrder {
-    bill_id: string
-    bill_number: string
-    bill_name: string
-    opened_at: string
-    items: KDSItem[]
-}
-
 // Ticket-based types
 export interface KDSTicketItem {
     id: string
@@ -66,7 +46,7 @@ const kdsService = {
         }
     },
 
-    // ==================== Ticket-based (new) ====================
+    // ==================== Ticket-based ====================
 
     sendToKitchen: async (billId: string): Promise<{ ticket_id: string; round: number; item_count: number }> => {
         const response = await api.post('/pos/kds/send', { bill_id: billId })
@@ -80,18 +60,6 @@ const kdsService = {
 
     updateTicketStatus: async (ticketId: string, status: 'IN_PROGRESS' | 'DONE'): Promise<any> => {
         const response = await api.patch(`/pos/kds/tickets/${ticketId}/status`, { status })
-        return response.data
-    },
-
-    // ==================== Legacy (backward compat) ====================
-
-    getOrders: async (): Promise<KDSOrder[]> => {
-        const response = await api.get('/pos/kds/orders')
-        return response.data.data
-    },
-
-    updateItemStatus: async (itemId: string, status: 'PREPARING' | 'READY'): Promise<any> => {
-        const response = await api.patch(`/pos/kds/items/${itemId}/status`, { status })
         return response.data
     }
 }

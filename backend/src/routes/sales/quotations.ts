@@ -87,7 +87,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
     }
 
-    const id = generateId()
+    const id = `qt_${tenantId.slice(0, 8)}_${generateId()}`
     let quotationNumber = ''
     const now = new Date().toISOString()
 

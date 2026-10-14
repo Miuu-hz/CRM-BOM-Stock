@@ -105,6 +105,53 @@ const initPlanEdit = (p: Plan): PlanEdit => ({
   max_pos_shifts: p.max_pos_shifts === null ? '' : String(p.max_pos_shifts),
 })
 
+function computeDraftTotal(draft: PlanDraft) {
+  const planCode = draft.planCode
+  const planPrices: Record<string, { base: number; includedPacks: number; extraUserPrice: number; nextPlan?: { code: string; name: string; price: number } }> = {
+    free: { base: 0, includedPacks: 0, extraUserPrice: 190, nextPlan: { code: 'solo', name: 'Solo', price: 299 } },
+    solo: { base: 299, includedPacks: 0, extraUserPrice: 190, nextPlan: { code: 'business', name: 'Business', price: 690 } },
+    business: { base: 690, includedPacks: 2, extraUserPrice: 150, nextPlan: { code: 'business_plus', name: 'Business+', price: 990 } },
+    business_plus: { base: 990, includedPacks: 3, extraUserPrice: 150, nextPlan: { code: 'pro', name: 'Pro', price: 1950 } },
+    pro: { base: 1950, includedPacks: 4, extraUserPrice: 120, nextPlan: { code: 'enterprise_ai', name: 'Enterprise AI', price: 3490 } },
+    enterprise_ai: { base: 3490, includedPacks: 4, extraUserPrice: 100 },
+  }
+
+  const p = planPrices[planCode] ?? { base: 0, includedPacks: 0, extraUserPrice: 150 }
+  const base = p.base
+  const extraPacksCount = p.includedPacks >= 4 ? 0 : Math.max(0, draft.packs.length - p.includedPacks)
+  const extraPacksCost = extraPacksCount * 390
+  const extraUsersCount = Number(draft.addons.extra_users) || 0
+  const extraUsersCost = extraUsersCount * p.extraUserPrice
+
+  const addonPrices: Record<string, number> = {
+    backup: 99,
+    smart_unit: 290,
+    subcontract: 290,
+    multi_currency: 390,
+    api_access: 590,
+  }
+  let addonsCost = 0
+  for (const [key, val] of Object.entries(draft.addons)) {
+    if (key === 'extra_users') continue
+    if (Number(val) > 0 && addonPrices[key]) {
+      addonsCost += addonPrices[key]
+    }
+  }
+
+  const monthlyTotal = base + extraPacksCost + extraUsersCost + addonsCost
+  const total = draft.billingCycle === 'yearly' ? monthlyTotal * 10 : monthlyTotal
+
+  let recommendation: string | null = null
+  if (p.nextPlan) {
+    const threshold = p.nextPlan.price * 0.85
+    if (monthlyTotal >= threshold) {
+      recommendation = `ยอดรวม (฿${monthlyTotal.toLocaleString()}/ด.) คิดเป็น ≥ 85% ของแพ็กเกจ ${p.nextPlan.name} (฿${p.nextPlan.price.toLocaleString()}/ด.) — แนะนำอัปเกรดเป็น ${p.nextPlan.name} จะคุ้มค่ากว่า`
+    }
+  }
+
+  return { total, monthlyTotal, recommendation }
+}
+
 const fmtMax = (n: number | null) => (n === null ? '∞' : n)
 
 function StatusChip({ status, daysRemaining }: { status: TenantSubscription['status']; daysRemaining: number | null }) {
@@ -888,6 +935,26 @@ export default function MasterPanel() {
                                 ))}
                               </div>
                             </fieldset>
+                            {(() => {
+                              const est = computeDraftTotal(selDraft)
+                              return (
+                                <div className="p-3 bg-[var(--surface-2)] rounded-lg space-y-2 border border-[var(--border)]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-[var(--fg-3)]">ประมาณการยอดชำระ:</span>
+                                    <span className="text-sm font-bold text-[var(--primary)]">
+                                      ฿{est.total.toLocaleString()}
+                                      <span className="text-[11px] font-normal text-[var(--fg-4)]"> / {selDraft.billingCycle === 'yearly' ? 'ปี (10 เดือน)' : 'เดือน'}</span>
+                                    </span>
+                                  </div>
+                                  {est.recommendation && (
+                                    <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1.5 leading-relaxed">
+                                      <span className="text-sm shrink-0">💡</span>
+                                      <span>{est.recommendation}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
                             <button
                               onClick={() => handleExtend(selSub.tenantId)}
                               disabled={!((selSub.status === 'ACTIVE' || selSub.status === 'EXPIRED') && !!selSub.currentPeriodEnd) || extending === selSub.tenantId}

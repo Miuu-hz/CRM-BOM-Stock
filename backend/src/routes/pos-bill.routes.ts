@@ -367,9 +367,9 @@ router.post('/bills/:id/items', (req, res) => {
     const userId = (req as any).user!.userId
     const { id } = req.params
     const { pos_menu_id, quantity, special_instructions } = req.body
-    
-    if (!pos_menu_id || !quantity) {
-      return res.status(400).json({ success: false, message: 'Menu ID and quantity required' })
+    const numQty = Number(quantity)
+    if (!pos_menu_id || !numQty || numQty <= 0 || !Number.isFinite(numQty)) {
+      return res.status(400).json({ success: false, message: 'Menu ID and valid positive quantity required' })
     }
     if (!findOpenBill(id, tenantId)) return res.status(409).json(BILL_NOT_OPEN)
     
@@ -422,6 +422,13 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     const { billId, itemId } = req.params
     const { quantity, special_instructions } = req.body
     
+    if (quantity !== undefined) {
+      const numQty = Number(quantity)
+      if (!Number.isFinite(numQty) || numQty <= 0) {
+        return res.status(400).json({ success: false, message: 'Quantity must be a positive number' })
+      }
+    }
+
     if (!findOpenBill(billId, tenantId)) return res.status(409).json(BILL_NOT_OPEN)
 
     // Get current item scoped to tenant
@@ -610,12 +617,18 @@ router.post('/bills/:id/pay', async (req, res) => {
         const customerId = (refreshedBill as any).customer_id
         const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
         if (customer) {
-          // earn_rate: spend X baht → 1 point (default 1 baht = 1 point)
-          const rate = earn_rate && earn_rate > 0 ? earn_rate : 1
+          // earn_rate: admin คนเดียวที่ตั้งค่าได้ในระบบ ดึงจาก company_settings ไม่รับค่าจาก client
+          const settingRow = db.prepare("SELECT value FROM company_settings WHERE tenant_id = ? AND key = 'loyalty_earn_rate'").get(tenantId) as any
+          const rate = (settingRow && Number(settingRow.value) > 0) ? Number(settingRow.value) : 1
           pointsEarned = Math.floor(totalAmount / rate)
-          pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
 
           const balanceBefore = customer.loyalty_points || 0
+          pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
+
+          if (pointsRedeemed > balanceBefore) {
+            throw new Error('คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก')
+          }
+
           const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
 
           db.prepare(`
@@ -695,6 +708,24 @@ router.post('/bills/:id/cancel', async (req, res) => {
     
     if ((bill as any).status === 'CANCELLED') {
       return res.status(400).json({ success: false, message: 'Bill already cancelled' })
+    }
+
+    // Clearing Guard: บิลที่ส่งยอดเข้าธนาคาร/Clearing ไปแล้ว ห้ามยกเลิกโดยเด็ดขาด
+    const cleared = db.prepare(`
+      SELECT 1 FROM pos_clearing_transfer_items ti
+      JOIN pos_clearing_transfers t ON ti.transfer_id = t.id
+      WHERE ti.bill_id = ? AND t.tenant_id = ?
+    `).get(id, tenantId)
+    if (cleared) {
+      return res.status(400).json({ success: false, message: 'บิลนี้ถูกนำส่งยอดเคลียริ่งเข้าธนาคารแล้ว ไม่สามารถยกเลิกได้' })
+    }
+
+    // Invoice Guard: บิลที่ออกใบกำกับภาษีแล้ว ต้องยกเลิกหรือออกใบลดหนี้ผ่านระบบภาษีก่อน
+    const invoice = db.prepare(`
+      SELECT id, invoice_number FROM invoices WHERE reference_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+    `).get(id, tenantId) as any
+    if (invoice) {
+      return res.status(400).json({ success: false, message: `บิลนี้ออกใบกำกับภาษีแล้ว (${invoice.invoice_number}) ต้องยกเลิกหรือออกใบลดหนี้ผ่านระบบภาษีก่อน` })
     }
 
     // ประตูอนุมัติ: หมวด "ปิดบิล POS / คืนเงิน"

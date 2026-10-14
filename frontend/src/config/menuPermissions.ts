@@ -26,7 +26,7 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/purchase': ALL_ROLES,
   '/calculator': ALL_ROLES,
   '/sales': ALL_ROLES,
-  '/receivables': NOT_USER, // ยอดหนี้ของลูกค้า/ซัพพลายเออร์ทั้งบริษัท — แคบกว่าเมนูขายทั่วไป
+  '/receivables': NOT_USER, // ยอดหนี้ของลูกค้า/ซัพลายเออร์ทั้งบริษัท — แคบกว่าเมนูขายทั่วไป
   '/marketing': ALL_ROLES,
   '/tax': ALL_ROLES,
   '/accounting': ALL_ROLES,
@@ -68,4 +68,40 @@ export function canViewMenu(role: string | undefined, path: string, departments?
   const allowed = MENU_PERMISSIONS[path]
   if (!allowed) return true
   return allowed.includes(role as Role)
+}
+
+/**
+ * ฟีเจอร์ที่จำเป็นสำหรับการเข้าถึงเมนูต่าง ๆ (อิงตาม carbontome.md และ subscription.features.ts)
+ * ถ้าเมนูไม่มีในตารางนี้ = ทุกแพ็กเกจ (รวมทั้ง Free) ใช้งานได้
+ */
+export const MENU_REQUIRED_FEATURES: Record<string, string> = {
+  '/production': 'work_orders',
+  '/bom': 'bom',
+  '/work-orders': 'work_orders',
+  '/qc': 'work_orders',
+  '/stock/subcontractors': 'subcontract',
+  '/calculator': 'bom',
+  '/tax': 'tax',
+  '/accounting': 'accounting',
+  '/accounting/chart-of-accounts': 'accounting',
+  '/accounting/journal-entries': 'accounting',
+  '/accounting/period-closing': 'accounting',
+  '/accounting/budget-vs-actual': 'accounting',
+  '/accounting/pos-clearing': 'accounting',
+  '/accounting/reconcile': 'accounting',
+  '/accounting/platform-settlement': 'platform_settlement',
+  '/accounting/reports': 'accounting',
+  '/accounting/phopy-board': 'accounting',
+  '/kds': 'kds',
+}
+
+/**
+ * ตรวจสอบว่าเมนูถูกล็อกด้วยแพ็กเกจหรือไม่ (Phase 3: โชว์กุญแจ + ลิงก์อัปเกรด)
+ */
+export function isMenuLocked(path: string, features?: string[], isMaster?: boolean): boolean {
+  if (isMaster) return false
+  const reqFeature = MENU_REQUIRED_FEATURES[path]
+  if (!reqFeature) return false
+  if (!features || !Array.isArray(features)) return true
+  return !features.includes(reqFeature)
 }

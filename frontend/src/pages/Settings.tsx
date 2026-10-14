@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import Billing from './Billing'
+import { useSubscription } from '../contexts/SubscriptionContext'
 import toast from 'react-hot-toast'
 import { useModalClose } from '../hooks/useModalClose'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -769,6 +770,7 @@ function GeneralSettings() {
   // ชื่อเรียกแทน SKU — ค่าเริ่มต้นเปิด (ไม่มีค่า/null = เปิด)
   const [stockAliasEnabled, setStockAliasEnabled] = useState(true)
   const [aliasSaving, setAliasSaving] = useState(false)
+  const { subscription } = useSubscription()
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -1157,9 +1159,32 @@ function GeneralSettings() {
           </div>
           <div>
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.subscriptionPlan')}</label>
-            <p className="font-semibold text-[var(--primary)]">{subPlanName || '-'}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-[var(--primary)]">{subscription?.planName || subPlanName || '-'}</p>
+              {subscription?.status && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  subscription.status === 'ACTIVE' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                  subscription.status === 'TRIAL' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                  subscription.status === 'FREE' ? 'bg-[var(--surface-2)] text-[var(--fg-3)]' :
+                  'bg-red-500/15 text-red-600'
+                }`}>
+                  {subscription.status}
+                </span>
+              )}
+            </div>
+            {subscription?.packs && subscription.packs.length > 0 && (
+              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                {subscription.packs.map(p => (
+                  <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--primary-soft)] text-[var(--primary)] font-medium">
+                    Pack {p.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+            )}
             {(isAdmin || isMaster) && (
-              <Link to="/settings?tab=subscription" className="text-xs text-[var(--primary)] underline underline-offset-2">เปลี่ยนแพ็กเกจ / ชำระเงิน</Link>
+              <Link to="/settings?tab=subscription" className="text-xs text-[var(--primary)] underline underline-offset-2 block mt-1.5">
+                จัดการแพ็กเกจ / ชำระเงิน →
+              </Link>
             )}
           </div>
         </div>

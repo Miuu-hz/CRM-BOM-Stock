@@ -191,16 +191,27 @@ export default function Dashboard() {
     periodRef.current = period
   }, [period])
 
+  const [revError, setRevError] = useState<string | null>(null)
+
   const loadRevenue = useCallback(async (p: Period) => {
     setRevLoading(true)
+    setRevError(null)
     try {
       const [revRes, topRes] = await Promise.allSettled([
         api.get(`/dashboard/revenue?period=${p}`),
         api.get(`/dashboard/top-customers?period=${p}`),
       ])
-      if (revRes.status === 'fulfilled') setRevenue(revRes.value.data.data)
-      if (topRes.status === 'fulfilled') setTopCustomers(topRes.value.data.data)
-    } catch {}
+      if (revRes.status === 'fulfilled' && revRes.value.data?.success) {
+        setRevenue(revRes.value.data.data)
+      } else {
+        setRevError('ไม่สามารถโหลดข้อมูลงบรายได้ได้')
+      }
+      if (topRes.status === 'fulfilled' && topRes.value.data?.success) {
+        setTopCustomers(topRes.value.data.data)
+      }
+    } catch {
+      setRevError('เกิดข้อผิดพลาดในการโหลดข้อมูล')
+    }
     setRevLoading(false)
   }, [])
 
@@ -361,16 +372,16 @@ export default function Dashboard() {
         <div className="flex items-center gap-2 mb-3">
           <BarChart2 className="w-4 h-4 text-[var(--primary)]" />
           <h2 className="text-sm font-bold text-[var(--fg-2)] uppercase tracking-wider">{t('dashboard.cashflowForecast')}</h2>
-          {cf && (
+          {cf?.netCashflow && (
             <div className="ml-auto flex items-center gap-3 text-xs">
               <span className="text-[var(--fg-3)]">{t('dashboard.net7Days')}:
-                <span className={`ml-1 font-bold ${cf.netCashflow.week >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
-                  {cf.netCashflow.week >= 0 ? '+' : ''}{fmt(cf.netCashflow.week)}
+                <span className={`ml-1 font-bold ${(cf.netCashflow.week ?? 0) >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
+                  {(cf.netCashflow.week ?? 0) >= 0 ? '+' : ''}{fmt(cf.netCashflow.week ?? 0)}
                 </span>
               </span>
               <span className="text-[var(--fg-3)]">{t('dashboard.net30Days')}:
-                <span className={`ml-1 font-bold ${cf.netCashflow.month >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
-                  {cf.netCashflow.month >= 0 ? '+' : ''}{fmt(cf.netCashflow.month)}
+                <span className={`ml-1 font-bold ${(cf.netCashflow.month ?? 0) >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
+                  {(cf.netCashflow.month ?? 0) >= 0 ? '+' : ''}{fmt(cf.netCashflow.month ?? 0)}
                 </span>
               </span>
             </div>
@@ -433,7 +444,7 @@ export default function Dashboard() {
                   <p className="text-xs text-[var(--fg-4)]">{t(labelKey)}</p>
                   <p className="text-2xl font-bold tabular-nums mt-0.5" style={{ color }}>{fmt(value)}</p>
                   <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden mt-2">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${(value / waterfallMax) * 100}%`, background: color }} />
+                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(0, Math.min(100, (value / waterfallMax) * 100))}%`, background: color }} />
                   </div>
                 </div>
               ))}
@@ -483,13 +494,13 @@ export default function Dashboard() {
               </div>
 
               {/* ออเดอร์ที่เปิดตรงไม่ผ่านใบเสนอราคา ทำให้ไปป์ไลน์ข้างบนอ่านต่ำกว่าความจริง */}
-              {pipeline.linkage.soDirect > 0 && (
+              {(pipeline?.linkage?.soDirect ?? 0) > 0 && (
                 <div className="flex items-start gap-2 mt-4 p-2.5 rounded-lg bg-[var(--warning-soft)] border border-warning/20">
                   <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
                   <p className="text-[11px] text-warning leading-relaxed">
                     {t('dashboard.pipelineUnlinked', {
-                      direct: pipeline.linkage.soDirect,
-                      total: pipeline.linkage.soTotal,
+                      direct: pipeline?.linkage?.soDirect ?? 0,
+                      total: pipeline?.linkage?.soTotal ?? 0,
                     })}
                   </p>
                 </div>
@@ -551,8 +562,8 @@ export default function Dashboard() {
           </div>
           {loading || !funnel ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-warning">{funnel.pendingDelivery.count} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.pendingValue', { amount: fmt(funnel.pendingDelivery.value) })}</p>
+              <p className="text-2xl font-bold text-warning">{funnel?.pendingDelivery?.count ?? 0} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.pendingValue', { amount: fmt(funnel?.pendingDelivery?.value ?? 0) })}</p>
             </>
           )}
         </button>
@@ -591,9 +602,9 @@ export default function Dashboard() {
           </div>
           {loading || !cf ? <Skeleton className="h-8 w-20" /> : (
             <>
-              <p className="text-2xl font-bold text-danger">{cf.ar.overdue.length} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.receivable', { amount: fmt(cf.ar.overdue.reduce((s,i) => s + i.amount, 0)) })}</p>
-              {cf.ar.overdue.slice(0, 2).map(i => (
+              <p className="text-2xl font-bold text-danger">{cf?.ar?.overdue?.length ?? 0} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
+              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.receivable', { amount: fmt((cf?.ar?.overdue ?? []).reduce((s,i) => s + i.amount, 0)) })}</p>
+              {(cf?.ar?.overdue ?? []).slice(0, 2).map(i => (
                 <p key={i.id} className="text-xs text-danger/70 truncate">{i.party_name} · {fmt(i.amount)}</p>
               ))}
             </>

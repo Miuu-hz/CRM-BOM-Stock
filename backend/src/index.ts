@@ -147,6 +147,7 @@ import kdsRoutes from './routes/kds.routes'
 
 import lineBotRoutes from './routes/line-bot.routes'
 import billingRoutes from './routes/billing.routes'
+import subscriptionRoutes from './routes/subscription.routes'
 
 
 import settingsRoutes from './routes/settings.routes'
@@ -479,14 +480,14 @@ app.use('/api/pos/kds', authenticate, subscriptionGate('kds'))
 app.use('/api/bom', authenticate, subscriptionGate('bom'))
 app.use('/api/calculator', authenticate, subscriptionGate('bom'))
 app.use('/api/work-orders', authenticate, subscriptionGate('work_orders'))
-app.use('/api/subcontracts', authenticate, subscriptionGate('work_orders'))
+app.use('/api/subcontracts', authenticate, subscriptionGate('subcontract'))
 app.use('/api/accounts', authenticate, subscriptionGate('accounting'))
 app.use('/api/journal', authenticate, subscriptionGate('accounting'))
 app.use('/api/clearing', authenticate, subscriptionGate('accounting'), clearingReconcileRoutes)
 app.use('/api/platform-settlement', authenticate, subscriptionGate('platform_settlement'), platformSettlementRoutes)
 app.use('/api/period-closing', authenticate, subscriptionGate('accounting'))
 app.use('/api/budgets', authenticate, subscriptionGate('accounting'))
-app.use('/api/currencies', authenticate, subscriptionGate('accounting'))
+app.use('/api/currencies', authenticate, subscriptionGate('multi_currency'))
 app.use('/api/bank-accounts', authenticate, subscriptionGate('accounting'))
 app.use('/api/tax', authenticate, subscriptionGate('tax'))
 app.use('/api/wht-certificates', authenticate, subscriptionGate('tax'))
@@ -504,8 +505,9 @@ app.use('/api/import', authenticate, subscriptionGate())
 app.use('/api/mcp-settings', authenticate, subscriptionGate())
 app.use('/api/marketing', authenticate, subscriptionGate())
 app.use('/api/approval', authenticate, subscriptionGate())
-app.use('/api/qc', authenticate, subscriptionGate())
+app.use('/api/qc', authenticate, subscriptionGate('work_orders'))
 app.use('/api/phopy-board', authenticate, subscriptionGate())
+app.use('/api/kanban', authenticate, subscriptionGate())
 
 
 app.use('/api/customers', customerRoutes)
@@ -627,6 +629,7 @@ app.use('/api/mcp-settings', mcpSettingsRoutes)
 app.use('/api/master', masterRoutes)
 // ไม่ผ่าน subscriptionGate — แพ็กหมดอายุแล้วก็ต้องเข้ามาต่ออายุได้
 app.use('/api/billing', billingRoutes)
+app.use('/api/subscription', subscriptionRoutes)
 setupMcpRoutes(app as unknown as import('express').Router)
 
 

@@ -348,7 +348,8 @@ router.get('/history', async (req: Request, res: Response) => {
         ar.requester_id, ar.requester_name, ar.requester_role, ar.amount, ar.description, ar.status,
         ar.created_at, ar.updated_at,
         COALESCE(ar.approver_2_name, ar.approver_1_name, ar.final_executor_name) as approver_name,
-        COALESCE(ar.approver_2_at, ar.approver_1_at, ar.executed_at) as decided_at
+        COALESCE(ar.approver_2_at, ar.approver_1_at, ar.executed_at) as decided_at,
+        COALESCE(ar.approver_2_comment, ar.approver_1_comment, '') as comment
       FROM approval_requests ar
       WHERE ${whereSql}
       ORDER BY ar.created_at DESC
@@ -366,14 +367,16 @@ router.get('/history', async (req: Request, res: Response) => {
 router.get('/requests/:id/detail', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const isPrivileged = req.user!.role === 'ADMIN' || req.user!.role === 'MASTER'
+    const isPrivileged = ['ADMIN', 'MASTER', 'OWNER', 'MANAGER'].includes(req.user!.role)
 
     const request = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?')
       .get(req.params.id, tenantId) as any
     if (!request) {
       return res.status(404).json({ success: false, message: 'Approval request not found' })
     }
-    if (!isPrivileged && request.requester_id !== req.user!.userId) {
+
+    const canUserApprove = isPrivileged || canApproveRequests(tenantId, req.user! as any, request.module_type, Number(request.amount) || 0)
+    if (!canUserApprove && request.requester_id !== req.user!.userId) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ดูคำขอนี้' })
     }
 
@@ -402,7 +405,7 @@ router.get('/requests/:id/detail', async (req: Request, res: Response) => {
 router.put('/requests/:id/decision', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { decision, comment, level } = req.body  // decision: APPROVED/REJECTED, level: 1 or 2
+    const { decision, comment } = req.body  // decision: APPROVED/REJECTED
     
     if (!decision || !['APPROVED', 'REJECTED'].includes(decision)) {
       return res.status(400).json({ success: false, message: 'Decision must be APPROVED or REJECTED' })
@@ -419,20 +422,28 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: `Request is already ${request.status}` })
     }
 
+    const isAdminOrMaster = ['ADMIN', 'MASTER', 'OWNER'].includes(req.user!.role)
+
+    // Self-Approval Guard: Admin/Master ทำเองได้หมด ส่วน role อื่นห้ามอนุมัติคำขอของตัวเอง
+    if (!isAdminOrMaster && request.requester_id === req.user!.userId) {
+      return res.status(403).json({ success: false, message: 'ไม่สามารถอนุมัติคำขอของตนเองได้ (ต้องให้ผู้อนุมัติท่านอื่นเป็นผู้พิจารณา)' })
+    }
+
+    const requestAmount = Number(request.amount) || 0
+
+    // Privilege Escalation Guard: Non-admin จำกัดวงเงินไม่เกิน 5,000 บาท
+    if (!isAdminOrMaster && requestAmount > 5000) {
+      return res.status(403).json({ success: false, message: 'วงเงินคำขอเกินสิทธิ์การอนุมัติ (จำกัดไม่เกิน 5,000 บาท ต้องให้ Admin หรือ Owner อนุมัติ)' })
+    }
+
     // ADMIN/MASTER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน
-    if (!canApproveRequests(tenantId, req.user! as any)) {
+    if (!canApproveRequests(tenantId, req.user! as any, request.module_type, requestAmount)) {
       return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์อนุมัติรายการนี้' })
     }
 
     const now = new Date().toISOString()
-    // BUG เดิม: UI ส่ง level 1 ตายตัว แต่โค้ดรัน action จริงเฉพาะ level 2 → กดอนุมัติแล้ว
-    // คำขอค้าง PENDING ตลอดกาล. ตอนนี้การอนุมัติของผู้มีสิทธิ์ถือเป็นครั้งสุดท้ายเสมอ
-    // (คอลัมน์ approver_2_* ยังอยู่ เผื่อเปิดใช้อนุมัติ 2 ระดับทีหลัง)
-    const approvalLevel: number = 2
 
-    // ยกเลิกบิล POS ต้องเรียก service แบบ async จึงทำก่อนเปิดทรานแซกชัน (db.transaction เป็น sync)
-    // ลำดับนี้ตั้งใจ: ถ้า service พัง คำขอยังเป็น PENDING กดอนุมัติซ้ำได้
-    // (ทั้งคืนสต็อกและกลับรายการบัญชีมี guard กันทำซ้ำในตัวเองอยู่แล้ว)
+    // ยกเลิกบิล POS ต้องเรียก service แบบ async จึงทำก่อนเปิดทรานแซกชัน
     if (decision === 'APPROVED' && request.reference_type === 'pos_running_bills') {
       const posPayload = request.payload ? JSON.parse(request.payload) : null
       if (posPayload) {
@@ -442,50 +453,31 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     }
 
     const transaction = db.transaction(() => {
-      if (approvalLevel === 1) {
-        // Level 1 approval (Department head)
-        db.prepare(`
-          UPDATE approval_requests SET
-            approver_1_id = ?, approver_1_name = ?, approver_1_decision = ?, approver_1_comment = ?, approver_1_at = ?,
-            ${decision === 'REJECTED' ? "status = 'REJECTED'," : ''}
-            updated_at = ?
-          WHERE id = ? AND tenant_id = ?
-        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, now, req.params.id, tenantId)
+      // Atomic status update with status = 'PENDING' to prevent double-approval race conditions
+      const updateResult = db.prepare(`
+        UPDATE approval_requests SET
+          approver_2_id = ?, approver_2_name = ?, approver_2_decision = ?, approver_2_comment = ?, approver_2_at = ?,
+          status = ?,
+          updated_at = ?
+        WHERE id = ? AND tenant_id = ? AND status = 'PENDING'
+      `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id, tenantId)
 
-        // Log
-        db.prepare(`
-          INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role,
-            comment, old_status, new_status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        `).run(generateId(), tenantId, req.params.id, decision, req.user!.userId, req.user!.email, 
-          req.user!.role, comment || '', decision === 'REJECTED' ? 'REJECTED' : 'PENDING', now)
+      if (updateResult.changes === 0) {
+        throw new Error('คำขอนี้ได้รับการตัดสินไปแล้วหรือไม่อยู่ในสถานะ PENDING')
+      }
 
+      // Log
+      db.prepare(`
+        INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role,
+          comment, old_status, new_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+      `).run(generateId(), tenantId, req.params.id, decision, req.user!.userId, req.user!.email,
+        req.user!.role, comment || '', decision, now)
+
+      if (decision === 'APPROVED') {
+        executeApprovedAction(request, req.user!.userId, req.user!.email, now)
       } else {
-        // Level 2 approval (Master approver)
-        db.prepare(`
-          UPDATE approval_requests SET
-            approver_2_id = ?, approver_2_name = ?, approver_2_decision = ?, approver_2_comment = ?, approver_2_at = ?,
-            status = ?,
-            updated_at = ?
-          WHERE id = ? AND tenant_id = ?
-        `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id, tenantId)
-
-        // Log
-        db.prepare(`
-          INSERT INTO approval_logs (id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role,
-            comment, old_status, new_status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        `).run(generateId(), tenantId, req.params.id, decision, req.user!.userId, req.user!.email,
-          req.user!.role, comment || '', decision, now)
-
-        // If approved, execute the action (โหมด "ปลดล็อกแล้วแก้เอง" ถูกถอดออกแล้ว —
-        // ทุกหมวดตอนนี้เป็น draft แบบเดียวกัน: อนุมัติ = ระบบรัน action ให้ทันที)
-        if (decision === 'APPROVED') {
-          executeApprovedAction(request, req.user!.userId, req.user!.email, now)
-        } else {
-          // Rejected - revert reference status
-          revertReferenceStatus(request)
-        }
+        revertReferenceStatus(request)
       }
     })
 

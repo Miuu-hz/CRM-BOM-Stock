@@ -609,11 +609,18 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
         for (const exp of validExpenses) {
           const movementId = generateId()
-          const accId = exp.account_id || defaultExpenseAccountId
+          let accId = defaultExpenseAccountId
+          if (exp.account_id) {
+            const accCheck = db.prepare('SELECT id FROM chart_of_accounts WHERE id = ? AND tenant_id = ?').get(exp.account_id, tenantId)
+            if (accCheck) accId = exp.account_id
+          }
+
           db.prepare(`
             INSERT INTO pos_shift_cash_movements (id, tenant_id, shift_id, type, amount, reason, account_id, created_by, created_at)
             VALUES (?, ?, ?, 'PAID_OUT', ?, ?, ?, ?, ?)
           `).run(movementId, tenantId, id, exp.amount, exp.reason, accId, userId, nowStr)
+
+          console.log(`[SHIFT EXPENSE AUDIT] Shift: ${shift.shift_number}, User: ${userId}, Amount: ${exp.amount}, Reason: ${exp.reason}`)
 
           const desc = `จ่ายออกจากลิ้นชัก กะ ${shift.shift_number} - ${exp.reason}`
           postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, accId, cashAccountId, exp.amount)
@@ -641,6 +648,12 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         finalNotes = notes
           ? `${notes} [ค่าใช้จ่ายก่อนปิดเก๊ะ: ${expenseSummary}]`
           : `[ค่าใช้จ่ายก่อนปิดเก๊ะ: ${expenseSummary}]`
+      }
+
+      if (cashDifference < 0) {
+        const shortageNote = `[รอ Admin อนุมัติตรวจสอบเงินขาด ฿${Math.abs(cashDifference)}]`
+        finalNotes = finalNotes ? `${finalNotes} ${shortageNote}` : shortageNote
+        console.warn(`[SHIFT SHORTAGE AUDIT] Shift ${shift.shift_number} shortage: ฿${Math.abs(cashDifference)} (User: ${userId})`)
       }
 
       const closed = db.prepare(`

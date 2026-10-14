@@ -40,13 +40,22 @@ router.post('/', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const createdBy = req.user!.email
     
-    console.log('Create activity:', { customerId, type, note, tenantId, createdBy })
+    // ponytail: redact customer note to protect customer PII in logs
+    console.log('Create activity:', { customerId, type, note: '[REDACTED]', tenantId, createdBy })
     
     if (!customerId || !type || !note) {
       return res.status(400).json({ 
         success: false, 
         message: 'กรุณากรอกข้อมูลให้ครบ',
-        received: { customerId, type, note }
+        received: { customerId, type, note: '[REDACTED]' }
+      })
+    }
+
+    const VALID_TYPES = ['CALL', 'EMAIL', 'MEETING', 'NOTE']
+    if (!VALID_TYPES.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: `ประเภทกิจกรรมไม่ถูกต้อง ต้องเป็นหนึ่งใน ${VALID_TYPES.join(', ')}`
       })
     }
     

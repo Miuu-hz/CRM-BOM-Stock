@@ -19,13 +19,19 @@ const KDS: React.FC = () => {
   const [tickets, setTickets] = useState<KDSTicket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [soundEnabled, setSoundEnabled] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('kds_sound_enabled') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
   )
   const [isFullscreen, setIsFullscreen] = useState(false)
   const isFirstLoad = useRef(true)
-  const lastCount = useRef(0)
+  const seenTicketIds = useRef<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const toggleFullscreen = () => {
@@ -42,16 +48,27 @@ const KDS: React.FC = () => {
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  const unlockAudio = async () => {
-    if (!soundEnabled) {
+  // Auto-init audio if previously enabled
+  useEffect(() => {
+    if (soundEnabled && !audioRef.current) {
       try {
         const audio = new Audio('/sounds/order-voice.m4a')
         audio.volume = 1.0
         audio.load()
         audioRef.current = audio
-        setSoundEnabled(true)
       } catch {}
     }
+  }, [soundEnabled])
+
+  const unlockAudio = async () => {
+    try {
+      const audio = new Audio('/sounds/order-voice.m4a')
+      audio.volume = 1.0
+      await audio.load()
+      audioRef.current = audio
+      setSoundEnabled(true)
+      localStorage.setItem('kds_sound_enabled', 'true')
+    } catch {}
     const perm = await kdsService.requestNotificationPermission()
     setNotifPermission(perm)
   }
@@ -61,12 +78,15 @@ const KDS: React.FC = () => {
       const data = await kdsService.getTickets()
       setTickets(data)
 
-      const count = data.length
-      if (!isFirstLoad.current && count > lastCount.current) {
-        playNotificationSound()
-        kdsService.notifyNewTickets(count - lastCount.current)
+      const currentIds = new Set(data.map(t => t.id))
+      if (!isFirstLoad.current) {
+        const newTickets = data.filter(t => !seenTicketIds.current.has(t.id))
+        if (newTickets.length > 0) {
+          playNotificationSound()
+          kdsService.notifyNewTickets(newTickets.length)
+        }
       }
-      lastCount.current = count
+      seenTicketIds.current = currentIds
       isFirstLoad.current = false
       setError(null)
     } catch (err) {

@@ -33,7 +33,9 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../services/api'
-import { canViewMenu } from '../../config/menuPermissions'
+import toast from 'react-hot-toast'
+import { canViewMenu, isMenuLocked } from '../../config/menuPermissions'
+import { useSubscription } from '../../contexts/SubscriptionContext'
 
 export type SidebarMode = 'full' | 'rail'
 
@@ -133,6 +135,18 @@ function Sidebar({ mode }: SidebarProps) {
   const [kanbanError, setKanbanError] = useState<string | null>(null)
   const isRail = mode === 'rail'
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MASTER'
+  const { subscription } = useSubscription()
+  const isLocked = (path: string) => isMenuLocked(path, subscription?.features, isMaster)
+
+  const handleLockedClick = (e: React.MouseEvent, path: string, itemLabel: string) => {
+    e.preventDefault()
+    if (isAdmin || isMaster) {
+      toast(`ฟีเจอร์ "${itemLabel}" ต้องอัปเกรดแพ็กเกจเพื่อเปิดใช้งาน`, { icon: '🔒', id: `lock-${path}` })
+      navigate('/settings?tab=subscription')
+    } else {
+      toast.error(`ฟีเจอร์ "${itemLabel}" ล็อกอยู่ กรุณาติดต่อผู้ดูแลระบบเพื่ออัปเกรด`, { id: `lock-${path}` })
+    }
+  }
 
   // One badge per menu path — adding a badge means adding a key here, not
   // another copy of the same <span> in the nav loop below.
@@ -366,7 +380,22 @@ function Sidebar({ mode }: SidebarProps) {
                 sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')
               )
 
+              const allChildrenLocked = item.subMenu.every(sub => isLocked(sub.path))
+
               if (isRail) {
+                if (allChildrenLocked) {
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={(e) => handleLockedClick(e, item.path, label)}
+                      title={`${label} (ล็อก)`}
+                      className="w-full flex justify-center items-center py-3 rounded-lg transition-all text-[var(--fg-4)] hover:bg-[var(--surface-2)] relative"
+                    >
+                      <item.icon className="w-5 h-5 opacity-60" />
+                      <Lock className="w-2.5 h-2.5 text-amber-500 absolute top-2 right-2" />
+                    </button>
+                  )
+                }
                 // Rail: parent icon navigates to first child
                 return (
                   <button
@@ -388,35 +417,72 @@ function Sidebar({ mode }: SidebarProps) {
                 <div key={item.path} className="space-y-1">
                   <div className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl ${isChildActive ? 'text-[var(--primary)] font-semibold' : 'text-[var(--fg-2)]'}`}>
                     <item.icon className={`w-5 h-5 ${isChildActive ? 'text-[var(--primary)]' : 'text-[var(--fg-3)]'}`} />
-                    <div className="flex-1">
-                      <p className="font-semibold text-sm">{label}</p>
-                      {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
+                    <div className="flex-1 flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-sm">{label}</p>
+                        {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
+                      </div>
+                      {allChildrenLocked && (
+                        <span
+                          onClick={(e) => handleLockedClick(e, item.path, label)}
+                          className="cursor-pointer inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                          title="คลิกเพื่ออัปเกรด"
+                        >
+                          <Lock className="w-2.5 h-2.5" />
+                          {isAdmin || isMaster ? 'อัปเกรด' : 'ล็อก'}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="ml-4 pl-4 border-l border-[var(--border)] space-y-1">
-                    {item.subMenu.map((sub) => (
-                      <NavLink
-                        key={sub.path}
-                        to={sub.path}
-                        className={({ isActive }) =>
-                          `flex items-center gap-3 px-4 py-2 rounded-lg transition-all text-sm ${
-                            isActive
-                              ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
-                              : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
-                          }`
-                        }
-                      >
-                        <sub.icon className="w-4 h-4" />
-                        {t(sub.tKey)}
-                      </NavLink>
-                    ))}
+                    {item.subMenu.map((sub) => {
+                      const subLocked = isLocked(sub.path)
+                      return (
+                        <NavLink
+                          key={sub.path}
+                          to={sub.path}
+                          onClick={(e) => {
+                            if (subLocked) handleLockedClick(e, sub.path, t(sub.tKey))
+                          }}
+                          className={({ isActive }) =>
+                            `flex items-center gap-3 px-4 py-2 rounded-lg transition-all text-sm ${
+                              subLocked ? 'opacity-70 hover:opacity-100' : ''
+                            } ${
+                              isActive
+                                ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
+                                : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
+                            }`
+                          }
+                        >
+                          <sub.icon className="w-4 h-4" />
+                          <span className="flex-1">{t(sub.tKey)}</span>
+                          {subLocked && (
+                            <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          )}
+                        </NavLink>
+                      )
+                    })}
                   </div>
                 </div>
               )
             }
 
             // Regular item
+            const itemLocked = isLocked(item.path)
             if (isRail) {
+              if (itemLocked) {
+                return (
+                  <button
+                    key={item.path}
+                    onClick={(e) => handleLockedClick(e, item.path, label)}
+                    title={`${label} (ล็อก)`}
+                    className="w-full flex justify-center items-center py-3 rounded-lg transition-all text-[var(--fg-4)] hover:bg-[var(--surface-2)] relative"
+                  >
+                    <item.icon className="w-5 h-5 opacity-60" />
+                    <Lock className="w-2.5 h-2.5 text-amber-500 absolute top-2 right-2" />
+                  </button>
+                )
+              }
               return (
                 <NavLink
                   key={item.path}
@@ -459,8 +525,13 @@ function Sidebar({ mode }: SidebarProps) {
                 key={item.path}
                 to={item.path}
                 end={item.path === '/'}
+                onClick={(e) => {
+                  if (itemLocked) handleLockedClick(e, item.path, label)
+                }}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all group ${
+                    itemLocked ? 'opacity-80 hover:opacity-100' : ''
+                  } ${
                     isActive
                       ? 'bg-phopy-indigo/10 text-phopy-indigo font-semibold shadow-xs'
                       : 'hover:bg-[var(--surface-2)] text-[var(--fg-2)] hover:text-[var(--fg-1)]'
@@ -473,11 +544,17 @@ function Sidebar({ mode }: SidebarProps) {
                     <div className="flex-1">
                       <p className={`font-semibold text-sm ${isActive ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>
                         {label}
+                        {itemLocked && (
+                          <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none align-middle bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            <Lock className="w-2.5 h-2.5" />
+                            {isAdmin || isMaster ? 'อัปเกรด' : 'ล็อก'}
+                          </span>
+                        )}
                         {item.beta && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none align-middle bg-[var(--warning-soft)] text-warning">Beta</span>}
                       </p>
                       {description && <p className="text-xs text-[var(--fg-4)]">{description}</p>}
                     </div>
-                    {(badgeCounts[item.path] ?? 0) > 0 && (
+                    {(badgeCounts[item.path] ?? 0) > 0 && !itemLocked && (
                       <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none flex-shrink-0">
                         {badgeCounts[item.path]}
                       </span>

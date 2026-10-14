@@ -42,14 +42,19 @@ function resolveTenant(key: string): TenantContext | null {
   return csRow ? { tenantId: csRow.tenant_id, userId: 'master' } : null
 }
 
-function extractKey(req: Request): string | null {
-  const fromQuery = req.query.key as string | undefined
-  if (fromQuery) return fromQuery.trim()
+export function extractKey(req: Request): string | null {
   const auth = req.headers.authorization
   if (auth) {
     const match = auth.match(/^Bearer\s+(.+)$/i)
     if (match) return match[1].trim()
     return auth.trim()
+  }
+  const fromQuery = req.query.key as string | undefined
+  if (fromQuery) {
+    console.warn(
+      `[mcp] Notice: API key passed via query parameter (?key=...) on ${req.method} ${req.path}. Recommend migrating to Authorization: Bearer <key> header.`
+    )
+    return fromQuery.trim()
   }
   return null
 }

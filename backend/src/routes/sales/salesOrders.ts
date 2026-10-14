@@ -82,6 +82,13 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
 
+    if (quotationId) {
+      const qt = db.prepare('SELECT id FROM quotations WHERE id = ? AND tenant_id = ?').get(quotationId, tenantId)
+      if (!qt) {
+        return res.status(400).json({ success: false, message: 'ใบเสนอราคาไม่ถูกต้องหรือไม่ได้อยู่ในกิจการนี้' })
+      }
+    }
+
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
     if ((Number(taxRate) || 0) > 0 && !isVatRegistered(tenantId)) {
       return res.status(400).json({ success: false, code: 'VAT_NOT_REGISTERED', message: 'กิจการยังไม่จดทะเบียน VAT — ขายแบบมี VAT ไม่ได้ (เปลี่ยนได้ที่ ตั้งค่า > ข้อมูลบริษัท)' })

@@ -370,12 +370,10 @@ export default function Cashier() {
       const res = await posBillService.getBill(billId)
       if (res.success) {
         setCurrentBill(res.data)
-        // บิลที่ไม่ใช่ OPEN (PAID/CANCELLED) ห้ามแก้ยอด — ล้างส่วนลด/ค่าบริการเสริมที่ค้างจากบิลก่อนหน้า
-        if (res.data.status && res.data.status !== 'OPEN') {
-          setDiscount({ type: 'pct', value: 0 })
-          setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 })
-          setExpandedRow(null)
-        }
+        // ล้างส่วนลดและค่าบริการเสริมที่ค้างจากบิลก่อนหน้าทุกครั้งที่สลับบิล ป้องกันส่วนลดรั่วไหลข้ามบิล
+        setDiscount({ type: 'pct', value: 0 })
+        setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 })
+        setExpandedRow(null)
         setView('menu')
       }
     } catch (error) {
