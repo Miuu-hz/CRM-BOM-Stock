@@ -722,7 +722,7 @@ router.post('/bills/:id/cancel', async (req, res) => {
 
     // Invoice Guard: บิลที่ออกใบกำกับภาษีแล้ว ต้องยกเลิกหรือออกใบลดหนี้ผ่านระบบภาษีก่อน
     const invoice = db.prepare(`
-      SELECT id, invoice_number FROM invoices WHERE reference_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+      SELECT id, invoice_number FROM invoices WHERE pos_bill_id = ? AND tenant_id = ? AND status != 'CANCELLED'
     `).get(id, tenantId) as any
     if (invoice) {
       return res.status(400).json({ success: false, message: `บิลนี้ออกใบกำกับภาษีแล้ว (${invoice.invoice_number}) ต้องยกเลิกหรือออกใบลดหนี้ผ่านระบบภาษีก่อน` })
