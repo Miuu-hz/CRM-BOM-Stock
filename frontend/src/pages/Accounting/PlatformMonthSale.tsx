@@ -507,12 +507,14 @@ function PostingPanel({ monthId, status, onChanged }: { monthId: string; status:
         ) : (
           <div className="space-y-2">
             <div className="flex items-center gap-4 text-xs text-[var(--fg-3)] flex-wrap">
-              <span>VAT: {preview.vatRegistered ? 'จดทะเบียนแล้ว' : 'ไม่ได้จดทะเบียน'}</span>
-              <span>1181 ในบัญชี: {fmtSigned(preview.ledgerBalance1181)}</span>
+              <span className="font-medium">
+                {preview.vatRegistered ? 'ลงบัญชีแบบจด VAT (แยกภาษีซื้อ-ขาย)' : 'ลงบัญชีแบบไม่จด VAT (ยอดเต็ม ไม่แยกภาษี)'}
+              </span>
+              <span>1181 ในบัญชี (เฉพาะร้านนี้): {fmtSigned(preview.ledgerBalance1181)}</span>
               <span>ยอดกระเป๋าแพลตฟอร์ม (closing): {fmtSigned(preview.walletClosing)}</span>
               <span className={Math.abs(preview.difference) > 1 ? 'text-warning font-medium' : ''}>
                 ส่วนต่าง: {fmtSigned(preview.difference)}
-                {Math.abs(preview.difference) > 1 ? ' — ยอดยกมาก่อนใช้ระบบ ให้ผู้ทำบัญชีลงปรับเอง' : ''}
+                {Math.abs(preview.difference) > 1 ? ' — ยอดยกมาลงอัตโนมัติแล้ว ไม่ต้องปรับเอง ตรวจไฟล์ income/balance/adjustments ของรอบนี้อีกครั้ง' : ''}
               </span>
             </div>
 

@@ -1,9 +1,10 @@
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { PlatformMonthError } from './platformMonth.service'
-import { findPlatformAlias, upsertPlatformAlias, deletePlatformAlias, StockItemRefError } from './stockItem.service'
-import { resolveMenuBomId, getBomIngredientsRecursive } from './pos-stock.service'
-import { getCostBasis } from './stockCostBasis.service'
+import { findPlatformAlias, upsertPlatformAlias, deletePlatformAlias, StockItemRefError, isServiceItem } from './stockItem.service'
+import { resolveMenuBomId } from './pos-stock.service'
+import { autoUnpackIfNeeded } from './unitConversion.service'
+import { roundQty } from '../utils/qty'
 import { ACC } from '../config/accountCodes'
 
 // ============================================================
@@ -31,15 +32,19 @@ function getMonthRow(tenantId: string, monthId: string): any {
  * บวกสินค้าที่ไม่มีตัวเลือกเลย (parent ที่ขายได้ แต่ไม่มีแถว variant ของสินค้านั้นในรอบเดียวกัน)
  */
 function neededRows(monthId: string): any[] {
+  // ponytail: ใช้ NOT EXISTS (correlated) แทน NOT IN — NOT IN กับเซ็ตย่อยที่มี NULL (variant
+  // บางแถว product_id เป็น NULL) จะกลาย NULL ทั้งนิพจน์ตาม 3-value logic ของ SQL ทำ parent
+  // ที่ไม่มีตัวเลือกทุกตัวหลุดจากรายการเงียบๆ ไม่ใช่แค่ตัวที่ product_id ชนกับ NULL
   return db.prepare(`
-    SELECT * FROM platform_month_products
-    WHERE month_id = ? AND (
-      (level = 'variant' AND qty_confirmed > 0)
-      OR (level = 'parent' AND qty_confirmed > 0 AND product_id NOT IN (
-        SELECT DISTINCT product_id FROM platform_month_products WHERE month_id = ? AND level = 'variant'
+    SELECT * FROM platform_month_products p
+    WHERE p.month_id = ? AND (
+      (p.level = 'variant' AND p.qty_confirmed > 0)
+      OR (p.level = 'parent' AND p.qty_confirmed > 0 AND NOT EXISTS (
+        SELECT 1 FROM platform_month_products v
+        WHERE v.month_id = p.month_id AND v.level = 'variant' AND v.product_id = p.product_id
       ))
     )
-  `).all(monthId, monthId) as any[]
+  `).all(monthId) as any[]
 }
 
 export interface MappingRow {
@@ -220,7 +225,9 @@ const REF_PREFIX = 'PLATFORM_MONTH:'
 
 export function confirmSale(tenantId: string, monthId: string, userId: string): { cogsAmount: number; breakdown: CogsLine[] } {
   const month = getMonthRow(tenantId, monthId)
-  if (month.status === 'SALE_CONFIRMED') throw new PlatformMonthError('ยืนยันการขายของรอบนี้ไปแล้ว')
+  // #1: เดิมเช็คแค่ === 'SALE_CONFIRMED' ไม่กัน POSTED — ยืนยันซ้ำหลังโพสต์แล้วตัดสต็อกซ้ำ
+  // + ย้อนสถานะกลับ SALE_CONFIRMED ทั้งที่ posted_at/journal_ids ยังอยู่ (JV ลอยค้าง GL)
+  if (month.status !== 'COLLECTING') throw new PlatformMonthError(`ยืนยันการขายไม่ได้ — รอบนี้อยู่ในสถานะ ${month.status} แล้ว`)
 
   const rows = neededRows(monthId)
   if (rows.length === 0) throw new PlatformMonthError('รอบนี้ไม่มีรายการขายที่ต้องตัดสต็อก')
@@ -245,37 +252,61 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
   const allowNegativeStock = !!setting && setting.allow_negative_stock === 1
 
   return db.transaction(() => {
-    // แตก BOM แล้วรวมตัดสต็อกจริงต่อ stock item (ของเดียวกันโผล่หลายรายการ → รวมเป็นยอดเดียว)
+    // #10: ไม่แตก BOM แล้ว — ขายผ่านแพลตฟอร์มคือใบสั่งขายทางหนึ่ง (platform sale ≈ SO) และ
+    // deductStockForSO (routes/sales/shared.ts) ก็ไม่แตก BOM เหมือนกัน ตัดสต็อกตัวที่ผูกไว้
+    // ตรงๆ เสมอ — เทแนนต์นี้ผลิตของสำเร็จเข้าสต็อกผ่าน WO ก่อนขาย แตก BOM ตรงนี้จะตัดวัตถุดิบ
+    // ซ้ำสอง (ของสำเร็จถูกตัดออกจาก WO ไปแล้วตอนผลิต) โดยสต็อกของสำเร็จที่ขายจริงไม่ลดเลย
+    // (#4 — หน่วยสูตร/หน่วยสต็อกไม่ตรงกันตอนแตก BOM — จึงตกไปด้วยเพราะไม่มีการแตก BOM ให้แปลงหน่วยแล้ว)
+    // ของเดียวกันโผล่หลายรายการ (คนละ source_ref ชี้ของตัวเดียวกัน) → รวมเป็นยอดเดียว
     const deduction = new Map<string, number>()
     for (const line of lines) {
       const qty = line.qty * (line.alias!.factor || 1)
       if (qty <= 0) continue
-      const bomId = resolveMenuBomId(tenantId, null, line.alias!.stockItemId)
-      if (bomId) {
-        const ingredients = getBomIngredientsRecursive(bomId, tenantId, 1)
-        for (const ing of ingredients) {
-          const used = Number(ing.quantity_used) * qty
-          deduction.set(ing.stock_item_id, (deduction.get(ing.stock_item_id) || 0) + used)
-        }
-      } else {
-        deduction.set(line.alias!.stockItemId, (deduction.get(line.alias!.stockItemId) || 0) + qty)
-      }
+      deduction.set(line.alias!.stockItemId, (deduction.get(line.alias!.stockItemId) || 0) + qty)
     }
 
     const now = new Date().toISOString()
+    // #8: created_at เดิมเป็นเวลาคลิก (now) ไม่ใช่วันที่ในรอบ — ใบส่งของ/รายงานสต็อกรายเดือนนับ
+    // เดือนผิดถ้ากดยืนยันข้ามเดือน ใช้ปลายรอบ (period_end) แทนเหมือนใบส่งของอื่นๆ ที่ลงวันที่เอกสาร
+    const createdAt = month.period_end ? `${month.period_end}T23:59:59.999Z` : now
     const reference = `${REF_PREFIX}${monthId}`
     const breakdown: CogsLine[] = []
     const shortfalls: string[] = []
 
     for (const [stockItemId, qty] of deduction) {
-      const item = db.prepare('SELECT id, name, category, quantity, base_unit, unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
+      const item = db.prepare('SELECT id, name, category, quantity, sealed_qty, base_unit, unit, display_unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
       if (!item) { shortfalls.push(`ไม่พบสินค้า ${stockItemId} ในคลัง`); continue }
+      // #8: ค่าขนส่ง/ค่าแพ็ค (SERVICE) ไม่มีของให้ตัด — เหมือน deductStockForSO/POS
+      if (isServiceItem(item)) continue
+
       const roundedQty = Math.round(qty * 10000) / 10000
-      if (item.quantity < roundedQty && !allowNegativeStock) {
-        shortfalls.push(`${item.name}: มี ${item.quantity} ต้องตัด ${roundedQty} ${item.base_unit || item.unit}`)
+
+      // #8: แกะแพ็คอัตโนมัติถ้าของพอดีรวมที่ปิดผนึกอยู่ แบบเดียวกับ deductStockForSO
+      let quantity = item.quantity
+      let sealedQty = item.sealed_qty
+      if (quantity < roundedQty && (sealedQty ?? 0) > 0) {
+        const unpack = autoUnpackIfNeeded({ ...item, quantity, sealed_qty: sealedQty }, roundedQty, tenantId)
+        if (unpack && unpack.unpackedPacks > 0) {
+          const released = roundQty(unpack.unpackedPacks * unpack.packFactor)
+          db.prepare('UPDATE stock_items SET quantity = ?, sealed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+            .run(unpack.quantity, unpack.sealed_qty, now, stockItemId, tenantId)
+          db.prepare(`
+            INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+            VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)
+          `).run(id25(), tenantId, stockItemId, released, item.display_unit || null, unpack.unpackedPacks, reference,
+            `แกะอัตโนมัติ (รอบ ${month.platform} ${month.month}) ${unpack.unpackedPacks} ${item.display_unit || ''} → +${released} ${item.base_unit || item.unit}`, now, userId)
+          quantity = unpack.quantity
+          sealedQty = unpack.sealed_qty
+        }
+      }
+
+      if (quantity < roundedQty && !allowNegativeStock) {
+        shortfalls.push(`${item.name}: มี ${quantity} ต้องตัด ${roundedQty} ${item.base_unit || item.unit}`)
         continue
       }
-      const unitCost = getCostBasis(tenantId, stockItemId).weightedAvg || Number(item.unit_cost) || 0
+      // #9: ใช้ stock_items.unit_cost เหมือน POS (deductStockOnPayment)/dashboard — ไม่ใช่
+      // getCostBasis().weightedAvg (เฉลี่ยถ่วงน้ำหนักตลอดชีพจากประวัติรับของ) ซึ่งเป็นคนละตัวเลข
+      const unitCost = Number(item.unit_cost) || 0
       const amount = Math.round(roundedQty * unitCost * 100) / 100
       const inventoryAccount = ['FINISHED', 'WIP'].includes(String(item.category || '').toUpperCase()) ? ACC.INVENTORY : ACC.RAW_MATERIAL
 
@@ -284,7 +315,7 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
         INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
         VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
       `).run(id25(), tenantId, stockItemId, roundedQty, item.base_unit || item.unit, roundedQty, reference,
-        `ยืนยันการขายรอบ ${month.platform} ${month.month}`, now, userId)
+        `ยืนยันการขายรอบ ${month.platform} ${month.month}`, createdAt, userId)
 
       breakdown.push({ stockItemId, stockItemName: item.name, qty: roundedQty, unitCost, amount, inventoryAccount })
     }
@@ -294,10 +325,14 @@ export function confirmSale(tenantId: string, monthId: string, userId: string): 
     }
 
     const cogsAmount = Math.round(breakdown.reduce((s, b) => s + b.amount, 0) * 100) / 100
-    db.prepare(`
+    // #1: ทำ transition สถานะเป็นเงื่อนไขของ UPDATE เดียวกัน (WHERE status = 'COLLECTING') แล้วเช็ค
+    // changes — ถ้ามีคำขออื่นแทรกเปลี่ยนสถานะไปก่อนแล้ว (race) แถวนี้จะไม่ถูกแก้และ throw ทำให้
+    // ทรานแซกชันทั้งก้อน (รวมที่ตัดสต็อกไปแล้วข้างบน) rollback หมด ไม่มีสต็อกถูกตัดลอยค้าง
+    const upd = db.prepare(`
       UPDATE platform_months SET status = 'SALE_CONFIRMED', cogs_amount = ?, cogs_breakdown = ?,
-        sale_confirmed_at = ?, sale_confirmed_by = ?, updated_at = ? WHERE id = ?
+        sale_confirmed_at = ?, sale_confirmed_by = ?, updated_at = ? WHERE id = ? AND status = 'COLLECTING'
     `).run(cogsAmount, JSON.stringify(breakdown), now, userId, now, monthId)
+    if (upd.changes !== 1) throw new PlatformMonthError('ยืนยันการขายไม่ได้ — รอบนี้ถูกยืนยัน/เปลี่ยนสถานะไปแล้วจากคำขออื่นพร้อมกัน')
 
     return { cogsAmount, breakdown }
   })()
@@ -331,9 +366,13 @@ export function cancelSale(tenantId: string, monthId: string, userId: string): v
       `).run(id25(), tenantId, m.stock_item_id, m.quantity, m.movement_unit, m.movement_quantity, reference,
         `ยกเลิกยืนยันการขาย คืนสต็อก (${m.id})`, now, userId)
     }
-    db.prepare(`
+    // #1: การ์ดเดียวกัน — อะตอมมิกด้วย WHERE เดียว + เช็ค posted_at/journal_ids ว่างด้วย (ไม่ใช่เชื่อ
+    // แค่ status) กันพลาดถ้าบั๊กอื่นในอนาคตทำให้ status ย้อนมาเป็น SALE_CONFIRMED ทั้งที่โพสต์ไปแล้ว
+    const upd = db.prepare(`
       UPDATE platform_months SET status = 'COLLECTING', cogs_amount = 0, cogs_breakdown = NULL,
-        sale_confirmed_at = NULL, sale_confirmed_by = NULL, updated_at = ? WHERE id = ?
+        sale_confirmed_at = NULL, sale_confirmed_by = NULL, updated_at = ?
+      WHERE id = ? AND status = 'SALE_CONFIRMED' AND (posted_at IS NULL OR posted_at = '') AND (journal_ids IS NULL OR journal_ids = '')
     `).run(now, monthId)
+    if (upd.changes !== 1) throw new PlatformMonthError('ยกเลิกการยืนยันการขายไม่ได้ — รอบนี้ไม่ได้อยู่ในสถานะยืนยันการขาย หรือมีการลงบัญชีค้างอยู่')
   })()
 }

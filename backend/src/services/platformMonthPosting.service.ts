@@ -246,19 +246,22 @@ function buildAdjustPlan(tenantId: string, month: any, income: IncomePayload, da
   const adj = income.adjustments
   if (!adj || r2(adj.total) === 0) return null
 
+  // ทิศดูจากเครื่องหมายจริงของแต่ละก้อน (กติกาเดียวกับทุกฟิลด์ใน income: ลบ = เงินออกจากกระเป๋า Shopee,
+  // บวก = เงินเข้า) ไม่เดาทิศจากชื่อฟิลด์ — เดิม refund/marketing เข้า Dr (ค่าใช้จ่าย) เสมอด้วย abs() ทำให้
+  // ถ้าค่าจริงเป็นบวก (เช่น Shopee ชดเชยเงินให้ ไม่ใช่ร้านเสียค่าใช้จ่าย) กลับทิศผิด — เคสจริง: marketing=+59
+  // (ค่าชดเชย) ถูกบันทึกเป็นค่าใช้จ่าย ทำให้ 1181 เพี้ยนไป 118 (2 เท่าของยอดจริง) ทั้งที่ทุกสมการ checks ผ่าน
   const lines: PlanLine[] = []
-  const refund = abs2(adj.refund_after_complete || 0)
-  if (refund > 0) lines.push(ln(ACC.SALES_RETURN, 'คืนเงินหลังจบรายการ (ปรับปรุง)', refund, 0))
+  const addAdj = (amount: number, accountCode: string, label: string) => {
+    const amt = r2(amount)
+    if (amt === 0) return
+    if (amt < 0) lines.push(ln(accountCode, label, -amt, 0)) // เงินออก = Dr ค่าใช้จ่าย
+    else lines.push(ln(accountCode, label, 0, amt)) // เงินเข้า = Cr (ลดค่าใช้จ่าย/รายได้)
+  }
 
-  const marketing = abs2(adj.marketing || 0)
-  if (marketing > 0) lines.push(ln(resolveFeeMapping(tenantId, 'AFFILIATE').accountCode, 'ค่าใช้จ่ายการตลาด (ปรับปรุง)', marketing, 0))
-
-  const shippingClaim = abs2(adj.shipping_claim || 0)
-  if (shippingClaim > 0) lines.push(ln(resolveFeeMapping(tenantId, 'SHIPPING').accountCode, 'เคลมค่าขนส่งคืน (ปรับปรุง ลดค่าใช้จ่าย)', 0, shippingClaim))
-
-  const other = r2(adj.other || 0)
-  if (other > 0) lines.push(ln(ACC.OTHER_EXPENSE, 'ปรับปรุงอื่น', other, 0))
-  else if (other < 0) lines.push(ln(ACC.OTHER_EXPENSE, 'ปรับปรุงอื่น', 0, -other))
+  addAdj(adj.refund_after_complete || 0, ACC.SALES_RETURN, 'คืนเงินหลังจบรายการ (ปรับปรุง)')
+  addAdj(adj.marketing || 0, resolveFeeMapping(tenantId, 'AFFILIATE').accountCode, 'ค่าใช้จ่ายการตลาด (ปรับปรุง)')
+  addAdj(adj.shipping_claim || 0, resolveFeeMapping(tenantId, 'SHIPPING').accountCode, 'เคลมค่าขนส่งคืน (ปรับปรุง)')
+  addAdj(adj.other || 0, ACC.OTHER_EXPENSE, 'ปรับปรุงอื่น')
 
   if (lines.length === 0) return null
 
@@ -288,12 +291,62 @@ function buildPayoutPlans(month: any, balance: BalancePayload): JournalPlan[] {
 
 // ── JV ยอดยกมา — เฉพาะรอบแรกที่ลงบัญชีของร้านนี้เท่านั้น (เงินที่ Shopee เป็นหนี้ร้านอยู่ก่อนวันที่
 // เริ่มใช้ระบบ ไม่มีเอกสารต้นทางอื่นมายัน 1181 จึงต้องลงเองครั้งเดียวตรงนี้) ────────────────────
-function buildOpeningPlan(tenantId: string, month: any, balance: BalancePayload, dateStr: string): JournalPlan | null {
-  const hasEarlierPosted = db.prepare(`
-    SELECT 1 FROM platform_months WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND status = 'POSTED' AND month < ?
-  `).get(tenantId, month.platform, month.shop_key, month.month)
-  if (hasEarlierPosted) return null
+//
+// กติกาเดิม (hasEarlierPosted = "มีเดือนก่อนหน้า POSTED ไหม") พังเมื่อ unpost แล้ว post เดือนถัดไปก่อน:
+// post ต.ค. → unpost ต.ค. → post พ.ย. (ไม่มีเดือนก่อนหน้า POSTED → ได้ opening ของตัวเอง) → post ต.ค. ซ้ำ
+// (ก็ไม่มีเดือนก่อนหน้า ต.ค. POSTED เหมือนกัน → ได้ opening อีกใบ) → เกิด OPENING 2 ใบซ้อนกัน 1181 เพี้ยน
+// แก้: ถ้าร้านนี้มีเดือนอื่น POSTED อยู่แล้ว เดือนนี้ต้องต่อเนื่องจากเดือนก่อน (ไม่ลงยอดยกมา) — ดู resolveOpeningDecision
+// (ไม่ใช้ธง "เดือนไหนลง opening" เพราะเดือนแรกที่ยอดยกมา = 0 ไม่มี JV opening → เดือนถัดไปจะลงยอดยกมาซ้ำ)
+interface OpeningDecision { shouldPost: boolean; blockedReason: string | null }
 
+function hasOtherPostedMonth(tenantId: string, platform: string, shopKey: string, excludeMonthId: string): boolean {
+  const row = db.prepare(`
+    SELECT 1 FROM platform_months
+    WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND status = 'POSTED' AND id != ?
+  `).get(tenantId, platform, shopKey, excludeMonthId)
+  return !!row
+}
+
+function getAdjacentMonthRow(tenantId: string, platform: string, shopKey: string, month: string, dir: 1 | -1): any {
+  const op = dir === -1 ? '<' : '>'
+  const order = dir === -1 ? 'DESC' : 'ASC'
+  return db.prepare(`
+    SELECT * FROM platform_months WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND month ${op} ?
+    ORDER BY month ${order} LIMIT 1
+  `).get(tenantId, platform, shopKey, month)
+}
+
+/** เคส a: ไม่มี OPENING JV ที่ active อยู่ของร้านนี้เลย → เดือนนี้ลง opening ของตัวเองได้
+ *  เคส b: มีแล้ว (อยู่เดือนอื่น) → เดือนนี้ต้องต่อเนื่อง (เดือนก่อนหน้า POSTED แล้ว + ยอดปิดของมันตรงกับ
+ *  ยอดยกมาของเดือนนี้ ±0.01) ไม่งั้นปฏิเสธด้วยข้อความอธิบาย — ดู finding #2 */
+function resolveOpeningDecision(tenantId: string, month: any, balance: BalancePayload): OpeningDecision {
+  if (!hasOtherPostedMonth(tenantId, month.platform, month.shop_key, month.id)) return { shouldPost: true, blockedReason: null }
+
+  // แทรกลงเดือนที่อยู่ก่อนเดือนที่ POSTED แล้ว → ยอดยกมาของเดือนถัดไปถูกนับไปแล้ว ลงซ้ำ 1181 เพี้ยน
+  const next = getAdjacentMonthRow(tenantId, month.platform, month.shop_key, month.month, 1)
+  if (next && next.status === 'POSTED') {
+    return { shouldPost: false, blockedReason: `ต้องยกเลิกการลงบัญชีเดือน ${next.month} ก่อน — ลงบัญชีได้เฉพาะต่อจากเดือนล่าสุด` }
+  }
+
+  const prev = getAdjacentMonthRow(tenantId, month.platform, month.shop_key, month.month, -1)
+  if (!prev || prev.status !== 'POSTED') {
+    return { shouldPost: false, blockedReason: 'ต้องลงบัญชีเดือนก่อนหน้าก่อน (ยอดยกมาของเดือนนี้ต่อเนื่องจากยอดปิดเดือนก่อน)' }
+  }
+  let prevBalance: BalancePayload | null = null
+  try { prevBalance = prev.balance_json ? JSON.parse(prev.balance_json) : null } catch { prevBalance = null }
+  const prevClosing = prevBalance ? r2(prevBalance.closing) : NaN
+  const thisOpening = r2(balance.opening)
+  if (!Number.isFinite(prevClosing) || Math.abs(prevClosing - thisOpening) > 0.01) {
+    return {
+      shouldPost: false,
+      blockedReason: `ยอดยกมาไม่ตรงกับยอดปิดเดือนก่อน (เดือนก่อนปิด ${prevClosing} แต่เดือนนี้ยอดยกมา ${thisOpening})`,
+    }
+  }
+  return { shouldPost: false, blockedReason: null }
+}
+
+function buildOpeningPlan(month: any, balance: BalancePayload, dateStr: string, shouldPost: boolean): JournalPlan | null {
+  if (!shouldPost) return null
   const opening = r2(balance.opening)
   if (!(opening > 0)) return null
 
@@ -347,6 +400,27 @@ function withAccountNames(tenantId: string, plan: JournalPlan | null): JournalPl
   return { ...plan, lines: plan.lines.map((l) => ({ ...l, name: accountDisplayName(tenantId, l.code) })) }
 }
 
+/** ยอดเคลื่อนไหวสะสมของ 1181 เฉพาะ JV ที่มาจากเดือนของร้านนี้ (ไม่ปนร้าน/แพลตฟอร์มอื่นใน tenant เดียวกัน)
+ *  — referenceId ของทุก JV ในโมดูลนี้ขึ้นต้นด้วย monthId เสมอ (ดู postMonth/unpostMonth) ใช้ LIKE ไล่ทุกเดือน
+ *  ของร้านนี้แทนการกรองด้วยวันที่ (period_end อาจไม่ตรงลำดับการโพสต์จริง) — ตัวเลือกที่ง่ายและถูกที่สุด */
+function shop1181Balance(tenantId: string, platform: string, shopKey: string): number {
+  const monthIds = (
+    db.prepare(`SELECT id FROM platform_months WHERE tenant_id = ? AND platform = ? AND shop_key = ?`).all(tenantId, platform, shopKey) as any[]
+  ).map((r) => r.id)
+  if (monthIds.length === 0) return 0
+
+  const whereLike = monthIds.map(() => 'e.reference_id LIKE ?').join(' OR ')
+  const likeParams = monthIds.map((id) => `${id}:%`)
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0) AS bal
+    FROM journal_lines l
+    JOIN journal_entries e ON l.journal_entry_id = e.id
+    JOIN accounts a ON l.account_id = a.id
+    WHERE e.tenant_id = ? AND a.code = ? AND (${whereLike})
+  `).get(tenantId, ACC.PLATFORM_CLEARING, ...likeParams) as any
+  return r2(row?.bal || 0)
+}
+
 export function previewPosting(tenantId: string, monthId: string): PostingPreviewResult {
   const month = getMonthRow(tenantId, monthId)
   const { income, balance } = parseIncomeBalance(month)
@@ -355,7 +429,8 @@ export function previewPosting(tenantId: string, monthId: string): PostingPrevie
   const vatOn = isVatRegistered(tenantId)
   const dateStr = income.period_end || month.period_end || new Date().toISOString().substring(0, 10)
 
-  const opening = buildOpeningPlan(tenantId, month, balance, balance.period_start || dateStr)
+  const openingDecision = resolveOpeningDecision(tenantId, month, balance)
+  const opening = buildOpeningPlan(month, balance, balance.period_start || dateStr, openingDecision.shouldPost)
   const sales = buildSalesPlan(month, income, vatOn, dateStr)
   const shipping = buildShippingPlan(tenantId, month, income, vatOn, dateStr)
   const cogs = buildCogsPlan(month, dateStr)
@@ -363,14 +438,9 @@ export function previewPosting(tenantId: string, monthId: string): PostingPrevie
   const adjust = buildAdjustPlan(tenantId, month, income, dateStr)
   const payouts = buildPayoutPlans(month, balance)
 
-  const ledger = db.prepare(`
-    SELECT COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0) AS bal
-    FROM journal_lines l
-    JOIN journal_entries e ON l.journal_entry_id = e.id
-    JOIN accounts a ON l.account_id = a.id
-    WHERE e.tenant_id = ? AND a.code = ?
-  `).get(tenantId, ACC.PLATFORM_CLEARING) as any
-  const ledgerBalance1181 = r2(ledger?.bal || 0)
+  // เดิม query ข้ามทั้ง tenant (ทุกร้าน/ทุกแพลตฟอร์ม) มาเทียบกับ closing ของร้านเดียว — ถ้า tenant มี
+  // มากกว่า 1 ร้าน diff ที่โชว์ไม่มีความหมายเลย (finding #14) แก้ให้กรองเฉพาะ JV ของเดือนที่เป็นร้านนี้
+  const ledgerBalance1181 = shop1181Balance(tenantId, month.platform, month.shop_key)
   const walletClosing = r2(balance.closing)
 
   return {
@@ -413,7 +483,9 @@ export function postMonth(tenantId: string, monthId: string, userId: string): { 
   const closed = closedPeriodLabel(tenantId, dateStr)
   if (closed) throw new PlatformMonthError(`งวด ${closed} ปิดแล้ว ลงบัญชีรอบนี้ไม่ได้`)
 
-  const opening = buildOpeningPlan(tenantId, month, balance, balance.period_start || dateStr)
+  const openingDecision = resolveOpeningDecision(tenantId, month, balance)
+  if (openingDecision.blockedReason) throw new PlatformMonthError(openingDecision.blockedReason)
+  const opening = buildOpeningPlan(month, balance, balance.period_start || dateStr, openingDecision.shouldPost)
   const sales = buildSalesPlan(month, income, vatOn, dateStr)
   const shipping = buildShippingPlan(tenantId, month, income, vatOn, dateStr)
   const cogs = buildCogsPlan(month, dateStr)
@@ -426,7 +498,8 @@ export function postMonth(tenantId: string, monthId: string, userId: string): { 
     // token กันชนกันของ referenceId ข้ามรอบ post→unpost→post ซ้ำบนเดือนเดียวกัน (ดูหมายเหตุที่ unpostMonth)
     const token = now
     const journalIds: string[] = []
-    const post = (p: JournalPlan | null) => {
+    let openingJournalId: string | null = null
+    const post = (p: JournalPlan | null, isOpening = false) => {
       if (!p) return
       const id = postJournal({
         tenantId,
@@ -439,15 +512,38 @@ export function postMonth(tenantId: string, monthId: string, userId: string): { 
         lines: p.lines.map((l) => ({ code: l.code, description: l.description, debit: l.debit, credit: l.credit })),
       })
       journalIds.push(id)
+      if (isOpening) openingJournalId = id
     }
 
-    post(opening)
+    post(opening, true)
     post(sales)
     post(shipping)
     post(cogs)
     post(fees)
     post(adjust)
-    payouts.forEach(post)
+    payouts.forEach((p) => post(p))
+
+    // การ์ดท้ายสุด (finding #5): ยอดเคลื่อนไหว 1181 ของ JV รอบนี้ (ไม่รวม opening — opening คือยอดสะสม
+    // ก่อนระบบ ไม่ใช่ความเคลื่อนไหวของรอบนี้) ต้องเท่ากับ closing-opening ของไฟล์ balance เป๊ะ ถ้าไม่ตรง
+    // แปลว่า JV ที่สร้างพลาดสมการ (เช่นบั๊กเดาทิศเครื่องหมาย) ทั้งที่ checks ของไฟล์ผ่านหมด — throw ย้อน
+    // ทั้งทรานแซกชันกันลงบัญชีผิดเงียบๆ
+    const nonOpeningIds = journalIds.filter((id) => id !== openingJournalId)
+    let movement = 0
+    if (nonOpeningIds.length > 0) {
+      const placeholders = nonOpeningIds.map(() => '?').join(',')
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0) AS mv
+        FROM journal_lines l JOIN accounts a ON l.account_id = a.id
+        WHERE a.tenant_id = ? AND a.code = ? AND l.journal_entry_id IN (${placeholders})
+      `).get(tenantId, ACC.PLATFORM_CLEARING, ...nonOpeningIds) as any
+      movement = r2(row?.mv || 0)
+    }
+    const expectedMovement = r2(balance.closing - balance.opening)
+    if (Math.abs(movement - expectedMovement) > 1) {
+      throw new PlatformMonthError(
+        `ลงบัญชีไม่สำเร็จ: ยอดเคลื่อนไหว 1181 ของรอบนี้ (${movement}) ไม่ตรงกับ closing-opening ของไฟล์ balance (${expectedMovement}) — ตรวจไฟล์ income/balance/adjustments อีกครั้ง`
+      )
+    }
 
     db.prepare(`
       UPDATE platform_months SET status = 'POSTED', journal_ids = ?, posted_at = ?, posted_by = ?, updated_at = ? WHERE id = ?
@@ -472,6 +568,13 @@ const FIXED_REFERENCE_TYPES = ['PLATFORM_MONTH_OPENING', 'PLATFORM_MONTH_SALES',
 export function unpostMonth(tenantId: string, monthId: string, userId: string): void {
   const month = getMonthRow(tenantId, monthId)
   if (month.status !== 'POSTED') throw new PlatformMonthError('รอบนี้ยังไม่ได้ลงบัญชี')
+
+  // ปิดช่องให้ unpost เดือนเก่าทิ้งเดือนใหม่ที่ POSTED ต่อเนื่องไว้ข้างบน (finding #2) — ต้อง unpost
+  // จากเดือนล่าสุดของร้านนี้ไล่ย้อนลงมาเสมอ ไม่งั้นเดือนถัดไปจะเหลือ opening ที่ไม่มีเดือนต้นทางรองรับ
+  const next = getAdjacentMonthRow(tenantId, month.platform, month.shop_key, month.month, 1)
+  if (next && next.status === 'POSTED') {
+    throw new PlatformMonthError(`ต้องยกเลิกการลงบัญชีเดือน ${next.month} (เดือนถัดไปของร้านนี้) ก่อน — ยกเลิกจากเดือนล่าสุดก่อนเสมอ`)
+  }
 
   const { income, balance } = parseIncomeBalance(month)
   const dateStr = income?.period_end || month.period_end || new Date().toISOString().substring(0, 10)

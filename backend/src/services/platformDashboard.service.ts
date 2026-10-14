@@ -121,11 +121,13 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
   for (const month of windowMonths) {
     const row = byMonth.get(month)
     if (!row) { monthsOut.push({ month, hasData: false, sales_confirmed: 0, ads_cost: 0, profit: 0 }); continue }
-    monthsWithData++
 
     const income = row.income_json ? JSON.parse(row.income_json) : null
     const stats = row.stats_json ? JSON.parse(row.stats_json) : null
     const ads = row.ads_json ? JSON.parse(row.ads_json) : null
+    // ponytail: นับว่า "มีข้อมูล" เฉพาะเดือนที่มีไฟล์รายรับแล้วจริงๆ ไม่ใช่แค่มีแถว platform_months
+    // (แถวอาจถูกสร้างไว้ก่อนแล้วไฟล์ยังไม่ถูกอัปโหลด)
+    if (income) monthsWithData++
 
     let gpRateMonth = 0
     let amsMonth = 0
@@ -152,8 +154,13 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
       cancelledOrdersTotal += t.cancelled_orders || 0
       potentialBuyersTotal += t.potential_buyers || 0
       newBuyersTotal += t.new_buyers || 0
-      crrNum += (t.repeat_rate || 0) * (t.buyers || 0)
-      crrDen += t.buyers || 0
+      // repeat_rate เป็นเศษส่วน 0–1 เสมอ (zod เช็คตอนรับไฟล์) — ค่าที่หลุดมา >1 หรือ <0 คือหน่วยผิด (เช่น 12.5 แทน 0.125)
+      // ไม่เอามาคิดค่าเฉลี่ยเลย (ไม่ใช่ทบ 0) กันลาก CRR/CLV พังทั้งก้อน
+      const rr = t.repeat_rate
+      if (rr == null || (rr >= 0 && rr <= 1)) {
+        crrNum += (rr || 0) * (t.buyers || 0)
+        crrDen += t.buyers || 0
+      }
       statsSalesConfirmedTotal += t.sales_confirmed || 0
     }
 
@@ -178,16 +185,35 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
     const parentRows = db.prepare(`
       SELECT * FROM platform_month_products WHERE month_id = ? AND level = 'parent'
     `).all(row.id) as any[]
-    const parentSalesSum = parentRows.reduce((s, r) => s + (r.sales_confirmed || 0), 0)
+    // เฉพาะแถวที่มี product_id เป็นตัวหารส่วนแบ่ง — แถวไม่มี product_id เคยอยู่ในตัวหารแต่ไม่เคยได้รับส่วนแบ่งเลย
+    const eligibleParents = parentRows.filter((r) => r.product_id)
+    const eligibleSalesSum = eligibleParents.reduce((s, r) => s + (r.sales_confirmed || 0), 0)
+
+    let maxShareIdx = -1, maxShareVal = -1
+    const allocs = eligibleParents.map((pr, idx) => {
+      const share = eligibleSalesSum > 0 ? (pr.sales_confirmed || 0) / eligibleSalesSum : 0
+      if ((pr.sales_confirmed || 0) > maxShareVal) { maxShareVal = pr.sales_confirmed || 0; maxShareIdx = idx }
+      return {
+        pr,
+        adsAlloc: (directAdsByProduct.get(pr.product_id) || 0) + remainingAdsPool * share,
+        amsAlloc: amsMonth * share,
+        shipAlloc: shipExcessMonth * share,
+        refundAlloc: refundsMonth * share,
+      }
+    })
+    // เกลี่ยเศษที่เหลือไปให้สินค้าที่มีส่วนแบ่งมากที่สุด เพื่อให้ sum(allocation ของทุกสินค้า) == ยอดจริงของเดือนเสมอ
+    // ครอบคลุมทั้งโฆษณาที่ชี้สินค้าไม่มีแถวยอดขาย (เคยหายไปเฉยๆ) และโฆษณาตรงสินค้ารวมเกินยอดจริง (เคยเกินเพราะ max(0,...))
+    // ponytail: largest-remainder แบบง่าย (โยนเศษไปก้อนใหญ่สุดก้อนเดียว ไม่ไล่ปันทีละหน่วย)
+    if (maxShareIdx >= 0) {
+      const t = allocs[maxShareIdx]
+      t.adsAlloc += adsCostMonth - allocs.reduce((s, a) => s + a.adsAlloc, 0)
+      t.amsAlloc += amsMonth - allocs.reduce((s, a) => s + a.amsAlloc, 0)
+      t.shipAlloc += shipExcessMonth - allocs.reduce((s, a) => s + a.shipAlloc, 0)
+      t.refundAlloc += refundsMonth - allocs.reduce((s, a) => s + a.refundAlloc, 0)
+    }
 
     let profitMonth = 0
-    for (const pr of parentRows) {
-      if (!pr.product_id) continue
-      const share = parentSalesSum > 0 ? (pr.sales_confirmed || 0) / parentSalesSum : 0
-      const adsAlloc = (directAdsByProduct.get(pr.product_id) || 0) + remainingAdsPool * share
-      const amsAlloc = amsMonth * share
-      const shipAlloc = shipExcessMonth * share
-      const refundAlloc = refundsMonth * share
+    for (const { pr, adsAlloc, amsAlloc, shipAlloc, refundAlloc } of allocs) {
       const gpAlloc = (pr.sales_confirmed || 0) * gpRateMonth
 
       // ── ต้นทุน/หน่วย จากเฟส 2 (ผูก SKU) — ใช้ตัวเลือกถ้ามี ไม่มีตัวเลือกใช้แถวสินค้าเอง ──
@@ -294,6 +320,8 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
   const crr = safeDiv(crrNum, crrDen)
   const cac = safeDiv(adsCostTotal + amsTotal, newBuyersTotal)
   const clv = crr < 1 ? safeDiv(aov * contributionMargin, 1 - crr) : 0
+  // ไม่มีคนเข้าตะกร้าเลย = ไม่มีข้อมูลให้คิด AR ไม่ใช่ "ทิ้งตะกร้า 100%"
+  const ar = cartVisitorsTotal > 0 ? r2((1 - safeDiv(buyersConfirmedTotal, cartVisitorsTotal)) * 100) : null
 
   const kpis = {
     sales: {
@@ -318,11 +346,18 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
     },
     customer: {
       cac: r2(cac),
-      ar: r2((1 - safeDiv(buyersConfirmedTotal, cartVisitorsTotal)) * 100),
+      ar,
       crr: r2(crr * 100),
       clv: r2(clv),
       clvCac: r2(safeDiv(clv, cac)),
     },
+  }
+
+  // gpPercent/CRR/CLV เป็นค่าเฉลี่ยทั้งร้าน/สูตรประมาณเสมอ ไม่ขึ้นกับว่ามีสินค้าหรือไม่ — ต้องติดป้ายไว้ตลอด
+  // ส่วนที่แบ่งสัดส่วนรายสินค้า (โฆษณา/Affiliate/ค่าส่ง/คืนเงิน/ทุนจาก unit_cost) มีความหมายเฉพาะตอนมีสินค้า
+  const estimates: string[] = ['gp_percent_shopwide_avg', 'crr_clv_weighted_estimate']
+  if (productList.length > 0) {
+    estimates.push('ads_by_sales_share', 'affiliate_by_sales_share', 'shipping_refund_by_sales_share', 'cogs_from_unit_cost')
   }
 
   return {
@@ -332,8 +367,6 @@ export function getPlatformDashboard(tenantId: string, params: DashboardParams) 
     kpis,
     products: productList,
     cancelled,
-    estimates: productList.length > 0
-      ? ['ads_by_sales_share', 'affiliate_by_sales_share', 'shipping_refund_by_sales_share']
-      : [],
+    estimates,
   }
 }

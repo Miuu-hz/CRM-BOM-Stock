@@ -33,7 +33,7 @@ interface Dashboard {
     sales: { grossPrice: number; storeDiscount: number; netSales: number; profit: number; margin: number; aov: number; cancelRate: number }
     platformCost: { gpPercent: number; affiliate: number; shippingExcess: number }
     ads: { roas: number; tacos: number; ctr: number; cpl: number }
-    customer: { cac: number; ar: number; crr: number; clv: number; clvCac: number }
+    customer: { cac: number; ar: number | null; crr: number; clv: number; clvCac: number }
   }
   products: ProductRow[]
   cancelled: CancelledRow[]
@@ -225,7 +225,7 @@ function Marketing() {
             <KpiCard label="CTR" value={`${num(dash.kpis.ads.ctr)}%`} formula="คลิก / การมองเห็น" />
             <KpiCard label="CPL" value={money(dash.kpis.ads.cpl)} formula="ค่าโฆษณา / ผู้มุ่งหวัง" />
             <KpiCard label="CAC" value={money(dash.kpis.customer.cac)} formula="(โฆษณา+Affiliate) / ลูกค้าใหม่" />
-            <KpiCard label="AR ทิ้งตะกร้า" value={`${num(dash.kpis.customer.ar)}%`} formula="1 − ซื้อสำเร็จ/เข้าตะกร้า" />
+            <KpiCard label="AR ทิ้งตะกร้า" value={dash.kpis.customer.ar == null ? '—' : `${num(dash.kpis.customer.ar)}%`} formula="1 − ซื้อสำเร็จ/เข้าตะกร้า" />
             <KpiCard label="CRR" value={`${num(dash.kpis.customer.crr)}%`} formula="ถ่วงน้ำหนักตามผู้ซื้อ" />
             <KpiCard label="CLV" value={money(dash.kpis.customer.clv)} formula="AOV×กำไรขั้นต้น/(1−CRR)" />
             <KpiCard label="CLV:CAC" value={num(dash.kpis.customer.clvCac)} formula="CLV / CAC" />

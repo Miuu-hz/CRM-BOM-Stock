@@ -168,10 +168,10 @@ export function reverseJournalEntryForReference(
 
   db.prepare(`
     INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-      description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+      description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
   `).run(journalId, tenantId, journalNumber, date, reversalReferenceType, referenceId,
-    description, original.total_credit, original.total_debit, original.is_posted ? 1 : 0, actorEmail, now, now)
+    description, original.total_credit, original.total_debit, original.is_posted ? 1 : 0, actorEmail, now, now, original.business_unit ?? null)
 
   const insertLine = db.prepare(`
     INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)

@@ -245,8 +245,18 @@ export function findPlatformAlias(tenantId: string, sourceRef: string): AliasTar
 }
 
 /**
- * ผูก/แก้ชื่อรองของ source_ref นี้ — ผิดกติกา (ไม่พบสินค้า/ตัวคูณไม่ถูกต้อง/ชื่อชนกับ source_ref อื่น) → StockItemRefError ข้อความไทย
- * ชื่อฝั่งแพลตฟอร์มเปลี่ยนได้ (เปลี่ยนชื่อสินค้า/ตัวเลือก) → ลบแถวเดิมของ source_ref นี้ก่อนกันค้างเป็น orphan name_norm
+ * ผูก/แก้ชื่อรองของ source_ref นี้ — ผิดกติกา (ไม่พบสินค้า/ตัวคูณไม่ถูกต้อง) → StockItemRefError ข้อความไทย
+ *
+ * #11: คีย์ name_norm ด้วย source_ref ตรงๆ (prefix '__platform__:' กันชนกับชื่อที่คนพิมพ์จริง)
+ * ไม่ใช่ชื่อแสดงผล "สินค้า · ตัวเลือก" เหมือนเดิม เพราะ:
+ *  1) Shopee มีได้ถึง 945 ตัวเลือก ชื่อรวมชนกันได้จริง (คนละ variant_id คนละ source_ref แต่
+ *     normName(name) เท่ากัน) — เดิมคู่ที่ 2 ผูกไม่ได้เลยเพราะ UNIQUE(tenant_id, name_norm) ชน
+ *  2) ชื่อรองฝั่งซื้อ (rememberAlias ที่ goodsReceipt.service.ts เรียกแบบไม่ใส่ onlyIfAbsent)
+ *     คีย์ด้วยชื่อสินค้าเหมือนกัน — ถ้าชื่อบรรทัดรับของบังเอิญตรงกับชื่อแพลตฟอร์ม เดิมจะ
+ *     ON CONFLICT ทับ stock_item_id/source_ref/factor ของคู่ Shopee ไปเงียบๆ
+ * คีย์แบบใหม่อยู่คนละ namespace กับชื่อสินค้าจริงเลย ทั้งสองปัญหาหมดไปที่รากเดียวกัน — ไม่ต้อง
+ * เพิ่ม guard แยกที่ rememberAlias/saveAlias อีกชั้น ก็ไม่ต้องมี index/ตารางใหม่ (ความ unique ของ
+ * source_ref ได้มาจาก UNIQUE(tenant_id, name_norm) ที่มีอยู่แล้วโดยไม่ต้องทำอะไรเพิ่ม)
  */
 export function upsertPlatformAlias(
   tenantId: string,
@@ -254,8 +264,7 @@ export function upsertPlatformAlias(
   userId: string,
 ): void {
   const name = String(input.name || '').trim()
-  const key = normName(name)
-  if (!key) throw new StockItemRefError('ไม่มีชื่อสินค้าให้ผูก')
+  if (!name) throw new StockItemRefError('ไม่มีชื่อสินค้าให้ผูก')
   if (!db.prepare(`SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ? AND ${LIVE}`).get(input.stockItemId, tenantId)) {
     throw new StockItemRefError('ไม่พบสินค้าในคลัง')
   }
@@ -263,15 +272,8 @@ export function upsertPlatformAlias(
     throw new StockItemRefError('ตัวคูณ (factor) ต้องมากกว่า 0')
   }
 
-  const existingByName = db.prepare('SELECT source_ref FROM stock_item_aliases WHERE tenant_id = ? AND name_norm = ?').get(tenantId, key) as any
-  if (existingByName && existingByName.source_ref !== input.sourceRef) {
-    throw new StockItemRefError(
-      `ชื่อ "${name}" ถูกใช้เป็นชื่อรองของอีกรายการอยู่แล้ว (${existingByName.source_ref || '-'}) — ชื่อสินค้าฝั่งแพลตฟอร์มซ้ำกัน ไม่สามารถผูกซ้ำได้`
-    )
-  }
-
+  const key = `__platform__:${normName(input.sourceRef)}`
   const now = new Date().toISOString()
-  db.prepare('DELETE FROM stock_item_aliases WHERE tenant_id = ? AND source_ref = ? AND name_norm != ?').run(tenantId, input.sourceRef, key)
   db.prepare(`
     INSERT INTO stock_item_aliases (id, tenant_id, name_norm, name, stock_item_id, source_ref, unit, factor, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

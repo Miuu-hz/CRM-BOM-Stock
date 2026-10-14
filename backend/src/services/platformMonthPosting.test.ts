@@ -275,4 +275,112 @@ describe('platformMonthPosting — ลงบัญชีรอบเดือน
     expect(() => previewPosting(tenantB, monthA)).toThrow(PlatformMonthError)
     expect(() => postMonth(tenantB, monthA, 'tester')).toThrow(PlatformMonthError)
   })
+
+  // ==================== finding #2: ยอดยกมาโพสต์ซ้ำ (post→unpost→post เดือนถัดไป→post เดือนเดิมซ้ำ) ====================
+  it('finding #2: post ต.ค.→unpost→post พ.ย. (ได้ opening เอง)→post ต.ค.ซ้ำต้องถูกปฏิเสธ + 1181 = ปิดงวด พ.ย.', () => {
+    const tenantId = newTenant()
+    const monthOct = makeMonth(tenantId, { income: INCOME, balance: BALANCE, cogsAmount: 0, month: '2026-10' })
+
+    postMonth(tenantId, monthOct, 'tester')
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(17604.88, 2)
+
+    unpostMonth(tenantId, monthOct, 'tester')
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(0, 2)
+
+    // พ.ย. ต่อเนื่องจากยอดปิด ต.ค. (17604.88) — ตอนนี้ไม่มี OPENING JV active เหลืออยู่เลย (ของ ต.ค. ถูกกลับแล้ว)
+    // ตามเคส (a) พ.ย. จึงลง opening ของตัวเอง 17,604.88 ได้ (ตรงกับที่รีวิวบอกว่า "ได้ opening 17,604.88")
+    const incomeNov: IncomePayload = { ...INCOME, period_start: '2026-11-01', period_end: '2026-11-30' }
+    const balanceNov: BalancePayload = {
+      ...BALANCE,
+      period_start: '2026-11-01',
+      period_end: '2026-11-30',
+      opening: 17604.88,
+      closing: r2(17604.88 + BALANCE.money_in + BALANCE.money_out),
+    }
+    const monthNov = makeMonth(tenantId, { income: incomeNov, balance: balanceNov, cogsAmount: 0, month: '2026-11' })
+    postMonth(tenantId, monthNov, 'tester')
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(balanceNov.closing, 2)
+
+    // post ต.ค. ซ้ำตอนนี้ต้องถูกปฏิเสธ (มี opening active อยู่ที่ พ.ย. แล้ว + ไม่มีเดือนก่อน ต.ค. ให้ต่อเนื่อง)
+    // เดิมบั๊ก: hasEarlierPosted เช็คแค่ "มีเดือนก่อนหน้า ต.ค. POSTED ไหม" → ไม่มี → ปล่อยให้ลง opening ซ้ำอีกใบ
+    // (1181 จะเกิน balanceNov.closing ไปอีก 15,356.88) — ตอนนี้ต้องโดนปฏิเสธ 1181 ต้องยังเท่ายอดปิด พ.ย. เท่านั้น
+    expect(() => postMonth(tenantId, monthOct, 'tester')).toThrow(PlatformMonthError)
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(balanceNov.closing, 2)
+  })
+
+  it('finding #2: unpost เดือนเก่าไม่ได้ถ้าเดือนถัดไปของร้านเดียวกัน POSTED อยู่ (ต้อง unpost จากเดือนล่าสุดก่อน)', () => {
+    const tenantId = newTenant()
+    const monthOct = makeMonth(tenantId, { income: INCOME, balance: BALANCE, cogsAmount: 0, month: '2026-10' })
+    postMonth(tenantId, monthOct, 'tester')
+
+    const incomeNov: IncomePayload = { ...INCOME, period_start: '2026-11-01', period_end: '2026-11-30' }
+    const balanceNov: BalancePayload = {
+      ...BALANCE,
+      period_start: '2026-11-01',
+      period_end: '2026-11-30',
+      opening: 17604.88,
+      closing: r2(17604.88 + BALANCE.money_in + BALANCE.money_out),
+    }
+    const monthNov = makeMonth(tenantId, { income: incomeNov, balance: balanceNov, cogsAmount: 0, month: '2026-11' })
+    postMonth(tenantId, monthNov, 'tester') // ต่อเนื่อง (เคส b) — ไม่มี opening ของตัวเอง
+    expect(previewPosting(tenantId, monthNov).journals.opening).toBeNull()
+
+    expect(() => unpostMonth(tenantId, monthOct, 'tester')).toThrow(PlatformMonthError)
+
+    unpostMonth(tenantId, monthNov, 'tester') // unpost เดือนล่าสุด (พ.ย.) ก่อนได้
+    unpostMonth(tenantId, monthOct, 'tester') // แล้วค่อย unpost ต.ค.
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(0, 2)
+  })
+
+  it('finding #2: เดือนแรกยอดยกมา = 0 (ไม่มี JV ยอดยกมา) เดือนถัดไปต้องไม่ลงยอดยกมาซ้ำ', () => {
+    const tenantId = newTenant()
+    const bal1: BalancePayload = { ...BALANCE, opening: 0, closing: r2(BALANCE.closing - BALANCE.opening) }
+    const m1 = makeMonth(tenantId, { income: INCOME, balance: bal1, cogsAmount: 0, month: '2026-10' })
+    postMonth(tenantId, m1, 'tester')
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(bal1.closing, 2)
+
+    const incomeNov: IncomePayload = { ...INCOME, period_start: '2026-11-01', period_end: '2026-11-30' }
+    const balNov: BalancePayload = { ...BALANCE, period_start: '2026-11-01', period_end: '2026-11-30',
+      opening: bal1.closing, closing: r2(bal1.closing + BALANCE.money_in + BALANCE.money_out) }
+    const m2 = makeMonth(tenantId, { income: incomeNov, balance: balNov, cogsAmount: 0, month: '2026-11' })
+    expect(previewPosting(tenantId, m2).journals.opening).toBeNull()
+    postMonth(tenantId, m2, 'tester')
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(balNov.closing, 2)
+  })
+
+  // ==================== finding #5: ADJUST JV เดาทิศเครื่องหมายผิด + การ์ดหลังลงบัญชี ====================
+  it('finding #5: ปรับปรุง (adjustments) ใช้เครื่องหมายจริงกำหนดทิศ ไม่ใช่เดาเสมอว่าเป็นค่าใช้จ่าย', () => {
+    const tenantId = newTenant()
+    // marketing = +59 (ชดเชยเข้ากระเป๋า ไม่ใช่ค่าใช้จ่าย) — เดิม abs() แล้ว Dr เสมอ จะกลับทิศผิด (1181 เพี้ยน 118)
+    const income: IncomePayload = {
+      ...INCOME,
+      adjustments: { total: 59, marketing: 59, shipping_claim: 0, refund_after_complete: 0, other: 0 },
+    }
+    const monthId = makeMonth(tenantId, { income, balance: BALANCE, cogsAmount: 0 })
+    const preview = previewPosting(tenantId, monthId)
+    const adjust = preview.journals.adjust!
+    expect(adjust.totalDebit).toBeCloseTo(adjust.totalCredit, 2)
+
+    const affiliateCode = getFeeMappings(tenantId).find((m) => m.feeType === 'AFFILIATE')!.accountCode
+    expect(adjust.lines.find((l) => l.code === affiliateCode)?.credit).toBeCloseTo(59, 2)
+    expect(adjust.lines.find((l) => l.code === affiliateCode)?.debit || 0).toBeCloseTo(0, 2)
+    expect(adjust.lines.find((l) => l.code === '1181')?.debit).toBeCloseTo(59, 2)
+  })
+
+  it('finding #5: การ์ดหลังลงบัญชี — ถ้า 1181 เคลื่อนไหวจริงไม่ตรงกับ closing-opening ต้อง throw และ rollback ทั้งก้อน', () => {
+    const tenantId = newTenant()
+    // closing ไม่ตรงกับ money_in/money_out จริง (เบี้ยวไป 500) แต่ยังผ่านเช็ค opening+money_in+money_out=closing
+    // เพราะปรับ money_in ตามไปด้วย — ไม่มี cross-check ไหนจับได้ก่อนเข้า postMonth (ช่องว่างที่การ์ดนี้อุด)
+    const badBalance: BalancePayload = {
+      ...BALANCE,
+      money_in: r2(BALANCE.money_in + 500),
+      closing: r2(BALANCE.opening + (BALANCE.money_in + 500) + BALANCE.money_out),
+    }
+    const monthId = makeMonth(tenantId, { income: INCOME, balance: badBalance, cogsAmount: 50000 })
+
+    expect(() => postMonth(tenantId, monthId, 'tester')).toThrow(PlatformMonthError)
+    expect(ledgerBalance(tenantId, '1181')).toBeCloseTo(0, 2)
+    const row = db.prepare(`SELECT status FROM platform_months WHERE id = ?`).get(monthId) as any
+    expect(row.status).toBe('SALE_CONFIRMED')
+  })
 })

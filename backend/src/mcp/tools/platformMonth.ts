@@ -15,135 +15,153 @@ import {
 import { proposeSkuMapping, getMappingSummary } from '../../services/platformMonthSale.service'
 
 // ── zod schema ต่อชนิดไฟล์ — ตรวจรูปร่าง data ให้ตรงก่อนส่งเข้า service (service ตรวจสมการเอง) ──────
+// num(): กันเลข NaN/Infinity ที่ parser พลาดหลุดมา (.finite()) + กันเลขหลุดโลก (เกินหมื่นล้านบาท ไม่มีจริง
+// ในรอบเดือนร้านเดียว) — เดิม z.number() เฉยๆ ปล่อยทั้ง Infinity และเลขมหาศาลผ่านได้หมด
+const num = () => z.number().finite().min(-1e10).max(1e10)
+// fraction(): สัดส่วน 0-1 (ไม่ใช่เปอร์เซ็นต์) ใช้กับ repeat_rate เท่านั้น
+const fraction = () => z.number().finite().min(0).max(1)
+// dateStr(): ต้องเป็น YYYY-MM-DD เป๊ะ — กันรูปแบบ dd/mm/yyyy หลุดเข้ามาเป็นวันที่ JV ตรงๆ (payout date ที่ผิด
+// รูปแบบเคยหลุดผ่าน z.string() เฉยๆ มาก่อน)
+const dateStr = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ต้องเป็นรูปแบบ YYYY-MM-DD')
+
 const incomeSchema = z.object({
-  period_start: z.string(),
-  period_end: z.string(),
-  order_count: z.number(),
-  product_list_price: z.number(),
-  seller_discount: z.number(),
-  refund_to_buyer: z.number(),
-  shopee_product_discount: z.number(),
-  product_sales: z.number(),
-  total_income: z.number(),
-  shipping_buyer_paid: z.number(),
-  shipping_shopee_subsidy: z.number(),
-  shipping_charged: z.number(),
-  shipping_return: z.number(),
-  commission: z.number(),
-  ams_commission: z.number(),
-  service_fee: z.number(),
-  infrastructure_fee: z.number(),
-  transaction_fee: z.number(),
-  ads_topup_from_escrow: z.number(),
-  other_fees: z.number().default(0),
-  total_expense: z.number(),
-  total_transferred: z.number(),
+  period_start: dateStr(),
+  period_end: dateStr(),
+  order_count: num(),
+  product_list_price: num(),
+  seller_discount: num(),
+  refund_to_buyer: num(),
+  shopee_product_discount: num(),
+  product_sales: num(),
+  total_income: num(),
+  shipping_buyer_paid: num(),
+  shipping_shopee_subsidy: num(),
+  shipping_charged: num(),
+  shipping_return: num(),
+  commission: num(),
+  ams_commission: num(),
+  service_fee: num(),
+  infrastructure_fee: num(),
+  transaction_fee: num(),
+  ads_topup_from_escrow: num(),
+  other_fees: num().default(0),
+  total_expense: num(),
+  total_transferred: num(),
   adjustments: z.object({
-    total: z.number(),
-    marketing: z.number(),
-    shipping_claim: z.number(),
-    refund_after_complete: z.number(),
-    other: z.number(),
+    total: num(),
+    marketing: num(),
+    shipping_claim: num(),
+    refund_after_complete: num(),
+    other: num(),
   }),
 })
 
 const balanceSchema = z.object({
-  period_start: z.string(),
-  period_end: z.string(),
-  opening: z.number(),
-  closing: z.number(),
-  money_in: z.number(),
-  money_out: z.number(),
-  order_income_in: z.number(),
-  order_income_out: z.number(),
-  adjustments_in: z.number(),
-  adjustments_out: z.number(),
-  withdrawals: z.array(z.object({ date: z.string(), amount: z.number() })),
-  withdrawals_total: z.number(),
+  period_start: dateStr(),
+  period_end: dateStr(),
+  opening: num(),
+  closing: num(),
+  money_in: num(),
+  money_out: num(),
+  order_income_in: num(),
+  order_income_out: num(),
+  adjustments_in: num(),
+  adjustments_out: num(),
+  withdrawals: z.array(z.object({ date: dateStr(), amount: num() })),
+  withdrawals_total: num(),
 })
 
+// level='variant' ต้องมี variant_id, ทุกแถว (parent/variant) ต้องมี product_id — เดิมปล่อยทั้งคู่
+// nullable/optional หมด ทำให้ rows: [{level:'variant'}] (ไม่มีทั้ง product_id/variant_id) ผ่าน schema ได้
 const productRowSchema = z.object({
   level: z.enum(['parent', 'variant']),
   product_id: z.string().nullable().optional(),
   variant_id: z.string().nullable().optional(),
   product_name: z.string().optional(),
   variant_name: z.string().optional(),
-  sales_all: z.number().optional(),
-  sales_confirmed: z.number().optional(),
-  orders_all: z.number().optional(),
-  orders_confirmed: z.number().optional(),
-  qty_all: z.number().optional(),
-  qty_confirmed: z.number().optional(),
-  visitors: z.number().optional(),
-  cart_visitors: z.number().optional(),
-  buyers_confirmed: z.number().optional(),
-  clicks: z.number().optional(),
-  impressions: z.number().optional(),
-  repeat_rate: z.number().optional(),
+  sales_all: num().optional(),
+  sales_confirmed: num().optional(),
+  orders_all: num().optional(),
+  orders_confirmed: num().optional(),
+  qty_all: num().optional(),
+  qty_confirmed: num().optional(),
+  visitors: num().optional(),
+  cart_visitors: num().optional(),
+  buyers_confirmed: num().optional(),
+  clicks: num().optional(),
+  impressions: num().optional(),
+  repeat_rate: fraction().optional().describe('อัตราการซื้อซ้ำ เป็นสัดส่วน 0-1 (เช่น 35% ให้ส่ง 0.35 ไม่ใช่ 35)'),
+}).superRefine((row, ctx) => {
+  if (!row.product_id) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'ทุกแถว (parent และ variant) ต้องมี product_id', path: ['product_id'] })
+  }
+  if (row.level === 'variant' && !row.variant_id) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'แถว level="variant" ต้องมี variant_id', path: ['variant_id'] })
+  }
 })
-const productsSchema = z.object({ rows: z.array(productRowSchema) })
+const productsSchema = z.object({ rows: z.array(productRowSchema).min(1, 'ต้องมีอย่างน้อย 1 แถว') })
 
 const adsCampaignSchema = z.object({
   name: z.string(),
   ad_type: z.string(),
   status: z.string(),
   product_id: z.string().nullable().optional(),
-  impressions: z.number(),
-  clicks: z.number(),
-  orders: z.number(),
-  direct_orders: z.number(),
-  items_sold: z.number(),
-  sales: z.number(),
-  direct_sales: z.number(),
-  cost: z.number(),
+  impressions: num(),
+  clicks: num(),
+  orders: num(),
+  direct_orders: num(),
+  items_sold: num(),
+  sales: num(),
+  direct_sales: num(),
+  cost: num(),
 })
 const adsSchema = z.object({
-  period_start: z.string(),
-  period_end: z.string(),
+  period_start: dateStr(),
+  period_end: dateStr(),
   campaigns: z.array(adsCampaignSchema),
-  total_cost: z.number(),
+  total_cost: num(),
 })
 
 const dayRowSchema = z.object({
-  date: z.string(),
-  sales_all: z.number(),
-  orders_all: z.number(),
-  sales_confirmed: z.number(),
-  orders_confirmed: z.number(),
-  visitors: z.number(),
-  clicks: z.number(),
-  cancelled_orders: z.number(),
-  cancelled_sales: z.number(),
-  buyers: z.number(),
-  new_buyers: z.number(),
-  existing_buyers: z.number(),
-  potential_buyers: z.number(),
+  date: dateStr(),
+  sales_all: num(),
+  orders_all: num(),
+  sales_confirmed: num(),
+  orders_confirmed: num(),
+  visitors: num(),
+  clicks: num(),
+  cancelled_orders: num(),
+  cancelled_sales: num(),
+  buyers: num(),
+  new_buyers: num(),
+  existing_buyers: num(),
+  potential_buyers: num(),
 })
 const statsSchema = z.object({
-  period_start: z.string(),
-  period_end: z.string(),
+  period_start: dateStr(),
+  period_end: dateStr(),
   totals: z.object({
-    sales_all: z.number(),
-    sales_confirmed: z.number(),
-    orders_all: z.number(),
-    orders_confirmed: z.number(),
-    visitors: z.number(),
-    clicks: z.number(),
-    cancelled_orders: z.number(),
-    cancelled_sales: z.number(),
-    buyers: z.number(),
-    new_buyers: z.number(),
-    existing_buyers: z.number(),
-    potential_buyers: z.number(),
-    repeat_rate: z.number(),
+    sales_all: num(),
+    sales_confirmed: num(),
+    orders_all: num(),
+    orders_confirmed: num(),
+    visitors: num(),
+    clicks: num(),
+    cancelled_orders: num(),
+    cancelled_sales: num(),
+    buyers: num(),
+    new_buyers: num(),
+    existing_buyers: num(),
+    potential_buyers: num(),
+    repeat_rate: fraction().describe('อัตราการซื้อซ้ำ เป็นสัดส่วน 0-1 (เช่น 35% ให้ส่ง 0.35 ไม่ใช่ 35)'),
   }),
   daily: z.array(dayRowSchema),
   sources: z.object({
-    product_page: z.number(),
-    live: z.number(),
-    video: z.number(),
-    partner: z.number(),
-    ads_attributed: z.number(),
+    product_page: num(),
+    live: num(),
+    video: num(),
+    partner: num(),
+    ads_attributed: num(),
   }),
 })
 
@@ -165,8 +183,26 @@ export function registerPlatformMonthTools(server: IMcpServer, tenantId: string,
   2) balance   — Seller Centre > การเงินของฉัน > ยอดคงเหลือ (เงินเข้า/ออก/ถอน)
   3) products  — Seller Centre > ข้อมูลเชิงลึกของธุรกิจ > สินค้า — ต้องมีทั้งแถวสรุปต่อสินค้า (level="parent")
      และแถวต่อตัวเลือก (level="variant") ถ้าสินค้าไม่มีตัวเลือกให้มีแค่แถว parent
+     ไฟล์ parentskudetail ชีต "สินค้าขายดี" — แถวแรกต่อสินค้า = parent, แถวที่ "รหัสตัวเลือกสินค้า" ≠ '-' = variant
+     แม็บคอลัมน์→ฟิลด์: รหัสสินค้า→product_id, รหัสตัวเลือกสินค้า→variant_id, ผลิตภัณฑ์→product_name,
+     ชื่อตัวเลือกสินค้า→variant_name, "ยอดขาย (ที่มีการสั่งซื้อทั้งหมด) (THB)"→sales_all,
+     "ยอดขาย (ยืนยันแล้ว) (THB)"→sales_confirmed, ทั้งหมด→orders_all, ยืนยันแล้ว→orders_confirmed
+     (2 คอลัมน์จำนวนคำสั่งซื้อที่อยู่ถัดจาก "อัตราการซื้อสินค้า (ยืนยันแล้ว)"),
+     "จำนวนที่ขายได้ (ที่มีการสั่งซื้อทั้งหมด)"→qty_all, "จำนวนที่ขายได้ (ยืนยันแล้ว)"→qty_confirmed,
+     "ผู้ซื้อ (ยืนยันคำสั่งซื้อแล้ว)"→buyers_confirmed, ผู้เข้าชมสินค้า→visitors,
+     "ผู้เข้าชมสินค้า (ที่เพิ่มสินค้าเข้าไปในรถเข็น)"→cart_visitors, จำนวนคลิก→clicks,
+     ยอดการมองเห็นสินค้าที่ไม่ซ้ำ→impressions, "อัตราการซื้อซ้ำ (ยืนยันแล้ว)"→repeat_rate (แปลง % เป็นสัดส่วน
+     0-1 เช่น 3.66% ส่งเป็น 0.0366) · '-' ในไฟล์ = 0/null · ตัด comma คั่นหลักพันก่อนแปลงเป็นเลข
   4) ads       — Seller Centre > การตลาด > โฆษณา (รายงานแคมเปญ)
   5) stats     — Seller Centre > ข้อมูลเชิงลึกของธุรกิจ > ร้านค้า (สถิติรายวัน)
+     ไฟล์ shop-stats — totals: อ่านชีต "ทั้งหมด" สำหรับฟิลด์ลงท้าย _all, ชีต "ยืนยันแล้ว" สำหรับฟิลด์ลงท้าย
+     _confirmed (ชื่อคอลัมน์เดียวกันปรากฏในทั้ง 2 ชีต) — "ยอดขายทั้งหมด (THB)"→sales_all/sales_confirmed,
+     คำสั่งซื้อทั้งหมด→orders_all/orders_confirmed, จำนวนผู้เยี่ยมชม→visitors, จำนวนคลิก→clicks,
+     คำสั่งซื้อที่ยกเลิก→cancelled_orders, ยอดขายที่ยกเลิก→cancelled_sales, "# ของผู้ซื้อ"→buyers,
+     "# ของผู้ซื้อใหม่"→new_buyers, "# ของผู้ซื้อเดิม"→existing_buyers, "# ผู้ที่อาจจะซื้อ"→potential_buyers,
+     อัตราการกลับมาซื้อซ้ำ→repeat_rate (แปลง % เป็นสัดส่วน 0-1 เช่น 8.43% ส่งเป็น 0.0843)
+     หมายเหตุ: daily[] (รายวันต่อแถว) และ sources (product_page/live/video/partner/ads_attributed) ยังไม่มี
+     แม็บคอลัมน์ต้นทางที่ยืนยันแล้ว — กรอกเท่าที่หาได้จากรายงาน ถ้าหาไม่ได้ให้ใส่ 0 ห้ามเดาตัวเลข
 
 กฎสำคัญ: ดึงเฉพาะตัวเลขตามฟิลด์ที่กำหนดไว้ ห้ามแนบไฟล์ดิบ ห้ามคำนวณเลขเอง ใช้ยอดที่ไฟล์สรุปให้มาตรงๆ
 month = เดือนปฏิทินของรอบ (เช่นรอบตุลาคม 2026 ให้ month="2026-10") แม้ไฟล์จะมีช่วงวันที่ไม่ตรงเดือนเต็มก็ตาม

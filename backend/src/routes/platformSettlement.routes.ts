@@ -169,7 +169,7 @@ router.get('/fee-mappings', (req: Request, res: Response) => {
 })
 
 // PUT /api/platform-settlement/fee-mappings  body: { updates: [{ id, accountCode?, columnAliases? }] }
-router.put('/fee-mappings', (req: Request, res: Response) => {
+router.put('/fee-mappings', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { updates } = req.body
@@ -196,7 +196,7 @@ router.get('/', (req: Request, res: Response) => {
 })
 
 // POST /api/platform-settlement/confirm  body: SettlementBatch — ลงบัญชีจริง
-router.post('/confirm', (req: Request, res: Response) => {
+router.post('/confirm', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { platform, periodStart, periodEnd, grossSales, vatAmount, cogsAmount, fees, payoutAmount, sourceFilename } = req.body
@@ -230,7 +230,7 @@ router.post('/confirm', (req: Request, res: Response) => {
 })
 
 // บันทึกเงินโอนของรอบที่ลงยอดขายไว้ก่อนแล้ว (ขั้น 3 ที่มาทีหลัง)
-router.post('/:id/payout', (req: Request, res: Response) => {
+router.post('/:id/payout', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const result = recordSettlementPayout({
       tenantId: req.user!.tenantId,

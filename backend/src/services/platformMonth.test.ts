@@ -112,6 +112,8 @@ const STATS: StatsPayload = {
   daily: [
     { date: '2026-10-01', sales_all: 20000, orders_all: 3, sales_confirmed: 19500, orders_confirmed: 3, visitors: 650, clicks: 100, cancelled_orders: 0, cancelled_sales: 0, buyers: 3, new_buyers: 1, existing_buyers: 2, potential_buyers: 15 },
     { date: '2026-10-02', sales_all: 18000, orders_all: 2, sales_confirmed: 18000, orders_confirmed: 2, visitors: 600, clicks: 90, cancelled_orders: 0, cancelled_sales: 0, buyers: 2, new_buyers: 0, existing_buyers: 2, potential_buyers: 12 },
+    // แทนวันที่เหลือทั้งหมดของเดือน (ไม่ลงรายวันจริงในเทสต์นี้ แค่ทำให้ sum(daily) = totals เป๊ะ)
+    { date: '2026-10-03', sales_all: 562000, orders_all: 87, sales_confirmed: 549243, orders_confirmed: 82, visitors: 18750, clicks: 2810, cancelled_orders: 5, cancelled_sales: 13257, buyers: 75, new_buyers: 29, existing_buyers: 46, potential_buyers: 473 },
   ],
   sources: { product_page: 400000, live: 50000, video: 30000, partner: 20000, ads_attributed: 100000 },
 }
@@ -174,13 +176,63 @@ describe('platform_months — รอบเดือนแพลตฟอร์�
     const tenantId = newTenant()
     const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2027-01' }
 
-    submitFile(tenantId, { ...base, fileType: 'income', data: INCOME })
-    submitFile(tenantId, { ...base, fileType: 'income', data: { ...INCOME, order_count: 150 } })
+    const income2027 = { ...INCOME, period_start: '2027-01-01', period_end: '2027-01-31' }
+    submitFile(tenantId, { ...base, fileType: 'income', data: income2027 })
+    submitFile(tenantId, { ...base, fileType: 'income', data: { ...income2027, order_count: 150 } })
 
     const rows = db.prepare(`SELECT COUNT(*) AS c FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any
     expect(rows.c).toBe(1)
 
     const row = db.prepare(`SELECT income_json FROM platform_months WHERE tenant_id = ?`).get(tenantId) as any
     expect(JSON.parse(row.income_json).order_count).toBe(150)
+  })
+
+  // ==================== finding #5 / #13: เช็คสมการเพิ่มตอน submit ====================
+  it('adjustments: marketing+shipping_claim+refund_after_complete+other ไม่เท่า total ต้องถูกปฏิเสธ (finding #5)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: IncomePayload = { ...INCOME, adjustments: { total: -486, marketing: 100, shipping_claim: 535, refund_after_complete: -962, other: 0 } }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'income', data: bad })).toThrow(PlatformMonthError)
+  })
+
+  it('period_end ไกลเกินไปจากเดือนที่ประกาศ (month) ต้องถูกปฏิเสธ (finding #13)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: IncomePayload = { ...INCOME, period_end: '2027-03-31' }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'income', data: bad })).toThrow(/ไม่อยู่ในช่วงรอบเดือน/)
+  })
+
+  it('วันที่ถอนเงิน (withdrawals) ไกลเกินไปจากเดือนที่ประกาศ ต้องถูกปฏิเสธ (finding #13 — กันวันที่ parse ผิดกลายเป็น JV date)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: BalancePayload = { ...BALANCE, withdrawals: [{ date: '2027-05-10', amount: -100 }], withdrawals_total: -100 }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'balance', data: bad })).toThrow(/ไม่อยู่ในช่วงรอบเดือน/)
+  })
+
+  it('ไฟล์ ads: ผลรวม cost ของแคมเปญทั้งหมดไม่เท่า total_cost ต้องถูกปฏิเสธ (finding #13)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: AdsPayload = { ...ADS, total_cost: 9999 }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'ads', data: bad })).toThrow(PlatformMonthError)
+  })
+
+  it('ไฟล์ stats: ผลรวม daily ไม่เท่า totals ต้องถูกปฏิเสธ (finding #13)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: StatsPayload = { ...STATS, totals: { ...STATS.totals, sales_all: 999999 } }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'stats', data: bad })).toThrow(PlatformMonthError)
+  })
+
+  it('ไฟล์ products: ผลรวม qty ของ variant ไม่เท่าแถว parent (exact) ต้องถูกปฏิเสธ (finding #13)', () => {
+    const tenantId = newTenant()
+    const base = { platform: 'SHOPEE', shopKey: 'ร้านหลัก', month: '2026-10' }
+    const bad: ProductsPayload = {
+      rows: [
+        { level: 'parent', product_id: 'P1', product_name: 'สินค้า A', qty_all: 100, qty_confirmed: 96 },
+        { level: 'variant', product_id: 'P1', variant_id: 'V1', qty_all: 40, qty_confirmed: 38 },
+        { level: 'variant', product_id: 'P1', variant_id: 'V2', qty_all: 40, qty_confirmed: 38 },
+      ],
+    }
+    expect(() => submitFile(tenantId, { ...base, fileType: 'products', data: bad })).toThrow(PlatformMonthError)
   })
 })

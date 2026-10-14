@@ -193,6 +193,38 @@ function assertIncomeInternal(d: IncomePayload): void {
       `ไฟล์ income: total_income + total_expense ควรเท่า total_transferred (คำนวณได้ ${transferred} แต่ไฟล์ให้ ${d.total_transferred})`
     )
   }
+  if (d.adjustments) {
+    const adjSum = r2(
+      (d.adjustments.marketing || 0) + (d.adjustments.shipping_claim || 0) +
+      (d.adjustments.refund_after_complete || 0) + (d.adjustments.other || 0)
+    )
+    if (!near(adjSum, d.adjustments.total)) {
+      throw new PlatformMonthError(
+        `ไฟล์ income: adjustments.marketing + shipping_claim + refund_after_complete + other ควรเท่า adjustments.total (คำนวณได้ ${adjSum} แต่ไฟล์ให้ ${d.adjustments.total})`
+      )
+    }
+  }
+}
+
+// เดือนปฏิทินของรอบ (month, YYYY-MM) อาจไม่ตรงพอดีกับ period_start/end ของไฟล์ (คอมเมนต์ต้นไฟล์อธิบายไว้)
+// แต่วันที่ใช้เป็น JV date จริง (period_end) และวันที่ถอนเงินแต่ละใบ ต้องไม่หลุดไปไกลเกินเดือนก่อน/หลังติดกัน
+// — กันรูปแบบวันที่ที่ parse ผิด (เช่น dd/mm/yyyy ที่ยัง pass regex YYYY-MM-DD ได้ถ้าสลับผิดแบบพอดี) หลุด
+// มาเป็นวันที่ JV ที่ผิดเดือนไปไกลๆ (finding #13)
+function monthKeyOf(dateStr: string): string {
+  return (dateStr || '').slice(0, 7)
+}
+function assertDateNearMonth(dateStr: string | undefined | null, month: string, label: string): void {
+  if (!dateStr) return
+  const key = monthKeyOf(dateStr)
+  const [y, m] = month.split('-').map(Number)
+  if (!y || !m) return
+  const prevD = new Date(y, m - 2, 1)
+  const nextD = new Date(y, m, 1)
+  const prevKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`
+  const nextKey = `${nextD.getFullYear()}-${String(nextD.getMonth() + 1).padStart(2, '0')}`
+  if (key !== month && key !== prevKey && key !== nextKey) {
+    throw new PlatformMonthError(`${label}: วันที่ ${dateStr} ไม่อยู่ในช่วงรอบเดือน ${month} (หรือเดือนก่อน/หลังติดกัน) — ตรวจรูปแบบวันที่`)
+  }
 }
 
 function assertBalanceInternal(d: BalancePayload): void {
@@ -207,6 +239,64 @@ function assertBalanceInternal(d: BalancePayload): void {
     throw new PlatformMonthError(
       `ไฟล์ balance: ผลรวมของ withdrawals ควรเท่า withdrawals_total (คำนวณได้ ${wSum} แต่ไฟล์ให้ ${d.withdrawals_total})`
     )
+  }
+}
+
+// ไฟล์ ads: ผลรวม cost ของทุกแคมเปญ ควรเท่า total_cost (ถ้ามีแคมเปญมาด้วย) ──────────────────────
+function assertAdsInternal(d: AdsPayload): void {
+  if (!d.campaigns || d.campaigns.length === 0) return
+  const sum = r2(d.campaigns.reduce((s, c) => s + (c.cost || 0), 0))
+  if (!near(sum, d.total_cost)) {
+    throw new PlatformMonthError(`ไฟล์ ads: ผลรวม cost ของแคมเปญทั้งหมด ควรเท่า total_cost (คำนวณได้ ${sum} แต่ไฟล์ให้ ${d.total_cost})`)
+  }
+}
+
+// ไฟล์ stats: ผลรวมรายวัน (daily) ของฟิลด์ที่เป็น "จำนวนนับต่อวัน" ควรเท่า totals ของฟิลด์เดียวกัน
+// (เฉพาะฟิลด์ที่บวกกันได้จริงตามความหมาย — ไม่รวม visitors/buyers/repeat_rate ที่เป็น unique count รายเดือน
+// ซึ่งการรวมรายวันไม่มีความหมายทางบัญชี ไม่ใช่ว่าลืมเช็ค) ──────────────────────────────────────
+const STATS_DAILY_SUM_FIELDS = ['sales_all', 'sales_confirmed', 'orders_all', 'orders_confirmed', 'cancelled_orders', 'cancelled_sales'] as const
+function assertStatsInternal(d: StatsPayload): void {
+  const daily = d.daily || []
+  if (daily.length === 0) return
+  for (const field of STATS_DAILY_SUM_FIELDS) {
+    const sum = r2(daily.reduce((s, day) => s + (Number((day as any)[field]) || 0), 0))
+    const total = (d.totals as any)?.[field]
+    if (!near(sum, total)) {
+      throw new PlatformMonthError(`ไฟล์ stats: ผลรวม ${field} ของ daily ทั้งหมด ควรเท่า totals.${field} (คำนวณได้ ${sum} แต่ไฟล์ให้ ${total})`)
+    }
+  }
+}
+
+// ไฟล์ products: ผลรวมแถว variant ของสินค้าเดียวกัน ควรเท่าแถว parent ของสินค้านั้น (เฉพาะสินค้าที่มีทั้ง
+// parent และ variant มาด้วย — สินค้าไม่มีตัวเลือกไม่มีแถว variant ให้เทียบอยู่แล้ว) sales ปัดเศษ ±1 บาท,
+// qty ต้องตรงเป๊ะ (จำนวนหน่วยนับ ไม่มีเศษปัดจากแพลตฟอร์ม) ────────────────────────────────────────
+const PRODUCTS_SUM_FIELDS: Array<{ key: keyof ProductRow; exact: boolean }> = [
+  { key: 'sales_all', exact: false },
+  { key: 'sales_confirmed', exact: false },
+  { key: 'qty_all', exact: true },
+  { key: 'qty_confirmed', exact: true },
+]
+function assertProductsInternal(rows: ProductRow[]): void {
+  const byProduct = new Map<string, { parent?: ProductRow; variants: ProductRow[] }>()
+  for (const row of rows) {
+    if (!row.product_id) continue
+    const entry = byProduct.get(row.product_id) || { variants: [] }
+    if (row.level === 'parent') entry.parent = row
+    else entry.variants.push(row)
+    byProduct.set(row.product_id, entry)
+  }
+  for (const [productId, { parent, variants }] of byProduct) {
+    if (!parent || variants.length === 0) continue
+    for (const { key, exact } of PRODUCTS_SUM_FIELDS) {
+      const anyVariantHasField = variants.some((v) => v[key] !== undefined && v[key] !== null)
+      if (!anyVariantHasField) continue // คอลัมน์นี้ไม่มีระดับ variant ในไฟล์ต้นฉบับ — ไม่มีอะไรให้เทียบ
+      const sum = r2(variants.reduce((s, v) => s + (Number(v[key]) || 0), 0))
+      const parentVal = r2(Number(parent[key]) || 0)
+      const okay = exact ? sum === parentVal : near(sum, parentVal)
+      if (!okay) {
+        throw new PlatformMonthError(`ไฟล์ products: สินค้า ${productId} ผลรวม ${key} ของตัวเลือกทั้งหมด (${sum}) ไม่เท่ากับแถวสรุป (${parentVal})`)
+      }
+    }
   }
 }
 
@@ -284,8 +374,21 @@ export function submitFile(tenantId: string, input: SubmitFileInput): SubmitFile
       throw new PlatformMonthError(`รอบเดือนนี้ปิดแล้ว (status = ${row.status}) ส่งไฟล์เพิ่ม/แก้ไม่ได้`)
     }
 
-    if (fileType === 'income') assertIncomeInternal(data as IncomePayload)
-    if (fileType === 'balance') assertBalanceInternal(data as BalancePayload)
+    if (fileType === 'income') {
+      assertIncomeInternal(data as IncomePayload)
+      assertDateNearMonth((data as IncomePayload).period_start, month, 'ไฟล์ income period_start')
+      assertDateNearMonth((data as IncomePayload).period_end, month, 'ไฟล์ income period_end')
+    }
+    if (fileType === 'balance') {
+      assertBalanceInternal(data as BalancePayload)
+      const bd = data as BalancePayload
+      assertDateNearMonth(bd.period_start, month, 'ไฟล์ balance period_start')
+      assertDateNearMonth(bd.period_end, month, 'ไฟล์ balance period_end')
+      for (const w of bd.withdrawals || []) assertDateNearMonth(w.date, month, `ไฟล์ balance withdrawal วันที่ ${w.date}`)
+    }
+    if (fileType === 'ads') assertAdsInternal(data as AdsPayload)
+    if (fileType === 'stats') assertStatsInternal(data as StatsPayload)
+    if (fileType === 'products') assertProductsInternal((data as ProductsPayload).rows || [])
 
     const periodStart = (data as any).period_start ?? row.period_start
     const periodEnd = (data as any).period_end ?? row.period_end

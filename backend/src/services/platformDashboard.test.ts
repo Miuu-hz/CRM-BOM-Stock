@@ -164,3 +164,105 @@ describe('getPlatformDashboard — KPI 4 หมวด + กำไรรายส
     expect(dashAagain.kpis.sales.netSales).toBe(2000)
   })
 })
+
+describe('ข้อ 16 — AR ทิ้งตะกร้าไม่มีข้อมูล ต้องเป็น null ไม่ใช่ 100%', () => {
+  it('cartVisitors=0 ทั้งเดือน (ไม่มีคนเข้าตะกร้าเลย) → kpis.customer.ar = null', () => {
+    const tenantId = newTenant()
+    makeMonth(tenantId, '2026-10', {
+      income: { total_income: 100, commission: 0, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.kpis.customer.ar).toBeNull()
+  })
+})
+
+describe('ข้อ 17 — repeat_rate หน่วยผิด (>1) ต้องไม่ลาก CRR/CLV พัง', () => {
+  it('repeat_rate=12.5 (เผื่อส่งมาเป็นเปอร์เซ็นต์ผิด) ถูก ignore ไม่ปนในค่าเฉลี่ยถ่วงน้ำหนัก', () => {
+    const tenantId = newTenant()
+    makeMonth(tenantId, '2026-10', {
+      income: { total_income: 100, commission: 0, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 10, repeat_rate: 12.5 } },
+    })
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    // ค่าที่หน่วยผิดถูกตัดออกทั้งตัวเศษและตัวหาร (ไม่ใช่ทบ 0 เข้าตัวหาร) → ไม่มีเดือนไหนใช้ได้เลย → crr=0, clv=0
+    expect(dash.kpis.customer.crr).toBe(0)
+    expect(dash.kpis.customer.clv).toBe(0)
+  })
+})
+
+describe('ข้อ 18 — allocation รายสินค้าต้องรวมเท่ายอดจริงของเดือนเสมอ', () => {
+  it('โฆษณาชี้สินค้าที่ไม่มีแถวยอดขาย + แถวไม่มี product_id เคยอยู่ในตัวหาร → รวมแล้วต้องเท่ายอดจริงทุกชนิดต้นทุน', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, '2026-10', {
+      income: { total_income: 1000, commission: -30, service_fee: -10, transaction_fee: -5, infrastructure_fee: -5, ams_commission: -40, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: -30, shipping_return: 0, refund_to_buyer: -25, adjustments: { refund_after_complete: 0 } },
+      // โฆษณารวม 100 แต่ตรงสินค้ารวม 70 (P1=20, P3=50 ที่ไม่มีแถวสินค้าเลย) → เหลือพูล 30
+      ads: { total_cost: 100, campaigns: [{ name: 'c1', sales: 1, clicks: 1, impressions: 1, cost: 20, product_id: 'P1' }, { name: 'c2', sales: 1, clicks: 1, impressions: 1, cost: 50, product_id: 'P3' }] },
+      stats: { totals: { sales_confirmed: 1000, orders_confirmed: 10, orders_all: 10, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    // P1 มียอดขายจริง, P3 ไม่มีแถวสินค้าเลย (กรณี "โฆษณาชี้สินค้าไม่มีแถวยอดขาย — เคยหายไปเฉยๆ")
+    addParent(tenantId, monthId, { productId: 'P1', productName: 'สินค้า 1', salesAll: 800, salesConfirmed: 800, ordersAll: 8, ordersConfirmed: 8, qtyConfirmed: 8, cartVisitors: 8, buyersConfirmed: 8 })
+    // แถวไม่มี product_id (เคยอยู่ในตัวหารแต่ไม่เคยได้รับส่วนแบ่งเลย)
+    db.prepare(`
+      INSERT INTO platform_month_products
+        (id, month_id, tenant_id, product_id, level, product_name, sales_all, sales_confirmed, orders_all, orders_confirmed, qty_all, qty_confirmed, cart_visitors, buyers_confirmed)
+      VALUES (?, ?, ?, NULL, 'parent', 'ไม่ผูกสินค้า', 200, 200, 2, 2, 2, 2, 2, 2)
+    `).run(generateId(), monthId, tenantId)
+
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    const totalAds = dash.products.reduce((s, p) => s + p.ads, 0)
+    const totalAffiliate = dash.products.reduce((s, p) => s + p.affiliate, 0)
+    const totalShip = dash.products.reduce((s, p) => s + p.shippingExcess, 0)
+    const totalRefund = dash.products.reduce((s, p) => s + p.refunds, 0)
+    expect(totalAds).toBeCloseTo(100, 2) // เท่า ads.total_cost จริง ไม่ใช่แค่ 70 ที่ตรงสินค้า+ส่วนแบ่งจากพูล
+    expect(totalAffiliate).toBeCloseTo(40, 2)
+    expect(totalShip).toBeCloseTo(30, 2)
+    expect(totalRefund).toBeCloseTo(25, 2)
+  })
+
+  it('โฆษณาตรงสินค้ารวมเกินยอดจริงของเดือน (เคย max(0,...) ทำให้รวมเกิน) → รวมยังต้องเท่ายอดจริง', () => {
+    const tenantId = newTenant()
+    const monthId = makeMonth(tenantId, '2026-10', {
+      income: { total_income: 100, commission: 0, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 50, campaigns: [{ name: 'c1', sales: 1, clicks: 1, impressions: 1, cost: 40, product_id: 'P1' }, { name: 'c2', sales: 1, clicks: 1, impressions: 1, cost: 40, product_id: 'P2' }] },
+      stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0 } },
+    })
+    addParent(tenantId, monthId, { productId: 'P1', productName: 'สินค้า 1', salesAll: 50, salesConfirmed: 50, ordersAll: 1, ordersConfirmed: 1, qtyConfirmed: 1, cartVisitors: 1, buyersConfirmed: 1 })
+    addParent(tenantId, monthId, { productId: 'P2', productName: 'สินค้า 2', salesAll: 50, salesConfirmed: 50, ordersAll: 1, ordersConfirmed: 1, qtyConfirmed: 1, cartVisitors: 1, buyersConfirmed: 1 })
+
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    const totalAds = dash.products.reduce((s, p) => s + p.ads, 0)
+    expect(totalAds).toBeCloseTo(50, 2) // ไม่ใช่ 80 (ยอดโฆษณาตรงสินค้ารวมที่เกินจริง)
+  })
+})
+
+describe('ข้อ 19 — estimates ต้องติดป้ายค่าประมาณให้ครบ และไม่หายเกลี้ยงเมื่อไม่มีสินค้า', () => {
+  it('ไม่มีสินค้าเลยในเดือน แต่ยังต้องติด flag GP เฉลี่ยทั้งร้าน และ CRR/CLV', () => {
+    const tenantId = newTenant()
+    makeMonth(tenantId, '2026-10', {
+      income: { total_income: 100, commission: -5, service_fee: 0, transaction_fee: 0, infrastructure_fee: 0, ams_commission: 0, shipping_buyer_paid: 0, shipping_shopee_subsidy: 0, shipping_charged: 0, shipping_return: 0, refund_to_buyer: 0, adjustments: { refund_after_complete: 0 } },
+      ads: { total_cost: 0, campaigns: [] },
+      stats: { totals: { sales_confirmed: 100, orders_confirmed: 1, orders_all: 1, cancelled_orders: 0, potential_buyers: 1, new_buyers: 1, buyers: 1, repeat_rate: 0.1 } },
+    })
+    // ไม่เพิ่ม parent เลย → productList ว่าง
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.products).toHaveLength(0)
+    expect(dash.estimates).toContain('gp_percent_shopwide_avg')
+    expect(dash.estimates).toContain('crr_clv_weighted_estimate')
+    expect(dash.estimates).not.toContain('ads_by_sales_share') // ไม่มีสินค้า ไม่มีให้แบ่งสัดส่วน
+  })
+})
+
+describe('เช็คเพิ่ม — monthsWithData ต้องไม่นับเดือนที่มีแถวแต่ยังไม่มีไฟล์รายรับ', () => {
+  it('income_json เป็น NULL (ยังไม่อัปโหลดไฟล์รายรับ) → ไม่นับใน monthsWithData', () => {
+    const tenantId = newTenant()
+    db.prepare(`
+      INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, income_json, ads_json, stats_json, status)
+      VALUES (?, ?, 'SHOPEE', 'shop1', '2026-10', NULL, NULL, NULL, 'COLLECTING')
+    `).run(generateId(), tenantId)
+    const dash = getPlatformDashboard(tenantId, { platform: 'SHOPEE', shopKey: 'shop1', endMonth: '2026-10', range: 1 })
+    expect(dash.monthsWithData).toBe(0)
+  })
+})
