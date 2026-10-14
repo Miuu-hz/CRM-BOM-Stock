@@ -262,12 +262,19 @@ function postPurchaseInvoiceJournal(
   // ก่อนหัก GRNI (ไม่ใช่หลัง) ให้ตรงกับสัดส่วนมูลค่าที่แท้จริงในบิล ไม่ใช่ตัวเลขที่เหลือจากปิด 2109
   const hasExpenseBuckets = expenseBuckets.length > 0
   const expensePortion = hasExpenseBuckets ? Math.max(0, Math.min(goodsDebit, r2(goodsDebit * skipShare))) : 0
-  const grniPortion = Math.max(0, Math.min(r2(accruedForGRs), r2(goodsDebit - expensePortion)))
-  const inventoryPortion = r2(goodsDebit - expensePortion - grniPortion)
   // ยังไม่จด VAT: vatAccId ชี้มาที่ inventoryAccId (ภาษีซื้อขอคืนไม่ได้ รวมเป็นต้นทุนของ) — ส่วน skip_stock
   // ของภาษีนี้ก็ต้องแยกไปบัญชีค่าใช้จ่ายเหมือนกัน ถ้าจด VAT แล้ว vatDebit ลง 1110 เต็มจำนวนไม่ต้องแยก
   const vatExpensePortion = (!vatClaimable && hasExpenseBuckets) ? Math.max(0, Math.min(vatDebit, r2(vatDebit * skipShare))) : 0
-  const vatInventoryPortion = r2(vatDebit - vatExpensePortion)
+  const vatStockPortion = r2(vatDebit - vatExpensePortion)
+  // ยังไม่จด VAT + PO ราคารวม VAT: GR ตั้ง 2109 ไว้รวมภาษี (qty × ราคารวม VAT) → ปิด 2109 จากยอดของ+ภาษี
+  // รวมกัน ไม่ใช่จากยอดของอย่างเดียว เดิมปิดได้แค่ส่วนของ เศษภาษีค้าง 2109 ถาวร + Dr สต็อกซ้ำอีกเท่าภาษี
+  // (ปิดเต็ม accruedForGRs แล้วยังลงบรรทัดภาษีอีก = นับภาษีสองรอบ เดบิตเกินเครดิต postJournal ปฏิเสธ)
+  const goodsStockPortion = r2(goodsDebit - expensePortion)
+  const grniCap = vatClaimable ? goodsStockPortion : r2(goodsStockPortion + vatStockPortion)
+  const grniPortion = Math.max(0, Math.min(r2(accruedForGRs), grniCap))
+  const grniFromVat = Math.max(0, r2(grniPortion - goodsStockPortion))
+  const inventoryPortion = r2(goodsStockPortion - grniPortion + grniFromVat)
+  const vatInventoryPortion = r2(vatStockPortion - grniFromVat)
   // แบ่ง expensePortion/vatExpensePortion ลงแต่ละบัญชีตามสัดส่วน rawSubtotal ของ bucket นั้น ๆ
   // (บรรทัดสุดท้ายรับเศษปัดทั้งหมด กันดุลไม่ลง) — 1 Dr ต่อบัญชีค่าใช้จ่ายที่ต่างกัน
   const expenseAllocations = allocateByBucket(expenseBuckets, expensePortion)

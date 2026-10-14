@@ -84,6 +84,24 @@ function availableOf(item: StockItem): number {
   if (packFactor && sealed > 0) return item.quantity + sealed * packFactor
   return item.quantity
 }
+function getItemStatus(item: StockItem): 'adequate' | 'nearLow' | 'low' | 'critical' | 'overstock' | 'out' | 'sealed' {
+  const hasSealed = (item.sealedQty ?? 0) > 0
+  const available = availableOf(item)
+  if (item.quantity === 0 && !hasSealed) return 'out'
+  // Loose stock is gone (or below the reorder point) but unopened packs still
+  // cover it: that is a "go open a pack" state, not the red out-of-stock one.
+  if (hasSealed && item.quantity <= 0) return 'sealed'
+  if (hasSealed && item.quantity <= item.minStock && available > item.minStock) return 'sealed'
+  if (available <= item.minStock * 0.3) return 'critical'
+  if (available <= item.minStock) return 'low'
+  // Early warning: still above the reorder point, but close enough that an
+  // order placed today arrives before the shelf is empty.
+  // ponytail: fixed 1.5x. Make it a company setting if lead times differ per product.
+  if (item.minStock > 0 && available <= item.minStock * 1.5) return 'nearLow'
+  if (item.maxStock > 0 && available >= item.maxStock) return 'overstock'
+  return 'adequate'
+}
+
 type ColumnKey = 'image' | 'category' | 'quantity' | 'purchasePrice' | 'unitPrice' | 'value' | 'location' | 'status'
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
@@ -265,23 +283,6 @@ function Stock() {
     }
   }
 
-  const getItemStatus = (item: StockItem): 'adequate' | 'nearLow' | 'low' | 'critical' | 'overstock' | 'out' | 'sealed' => {
-    const hasSealed = (item.sealedQty ?? 0) > 0
-    const available = availableOf(item)
-    if (item.quantity === 0 && !hasSealed) return 'out'
-    // Loose stock is gone (or below the reorder point) but unopened packs still
-    // cover it: that is a "go open a pack" state, not the red out-of-stock one.
-    if (hasSealed && item.quantity <= 0) return 'sealed'
-    if (hasSealed && item.quantity <= item.minStock && available > item.minStock) return 'sealed'
-    if (available <= item.minStock * 0.3) return 'critical'
-    if (available <= item.minStock) return 'low'
-    // Early warning: still above the reorder point, but close enough that an
-    // order placed today arrives before the shelf is empty.
-    // ponytail: fixed 1.5x. Make it a company setting if lead times differ per product.
-    if (item.minStock > 0 && available <= item.minStock * 1.5) return 'nearLow'
-    if (item.maxStock > 0 && available >= item.maxStock) return 'overstock'
-    return 'adequate'
-  }
 
   // จำนวนต่อชิป — นับจากรายการทั้งหมดเสมอ ไม่ใช่ของที่กรองแล้ว
   // ไม่งั้นพอกดชิปนึง ตัวเลขชิปอื่นจะกลายเป็น 0 หมดจนกดต่อไม่ถูก
@@ -547,7 +548,7 @@ function Stock() {
         </div>
 
         {/* บนมือถือให้ชิปเลื่อนแนวนอนแทนที่จะตกบรรทัดจนเต็มจอ */}
-        <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible -mx-0.5 px-0.5 py-0.5">
+        <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-0.5 px-0.5 py-0.5">
           <FilterButton label="ทั้งหมด" count={chipCounts.cat.all} active={selectedCategory === 'all'} onClick={() => handleCategoryChange('all')} />
           {([
             ['วัตถุดิบ', 'raw', chipCounts.cat.raw],
@@ -773,7 +774,7 @@ function Stock() {
                       )}
 
                       {visibleCols.status && (
-                        <td className="hidden sm:table-cell">
+                        <td className="hidden sm:table-cell whitespace-nowrap">
                           <div className="flex items-center gap-1.5" title={barTitle}>
                             {/* แถบสั้น ๆ ให้กวาดตาเห็นระดับของทั้งคอลัมน์ได้โดยไม่ต้องอ่านตัวเลขทีละแถว */}
                             <span className="inline-block w-[42px] h-[5px] rounded-full bg-[var(--surface-sunken)] overflow-hidden shrink-0">
@@ -1293,7 +1294,7 @@ function DetailModal({
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-mono text-[var(--fg-4)]">{item.sku}</span>
               <CategoryBadge category={item.category} />
-              <StatusBadge status={item.status} />
+              <StatusBadge status={getItemStatus(item)} />
             </div>
           </div>
 
@@ -2114,7 +2115,7 @@ export function EditModal({
               <div className="flex items-center gap-2 flex-wrap mt-1">
                 <span className="text-xs font-mono text-[var(--fg-3)]">{item.sku}</span>
                 <CategoryBadge category={formData.category || item.category} />
-                <StatusBadge status={item.status} />
+                <StatusBadge status={getItemStatus(item)} />
               </div>
             </div>
 

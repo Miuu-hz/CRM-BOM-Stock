@@ -97,6 +97,7 @@ function Marketing() {
   const [showCostPercent, setShowCostPercent] = useState(false)
   const [whatIfCost, setWhatIfCost] = useState<Record<string, number>>({})
   const [sortKey, setSortKey] = useState<'salesConfirmed' | 'profit' | 'margin'>('salesConfirmed')
+  const [permissionError, setPermissionError] = useState(false)
 
   useEffect(() => {
     api.get('/marketing/platform-dashboard/shops').then((r) => {
@@ -108,7 +109,9 @@ function Marketing() {
         const latest = [...list[0].months].sort().slice(-1)[0]
         setEndMonth(latest)
       }
-    }).catch(() => {})
+    }).catch((err) => {
+      if (err.response?.status === 403) setPermissionError(true)
+    })
   }, [])
 
   const load = useCallback(() => {
@@ -116,7 +119,10 @@ function Marketing() {
     setLoading(true)
     api.get('/marketing/platform-dashboard', { params: { platform, shop_key: shopKey, end_month: endMonth, range } })
       .then((r) => setDash(r.data.data))
-      .catch(() => setDash(null))
+      .catch((err) => {
+        if (err.response?.status === 403) setPermissionError(true)
+        setDash(null)
+      })
       .finally(() => setLoading(false))
   }, [platform, shopKey, endMonth, range])
 
@@ -169,6 +175,18 @@ function Marketing() {
     bars.push({ name: 'กำไร', base: 0, delta: Math.abs(running), value: running })
     return bars
   }, [dash, enabledCosts, productsComputed])
+
+  if (permissionError) {
+    return (
+      <div className="p-6 space-y-4">
+        <h1 className="text-2xl font-bold">แดชบอร์ดแพลตฟอร์ม</h1>
+        <div className="p-4 rounded-xl bg-[var(--danger)]/10 border border-[var(--danger)]/20 text-[var(--danger)]">
+          <h3 className="font-semibold text-base mb-1">ไม่มีสิทธิ์เข้าถึงข้อมูลการตลาด</h3>
+          <p className="text-sm">หน้านี้จำกัดเฉพาะฝ่ายการตลาด ฝ่ายขาย หรือผู้ดูแลระบบเท่านั้น หากจำเป็นต้องใช้งาน กรุณาติดต่อผู้ดูแลระบบ (Admin) เพื่อขอสิทธิ์</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!shops.length) {
     return (

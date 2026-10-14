@@ -213,3 +213,22 @@ describe('resolveExpenseAccountId — บัญชีค่าใช้จ่า
     expect(resolveExpenseAccountId(user.tenantId, accId, true)).toBe(accId)
   })
 })
+
+describe('ใบแจ้งหนี้ซื้อ — กิจการยังไม่จด VAT + PO ราคารวม VAT', () => {
+  // GR ตั้ง 2109 ไว้ 107 (ราคารวมภาษี) — ใบแจ้งหนี้ต้องปิด 2109 ครบ 107 และลงบัญชีได้ (ดุล)
+  // เดิม: ปิดได้แค่ 100 เศษ 7 ค้าง 2109 + Dr 1107 อีก 7 · รอบแก้แรก: ปิด 107 แล้วยังลงภาษีอีก 7 → Dr 114 ≠ Cr 107
+  it('ปิด 2109 เต็มยอดที่ GR ตั้งไว้ ไม่นับภาษีซ้ำ และไม่ Dr สต็อกเพิ่ม', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    db.prepare('INSERT INTO company_settings (tenant_id, name, vat_registered) VALUES (?, ?, 0)').run(user.tenantId, 'ร้านทดสอบ')
+    const poId = seedPo(user.tenantId, [{ description: 'แป้งสาลี', qty: 1, unitPrice: 107 }], 7)
+    db.prepare('UPDATE purchase_orders SET vat_inclusive = 1 WHERE id = ?').run(poId)
+    const gr = receiveWholePo(user.tenantId, user.email, poId)
+    const inv = createPurchaseInvoice(user.tenantId, user.email, { goodsReceiptIds: [gr.id] })
+
+    const { byCode, debitTotal, creditTotal } = journalSummary(user.tenantId, inv.id)
+    expect(debitTotal).toBeCloseTo(creditTotal, 5)
+    expect(creditTotal).toBeCloseTo(107, 2)
+    expect(byCode('2109')).toBeCloseTo(107, 2)
+    expect(byCode('1107')).toBeCloseTo(0, 2)
+  })
+})

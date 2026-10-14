@@ -1,12 +1,25 @@
 import { Router, Request, Response } from 'express'
-import { authenticate } from '../middleware/auth.middleware'
+import rateLimit from 'express-rate-limit'
+import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import { getPlatformDashboard, getDashboardShops } from '../services/platformDashboard.service'
 import { PlatformMonthError } from '../services/platformMonth.service'
 
 const router = Router()
 
-// All routes require authentication
+// All routes require authentication & marketing read permission
 router.use(authenticate)
+router.use(requirePermission('marketing', 'read'))
+
+// Rate-limit aggregate dashboard queries to prevent DoS / SQLite lock contention
+const marketingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่' },
+})
+
+router.use(marketingLimiter)
 
 // ponytail: /shops, /metrics, /analytics/summary (ยุค CSV อัปโหลดเอง) ลบทิ้ง 2026-10-13 —
 // marketing_metrics มี 0 แถวมาตลอด, ไม่มีผู้เรียกอื่นนอกจาก Marketing.tsx เดิมที่เขียนทับไปแล้ว
