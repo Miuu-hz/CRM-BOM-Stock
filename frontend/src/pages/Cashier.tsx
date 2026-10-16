@@ -2657,7 +2657,7 @@ function CashMovementModal({ shift, onClose, onDone }: {
   }
 
   useEffect(() => {
-    accountsApi.getAll({ active: true }).then(({ data }: any) => { if (data.success) setAccounts(data.data) }).catch(() => {})
+    accountsApi.getAll({ active: true }).then(({ data }: any) => { if (data.success) setAccounts((data.data?.list ?? []).filter((a: any) => a.level >= 2)) }).catch(() => {})
     loadMovements()
   }, [])
 

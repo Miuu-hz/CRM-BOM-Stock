@@ -1223,6 +1223,11 @@ export function runMigrations(db: any): void {
         PRIMARY KEY (tenant_id, doc_type)
       );
     `)
+    // เริ่มเลข 001 ใหม่ทุก YEAR/MONTH/DAY — ค่าเดิม YEAR = ต่อเนื่องทั้งปีเหมือนก่อนมีคอลัมน์นี้
+    const dnfCols = db.prepare("PRAGMA table_info(document_number_formats)").all() as any[]
+    if (!dnfCols.some(c => c.name === 'reset_period')) {
+      db.exec("ALTER TABLE document_number_formats ADD COLUMN reset_period TEXT NOT NULL DEFAULT 'YEAR'")
+    }
     console.log('✅ Migration: document_number_formats table ready')
   } catch (e) {
     console.error('⚠️ document_number_formats migration error:', e)

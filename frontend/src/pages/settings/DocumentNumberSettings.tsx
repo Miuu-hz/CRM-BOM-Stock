@@ -10,6 +10,7 @@ interface DocFormat {
   padding: number
   date_format: string
   separator: string
+  reset_period: string
 }
 
 const DOC_TYPES: { value: string; label: string; defaultPrefix: string }[] = [
@@ -27,6 +28,13 @@ const DOC_TYPES: { value: string; label: string; defaultPrefix: string }[] = [
   { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS' },
   { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT' },
   { value: 'WORK_ORDER',       label: 'ใบสั่งผลิต (WO)',      defaultPrefix: 'WO' },
+]
+
+// เลือกได้ละเอียดแค่ที่วันที่ในเลขแยกได้ — backend ถอยเป็นช่วงใหญ่ขึ้นเองด้วย (utils/docSeq.ts seqBucket)
+const RESET_PERIODS = [
+  { value: 'YEAR',  label: 'ต่อเนื่องทั้งปี', needs: ['DDMMYY', 'YYMMDD', 'MMYY', 'YYYY'] },
+  { value: 'MONTH', label: 'ทุกเดือน',       needs: ['DDMMYY', 'YYMMDD', 'MMYY'] },
+  { value: 'DAY',   label: 'ทุกวัน',         needs: ['DDMMYY', 'YYMMDD'] },
 ]
 
 const DATE_FORMATS = [
@@ -71,6 +79,7 @@ export default function DocumentNumberSettings() {
               padding: existing.padding,
               date_format: existing.date_format || 'NONE',
               separator: existing.separator || '-',
+              reset_period: existing.reset_period || 'YEAR',
             }
           : {
               doc_type: dt.value,
@@ -79,6 +88,7 @@ export default function DocumentNumberSettings() {
               padding: 3,
               date_format: 'DDMMYY',
               separator: '-',
+              reset_period: 'YEAR',
             }
       }
       setFormats(map)
@@ -141,8 +151,8 @@ export default function DocumentNumberSettings() {
       <div className="flex gap-3 bg-[var(--info-soft)] border border-info/25 rounded-xl p-4 text-sm text-[var(--fg-2)]">
         <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
         <div>
-          <p>เลขรันนิ่ง (xxx) เพิ่มอัตโนมัติต่อเนื่อง ไม่รีเซ็ตตามวัน — เอกสารที่ออกไปแล้วจะไม่เปลี่ยนเลข
-            มีผลเฉพาะเอกสารใหม่ที่สร้างหลังเปิดใช้งาน</p>
+          <p>เลขรันนิ่ง (xxx) เลือกได้ว่าจะเริ่ม 001 ใหม่ทุกวัน ทุกเดือน หรือต่อเนื่องทั้งปี (ต้องมีวันที่ต่อท้ายพอให้เลขไม่ซ้ำ)
+            — เอกสารที่ออกไปแล้วจะไม่เปลี่ยนเลข มีผลเฉพาะเอกสารใหม่ที่สร้างหลังบันทึก</p>
         </div>
       </div>
 
@@ -155,6 +165,7 @@ export default function DocumentNumberSettings() {
               <th className="text-left px-2 py-3 font-medium">Prefix</th>
               <th className="text-center px-2 py-3 font-medium">จำนวนหลัก</th>
               <th className="text-left px-2 py-3 font-medium">วันที่ต่อท้าย</th>
+              <th className="text-left px-2 py-3 font-medium">เริ่ม 001 ใหม่</th>
               <th className="text-center px-2 py-3 font-medium">คั่น</th>
               <th className="text-right px-4 py-3 font-medium">ตัวอย่าง</th>
             </tr>
@@ -193,11 +204,28 @@ export default function DocumentNumberSettings() {
                   <td className="px-2 py-2.5">
                     <select
                       value={f.date_format}
-                      onChange={e => update(dt.value, { date_format: e.target.value })}
+                      onChange={e => {
+                        const date_format = e.target.value
+                        const ok = RESET_PERIODS.find(r => r.value === f.reset_period)?.needs.includes(date_format)
+                        update(dt.value, ok ? { date_format } : { date_format, reset_period: 'YEAR' })
+                      }}
                       disabled={!f.enabled}
                       className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-40"
                     >
                       {DATE_FORMATS.map(df => <option key={df.value} value={df.value}>{df.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-2 py-2.5">
+                    <select
+                      value={f.reset_period}
+                      onChange={e => update(dt.value, { reset_period: e.target.value })}
+                      disabled={!f.enabled || f.date_format === 'NONE'}
+                      aria-label={`เริ่มเลข 001 ใหม่ของ${dt.label}`}
+                      className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-40"
+                    >
+                      {RESET_PERIODS.map(r => (
+                        <option key={r.value} value={r.value} disabled={!r.needs.includes(f.date_format)}>{r.label}</option>
+                      ))}
                     </select>
                   </td>
                   <td className="px-2 py-2.5 text-center">

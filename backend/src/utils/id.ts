@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import db from '../db/sqlite'
+import { seqBucket } from './docSeq'
 
 export const generateId = (): string =>
   randomUUID().replace(/-/g, '').substring(0, 25)
@@ -57,12 +58,11 @@ export function formatDocumentNumber(
   } catch { /* table not migrated yet */ }
 
   const d = parseDocDate(docDate)
-  const currentYear = d.getFullYear()
   const fmtHasYear = !!(fmt && fmt.date_format && fmt.date_format !== 'NONE')
   const seq = getNextDocumentNumber(
     tenantId,
     docType,
-    fmt ? (fmtHasYear ? currentYear : 0) : segment !== undefined ? Number(segment) : 0
+    fmt ? (fmtHasYear ? seqBucket(fmt.reset_period, fmt.date_format, d) : 0) : segment !== undefined ? Number(segment) : 0
   )
 
   if (fmt) {

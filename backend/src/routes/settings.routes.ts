@@ -177,11 +177,11 @@ router.post('/document-formats', (req, res) => {
     }
     const now = new Date().toISOString()
     const upsert = db.prepare(`
-      INSERT INTO document_number_formats (tenant_id, doc_type, enabled, prefix, padding, date_format, separator, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO document_number_formats (tenant_id, doc_type, enabled, prefix, padding, date_format, separator, reset_period, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, doc_type) DO UPDATE SET
         enabled = excluded.enabled, prefix = excluded.prefix, padding = excluded.padding,
-        date_format = excluded.date_format, separator = excluded.separator, updated_at = excluded.updated_at
+        date_format = excluded.date_format, separator = excluded.separator, reset_period = excluded.reset_period, updated_at = excluded.updated_at
     `)
     const tx = db.transaction(() => {
       for (const f of formats) {
@@ -189,7 +189,8 @@ router.post('/document-formats', (req, res) => {
         const padding = Math.min(Math.max(Number(f.padding) || 3, 2), 8)
         const dateFormat = ['NONE', 'DDMMYY', 'YYMMDD', 'MMYY', 'YYYY'].includes(f.date_format) ? f.date_format : 'DDMMYY'
         upsert.run(user.tenantId, f.doc_type, f.enabled ? 1 : 0, String(f.prefix).slice(0, 10), padding,
-          dateFormat === 'NONE' ? '' : dateFormat, f.separator === '/' ? '/' : '-', now)
+          dateFormat === 'NONE' ? '' : dateFormat, f.separator === '/' ? '/' : '-',
+          ['DAY', 'MONTH'].includes(f.reset_period) ? f.reset_period : 'YEAR', now)
       }
     })
     tx()

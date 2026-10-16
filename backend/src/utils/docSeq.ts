@@ -21,3 +21,17 @@ export function docSeqOf(docNumber: unknown): number | null {
   const n = parseInt(pick, 10)
   return n > 0 && n < MAX_DOC_SEQ ? n : null
 }
+
+/**
+ * ถังตัวนับ (document_sequences.year) ของเลขแบบตั้งค่า — ถังใหม่ = เลขเริ่ม 001 ใหม่
+ *   YEAR → 2026 · MONTH → 202610 · DAY → 20261016
+ * reset ได้ละเอียดแค่ที่วันที่ในเลขแยกได้ ไม่งั้นเลขชนกัน (MMYY + DAY → POS-001-1026 ซ้ำทุกวัน)
+ * จึงถอยเป็นช่วงที่ใหญ่ขึ้นเอง
+ */
+export function seqBucket(resetPeriod: string | null | undefined, dateFormat: string, d: Date): number {
+  const y = d.getFullYear(), m = d.getMonth() + 1
+  const hasDay = dateFormat === 'DDMMYY' || dateFormat === 'YYMMDD'
+  if (resetPeriod === 'DAY' && hasDay) return y * 10000 + m * 100 + d.getDate()
+  if ((resetPeriod === 'MONTH' || resetPeriod === 'DAY') && (hasDay || dateFormat === 'MMYY')) return y * 100 + m
+  return y
+}
