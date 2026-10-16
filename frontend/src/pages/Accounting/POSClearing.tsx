@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Link } from 'react-router-dom'
 import {
   Wallet,
   Building2,
@@ -266,7 +267,7 @@ export default function POSClearing() {
           <div className="px-5 py-4 border-b border-[var(--border)]">
             <h2 className="font-semibold text-[var(--fg-1)] flex items-center gap-2">
               <Receipt className="w-4 h-4 text-[var(--primary)]" />
-              บิลที่รอนำเงินเข้า ({pendingBills.length} บิล)
+              ประวัติการขาย{dateLabel()} ({new Set(pendingBills.map(b => b.id)).size} บิล)
             </h2>
           </div>
 
@@ -295,8 +296,8 @@ export default function POSClearing() {
       {pendingBills.length === 0 && !loading && (
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-10 text-center">
           <CheckCircle2 className="w-14 h-14 mx-auto mb-3 text-success" />
-          <p className="text-[var(--fg-1)] font-medium">ทุกยอดได้รับการนำเข้าบัญชีแล้ว</p>
-          <p className="text-[var(--fg-4)] text-sm mt-1">ไม่มีบิลค้างอยู่</p>
+          <p className="text-[var(--fg-1)] font-medium">ไม่มีการขาย{dateLabel()}</p>
+          <p className="text-[var(--fg-4)] text-sm mt-1">เลือกวันอื่นด้านบนเพื่อดูประวัติการขาย</p>
         </div>
       )}
 
@@ -410,7 +411,8 @@ function BillGroup({
             className="overflow-hidden"
           >
             {bills.map((bill) => (
-              <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20">
+              <Link key={`${bill.id}-${bill.payment_method}`} to={`/cashier?bill=${bill.id}`} title="เปิดบิลนี้ในหน้าแคชเชียร์ (พิมพ์ซ้ำ/ออกใบกำกับภาษี)"
+                className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20 hover:bg-[var(--bg)]">
                 <div>
                   <p className="text-sm text-[var(--fg-1)]">{bill.display_name || bill.bill_number}</p>
                   <p className="text-xs text-[var(--fg-4)]">
@@ -418,7 +420,7 @@ function BillGroup({
                   </p>
                 </div>
                 <p className="text-sm font-medium text-[var(--fg-1)]">{fmt(bill.total_amount)}</p>
-              </div>
+              </Link>
             ))}
           </motion.div>
         )}

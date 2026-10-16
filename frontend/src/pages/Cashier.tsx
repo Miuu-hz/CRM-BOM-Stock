@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils, ArrowLeft} from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils, ArrowLeft, Wallet, ArrowDownToLine, ArrowUpFromLine, History} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
@@ -116,6 +117,15 @@ interface CashMovement {
   created_at: string
 }
 
+interface TodaySale {
+  id: string
+  bill_number: string
+  display_name?: string
+  total_amount: number
+  closed_at: string
+  methods: string[]
+}
+
 // ==================== Components ====================
 
 export default function Cashier() {
@@ -124,7 +134,8 @@ export default function Cashier() {
   const [view, setView] = useState<'bills' | 'menu'>('bills')
   const [openBills, setOpenBills] = useState<OpenBill[]>([])
   const [billsMode, setBillsMode] = useState<'OPEN' | 'PAID'>('OPEN')
-  const [paidBills, setPaidBills] = useState<OpenBill[]>([])
+  const [todaySales, setTodaySales] = useState<TodaySale[]>([])
+  const [drawerMoves, setDrawerMoves] = useState<CashMovement[]>([])
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [currentBill, setCurrentBill] = useState<CurrentBill | null>(null)
   const [menus, setMenus] = useState<POSMenu[]>([])
@@ -194,27 +205,49 @@ export default function Cashier() {
     fetchData()
   }, [fetchData])
 
-  // บิลที่ชำระเงินแล้ว (สำหรับออกใบกำกับภาษีย้อนหลัง) — โหลดแยกจาก openBills เพื่อไม่ให้
-  // ตัวเลขนับ "บิล (n)" บนหัวจอกลายเป็นนับบิล PAID ไปโดยไม่ตั้งใจ
+  // แท็บ "ชำระแล้ว" = สรุปของวันนี้ (เงินในลิ้นชัก + รายการขาย/เงินเข้าออก) — ประวัติย้อนหลังอยู่ที่
+  // /accounting/pos-clearing ซึ่งลิงก์กลับมาเปิดบิลที่นี่ด้วย ?bill= (ออกใบกำกับภาษี/พิมพ์ซ้ำ)
+  // ponytail: ดึงบิล PAID ทั้งหมดแล้วกรองวันนี้ฝั่งจอ เพราะ ?date= ของ endpoint กรองด้วย DATE() แบบ UTC
+  //   (บิล 00:00–06:59 น. ตกไปวันก่อน) เพดาน: บิลทั้งปีมาทุกครั้งที่เปิดแท็บ — วันละหลายร้อยบิลค่อยกรองที่ backend
   const fetchPaidBills = useCallback(async () => {
     try {
-      const res = await posBillService.getBills({ status: 'PAID' })
-      if (res.success) {
-        const sorted = [...(res.data || [])].sort((a: OpenBill, b: OpenBill) =>
-          new Date(b.closed_at || b.opened_at).getTime() - new Date(a.closed_at || a.opened_at).getTime()
-        )
-        setPaidBills(sorted)
+      const [billsRes, movesRes] = await Promise.all([
+        posService.getPendingClearingBills(),
+        currentShift ? posService.getShiftCashMovements(currentShift.id) : Promise.resolve(null),
+      ])
+      if (billsRes.success) {
+        const today = new Date().toDateString()
+        const byId = new Map<string, TodaySale>()
+        // endpoint join pos_payments → บิลจ่ายหลายช่องทางมาหลายแถว รวมเป็นบิลเดียว
+        for (const r of billsRes.data || []) {
+          if (!r.closed_at || new Date(r.closed_at).toDateString() !== today) continue
+          const sale: TodaySale = byId.get(r.id) || { id: r.id, bill_number: r.bill_number, display_name: r.display_name, total_amount: r.total_amount, closed_at: r.closed_at, methods: [] }
+          if (r.payment_method && !sale.methods.includes(r.payment_method)) sale.methods.push(r.payment_method)
+          byId.set(r.id, sale)
+        }
+        setTodaySales([...byId.values()])
       }
+      setDrawerMoves(movesRes?.success ? movesRes.data || [] : [])
     } catch {
-      toast.error('โหลดบิลที่ชำระแล้วไม่สำเร็จ')
+      toast.error('โหลดสรุปวันนี้ไม่สำเร็จ')
     }
-  }, [])
+  }, [currentShift])
 
   useEffect(() => {
     if (billsMode === 'PAID') fetchPaidBills()
   }, [billsMode, fetchPaidBills])
 
-  const displayedBills = billsMode === 'OPEN' ? openBills : paidBills
+  // เปิดบิลจากลิงก์หน้าประวัติการขาย (/cashier?bill=<id>)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const id = searchParams.get('bill')
+    if (!id) return
+    openBill(id)
+    setSearchParams({}, { replace: true })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const displayedBills = openBills
 
   // แก้รายการ/ยอด/ชำระเงินซ้ำได้เฉพาะบิลที่ยังเปิดอยู่เท่านั้น — บิล PAID ดูได้อย่างเดียว
   const isBillEditable = (b: CurrentBill | null): b is CurrentBill => !!b && (b.status == null || b.status === 'OPEN')
@@ -671,7 +704,7 @@ export default function Cashier() {
                 <div className="flex justify-between items-center flex-wrap gap-3">
                   <div className="flex items-center gap-3">
                     <h2 className="text-lg font-semibold text-[var(--fg-1)]">
-                      {billsMode === 'OPEN' ? 'บิลที่เปิดอยู่' : 'บิลที่ชำระแล้ว'}
+                      {billsMode === 'OPEN' ? 'บิลที่เปิดอยู่' : 'สรุปวันนี้'}
                     </h2>
                     <div className="flex bg-[var(--bg)] rounded-lg p-1">
                       <button
@@ -688,7 +721,7 @@ export default function Cashier() {
                           billsMode === 'PAID' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
                         }`}
                       >
-                        ชำระแล้ว
+                        สรุปวันนี้
                       </button>
                     </div>
                   </div>
@@ -705,17 +738,17 @@ export default function Cashier() {
                 </div>
 
                 {/* Bills Grid */}
-                {loading ? (
+                {billsMode === 'PAID' ? (
+                  <TodaySummary shift={currentShift} sales={todaySales} moves={drawerMoves} onOpenBill={openBill} />
+                ) : loading ? (
                   <div className="text-center py-12">
                     <div className="w-8 h-8 border-2 border-phopy-indigo border-t-transparent rounded-full animate-spin mx-auto" />
                   </div>
                 ) : displayedBills.length === 0 ? (
                   <div className="text-center py-12 bg-[var(--surface)] border border-[var(--border)] rounded-xl">
                     <Receipt className="w-12 h-12 mx-auto text-[var(--fg-4)] mb-3" />
-                    <p className="text-[var(--fg-3)]">{billsMode === 'OPEN' ? 'ยังไม่มีบิล' : 'ยังไม่มีบิลที่ชำระแล้ว'}</p>
-                    <p className="text-sm text-[var(--fg-4)] mt-1">
-                      {billsMode === 'OPEN' ? 'สร้างบิลใหม่เพื่อเริ่มขาย' : 'บิลที่ชำระเงินแล้วจะมาแสดงที่นี่'}
-                    </p>
+                    <p className="text-[var(--fg-3)]">ยังไม่มีบิล</p>
+                    <p className="text-sm text-[var(--fg-4)] mt-1">สร้างบิลใหม่เพื่อเริ่มขาย</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -755,7 +788,7 @@ export default function Cashier() {
                         <div className="flex items-center gap-1 text-xs text-[var(--fg-4)] mt-2">
                           <Clock className="w-3 h-3" />
                           <span>
-                            {new Date(billsMode === 'PAID' && bill.closed_at ? bill.closed_at : bill.opened_at)
+                            {new Date(bill.opened_at)
                               .toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
@@ -1409,6 +1442,103 @@ export default function Cashier() {
 }
 
 // ==================== Sub Components ====================
+
+// ==================== สรุปวันนี้ (แท็บ "สรุปวันนี้") ====================
+
+const PAY_LABEL: Record<string, string> = { CASH: 'เงินสด', QR_CODE: 'QR', TRANSFER: 'โอน', CREDIT_CARD: 'บัตร' }
+const baht = (n?: number) => `฿${(Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
+const hhmm = (s: string) => new Date(s).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+
+function TodaySummary({ shift, sales, moves, onOpenBill }: {
+  shift: POSShift | null | undefined
+  sales: TodaySale[]
+  moves: CashMovement[]
+  onOpenBill: (id: string) => void
+}) {
+  const live = shift?.live
+  // เงินในลิ้นชักตอนนี้ = ยอดเดียวกับที่ปิดกะใช้เทียบ (expectedShiftCash) — ไม่ลงเงินออกก็จะโตตามยอดขายเงินสด
+  const drawer = expectedShiftCash(shift)
+  const rows = [
+    ...sales.map(s => ({ key: `b-${s.id}`, at: s.closed_at, sale: s, move: null as CashMovement | null })),
+    ...moves.map(m => ({ key: `m-${m.id}`, at: m.created_at, sale: null as TodaySale | null, move: m })),
+  ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+  const salesTotal = sales.reduce((s, b) => s + (b.total_amount || 0), 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="p-4 rounded-xl bg-[var(--surface)] border border-success/30">
+          <p className="text-xs text-[var(--fg-3)] flex items-center gap-1.5"><Wallet className="w-4 h-4 text-success" /> เงินสดที่ควรมีในลิ้นชัก</p>
+          {shift ? (
+            <>
+              <p className="text-2xl font-bold text-success mt-1">{baht(drawer)}</p>
+              <div className="text-xs text-[var(--fg-3)] mt-2 space-y-0.5">
+                <div className="flex justify-between"><span>เงินทอนเริ่มกะ</span><span>{baht(shift.opening_cash)}</span></div>
+                <div className="flex justify-between"><span>+ ขายเงินสด</span><span>{baht(live?.cash_revenue)}</span></div>
+                {(live?.cash_in || 0) > 0 && <div className="flex justify-between"><span>+ เงินเข้าลิ้นชัก</span><span>{baht(live?.cash_in)}</span></div>}
+                {(live?.paid_out || 0) > 0 && <div className="flex justify-between text-danger"><span>− เงินออกลิ้นชัก</span><span>{baht(live?.paid_out)}</span></div>}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-[var(--fg-4)] mt-2">ยังไม่ได้เปิดกะ</p>
+          )}
+        </div>
+        <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
+          <p className="text-xs text-[var(--fg-3)] flex items-center gap-1.5"><QrCode className="w-4 h-4 text-blue-400" /> รับโอน / QR</p>
+          <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">{baht(live?.bank_revenue)}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-2">เข้าบัญชีธนาคาร ไม่อยู่ในลิ้นชัก</p>
+        </div>
+        <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--border)]">
+          <p className="text-xs text-[var(--fg-3)] flex items-center gap-1.5"><Receipt className="w-4 h-4 text-[var(--primary)]" /> ยอดขายวันนี้</p>
+          <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">{baht(shift ? live?.total_revenue : salesTotal)}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-2">{sales.length} บิล</p>
+        </div>
+      </div>
+
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+          <h3 className="font-semibold text-[var(--fg-1)] text-sm">รายการวันนี้</h3>
+          <Link to="/accounting/pos-clearing" className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1">
+            <History className="w-3.5 h-3.5" /> ประวัติการขายย้อนหลัง
+          </Link>
+        </div>
+        {rows.length === 0 ? (
+          <p className="p-8 text-center text-sm text-[var(--fg-4)]">ยังไม่มีการขายหรือเงินเข้า/ออกวันนี้</p>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {rows.map(r => r.sale ? (
+              <li key={r.key}>
+                <button onClick={() => onOpenBill(r.sale!.id)} className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-[var(--bg)]">
+                  <span className="text-xs text-[var(--fg-4)] w-12 shrink-0">{hhmm(r.at)}</span>
+                  {r.sale.methods.includes('CASH') ? <Banknote className="w-4 h-4 text-warning shrink-0" /> : <QrCode className="w-4 h-4 text-blue-400 shrink-0" />}
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-[var(--fg-1)] truncate">{r.sale.display_name || r.sale.bill_number}</span>
+                    <span className="block text-xs text-[var(--fg-4)]">{r.sale.bill_number} · {r.sale.methods.map(m => PAY_LABEL[m] || m).join(' + ') || 'ไม่มีรายการรับเงิน'}</span>
+                  </span>
+                  <span className="text-sm font-semibold text-success">+{baht(r.sale.total_amount)}</span>
+                </button>
+              </li>
+            ) : (
+              <li key={r.key} className="px-4 py-2.5 flex items-center gap-3">
+                <span className="text-xs text-[var(--fg-4)] w-12 shrink-0">{hhmm(r.at)}</span>
+                {r.move!.type === 'CASH_IN'
+                  ? <ArrowDownToLine className="w-4 h-4 text-success shrink-0" />
+                  : <ArrowUpFromLine className="w-4 h-4 text-danger shrink-0" />}
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm text-[var(--fg-1)] truncate">{r.move!.type === 'CASH_IN' ? 'เงินเข้าลิ้นชัก' : 'เงินออกลิ้นชัก'}{r.move!.reason ? ` — ${r.move!.reason}` : ''}</span>
+                  {r.move!.account_name && <span className="block text-xs text-[var(--fg-4)]">{r.move!.account_name}</span>}
+                </span>
+                <span className={`text-sm font-semibold ${r.move!.type === 'CASH_IN' ? 'text-success' : 'text-danger'}`}>
+                  {r.move!.type === 'CASH_IN' ? '+' : '−'}{baht(r.move!.amount)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function CreateBillModal({ isOpen, onClose, onCreate }: {
   isOpen: boolean
