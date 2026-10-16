@@ -870,4 +870,132 @@ export const flexTemplates = {
         }
     },
 
+    // ─── Samsung One UI 9 Style: สรุปปิดกะ → LINE ส่วนตัวของ Admin ─────────────
+    // สีจาก Phopy Design System (indigo/mango/sand/ink) · แบบร่างที่เจ้าของเลือก: Desktop/pos-shift-line-mockup.html
+    shiftCloseCard: (s: {
+        shiftNumber: string; shopName: string; openedAt: string; closedAt: string; closedByName: string
+        billCount: number; totalRevenue: number; cashRevenue: number; bankRevenue: number
+        expectedCash: number; countedCash: number; difference: number
+        topSales: { name: string; qty: number; amount: number }[]
+        buys: { total: number; top: { label: string; sub: string; amount: number }[] }
+        alerts: { voids: number; itemVoids: number; discountTotal: number }
+        webUrl: string
+    }) => {
+        const C = {
+            indigo: '#3949E5', indigo50: '#EEF0FE', mango: '#F5A524', mango600: '#D9881A', mango50: '#FEF4E2',
+            ink900: '#1E1B16', ink500: '#6B6658', sand100: '#F5F0E2', sand200: '#ECE6D8',
+            danger: '#DC2626', danger50: '#FEE2E2', success: '#16A34A', success50: '#DCFCE7',
+        }
+        const baht = (n: number) => `฿${(Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
+        const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })
+        const diff = s.difference
+        const drawer = diff < 0 ? { bg: C.danger50, pill: C.danger, text: `🔴 ขาด ${baht(-diff)}` }
+            : diff > 0 ? { bg: C.mango50, pill: C.mango600, text: `🟠 เกิน ${baht(diff)}` }
+            : { bg: C.success50, pill: C.success, text: '🟢 ตรงพอดี' }
+        const pad = (all: string) => ({ paddingAll: all })
+
+        const rankList = (rows: { title: string; sub: string; amount: number }[], tint: string, bar: string, max: number) =>
+            rows.map((r, i) => ({
+                type: 'box', layout: 'horizontal', spacing: 'md', alignItems: 'center', margin: 'sm',
+                contents: [
+                    { type: 'box', layout: 'vertical', width: '22px', height: '22px', cornerRadius: '8px', backgroundColor: tint,
+                      justifyContent: 'center', contents: [{ type: 'text', text: String(i + 1), size: 'xxs', weight: 'bold', color: bar, align: 'center' }] },
+                    { type: 'box', layout: 'vertical', flex: 1, contents: [
+                        { type: 'text', text: r.title, size: 'sm', weight: 'bold', color: C.ink900, wrap: false },
+                        { type: 'text', text: r.sub, size: 'xxs', color: C.ink500 },
+                        { type: 'box', layout: 'vertical', height: '4px', backgroundColor: C.sand100, cornerRadius: '4px', margin: 'xs', contents: [
+                            { type: 'box', layout: 'vertical', height: '4px', cornerRadius: '4px', backgroundColor: bar,
+                              width: `${Math.max(4, Math.round((r.amount / (max || 1)) * 100))}%`, contents: [] },
+                        ] },
+                    ] },
+                    { type: 'text', text: baht(r.amount), size: 'sm', weight: 'bold', color: C.ink900, flex: 0 },
+                ],
+            }))
+
+        const section = (title: string, right: string, rows: any[], empty: string) => ({
+            type: 'box', layout: 'vertical', margin: 'xl', contents: [
+                { type: 'box', layout: 'horizontal', contents: [
+                    { type: 'text', text: title, size: 'sm', weight: 'bold', color: C.ink900, flex: 1 },
+                    { type: 'text', text: right, size: 'xxs', color: C.ink500, align: 'end', gravity: 'bottom', flex: 0 },
+                ] },
+                ...(rows.length ? rows : [{ type: 'text', text: empty, size: 'xs', color: C.ink500, margin: 'sm' }]),
+            ],
+        })
+
+        const sales = s.topSales.map(t => ({ title: t.name, sub: `× ${t.qty.toLocaleString('th-TH')}`, amount: t.amount }))
+        const buys = s.buys.top.map(b => ({ title: b.label, sub: b.sub, amount: b.amount }))
+        const chips = [
+            s.alerts.voids ? `🔴 ยกเลิกบิล ${s.alerts.voids}` : '',
+            s.alerts.itemVoids ? `🟠 ลบรายการหลังส่งครัว ${s.alerts.itemVoids}` : '',
+            s.alerts.discountTotal ? `🏷️ ส่วนลด ${baht(s.alerts.discountTotal)}` : '',
+        ].filter(Boolean)
+        const pillBtn = (label: string, uri: string, primary: boolean) => ({
+            type: 'box', layout: 'vertical', cornerRadius: 'xxl', paddingTop: '11px', paddingBottom: '11px',
+            backgroundColor: primary ? C.indigo : C.sand100, action: { type: 'uri', label, uri },
+            contents: [{ type: 'text', text: label, size: 'sm', weight: 'bold', align: 'center', color: primary ? '#FFFFFF' : C.indigo }],
+        })
+
+        return {
+            type: 'flex',
+            altText: `🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล) · ${drawer.text}`,
+            contents: {
+                type: 'bubble', size: 'mega',
+                header: {
+                    type: 'box', layout: 'vertical', backgroundColor: C.indigo, ...pad('18px'), spacing: 'xs',
+                    contents: [
+                        { type: 'text', text: '🔒 ปิดกะแล้ว', size: 'xxs', weight: 'bold', color: '#DDE1FD' },
+                        { type: 'text', text: s.shiftNumber, size: 'lg', weight: 'bold', color: '#FFFFFF' },
+                        { type: 'text', text: [s.shopName, `${hhmm(s.openedAt)} – ${hhmm(s.closedAt)}`, s.closedByName && `ปิดโดย ${s.closedByName}`].filter(Boolean).join(' · '),
+                          size: 'xxs', color: '#DDE1FD', wrap: true },
+                    ],
+                },
+                body: {
+                    type: 'box', layout: 'vertical', ...pad('16px'),
+                    contents: [
+                        { type: 'box', layout: 'vertical', backgroundColor: C.indigo50, cornerRadius: '20px', ...pad('14px'), contents: [
+                            { type: 'text', text: 'ยอดขายรวมกะนี้', size: 'xxs', color: C.ink500, weight: 'bold' },
+                            { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+                                { type: 'text', text: baht(s.totalRevenue), size: 'xxl', weight: 'bold', color: C.ink900, flex: 0 },
+                                { type: 'text', text: `· ${s.billCount} บิล`, size: 'xs', color: C.ink500 },
+                            ] },
+                            { type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md', contents: [
+                                { type: 'box', layout: 'vertical', backgroundColor: '#FFFFFF', cornerRadius: '14px', ...pad('8px'), contents: [
+                                    { type: 'text', text: '💵 เงินสด', size: 'xxs', color: C.ink500 },
+                                    { type: 'text', text: baht(s.cashRevenue), size: 'md', weight: 'bold', color: C.ink900 },
+                                ] },
+                                { type: 'box', layout: 'vertical', backgroundColor: '#FFFFFF', cornerRadius: '14px', ...pad('8px'), contents: [
+                                    { type: 'text', text: '📱 โอน / QR', size: 'xxs', color: C.ink500 },
+                                    { type: 'text', text: baht(s.bankRevenue), size: 'md', weight: 'bold', color: C.ink900 },
+                                ] },
+                            ] },
+                        ] },
+                        { type: 'box', layout: 'vertical', backgroundColor: drawer.bg, cornerRadius: '18px', ...pad('12px'), margin: 'md', contents: [
+                            { type: 'text', text: '💰 เงินในลิ้นชัก · ควรมี → นับได้', size: 'xxs', color: C.ink500, weight: 'bold' },
+                            { type: 'box', layout: 'horizontal', alignItems: 'center', margin: 'xs', contents: [
+                                { type: 'text', text: `${baht(s.expectedCash)} → ${baht(s.countedCash)}`, size: 'md', weight: 'bold', color: C.ink900, flex: 1 },
+                                { type: 'box', layout: 'vertical', flex: 0, backgroundColor: drawer.pill, cornerRadius: 'xxl',
+                                  paddingStart: '10px', paddingEnd: '10px', paddingTop: '4px', paddingBottom: '4px',
+                                  contents: [{ type: 'text', text: drawer.text, size: 'xs', weight: 'bold', color: '#FFFFFF' }] },
+                            ] },
+                        ] },
+                        section('🍽️ ขายดีสุด 5 อันดับ', 'ตามยอดเงิน', rankList(sales, C.indigo50, C.indigo, sales[0]?.amount || 0), 'ไม่มีบิลที่ชำระในกะนี้'),
+                        section('🛒 ซื้อสูงสุด 5 อันดับ', `รวม ${baht(s.buys.total)}`, rankList(buys, C.mango50, C.mango, buys[0]?.amount || 0), 'ไม่มีการซื้อหรือจ่ายออกในกะนี้'),
+                        ...(chips.length ? [{ type: 'box', layout: 'vertical', margin: 'xl', spacing: 'xs', contents: chips.map(c => ({
+                            type: 'box', layout: 'horizontal', contents: [{ type: 'box', layout: 'vertical', flex: 0, backgroundColor: C.sand100, cornerRadius: 'xxl',
+                                paddingStart: '10px', paddingEnd: '10px', paddingTop: '4px', paddingBottom: '4px',
+                                contents: [{ type: 'text', text: c, size: 'xxs', weight: 'bold', color: C.ink900 }] }],
+                        })) }] : []),
+                    ],
+                },
+                footer: {
+                    type: 'box', layout: 'vertical', spacing: 'sm', paddingStart: '16px', paddingEnd: '16px', paddingBottom: '16px', paddingTop: '4px',
+                    contents: [
+                        pillBtn('ดูรายการขายวันนี้', `${s.webUrl}/accounting/pos-clearing`, true),
+                        pillBtn('ดูบันทึกความเคลื่อนไหว', `${s.webUrl}/approvals`, false),
+                    ],
+                },
+            },
+        }
+    },
+
 };

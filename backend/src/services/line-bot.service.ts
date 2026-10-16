@@ -275,14 +275,9 @@ class LineBotService {
     }
 
 
-    // ── Approval notifications (Samsung One UI 9 Flex Card) ───────────────────
-    public async notifyApprovalRequest(tenantId: string, req: any) {
-        const client = this.getClient(tenantId)
-        if (!client) return
-
-        const db = getDb()
-        // 1. Target: ADMIN and MASTER in this tenant (check users table or line_user_mappings)
-        const blanketUsers = db.prepare(`
+    /** LINE ส่วนตัวของ ADMIN/MASTER ใน tenant (ไม่รวมกลุ่ม) */
+    private adminLineUsers(tenantId: string): { line_user_id: string }[] {
+        return getDb().prepare(`
             SELECT DISTINCT lum.line_user_id
             FROM line_user_mappings lum
             LEFT JOIN users u ON lum.user_id = u.id AND (lum.tenant_id = u.tenant_id OR u.tenant_id IS NULL)
@@ -293,6 +288,28 @@ class LineBotService {
                 OR lum.user_id LIKE 'master_%'
               )
         `).all(tenantId) as { line_user_id: string }[]
+    }
+
+    // ── สรุปปิดกะ POS → LINE ส่วนตัวของ Admin เท่านั้น (เจ้าของสั่ง 2026-10-16 ไม่ส่งเข้ากลุ่ม) ──
+    public async notifyShiftClosed(tenantId: string, summary: any) {
+        const client = this.getClient(tenantId)
+        if (!client || !summary) return
+        const card = flexTemplates.shiftCloseCard({ ...summary, webUrl: process.env.APP_URL ?? 'https://erp.phopy.net' })
+        for (const { line_user_id } of this.adminLineUsers(tenantId)) {
+            try { await client.pushMessage(line_user_id, card) } catch (err) {
+                console.error(`notifyShiftClosed push failed → ${line_user_id}:`, err)
+            }
+        }
+    }
+
+    // ── Approval notifications (Samsung One UI 9 Flex Card) ───────────────────
+    public async notifyApprovalRequest(tenantId: string, req: any) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+
+        const db = getDb()
+        // 1. Target: ADMIN and MASTER in this tenant (check users table or line_user_mappings)
+        const blanketUsers = this.adminLineUsers(tenantId)
 
         // 2. Specific module approvers from user_approval_permissions
         const specificUsers = db.prepare(`

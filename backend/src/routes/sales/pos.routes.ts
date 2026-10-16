@@ -7,6 +7,7 @@ import { ACC } from '../../config/accountCodes'
 import { postJournal, getOrCreateAccount, JournalError } from '../../services/accounting.service'
 import { cancelPosBill } from '../../services/posBillCancel.service'
 import { gateOrCreate, recordAutoAction } from '../../services/approvalGate.service'
+import { buildShiftSummary } from '../../services/posShiftSummary.service'
 import posStockService from '../../services/pos-stock.service'
 import { buildShiftCloseJournal } from '../../services/posShiftRepair.service'
 
@@ -719,6 +720,14 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         + (validExpenses.length ? ` · ใช้เงินก่อนปิด ${validExpenses.map(e => `${e.reason} ฿${e.amount.toLocaleString()}`).join(', ')}` : ''),
       payload: { severity: cashDifference < 0 ? 'high' : cashDifference > 0 ? 'medium' : 'info', difference: cashDifference },
     })
+
+    try {
+      const { lineBotService } = require('../../services/line-bot.service')
+      lineBotService.notifyShiftClosed(tenantId, buildShiftSummary(tenantId, id))
+        .catch((err: any) => console.error('[ปิดกะ] ส่งสรุปเข้า LINE ไม่สำเร็จ:', err))
+    } catch (err) {
+      console.error('[ปิดกะ] สร้างสรุปส่ง LINE ไม่สำเร็จ (ปิดกะสำเร็จแล้ว):', err)
+    }
 
     res.json({
       success: true,
