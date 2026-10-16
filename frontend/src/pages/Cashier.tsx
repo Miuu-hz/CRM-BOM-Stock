@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils} from 'lucide-react'
+import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils, ArrowLeft} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
@@ -774,6 +774,12 @@ export default function Cashier() {
               >
                 {/* Search & Categories */}
                 <div className="space-y-4">
+                  <button
+                    onClick={() => setView('bills')}
+                    className="flex items-center gap-2 px-3 py-2 -ml-1 rounded-lg text-sm font-medium text-[var(--fg-2)] hover:bg-[var(--surface)] hover:text-[var(--fg-1)]"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> บิลทั้งหมด ({openBills.length})
+                  </button>
                   <div className="relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
                     <input
@@ -893,7 +899,8 @@ export default function Cashier() {
                     <p className="text-sm text-[var(--fg-3)]">{currentBill.bill_number}</p>
                   </div>
                   <button
-                    onClick={() => setCurrentBill(null)}
+                    onClick={() => { setCurrentBill(null); setView('bills') }}
+                    aria-label="ปิดบิลนี้ กลับไปหน้าบิลทั้งหมด"
                     className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
                   >
                     <X className="w-5 h-5" />
