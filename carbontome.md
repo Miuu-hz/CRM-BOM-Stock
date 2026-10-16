@@ -19,7 +19,7 @@
 | **Marketing** | 🚧 | Ads analytics จาก CSV — กำลังรื้อเป็นแดชบอร์ดรายเดือนผ่าน MCP (ดูแผน 13 ต.ค. 2026 ท้ายไฟล์) |
 | **Calculator** | ✅ | Cost & Profit Analysis |
 | **POS/Cashier** | ✅ | Open Bill System, Stock Integration, Accounting Link |
-| **POS Shift System** | ✅ | เปิด/ปิดกะ, กรอกเงินเปิดกะ, นับเงินปิดกะแบบ blind count, ผลต่าง, แท็บสรุปวันนี้ (เงินในลิ้นชัก/สด/โอน) |
+| **POS Shift System** | ✅ | เปิด/ปิดกะ, กรอกเงินเปิดกะ, นับเงินปิดกะแบบ blind count, ผลต่าง, แท็บสรุปวันนี้ (เงินในลิ้นชัก/สด/โอน), ปิดกะแล้วส่งสรุปเข้า LINE ส่วนตัวของ Admin |
 | **POS Clearing Transfer** | ✅ | นำเงินเข้าบัญชีประจำวัน, เลือกวันที่, Cash Over/Short (5901) |
 | **Bill Void** | ✅ | ยกเลิกบิล (PAID→VOID) + Reversal Journal Entry อัตโนมัติ |
 | **Accounting** | ✅ | Chart of Accounts, Journal Entries (T-account UX), VAT |
@@ -368,6 +368,7 @@ sales_orders → work_orders
 - [x] Cash Over/Short Recording (account 5901)
 - [x] Bill Void + Reversal Journal Entry
 - [x] POS Shift System (เปิด/ปิดกะ + นับเงิน)
+- [x] สรุปปิดกะส่งเข้า LINE ส่วนตัวของ Admin (Flex One UI 9, 16 ต.ค. 2026)
 - [ ] POS Kitchen Display System (KDS)
 - [ ] COGS auto-calculation on sale
 
@@ -1408,7 +1409,7 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 | **Add-on** | API & Webhook Access | `api_access` | `/api/mcp-settings` | `/settings?tab=mcp` | - | เชื่อมต่อโปรแกรมภายนอก, ออก API Key, ยิง Webhook (แถมใน Enterprise AI) |
 | **Add-on** | เพิ่มจำนวนผู้ใช้ (Extra Users) | `extra_users` | ใน `billing.catalog.ts` | `/settings?tab=subscription` | - | เพิ่มจำนวนที่นั่งใช้งานเกินกว่าโควตาของแพ็กเกจ (เช่น Solo +1, Business +2, Business+ +5) |
 | **ระบบเชื่อมต่อ & AI** | Phopy MCP Server | `ai` / `api_access` | `/sse`<br>`/messages` | `/settings?tab=mcp` | ครอบคลุม 30+ tools | อินเทอร์เฟซ Model Context Protocol สำหรับ Claude Desktop / Cursor / Agent ทำงานอัตโนมัติ 3 ระดับสิทธิ์ (readonly / draft / full) |
-| **ระบบเชื่อมต่อ & AI** | LINE Notification & Tasks | *(รอจัด tier)* | `/api/line` | `/settings?tab=line` | - | แจ้งเตือนงานอนุมัติเอกสารและงานเร่งด่วนผ่าน LINE Notify / LINE Bot |
+| **ระบบเชื่อมต่อ & AI** | LINE Notification & Tasks | *(รอจัด tier)* | `/api/line` | `/settings?tab=line` | - | แจ้งเตือนงานอนุมัติเอกสารและงานเร่งด่วนผ่าน LINE Notify / LINE Bot · สรุปปิดกะ POS (ยอดขาย ลิ้นชัก ขายดี/ซื้อสูงสุด 5 อันดับ) เข้า LINE ส่วนตัวของ Admin |
 | **ระบบเชื่อมต่อ & AI** | Phopy Kanban (Planka) SSO | *(expiry gate)* | `/api/kanban/sso` | แถบเมนูด้านข้าง | - | ระบบ Single Sign-On ส่งตัวไปยังกระดานจัดการงาน Kanban (kanban.phopy.net) |
 | **Master & แอดมิน** | ระบบจัดการผู้เช่า (Master Panel) | MASTER only | `/api/master/*` | `/master` | - | จัดการ Tenant, สลับบริษัท, ตั้งแพ็กเกจและเลือก Pack/Add-on, กู้คืนฐานข้อมูล, ดูสถิติการใช้งาน |
 ### สถานะ ณ 13 ต.ค. 2026 (ทำตามเฟสด้วย sub-agent + ตรวจเองทุกเฟส) — **deploy แล้ว 14 ต.ค. 2026** (backup DB: /root/dev.db.bak-platform-20261014)
