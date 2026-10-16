@@ -117,7 +117,7 @@ describe('ยืนยันคำสั่งขาย (PUT /sales-orders/:id/s
     expect(autoRow.module_type).toBe('sales_order')
   })
 
-  it('ยอดต่ำกว่า auto_approve_threshold → ผ่านเลยไม่ต้องขออนุมัติ (ไม่มีคำขอ)', async () => {
+  it('ยอดต่ำกว่า auto_approve_threshold → ผ่านเลยไม่ต้องรออนุมัติ แต่ลงบันทึกความเคลื่อนไหว (AUTO)', async () => {
     const user = createTestUser({ role: 'USER' })
     openSalesOrderApproval(user.tenantId, 'USER', 10000)   // เกณฑ์ 10,000
     const soId = seedDraftSO(user.tenantId, 3000)          // ยอด 3,000 ต่ำกว่าเกณฑ์
@@ -127,8 +127,8 @@ describe('ยืนยันคำสั่งขาย (PUT /sales-orders/:id/s
       .send({ status: 'CONFIRMED' })
 
     expect(res.status).toBe(200)
-    const reqRow = db.prepare('SELECT COUNT(*) c FROM approval_requests WHERE reference_id = ?').get(soId) as any
-    expect(reqRow.c).toBe(0)
+    const rows = db.prepare('SELECT status FROM approval_requests WHERE reference_id = ?').all(soId) as any[]
+    expect(rows.map(r => r.status)).toEqual(['AUTO'])
   })
 })
 

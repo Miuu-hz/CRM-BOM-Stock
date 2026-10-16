@@ -24,6 +24,8 @@ export interface ApprovalRequest {
   approver_name?: string
   decided_at?: string
   comment?: string
+  /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว (payload.severity) — /approval/history เท่านั้น */
+  severity?: 'high' | 'medium' | 'low' | 'info' | null
   created_at: string
   updated_at?: string
 }
@@ -92,11 +94,12 @@ const approvalService = {
   },
 
   // endpoint ใหม่ ยังไม่ล่ม backend ระหว่างพัฒนาคู่ขนาน — คืนค่าว่างเงียบๆ ถ้ายัง 404
-  async getHistory(params: ApprovalHistoryParams): Promise<{ data: ApprovalRequest[]; total: number }> {
-    const res = await api.get('/approval/history', { params }).catch(() => ({ data: { data: [], total: 0 } }))
+  async getHistory(params: ApprovalHistoryParams): Promise<{ data: ApprovalRequest[]; total: number; counts: { module_type: string; n: number }[] }> {
+    const res = await api.get('/approval/history', { params }).catch(() => ({ data: { data: [], total: 0, counts: [] } }))
     return {
       data: Array.isArray(res.data?.data) ? res.data.data : [],
       total: typeof res.data?.total === 'number' ? res.data.total : 0,
+      counts: Array.isArray(res.data?.counts) ? res.data.counts : [],
     }
   },
 

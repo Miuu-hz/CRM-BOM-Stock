@@ -4,7 +4,27 @@ import db from '../db/sqlite'
 import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
-import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
+import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass } from '../services/approvalGate.service'
+
+// ลด/ลบรายการที่ส่งครัวแล้ว = ของอาจเสิร์ฟไปแล้วแต่ไม่อยู่ในบิล → ต้องมีเหตุผล + ลงบันทึกความเคลื่อนไหว
+// คืน false = ตอบ 400 ไปแล้ว ผู้เรียกหยุด · ถ้ารายการยังไม่ส่งครัว แก้ได้อิสระไม่ต้องบันทึก
+function guardKitchenItemChange(req: any, res: any, billId: string, item: any, newQty: number): boolean {
+  if (!item.sent_to_kds || newQty >= item.quantity) return true
+  const reason = String(req.body?.reason ?? req.query?.reason ?? '').trim()
+  if (!reason) {
+    res.status(400).json({ success: false, code: 'REASON_REQUIRED', message: `${item.product_name} ส่งครัวไปแล้ว — ต้องระบุเหตุผลที่ลด/ลบรายการ` })
+    return false
+  }
+  const bill = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ?').get(billId) as any
+  const removed = item.quantity - newQty
+  recordAutoAction({
+    tenantId: req.user.tenantId, user: req.user, category: 'pos_item_void',
+    refType: 'pos_bill_items', refId: item.id, amount: removed * (item.unit_price || 0),
+    description: `บิล ${bill?.bill_number ?? billId} ${newQty === 0 ? 'ลบ' : 'ลด'} ${item.product_name} ${item.quantity}→${newQty} หลังส่งครัว เพราะ ${reason}`,
+    payload: { severity: 'medium', billId, itemId: item.id, from: item.quantity, to: newQty, reason },
+  })
+  return true
+}
 import { authenticate } from '../middleware/auth.middleware'
 import { generateId, formatDocumentNumber, thaiDateStr } from '../utils/id'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../utils/receiptToken'
@@ -444,6 +464,7 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     }
     
     const newQty = quantity || (item as any).quantity
+    if (!guardKitchenItemChange(req, res, billId, item, Number(newQty))) return
     const unitPrice = (item as any).unit_price
     const newTotal = newQty * unitPrice
     
@@ -473,6 +494,9 @@ router.delete('/bills/:billId/items/:itemId', (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const { billId, itemId } = req.params
     if (!findOpenBill(billId, tenantId)) return res.status(409).json(BILL_NOT_OPEN)
+
+    const item = db.prepare('SELECT * FROM pos_bill_items WHERE id = ? AND bill_id = ? AND tenant_id = ?').get(itemId, billId, tenantId)
+    if (item && !guardKitchenItemChange(req, res, billId, item, 0)) return
 
     const stmt = db.prepare(`
       DELETE FROM pos_bill_items 
@@ -532,6 +556,18 @@ router.post('/bills/:id/pay', async (req, res) => {
     
     if ((bill as any).item_count === 0) {
       return res.status(400).json({ success: false, message: 'Cannot pay empty bill' })
+    }
+
+    // เพดานส่วนลด = approval_settings หมวด pos_discount (Settings → การอนุมัติ) เกินเพดานให้ Admin กดเอง
+    // ไม่ทำเป็นคำขอรออนุมัติ เพราะบิลต้องจ่ายตอนลูกค้ายืนอยู่หน้าเคาน์เตอร์
+    const discountBaht = Math.max(0, Number(discount_amount) || 0)
+    const gateUser = (req as any).user
+    if (discountBaht > 0 && isApprovalRequired(tenantId, gateUser, 'pos_discount', discountBaht)
+      && !hasBypass(tenantId, gateUser, 'pos_discount')) {
+      return res.status(403).json({
+        success: false, code: 'DISCOUNT_OVER_LIMIT',
+        message: `ส่วนลด ฿${discountBaht.toLocaleString()} เกินเพดานที่ Admin ตั้งไว้ — ให้ Admin เป็นคนกดชำระบิลนี้ หรือลดส่วนลดลง`,
+      })
     }
 
     // ส่วนลด/ค่าขนส่งที่แคชเชียร์ใส่หน้าจอต้องลงบิลก่อนคำนวณ ไม่งั้นลูกค้าจ่ายยอดหนึ่ง
@@ -668,6 +704,19 @@ router.post('/bills/:id/pay', async (req, res) => {
     })
     const { accountingResult, pointsEarned, pointsRedeemed } = payTx()
 
+    if (discountBaht > 0) {
+      // ส่วนลดเกินเพดานของพนักงาน (ผ่านมาได้เพราะ Admin กดเอง) = แดง, ใต้เพดาน = เหลือง
+      const cap = db.prepare(`SELECT approval_required, auto_approve_threshold FROM approval_settings
+        WHERE tenant_id = ? AND role = 'USER' AND module_type = 'pos_discount'`).get(tenantId) as any
+      const overCap = cap?.approval_required === 1 && discountBaht > (cap.auto_approve_threshold || 0)
+      recordAutoAction({
+        tenantId, user: gateUser, category: 'pos_discount', refType: 'pos_running_bills', refId: id,
+        amount: discountBaht,
+        description: `บิล ${(refreshedBill as any).bill_number} ให้ส่วนลด ฿${discountBaht.toLocaleString()} จากยอด ฿${((refreshedBill as any).subtotal || 0).toLocaleString()}`,
+        payload: { severity: overCap ? 'high' : 'low', billId: id },
+      })
+    }
+
     res.json({
       success: true,
       message: 'Payment processed successfully',
@@ -737,7 +786,8 @@ router.post('/bills/:id/cancel', async (req, res) => {
       refId: id,
       amount: (bill as any).total_amount || 0,
       description: `บิล ${(bill as any).bill_number} ยอด ฿${((bill as any).total_amount || 0).toLocaleString()} ขอยกเลิก${reason ? ` เนื่องจาก ${reason}` : ''}`,
-      payload: { billId: id, reason, finalStatus: 'CANCELLED' },
+      // บิลที่รับเงินแล้วถูกยกเลิก = เงินถอยออก (แดง) · บิลยังไม่จ่าย = ส้ม
+      payload: { billId: id, reason, finalStatus: 'CANCELLED', severity: (bill as any).status === 'PAID' ? 'high' : 'medium' },
     }
     const pending = gateOrCreate(gateArgs)
     if (pending) {

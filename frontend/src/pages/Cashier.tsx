@@ -440,24 +440,31 @@ export default function Cashier() {
     if (!isBillEditable(currentBill)) return
     
     const newQty = currentQty + delta
+    // รายการที่ส่งครัวแล้ว ลด/ลบต้องมีเหตุผล (backend ลงบันทึกความเคลื่อนไหวให้ Admin เห็น)
+    // ponytail: ใช้ prompt ของเบราว์เซอร์ — ถ้าต้องการเลือกเหตุผลสำเร็จรูปค่อยทำเป็นโมดัล
+    let reason: string | undefined
+    if (delta < 0 && currentBill.items.find(i => i.id === itemId)?.sent_to_kds) {
+      reason = window.prompt('รายการนี้ส่งครัวไปแล้ว — ระบุเหตุผลที่ลด/ลบ (เช่น ลูกค้ายกเลิก, คีย์ผิด)')?.trim()
+      if (!reason) return
+    }
     if (newQty <= 0) {
       // Delete item
       try {
-        await posBillService.deleteItem(currentBill.id, itemId)
+        await posBillService.deleteItem(currentBill.id, itemId, reason)
         const billRes = await posBillService.getBill(currentBill.id)
         if (billRes.success) setCurrentBill(billRes.data)
-      } catch (error) {
-        toast.error('Failed to remove item')
+      } catch (error: any) {
+        toast.error(error.response?.data?.message || 'Failed to remove item')
       }
       return
     }
 
     try {
-      await posBillService.updateItem(currentBill.id, itemId, { quantity: newQty })
+      await posBillService.updateItem(currentBill.id, itemId, { quantity: newQty, reason })
       const billRes = await posBillService.getBill(currentBill.id)
       if (billRes.success) setCurrentBill(billRes.data)
-    } catch (error) {
-      toast.error('Failed to update quantity')
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to update quantity')
     }
   }
 
@@ -2543,7 +2550,8 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
   const cashIn = live?.cash_in || 0
   const paidOut = live?.paid_out || 0
   const expectedCash = expectedShiftCash(shift)
-  const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
+  // ช่องนับเริ่มว่าง — เดิมเติมยอดควรมีไว้ให้ กดยืนยันได้โดยไม่ต้องนับเงินเลย เงินขาดจึงไม่เคยถูกจับ
+  const [closingCash, setClosingCash] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -2579,6 +2587,7 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
 
   const handleClose = async () => {
     if (!shift) return
+    if (closingCash.trim() === '') { toast.error('นับเงินสดในลิ้นชักแล้วกรอกยอดก่อนปิดกะ'); return }
     setSaving(true)
     try {
       const validExpenses = expenses
@@ -2743,17 +2752,18 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
             <label className="block text-sm text-[var(--fg-3)] mb-1.5">นับเงินสดจริงในลิ้นชัก</label>
             <div className="relative mb-3">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
-              <input type="number" value={closingCash} onChange={e => setClosingCash(e.target.value)} onFocus={e => e.target.select()}
+              <input type="number" inputMode="decimal" min={0} value={closingCash} onChange={e => setClosingCash(e.target.value)} onFocus={e => e.target.select()}
+                placeholder="นับแล้วกรอกยอด" aria-label="นับเงินสดจริงในลิ้นชัก" required
                 className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
             </div>
-            <div className={`flex justify-between items-center p-3 rounded-lg text-sm font-medium mb-4 ${
+            {closingCash.trim() !== '' && <div className={`flex justify-between items-center p-3 rounded-lg text-sm font-medium mb-4 ${
               Math.abs(diff) < 0.01 ? 'bg-success/10 border border-success/30 text-success'
               : diff > 0 ? 'bg-[var(--warning-soft)] border border-warning/30 text-warning'
               : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
             }`}>
               <span>ผลต่าง</span>
               <span>{diff >= 0 ? '+' : ''}{diff.toLocaleString()} {Math.abs(diff) < 0.01 ? '(ตรง)' : diff > 0 ? '(เกิน)' : '(ขาด)'}</span>
-            </div>
+            </div>}
           </>
         )}
 
@@ -2763,7 +2773,7 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
 
         <div className="flex gap-3">
           {!blocking && <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">ยกเลิก</button>}
-          <button onClick={mode === 'open' ? handleOpen : handleClose} disabled={saving}
+          <button onClick={mode === 'open' ? handleOpen : handleClose} disabled={saving || (mode === 'close' && closingCash.trim() === '')}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 font-semibold rounded-lg disabled:opacity-50 text-white ${mode === 'open' ? 'bg-phopy-indigo hover:bg-phopy-indigo/80' : 'bg-red-500/80 hover:bg-red-500'}`}>
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Check className="w-4 h-4" />}
             {mode === 'open' ? 'เริ่มกะ' : 'ยืนยันปิดกะ'}
@@ -2802,6 +2812,7 @@ function CashMovementModal({ shift, onClose, onDone }: {
     const amt = parseFloat(amount)
     if (!amt || amt <= 0) { toast.error('กรุณาระบุจำนวนเงินให้ถูกต้อง'); return }
     if (!accountId) { toast.error('กรุณาเลือกบัญชี'); return }
+    if (!reason.trim()) { toast.error('กรุณาระบุเหตุผล'); return }
     setSaving(true)
     try {
       const res = await posService.addShiftCashMovement(shift.id, { type, amount: amt, reason: reason || undefined, account_id: accountId })
@@ -2851,7 +2862,7 @@ function CashMovementModal({ shift, onClose, onDone }: {
         </select>
 
         <label className="block text-sm text-[var(--fg-3)] mb-1.5">เหตุผล</label>
-        <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="เช่น ซื้อวัตถุดิบเพิ่ม, เงินทอนไม่พอ"
+        <input type="text" required aria-required="true" value={reason} onChange={e => setReason(e.target.value)} placeholder="เช่น ซื้อวัตถุดิบเพิ่ม, เงินทอนไม่พอ"
           className="w-full px-3 py-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo mb-4" />
 
         <button onClick={handleSubmit} disabled={saving}

@@ -172,3 +172,35 @@ describe('แก้รายการบิล POS — ได้เฉพาะ�
     expect(res.status).toBe(409)
   })
 })
+
+describe("ลด/ลบรายการที่ส่งครัวแล้ว — ต้องมีเหตุผล และลงบันทึกความเคลื่อนไหว", () => {
+  const app = express()
+  app.use(express.json())
+  app.use("/api/pos", posBillRouter)
+
+  it("ไม่มีเหตุผล = 400 รายการไม่หาย · มีเหตุผล = ลบได้ + มีแถว AUTO หมวด pos_item_void", async () => {
+    const user = createTestUser({ role: "USER" })
+    const menuId = seedMenu(user.tenantId, 80)
+    const billId = seedOpenBill(user.tenantId)
+    addBillItem(user.tenantId, billId, menuId, 2, 80)
+    const itemId = (db.prepare("SELECT id FROM pos_bill_items WHERE bill_id = ?").get(billId) as any).id
+    db.prepare("UPDATE pos_bill_items SET sent_to_kds = 1 WHERE id = ?").run(itemId)
+    const auth = { Authorization: `Bearer ${user.token}` }
+
+    const noReason = await request(app).delete(`/api/pos/bills/${billId}/items/${itemId}`).set(auth)
+    expect(noReason.status).toBe(400)
+    expect(db.prepare("SELECT 1 FROM pos_bill_items WHERE id = ?").get(itemId)).toBeTruthy()
+
+    // ลดจำนวนก็ต้องมีเหตุผลเหมือนกัน แต่เพิ่มจำนวนไม่ต้อง
+    expect((await request(app).put(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ quantity: 1 })).status).toBe(400)
+    expect((await request(app).put(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ quantity: 3 })).status).toBe(200)
+
+    const ok = await request(app).delete(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ reason: "ลูกค้ายกเลิก" })
+    expect(ok.status).toBe(200)
+    const log = db.prepare("SELECT * FROM approval_requests WHERE tenant_id = ? AND module_type = ?").get(user.tenantId, "pos_item_void") as any
+    expect(log.status).toBe("AUTO")
+    expect(log.amount).toBe(240)
+    expect(log.description).toContain("ลูกค้ายกเลิก")
+    expect(JSON.parse(log.payload).severity).toBe("medium")
+  })
+})

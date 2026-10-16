@@ -15,6 +15,11 @@ import { can, Role, Department } from './rbac.service'
  */
 
 export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_order' | 'pos_invoice'
+  // หมวดบันทึกความเคลื่อนไหว POS — pos_discount มีเพดานใน approval_settings, ที่เหลือเป็น log อย่างเดียว
+  | 'pos_discount' | 'pos_item_void' | 'pos_cash_move' | 'pos_shift_close'
+
+/** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
+export type Severity = 'high' | 'medium' | 'low' | 'info'
 
 export interface GateUser {
   userId: string
@@ -34,6 +39,10 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   doc_edit: 'purchase',
   sales_order: 'orders',
   pos_invoice: 'orders',
+  pos_discount: 'orders',
+  pos_item_void: 'orders',
+  pos_cash_move: 'orders',
+  pos_shift_close: 'orders',
 }
 
 /** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท */
@@ -180,14 +189,15 @@ export function createRequest(args: CreateRequestArgs) {
 }
 
 /**
- * บันทึกประวัติ "ทำเลยไม่ต้องขออนุมัติ" — เรียกหลัง action ทำสำเร็จแล้ว เมื่อผู้ใช้เป็น
- * ADMIN/MASTER หรือถูกมอบสิทธิ์ bypass ในหมวดนี้ ไม่งั้นไม่บันทึกอะไร (คนทั่วไปที่หมวดนี้ไม่ได้
- * เปิดอนุมัติเลยไม่ต้องมีประวัติ กันตาราง approval_requests บวมโดยไม่มีประโยชน์)
+ * บันทึกความเคลื่อนไหว "ทำไปแล้วโดยไม่ต้องรออนุมัติ" (สถานะ AUTO) — เรียกหลัง action ทำสำเร็จ
+ * บันทึกทุกคน: เจ้าของตั้งเพดานให้ลูกน้องทำเองได้ (งานไม่สะดุดตอน admin ไม่อยู่) แต่ต้องเห็นย้อนหลัง
+ * ว่าใครทำอะไร ที่หน้า /approvals → บันทึกความเคลื่อนไหว (เดิมบันทึกเฉพาะคนที่มีสิทธิ์ bypass
+ * พนักงานยกเลิกบิลใต้เพดานจึงไม่มีร่องรอยเลย)
+ * ponytail: ตารางโตตามจำนวน action ที่ผ่านด่าน — ถ้าวันละหลายพันแถวค่อยแยกตาราง log ออก
  *
  * ตั้งใจไม่ throw — ผู้เรียกไม่ต้อง try/catch เอง การ log ประวัติพังต้องไม่ทำให้ action จริงพังตาม
  */
 export function recordAutoAction(args: CreateRequestArgs) {
-  if (!hasBypass(args.tenantId, args.user, args.category)) return null
   try {
     const now = new Date().toISOString()
     const id = generateId()

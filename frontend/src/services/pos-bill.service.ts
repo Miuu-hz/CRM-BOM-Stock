@@ -68,13 +68,14 @@ const posBillService = {
   updateItem: async (billId: string, itemId: string, data: {
     quantity?: number
     special_instructions?: string
+    reason?: string
   }) => {
     const response = await api.put(`/pos/bills/${billId}/items/${itemId}`, data)
     return response.data
   },
 
-  deleteItem: async (billId: string, itemId: string) => {
-    const response = await api.delete(`/pos/bills/${billId}/items/${itemId}`)
+  deleteItem: async (billId: string, itemId: string, reason?: string) => {
+    const response = await api.delete(`/pos/bills/${billId}/items/${itemId}`, { data: { reason } })
     return response.data
   },
 

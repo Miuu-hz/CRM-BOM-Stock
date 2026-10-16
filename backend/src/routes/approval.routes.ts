@@ -336,9 +336,12 @@ router.get('/history', async (req: Request, res: Response) => {
     if (!isPrivileged) { where.push('ar.requester_id = ?'); params.push(req.user!.userId) }
     if (from) { where.push('ar.created_at >= ?'); params.push(from) }
     if (to) { where.push('ar.created_at <= ?'); params.push(to) }
-    if (moduleType) { where.push('ar.module_type = ?'); params.push(moduleType) }
     if (status) { where.push('ar.status = ?'); params.push(status) }
     if (requesterId) { where.push('ar.requester_id = ?'); params.push(requesterId) }
+    // จำนวนต่อหมวดในช่วงเดียวกัน (ไม่กรองหมวด) — ทำชิปหมวดในหน้าบันทึกความเคลื่อนไหว
+    const counts = db.prepare(`SELECT ar.module_type, COUNT(*) n FROM approval_requests ar
+      WHERE ${where.join(' AND ')} GROUP BY ar.module_type`).all(...params)
+    if (moduleType) { where.push('ar.module_type = ?'); params.push(moduleType) }
     const whereSql = where.join(' AND ')
 
     const total = (db.prepare(`SELECT COUNT(*) c FROM approval_requests ar WHERE ${whereSql}`).get(...params) as any).c
@@ -346,7 +349,7 @@ router.get('/history', async (req: Request, res: Response) => {
     const data = db.prepare(`
       SELECT ar.id, ar.request_number, ar.module_type, ar.reference_type, ar.reference_id,
         ar.requester_id, ar.requester_name, ar.requester_role, ar.amount, ar.description, ar.status,
-        ar.created_at, ar.updated_at,
+        ar.created_at, ar.updated_at, CASE WHEN json_valid(ar.payload) THEN json_extract(ar.payload, '$.severity') END as severity,
         COALESCE(ar.approver_2_name, ar.approver_1_name, ar.final_executor_name) as approver_name,
         COALESCE(ar.approver_2_at, ar.approver_1_at, ar.executed_at) as decided_at,
         COALESCE(ar.approver_2_comment, ar.approver_1_comment, '') as comment
@@ -356,7 +359,7 @@ router.get('/history', async (req: Request, res: Response) => {
       LIMIT ? OFFSET ?
     `).all(...params, limit, offset)
 
-    res.json({ success: true, data, total, limit, offset })
+    res.json({ success: true, data, total, limit, offset, counts })
   } catch (error) {
     console.error('Get approval history error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch history' })

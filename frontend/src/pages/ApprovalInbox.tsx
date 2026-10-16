@@ -31,7 +31,28 @@ const MODULE_LABELS: Record<string, string> = {
   sales_order:       'คำสั่งขาย',
   work_orders:       'ใบสั่งผลิต',
   stock_adjustments: 'ปรับสต็อก',
+  pos_discount:      'ส่วนลดหน้าร้าน',
+  pos_item_void:     'ลด/ลบรายการหลังส่งครัว',
+  pos_cash_move:     'เงินเข้า/ออกลิ้นชัก',
+  pos_shift_close:   'ปิดกะ',
 }
+
+const MODULE_ICON: Record<string, string> = {
+  pos_void: '🧾', pos_discount: '🏷️', pos_item_void: '🍳', pos_cash_move: '💵', pos_shift_close: '🔒',
+  pos_invoice: '🧾', stock_adjust: '📦', stock_adjustments: '📦', doc_edit: '✏️',
+  purchase_request: '📝', purchase_order: '🛒', sales_order: '📄', work_orders: '🏭',
+}
+
+// ระดับความร้ายแรง: backend ใส่ไว้ใน payload.severity ตอนลงบันทึก · แถวเก่า/หมวดอื่นเดาจากหมวด
+const SEVERITY = {
+  high:   { emoji: '🔴', label: 'ร้ายแรง ควรตรวจ' },
+  medium: { emoji: '🟠', label: 'ควรรู้' },
+  low:    { emoji: '🟡', label: 'ทั่วไป' },
+  info:   { emoji: '🟢', label: 'ปกติ' },
+} as const
+const severityOf = (req: ApprovalRequest): keyof typeof SEVERITY =>
+  req.severity ?? (req.module_type === 'pos_void' ? 'medium'
+    : ['stock_adjust', 'stock_adjustments', 'doc_edit', 'pos_discount'].includes(req.module_type) ? 'low' : 'info')
 
 function fmt(amount: number) {
   if (!amount) return '—'
@@ -338,7 +359,7 @@ function DetailModal({ req, onApprove, onReject, actionLoading, onClose }: Detai
               {req.request_number}
             </span>
             <span className="text-xs px-2 py-0.5 bg-[var(--surface-2)] border border-[var(--border)] rounded text-[var(--fg-3)]">
-              {MODULE_LABELS[req.module_type] ?? req.module_type}
+              {MODULE_ICON[req.module_type] ? `${MODULE_ICON[req.module_type]} ` : ''}{MODULE_LABELS[req.module_type] ?? req.module_type}
             </span>
             <StatusBadge status={req.status} />
           </div>
@@ -465,11 +486,14 @@ function RequestRow({ req, index, clickable, onOpen, showActions, actionLoading,
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-base leading-none" role="img" aria-label={SEVERITY[severityOf(req)].label} title={SEVERITY[severityOf(req)].label}>
+              {SEVERITY[severityOf(req)].emoji}
+            </span>
             <span className="font-mono text-xs font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2 py-0.5 rounded">
               {req.request_number}
             </span>
             <span className="text-xs px-2 py-0.5 bg-[var(--surface-2)] border border-[var(--border)] rounded text-[var(--fg-3)]">
-              {MODULE_LABELS[req.module_type] ?? req.module_type}
+              {MODULE_ICON[req.module_type] ? `${MODULE_ICON[req.module_type]} ` : ''}{MODULE_LABELS[req.module_type] ?? req.module_type}
             </span>
             <StatusBadge status={req.status} />
           </div>
@@ -546,6 +570,7 @@ export default function ApprovalInbox() {
   const [page, setPage] = useState(0)
   const [historyList, setHistoryList] = useState<ApprovalRequest[]>([])
   const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyCounts, setHistoryCounts] = useState<{ module_type: string; n: number }[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
   const load = useCallback(async () => {
@@ -571,7 +596,7 @@ export default function ApprovalInbox() {
     setHistoryLoading(true)
     try {
       const range = preset === 'custom' ? { from: dateFrom, to: dateTo } : presetRange(preset)
-      const { data, total } = await approvalService.getHistory({
+      const { data, total, counts } = await approvalService.getHistory({
         from: range.from || undefined,
         to: range.to || undefined,
         moduleType: moduleFilter || undefined,
@@ -581,6 +606,7 @@ export default function ApprovalInbox() {
       })
       setHistoryList(data)
       setHistoryTotal(total)
+      setHistoryCounts(counts)
     } finally {
       setHistoryLoading(false)
     }
@@ -678,7 +704,7 @@ export default function ApprovalInbox() {
             }`}
           >
             <History className="w-4 h-4" />
-            ประวัติทั้งหมด
+            บันทึกความเคลื่อนไหว
           </button>
         </div>
       </motion.div>
@@ -718,16 +744,6 @@ export default function ApprovalInbox() {
             </div>
           )}
 
-          <select
-            value={moduleFilter}
-            onChange={e => setModuleFilter(e.target.value)}
-            className="bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--fg-2)] focus:outline-none focus:border-[var(--primary)]"
-          >
-            <option value="">ทุกประเภท</option>
-            {Object.entries(MODULE_LABELS).map(([k, label]) => (
-              <option key={k} value={k}>{label}</option>
-            ))}
-          </select>
 
           <select
             value={statusFilter}
@@ -739,6 +755,27 @@ export default function ApprovalInbox() {
               <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
             ))}
           </select>
+
+          {/* หมวดของความเคลื่อนไหว + จำนวนในช่วงที่เลือก — กดเพื่อกรอง */}
+          <div className="w-full flex flex-wrap gap-1.5" role="group" aria-label="กรองตามหมวด">
+            {[{ module_type: '', n: historyCounts.reduce((s, c) => s + c.n, 0) }, ...historyCounts].map(c => (
+              <button
+                key={c.module_type || 'all'}
+                onClick={() => setModuleFilter(c.module_type)}
+                aria-pressed={moduleFilter === c.module_type}
+                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                  moduleFilter === c.module_type
+                    ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
+                    : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--fg-2)] hover:text-[var(--fg-1)]'
+                }`}
+              >
+                {c.module_type ? `${MODULE_ICON[c.module_type] ?? '•'} ${MODULE_LABELS[c.module_type] ?? c.module_type}` : 'ทุกหมวด'} · {c.n}
+              </button>
+            ))}
+          </div>
+          <p className="w-full text-[11px] text-[var(--fg-4)]">
+            {Object.values(SEVERITY).map(s => `${s.emoji} ${s.label}`).join('   ')}
+          </p>
         </motion.div>
       )}
 

@@ -710,6 +710,16 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
       }
     })()
 
+    // ปิดกะลงบันทึกความเคลื่อนไหวเสมอ — เงินขาดแดง เงินเกินส้ม (เงินเข้ามือโดยไม่มีที่มา) ตรงเป๊ะเขียว
+    recordAutoAction({
+      tenantId, user: req.user as any, category: 'pos_shift_close', refType: 'pos_shifts', refId: id,
+      amount: Math.abs(cashDifference),
+      description: `ปิดกะ ${shift.shift_number} ควรมี ฿${expectedCash.toLocaleString()} นับได้ ฿${closing_cash_counted.toLocaleString()}`
+        + (cashDifference < 0 ? ` เงินขาด ฿${Math.abs(cashDifference).toLocaleString()}` : cashDifference > 0 ? ` เงินเกิน ฿${cashDifference.toLocaleString()}` : ' ตรงพอดี')
+        + (validExpenses.length ? ` · ใช้เงินก่อนปิด ${validExpenses.map(e => `${e.reason} ฿${e.amount.toLocaleString()}`).join(', ')}` : ''),
+      payload: { severity: cashDifference < 0 ? 'high' : cashDifference > 0 ? 'medium' : 'info', difference: cashDifference },
+    })
+
     res.json({
       success: true,
       message: 'ปิดกะสำเร็จ',
@@ -780,6 +790,9 @@ router.post('/pos-shifts/:id/cash-movement', (req: Request, res: Response) => {
     if (!account_id) {
       return res.status(400).json({ success: false, message: 'กรุณาเลือกบัญชี' })
     }
+    if (!String(reason ?? '').trim()) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุเหตุผลที่นำเงินเข้า/ออกลิ้นชัก' })
+    }
 
     const shift = db.prepare(`SELECT * FROM pos_shifts WHERE id = ? AND tenant_id = ? AND status = 'OPEN'`).get(id, tenantId) as any
     if (!shift) return res.status(404).json({ success: false, message: 'ไม่พบกะที่เปิดอยู่ — ต้องเปิดกะก่อนบันทึกเงินเข้า/ออก' })
@@ -802,6 +815,12 @@ router.post('/pos-shifts/:id/cash-movement', (req: Request, res: Response) => {
       ? postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, account_id, cashAccountId, amt)
       // รับเข้า: Dr เงินสด / Cr บัญชีที่เลือก
       : postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, cashAccountId, account_id, amt)
+
+    recordAutoAction({
+      tenantId, user: req.user as any, category: 'pos_cash_move', refType: 'pos_shift_cash_movements', refId: movementId,
+      amount: amt, description: desc,
+      payload: { severity: type === 'PAID_OUT' ? 'medium' : 'info', shiftId: id, type },
+    })
 
     res.json({ success: true, message: 'บันทึกสำเร็จ', data: { id: movementId, type, amount: amt, journal_entry_id: journalEntryId } })
   } catch (error) {
@@ -852,7 +871,7 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
       refId: id,
       amount: bill.total_amount || 0,
       description: `บิลที่ชำระแล้ว ${bill.bill_number} ยอด ฿${(bill.total_amount || 0).toLocaleString()} ขอยกเลิก${reason ? ` เนื่องจาก ${reason}` : ''}`,
-      payload: { billId: id, reason, finalStatus: 'VOID' },
+      payload: { billId: id, reason, finalStatus: 'VOID', severity: 'high' }, // คืนเงินบิลที่รับเงินแล้ว
     }
     const pending = gateOrCreate(gateArgs)
     if (pending) {

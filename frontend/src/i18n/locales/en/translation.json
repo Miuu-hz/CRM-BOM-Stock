@@ -3316,6 +3316,7 @@
         "stockAdjustment": "Stock Adjustment",
         "stockChange": "Stock Changes",
         "posVoid": "POS Void / Refund",
+        "posDiscount": "POS Discount",
         "posInvoice": "POS Bill Tax Invoice",
         "docEdit": "Edit Issued Documents"
       },
@@ -3339,6 +3340,7 @@
         "title": "Categories requiring approval",
         "stockChangeHint": "Stock in, stock out and adjustments wait for an approver before anything moves",
         "posVoidHint": "Cancelling a POS bill waits for approval before stock and accounting are reversed",
+        "posDiscountHint": "Discounts above this amount must be rung up by an Admin; every discount is logged",
         "posInvoiceHint": "Issuing, editing or cancelling a full tax invoice from a POS bill waits for approval",
         "docEditHint": "Issued purchase orders need an approved unlock before they can be edited (single use, 30 minutes)",
         "turnedOn": "Approval enabled for this category",

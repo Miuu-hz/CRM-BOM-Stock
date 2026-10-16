@@ -119,15 +119,16 @@ describe('approvalGate — สิทธิ์ bypass รายคน', () => {
     expect(hasBypass(admin.tenantId, asGate(admin), 'stock_adjust')).toBe(true)
   })
 
-  it('recordAutoAction: ไม่มีสิทธิ์ bypass → ไม่บันทึกอะไร (คืน null)', () => {
+  it('recordAutoAction: พนักงานไม่มีสิทธิ์ bypass ก็ต้องมีร่องรอยในบันทึกความเคลื่อนไหว', () => {
     const user = createTestUser({ role: 'USER' })
     const row = recordAutoAction({
-      tenantId: user.tenantId, user: asGate(user), category: 'stock_adjust',
-      refType: 'stock_items', refId: 'item-9', description: 'ปรับสต๊อก',
+      tenantId: user.tenantId, user: asGate(user), category: 'pos_void',
+      refType: 'pos_running_bills', refId: 'bill-9', description: 'ยกเลิกบิลใต้เพดาน',
+      payload: { severity: 'high' },
     })
-    expect(row).toBeNull()
-    const count = db.prepare("SELECT COUNT(*) c FROM approval_requests WHERE reference_id = 'item-9'").get() as any
-    expect(count.c).toBe(0)
+    expect(row.status).toBe('AUTO')
+    expect(row.requester_id).toBe(user.userId)
+    expect(JSON.parse(row.payload).severity).toBe('high')
   })
 
   it('recordAutoAction: มีสิทธิ์ bypass → บันทึกแถวสถานะ AUTO พร้อมเครดิตผู้ทำ', () => {

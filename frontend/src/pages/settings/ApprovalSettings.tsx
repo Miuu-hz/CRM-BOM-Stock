@@ -80,6 +80,7 @@ export default function ApprovalSettings() {
     { value: 'sales_order',       label: t('settings.approval.modules.salesOrder') },
     { value: 'stock_adjust',      label: t('settings.approval.modules.stockChange') },
     { value: 'pos_void',          label: t('settings.approval.modules.posVoid') },
+    { value: 'pos_discount',      label: t('settings.approval.modules.posDiscount') },
     { value: 'doc_edit',          label: t('settings.approval.modules.docEdit') },
   ]
 
@@ -88,6 +89,7 @@ export default function ApprovalSettings() {
   const QUICK_CATEGORIES = [
     { value: 'stock_adjust', icon: '📦', label: t('settings.approval.modules.stockChange'), hint: t('settings.approval.quick.stockChangeHint') },
     { value: 'pos_void',     icon: '🧾', label: t('settings.approval.modules.posVoid'),     hint: t('settings.approval.quick.posVoidHint') },
+    { value: 'pos_discount', icon: '🏷️', label: t('settings.approval.modules.posDiscount'), hint: t('settings.approval.quick.posDiscountHint') },
     { value: 'doc_edit',     icon: '✏️', label: t('settings.approval.modules.docEdit'),     hint: t('settings.approval.quick.docEditHint') },
   ]
 
