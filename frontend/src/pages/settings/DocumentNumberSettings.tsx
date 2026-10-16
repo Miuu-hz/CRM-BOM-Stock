@@ -25,6 +25,7 @@ const DOC_TYPES: { value: string; label: string; defaultPrefix: string }[] = [
   { value: 'RECEIPT',          label: 'ใบเสร็จ (RC)',          defaultPrefix: 'RC' },
   { value: 'CREDIT_NOTE',      label: 'ใบลดหนี้ (CN)',        defaultPrefix: 'CN' },
   { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS' },
+  { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT' },
   { value: 'WORK_ORDER',       label: 'ใบสั่งผลิต (WO)',      defaultPrefix: 'WO' },
 ]
 
