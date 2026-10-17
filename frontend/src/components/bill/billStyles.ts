@@ -626,7 +626,8 @@ export const BILL_CSS = `
 
 @page a4page    { size: A4 portrait; margin: 7mm; }
 @page a5page    { size: A5 portrait; margin: 6mm; }
-@page thermal80 { size: 80mm auto;   margin: 2mm; }
+/* 80mm × ความยาวจริงของบิล ตั้งตอนพิมพ์ใน printBill.ts → fitThermalPage() — ค่านี้แค่สำรอง ("80mm auto" ใช้ไม่ได้ เบราว์เซอร์ทิ้ง) */
+@page thermal80 { size: 80mm 297mm;  margin: 0; }
 
 @media print {
   .bill-a4      { page: a4page; }

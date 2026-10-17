@@ -307,8 +307,8 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
 
 /**
  * เครื่องพิมพ์ใบเสร็จตัดกระดาษทุกครั้งที่ขึ้นหน้าใหม่ — บิลยาวเกินหนึ่งหน้าจึงโดนตัดกลางบิล
- * เดิมใช้ @page { size: 80mm auto } ซึ่งเบราว์เซอร์ถือว่าไม่ถูกต้อง (size รับความยาว 1–2 ค่า ไม่รับ auto คู่กับความยาว)
- * แล้วตกไปใช้ @page A4 ของ @media print แทน
+ * เดิม @page thermal80 ใน BILL_CSS ใช้ size: 80mm auto ซึ่งเบราว์เซอร์ถือว่าไม่ถูกต้อง (size รับความยาว 1–2 ค่า
+ * ไม่รับ auto คู่กับความยาว) จึงทิ้งไปแล้วใช้กระดาษตั้งต้นของเครื่องพิมพ์ ซึ่งสั้นกว่าบิล
  * แก้โดยวัดความสูงจริงของบิลแล้วตั้งหน้ากระดาษให้ยาวเท่าบิลพอดี จะได้เป็นหน้าเดียว ตัดครั้งเดียวท้ายบิล
  * ponytail: วัดตอนจะพิมพ์ (หลังรูปโลโก้/QR โหลดเสร็จในช่วงรอ 600ms) — ถ้ารูปโหลดช้ากว่านั้น บิลอาจยาวกว่าที่วัดได้นิดหน่อย
  */
@@ -317,9 +317,9 @@ function fitThermalPage(doc: Document) {
   if (!paper) return
   const heightMm = Math.ceil((paper.scrollHeight * 25.4) / 96) + 4 // +4mm เผื่อปัดเศษ ไม่ให้ล้นไปหน้าที่ 2
   const style = doc.createElement('style')
-  style.textContent = `@page { size: 80mm ${heightMm}mm; margin: 0; }
+  style.textContent = `@page thermal80 { size: 80mm ${heightMm}mm; margin: 0; }
 @media print { html, body { margin: 0; padding: 0; } .unified-bill-container { padding: 0; } }`
-  doc.head.appendChild(style) // ต่อท้าย → ชนะ @page A4 ใน BILL_CSS
+  doc.head.appendChild(style) // ต่อท้าย → ชนะ @page thermal80 ตัวสำรองใน BILL_CSS
 }
 
 /** ลายเซ็นเดิมของ printPOSReceipt() — Cashier.tsx เรียกแบบไม่มี type */
