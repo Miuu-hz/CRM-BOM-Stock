@@ -23,6 +23,16 @@ function guardKitchenItemChange(req: any, res: any, billId: string, item: any, n
     description: `บิล ${bill?.bill_number ?? billId} ${newQty === 0 ? 'ลบ' : 'ลด'} ${item.product_name} ${item.quantity}→${newQty} หลังส่งครัว เพราะ ${reason}`,
     payload: { severity: 'medium', billId, itemId: item.id, from: item.quantity, to: newQty, reason },
   })
+  // ให้ตั๋วครัวที่ยังไม่เสร็จเห็นด้วย: quantity ในตั๋ว = จำนวนตอนส่ง, void_qty = ส่วนที่ยกเลิกไปแล้วเทียบกับตอนส่ง
+  const ts = new Date().toISOString()
+  const active = `SELECT id FROM pos_kds_tickets WHERE tenant_id = ? AND status IN ('PENDING', 'IN_PROGRESS')`
+  db.prepare(`UPDATE pos_kds_ticket_items
+    SET void_qty = MIN(quantity, MAX(0, quantity - ?)), void_reason = ?,
+        status = CASE WHEN ? <= 0 THEN 'CANCELLED' ELSE status END
+    WHERE bill_item_id = ? AND ticket_id IN (${active})`).run(newQty, reason, newQty, item.id, req.user.tenantId)
+  db.prepare(`UPDATE pos_kds_tickets SET updated_at = ?
+    WHERE id IN (SELECT ticket_id FROM pos_kds_ticket_items WHERE bill_item_id = ?) AND id IN (${active})`)
+    .run(ts, item.id, req.user.tenantId)
   return true
 }
 import { authenticate } from '../middleware/auth.middleware'
@@ -465,6 +475,18 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     
     const newQty = quantity || (item as any).quantity
     if (!guardKitchenItemChange(req, res, billId, item, Number(newQty))) return
+
+    // เพิ่มจำนวนของที่ส่งครัวไปแล้ว: ส่วนที่เพิ่มต้องเป็นรายการใหม่ที่ยังไม่ส่ง ไม่งั้นครัวไม่มีวันรู้
+    // (ส่งครัวหยิบเฉพาะ sent_to_kds = 0 — เดิมกด + บนรายการเก่าแล้วยอดบิลขึ้น แต่ครัวทำจำนวนเดิม)
+    if ((item as any).sent_to_kds && Number(newQty) > (item as any).quantity) {
+      const extra = Number(newQty) - (item as any).quantity
+      db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name,
+          quantity, unit_price, total_price, special_instructions, created_by)
+        SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, special_instructions, ?
+        FROM pos_bill_items WHERE id = ?`).run(generateId(), extra, extra, (req as any).user!.userId, itemId)
+      recalculateBillTotals(billId)
+      return res.json({ success: true, message: 'Item updated successfully' })
+    }
     const unitPrice = (item as any).unit_price
     const newTotal = newQty * unitPrice
     

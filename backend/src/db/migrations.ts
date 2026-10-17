@@ -1233,6 +1233,18 @@ export function runMigrations(db: any): void {
     console.error('⚠️ document_number_formats migration error:', e)
   }
 
+  // ตั๋วครัว: ลด/ลบรายการหลังส่งครัวต้องเห็นบนจอ KDS (เดิมตั๋วเก็บจำนวนตอนส่ง แล้วไม่เคยเปลี่ยนตาม)
+  try {
+    const kdsCols = db.prepare('PRAGMA table_info(pos_kds_ticket_items)').all() as any[]
+    if (kdsCols.length && !kdsCols.some(c => c.name === 'void_qty')) {
+      db.exec('ALTER TABLE pos_kds_ticket_items ADD COLUMN void_qty INTEGER NOT NULL DEFAULT 0')
+      db.exec('ALTER TABLE pos_kds_ticket_items ADD COLUMN void_reason TEXT')
+    }
+    console.log('✅ Migration: pos_kds_ticket_items void columns ready')
+  } catch (e) {
+    console.error('⚠️ pos_kds_ticket_items void columns migration error:', e)
+  }
+
   // Migration: document settings for print layout (Settings -> ตั้งค่าหน้ากระดาษ/เอกสาร). One JSON blob per
   // tenant so the Settings page can read/write it whole and add new keys later without
   // a migration (see GET/PUT /api/settings/documents in settings.routes.ts).

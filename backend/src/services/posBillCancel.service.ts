@@ -52,6 +52,9 @@ export async function cancelPosBill(
         WHERE id = ? AND tenant_id = ?
       `).run(now, userId, bill.notes, reason || 'No reason', billId, tenantId)
     }
+    // ตั๋วที่ครัวยังไม่เสร็จ → การ์ดแดงบน KDS จนเชฟกด "รับทราบ" (เดิมหายเงียบ ครัวทำต่อโดยไม่รู้)
+    db.prepare(`UPDATE pos_kds_tickets SET status = 'CANCELLED', updated_at = ?
+      WHERE bill_id = ? AND tenant_id = ? AND status IN ('PENDING', 'IN_PROGRESS')`).run(now, billId, tenantId)
     return { accountingResult, pointsResult }
   })()
 

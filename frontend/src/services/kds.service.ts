@@ -8,7 +8,10 @@ export interface KDSTicketItem {
     product_name: string
     quantity: number
     special_instructions: string | null
-    status: 'PENDING' | 'DONE'
+    status: 'PENDING' | 'DONE' | 'CANCELLED'
+    /** จำนวนที่ถูกยกเลิกหลังส่งครัว (เทียบกับ quantity ตอนส่ง) */
+    void_qty?: number
+    void_reason?: string | null
 }
 
 export interface KDSTicket {
@@ -18,7 +21,7 @@ export interface KDSTicket {
     bill_number: string
     table_name: string
     round: number
-    status: 'PENDING' | 'IN_PROGRESS' | 'DONE'
+    status: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'
     sent_at: string
     updated_at: string
     items: KDSTicketItem[]
@@ -58,7 +61,7 @@ const kdsService = {
         return response.data.data
     },
 
-    updateTicketStatus: async (ticketId: string, status: 'IN_PROGRESS' | 'DONE'): Promise<any> => {
+    updateTicketStatus: async (ticketId: string, status: 'IN_PROGRESS' | 'DONE' | 'CANCEL_ACK'): Promise<any> => {
         const response = await api.patch(`/pos/kds/tickets/${ticketId}/status`, { status })
         return response.data
     }

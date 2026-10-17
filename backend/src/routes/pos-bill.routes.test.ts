@@ -191,15 +191,16 @@ describe("ลด/ลบรายการที่ส่งครัวแล้
     expect(noReason.status).toBe(400)
     expect(db.prepare("SELECT 1 FROM pos_bill_items WHERE id = ?").get(itemId)).toBeTruthy()
 
-    // ลดจำนวนก็ต้องมีเหตุผลเหมือนกัน แต่เพิ่มจำนวนไม่ต้อง
+    // ลดจำนวนก็ต้องมีเหตุผลเหมือนกัน แต่เพิ่มจำนวนไม่ต้อง (ส่วนที่เพิ่มแยกเป็นรายการใหม่ที่ยังไม่ส่งครัว)
     expect((await request(app).put(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ quantity: 1 })).status).toBe(400)
     expect((await request(app).put(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ quantity: 3 })).status).toBe(200)
+    expect((db.prepare("SELECT quantity FROM pos_bill_items WHERE id = ?").get(itemId) as any).quantity).toBe(2)
 
     const ok = await request(app).delete(`/api/pos/bills/${billId}/items/${itemId}`).set(auth).send({ reason: "ลูกค้ายกเลิก" })
     expect(ok.status).toBe(200)
     const log = db.prepare("SELECT * FROM approval_requests WHERE tenant_id = ? AND module_type = ?").get(user.tenantId, "pos_item_void") as any
     expect(log.status).toBe("AUTO")
-    expect(log.amount).toBe(240)
+    expect(log.amount).toBe(160) // ลบ 2 จานที่ส่งครัวไปแล้ว × 80
     expect(log.description).toContain("ลูกค้ายกเลิก")
     expect(JSON.parse(log.payload).severity).toBe("medium")
   })
