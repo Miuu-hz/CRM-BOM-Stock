@@ -299,7 +299,27 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
   w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>พิมพ์เอกสาร</title></head><body>${html}</body></html>`)
   w.document.close()
   w.focus()
-  setTimeout(() => w.print(), 600)
+  setTimeout(() => {
+    if (format === 'thermal') fitThermalPage(w.document)
+    w.print()
+  }, 600)
+}
+
+/**
+ * เครื่องพิมพ์ใบเสร็จตัดกระดาษทุกครั้งที่ขึ้นหน้าใหม่ — บิลยาวเกินหนึ่งหน้าจึงโดนตัดกลางบิล
+ * เดิมใช้ @page { size: 80mm auto } ซึ่งเบราว์เซอร์ถือว่าไม่ถูกต้อง (size รับความยาว 1–2 ค่า ไม่รับ auto คู่กับความยาว)
+ * แล้วตกไปใช้ @page A4 ของ @media print แทน
+ * แก้โดยวัดความสูงจริงของบิลแล้วตั้งหน้ากระดาษให้ยาวเท่าบิลพอดี จะได้เป็นหน้าเดียว ตัดครั้งเดียวท้ายบิล
+ * ponytail: วัดตอนจะพิมพ์ (หลังรูปโลโก้/QR โหลดเสร็จในช่วงรอ 600ms) — ถ้ารูปโหลดช้ากว่านั้น บิลอาจยาวกว่าที่วัดได้นิดหน่อย
+ */
+function fitThermalPage(doc: Document) {
+  const paper = doc.querySelector('.unified-bill-paper') as HTMLElement | null
+  if (!paper) return
+  const heightMm = Math.ceil((paper.scrollHeight * 25.4) / 96) + 4 // +4mm เผื่อปัดเศษ ไม่ให้ล้นไปหน้าที่ 2
+  const style = doc.createElement('style')
+  style.textContent = `@page { size: 80mm ${heightMm}mm; margin: 0; }
+@media print { html, body { margin: 0; padding: 0; } .unified-bill-container { padding: 0; } }`
+  doc.head.appendChild(style) // ต่อท้าย → ชนะ @page A4 ใน BILL_CSS
 }
 
 /** ลายเซ็นเดิมของ printPOSReceipt() — Cashier.tsx เรียกแบบไม่มี type */

@@ -384,8 +384,9 @@ export const BILL_CSS = `
     print-color-adjust: exact;
   }
 }
+/* ความยาวหน้ากระดาษ 80mm ตั้งตอนสั่งพิมพ์ใน utils/printBill.ts → fitThermalPage() ตามความสูงจริงของบิล
+   (เดิม size: 80mm auto ไม่ถูกต้องตามสเปก เบราว์เซอร์ทิ้งแล้วใช้ A4 → บิลยาวถูกแบ่งหน้าและโดนตัด) */
 @media print and (max-width: 82mm) {
-  @page { size: 80mm auto; margin: 3mm; }
   .unified-bill-paper { width: 80mm; box-shadow: none; }
 }
 
