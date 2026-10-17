@@ -68,10 +68,30 @@ const registerIpLimiter = rateLimit({
 })
 
 // ── Credential-level rate limit: 3 attempts then 5-minute lockout ─────────────
-interface AttemptRecord { count: number; lockedUntil: number }
+// ponytail: resets failed count after 15 minutes of inactivity to prevent sticky lockout across days.
+interface AttemptRecord {
+  count: number
+  lockedUntil: number
+  lastAttemptAt: number
+}
 const loginAttempts = new Map<string, AttemptRecord>()
-const MAX_ATTEMPTS   = 3
-const LOCKOUT_MS     = 5 * 60 * 1000 // 5 minutes
+const MAX_ATTEMPTS     = 3
+const LOCKOUT_MS       = 5 * 60 * 1000  // 5 minutes
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
+function cleanupExpiredAttempts(now = Date.now()): void {
+  for (const [key, rec] of loginAttempts.entries()) {
+    // Purge records where lockout has expired or where no lockout occurred and window elapsed
+    if (rec.lockedUntil > now) continue
+    if (rec.lockedUntil > 0 || (now - rec.lastAttemptAt > ATTEMPT_WINDOW_MS)) {
+      loginAttempts.delete(key)
+    }
+  }
+}
+
+// Background sweep so abandoned single-failure records don't leak memory indefinitely
+const sweepTimer = setInterval(() => cleanupExpiredAttempts(), ATTEMPT_WINDOW_MS)
+if (sweepTimer.unref) sweepTimer.unref()
 
 function checkRateLimit(key: string): { blocked: boolean; retryAfterSec?: number } {
   const now = Date.now()
@@ -80,8 +100,8 @@ function checkRateLimit(key: string): { blocked: boolean; retryAfterSec?: number
   if (rec.lockedUntil > now) {
     return { blocked: true, retryAfterSec: Math.ceil((rec.lockedUntil - now) / 1000) }
   }
-  if (rec.lockedUntil > 0 && rec.lockedUntil <= now) {
-    // lockout expired — reset
+  if (rec.lockedUntil > 0 || (now - rec.lastAttemptAt > ATTEMPT_WINDOW_MS)) {
+    // lockout expired or attempt window elapsed — reset
     loginAttempts.delete(key)
     return { blocked: false }
   }
@@ -90,8 +110,13 @@ function checkRateLimit(key: string): { blocked: boolean; retryAfterSec?: number
 
 function recordFailedAttempt(key: string): void {
   const now = Date.now()
-  const rec  = loginAttempts.get(key) ?? { count: 0, lockedUntil: 0 }
+  cleanupExpiredAttempts(now)
+  let rec = loginAttempts.get(key)
+  if (!rec || (now - rec.lastAttemptAt > ATTEMPT_WINDOW_MS) || (rec.lockedUntil > 0 && rec.lockedUntil <= now)) {
+    rec = { count: 0, lockedUntil: 0, lastAttemptAt: now }
+  }
   rec.count += 1
+  rec.lastAttemptAt = now
   if (rec.count >= MAX_ATTEMPTS) {
     rec.lockedUntil = now + LOCKOUT_MS
   }
@@ -110,7 +135,7 @@ const generateToken = (payload: any) => {
 
 // Short-lived access token for regular users, paired with a long-lived refresh
 // token. Master accounts keep the single long-lived token (see login handler).
-const ACCESS_TOKEN_TTL  = '60m'
+const ACCESS_TOKEN_TTL  = '2h'
 const REFRESH_TOKEN_TTL = '7d'
 const generateAccessToken = (payload: any) => {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL })
@@ -229,7 +254,7 @@ router.post('/login', loginIpLimiter, async (req, res) => {
 })
 
 // @route   POST /api/auth/refresh
-// @desc    Exchange a valid refresh token for a fresh 60-minute access token.
+// @desc    Exchange a valid refresh token for a fresh 2-hour access token.
 //          Refresh tokens issued before the last password change are rejected.
 router.post('/refresh', async (req, res) => {
   try {
@@ -282,6 +307,12 @@ router.post('/refresh', async (req, res) => {
   }
 })
 
+/** ตัวตนของเบอร์โทรไว้เช็คสิทธิ์ทดลอง: 081-234-5678 / +66 81 234 5678 / 0812345678 → "812345678" (9 หลักท้าย) */
+export function phoneIdentity(raw: unknown): string | null {
+  const digits = String(raw ?? '').replace(/\D/g, '')
+  return digits.length >= 9 ? digits.slice(-9) : null
+}
+
 // @route   POST /api/auth/register
 // @desc    Public self-service signup — opens the company immediately (no Master approval).
 //          No plan / 'free' → Free forever. A paid `plan` (from the phopy.net pricing page)
@@ -327,6 +358,15 @@ router.post('/register', registerIpLimiter, async (req, res) => {
 
     const db = getDb()
 
+    // ทดลองฟรีได้ครั้งเดียวต่อเบอร์โทร — เดิมเปลี่ยนอีเมลแล้วสมัครใหม่ก็ได้ทดลองใหม่ทุกรอบ
+    const phoneKey = phoneIdentity(phone)
+    if (selection && !phoneKey) {
+      return res.status(400).json({ success: false, message: 'กรุณากรอกเบอร์โทรศัพท์ เพื่อรับสิทธิ์ทดลองใช้ฟรี 30 วัน' })
+    }
+    const trialUsed = !!phoneKey && (db.prepare("SELECT phone FROM signup_requests WHERE phone IS NOT NULL AND status = 'approved'").all() as { phone: string }[])
+      .some(r => phoneIdentity(r.phone) === phoneKey)
+    const trial = selection && !trialUsed ? selection : null
+
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email)
     if (existingUser) {
       return res.status(409).json({ success: false, message: 'อีเมลนี้ถูกใช้งานแล้ว กรุณาเข้าสู่ระบบ' })
@@ -335,15 +375,20 @@ router.post('/register', registerIpLimiter, async (req, res) => {
     const result = db.transaction(() => {
       // คำขอเก่าที่ค้างจากระบบรออนุมัติ — ไม่ต้องรอแล้ว
       db.prepare(`DELETE FROM signup_requests WHERE email = ? COLLATE NOCASE AND status IN ('checkout', 'pending')`).run(email)
-      const { tenantId } = provisionTenant({ businessName: businessName.trim(), adminEmail: email, adminName: adminName.trim(), adminPasswordHash: passwordHash, trial: selection ? { ...selection, addons: {} } : undefined })  // ทดลอง = แพ็ก + Pack เท่านั้น Add-on ต้องซื้อ
+      const { tenantId } = provisionTenant({ businessName: businessName.trim(), adminEmail: email, adminName: adminName.trim(), adminPasswordHash: passwordHash, trial: trial ? { ...trial, addons: {} } : undefined })  // ทดลอง = แพ็ก + Pack เท่านั้น Add-on ต้องซื้อ
       db.prepare(
         `INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, tenant_id, reviewed_by, reviewed_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 'self', datetime('now'), datetime('now'))`,
       ).run(randomBytes(12).toString('hex'), businessName, adminName, email, passwordHash, phone || null, tenantId)
+      // เบอร์นี้เคยสมัครมาแล้ว → ปิดสิทธิ์ทดลองของบริษัทนี้ด้วย ไม่งั้นไปกดซื้อแพ็กแล้วได้ทดลองใน Stripe อีก 30 วัน
+      if (trialUsed) db.prepare('UPDATE tenant_subscriptions SET trial_used = 1 WHERE tenant_id = ?').run(tenantId)
       return tenantId
     })()
-    console.log(`[signup] ${email} → ${result} (${selection ? `ทดลอง ${selection.plan} ${TRIAL_DAYS} วัน` : 'free'})`)
-    res.json({ success: true, data: { activated: true, plan: selection?.plan ?? 'free', trialDays: selection ? TRIAL_DAYS : 0 } })
+    console.log(`[signup] ${email} → ${result} (${trial ? `ทดลอง ${trial.plan} ${TRIAL_DAYS} วัน` : trialUsed ? 'free — เบอร์นี้เคยใช้สิทธิ์ทดลองแล้ว' : 'free'})`)
+    res.json({ success: true, data: {
+      activated: true, plan: trial?.plan ?? 'free', trialDays: trial ? TRIAL_DAYS : 0,
+      ...(selection && trialUsed ? { trialDenied: 'เบอร์โทรนี้เคยใช้สิทธิ์ทดลองฟรีแล้ว บริษัทใหม่จึงเริ่มที่แพ็ก Free — อัปเกรดได้ที่ ตั้งค่า → แพ็กเกจ' } : {}),
+    } })
   } catch (error) {
     if (error instanceof ProvisionError) return res.status(error.status).json({ success: false, message: error.message })
     console.error('Register error:', error)

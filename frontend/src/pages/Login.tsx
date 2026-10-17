@@ -67,9 +67,14 @@ function Login() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    const result = await login(email, password)
-    if (!result.success) setError(result.message || t('login.error'))
-    setLoading(false)
+    try {
+      const result = await login(email, password)
+      if (!result.success) setError(result.message || t('login.error'))
+    } catch (err: any) {
+      setError(err?.message || t('login.error'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ── Signup wizard logic ──
@@ -112,6 +117,8 @@ function Login() {
         ...(paidPlan ? { plan: paidPlan, cycle: planCycle, packs } : {}),
       })
       if (!res.data?.success) { setSuErr(res.data?.message || 'สมัครไม่สำเร็จ'); return }
+      // เบอร์นี้เคยใช้สิทธิ์ทดลองแล้ว — บริษัทเปิดได้แต่เริ่มที่ Free บอกให้รู้ก่อนพาเข้าระบบ
+      if (res.data.data?.trialDenied) window.alert(res.data.data.trialDenied)
       // บริษัทเปิดแล้ว → เข้าระบบให้เลย (ล้าง ?plan= ก่อน ไม่งั้น App เด้งไปหน้าชำระเงิน)
       window.history.replaceState(null, '', '/')
       const r = await login(su.email.trim(), su.password)

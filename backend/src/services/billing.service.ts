@@ -165,7 +165,7 @@ interface TenantBilling {
 }
 
 function tenantBilling(tenantId: string): TenantBilling {
-  return (getDb().prepare('SELECT stripe_customer_id, stripe_subscription_id, status, current_period_end FROM tenant_subscriptions WHERE tenant_id = ?')
+  return (getDb().prepare('SELECT stripe_customer_id, stripe_subscription_id, status, current_period_end, trial_used FROM tenant_subscriptions WHERE tenant_id = ?')
     .get(tenantId) as TenantBilling | undefined) ?? { stripe_customer_id: null, stripe_subscription_id: null, status: null, current_period_end: null }
 }
 
@@ -174,8 +174,9 @@ function tenantBilling(tenantId: string): TenantBilling {
 // - กำลังทดลองจากการสมัครเอง (TRIAL) → ทดลองต่อใน Stripe ถึงวันเดิม (ไม่ต่อเพิ่มอีก 30 วัน) เหลือไม่ถึง 48 ชม. = เก็บเงินเลย
 // - ทดลองไปแล้วจนหมด (แถวยังเป็น TRIAL) → ไม่มี
 // - Free ที่ไม่เคยทดลอง → 30 วันเต็ม
-export function trialFor(b: Pick<TenantBilling, 'stripe_customer_id' | 'status' | 'current_period_end'>, now = Date.now()): SessionOptions['trial'] {
-  if (b.stripe_customer_id) return null
+// - สมัครด้วยเบอร์โทรที่เคยใช้สิทธิ์แล้ว (trial_used) → ไม่มี
+export function trialFor(b: Pick<TenantBilling, 'stripe_customer_id' | 'status' | 'current_period_end'> & { trial_used?: number | null }, now = Date.now()): SessionOptions['trial'] {
+  if (b.stripe_customer_id || b.trial_used) return null // trial_used = เบอร์โทรของผู้สมัครเคยใช้สิทธิ์ไปแล้ว
   if (b.status !== 'TRIAL') return { days: TRIAL_DAYS }
   const end = b.current_period_end ? new Date(b.current_period_end).getTime() : 0
   return end - now >= MIN_TRIAL_MS ? { end: Math.floor(end / 1000) } : null
