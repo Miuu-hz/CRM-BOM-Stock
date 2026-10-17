@@ -313,6 +313,14 @@ export function phoneIdentity(raw: unknown): string | null {
   return digits.length >= 9 ? digits.slice(-9) : null
 }
 
+/** ตัวตนของอีเมลไว้เช็คสิทธิ์ทดลอง: ตัด +แท็ก ทุกโดเมน และตัดจุดของ Gmail (a.b+x@gmail.com = ab@gmail.com) */
+export function emailIdentity(raw: unknown): string {
+  const [local = '', domain = ''] = String(raw ?? '').trim().toLowerCase().split('@')
+  const gmail = domain === 'gmail.com' || domain === 'googlemail.com'
+  const base = local.split('+')[0]
+  return `${gmail ? base.replace(/\./g, '') : base}@${gmail ? 'gmail.com' : domain}`
+}
+
 // @route   POST /api/auth/register
 // @desc    Public self-service signup — opens the company immediately (no Master approval).
 //          No plan / 'free' → Free forever. A paid `plan` (from the phopy.net pricing page)
@@ -358,13 +366,15 @@ router.post('/register', registerIpLimiter, async (req, res) => {
 
     const db = getDb()
 
-    // ทดลองฟรีได้ครั้งเดียวต่อเบอร์โทร — เดิมเปลี่ยนอีเมลแล้วสมัครใหม่ก็ได้ทดลองใหม่ทุกรอบ
+    // ทดลองฟรีได้ครั้งเดียวต่อเบอร์โทร และครั้งเดียวต่ออีเมล (ซ้ำอย่างใดอย่างหนึ่ง = ไม่ได้ทดลอง)
+    // เดิมเปลี่ยนอีเมลแล้วสมัครใหม่ก็ได้ทดลองใหม่ทุกรอบ · ไม่เก็บบัตรตอนทดลอง จึงผูกได้แค่ 2 อย่างนี้ (เจ้าของตัดสิน 2026-10-17)
     const phoneKey = phoneIdentity(phone)
     if (selection && !phoneKey) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกเบอร์โทรศัพท์ เพื่อรับสิทธิ์ทดลองใช้ฟรี 30 วัน' })
     }
-    const trialUsed = !!phoneKey && (db.prepare("SELECT phone FROM signup_requests WHERE phone IS NOT NULL AND status = 'approved'").all() as { phone: string }[])
-      .some(r => phoneIdentity(r.phone) === phoneKey)
+    const emailKey = emailIdentity(email)
+    const trialUsed = (db.prepare("SELECT phone, email FROM signup_requests WHERE status = 'approved'").all() as { phone: string | null; email: string }[])
+      .some(r => (!!phoneKey && phoneIdentity(r.phone) === phoneKey) || emailIdentity(r.email) === emailKey)
     const trial = selection && !trialUsed ? selection : null
 
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email)
@@ -380,14 +390,14 @@ router.post('/register', registerIpLimiter, async (req, res) => {
         `INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, tenant_id, reviewed_by, reviewed_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 'self', datetime('now'), datetime('now'))`,
       ).run(randomBytes(12).toString('hex'), businessName, adminName, email, passwordHash, phone || null, tenantId)
-      // เบอร์นี้เคยสมัครมาแล้ว → ปิดสิทธิ์ทดลองของบริษัทนี้ด้วย ไม่งั้นไปกดซื้อแพ็กแล้วได้ทดลองใน Stripe อีก 30 วัน
+      // เบอร์/อีเมลนี้เคยสมัครมาแล้ว → ปิดสิทธิ์ทดลองของบริษัทนี้ด้วย ไม่งั้นไปกดซื้อแพ็กแล้วได้ทดลองใน Stripe อีก 30 วัน
       if (trialUsed) db.prepare('UPDATE tenant_subscriptions SET trial_used = 1 WHERE tenant_id = ?').run(tenantId)
       return tenantId
     })()
-    console.log(`[signup] ${email} → ${result} (${trial ? `ทดลอง ${trial.plan} ${TRIAL_DAYS} วัน` : trialUsed ? 'free — เบอร์นี้เคยใช้สิทธิ์ทดลองแล้ว' : 'free'})`)
+    console.log(`[signup] ${email} → ${result} (${trial ? `ทดลอง ${trial.plan} ${TRIAL_DAYS} วัน` : trialUsed ? 'free — เบอร์/อีเมลนี้เคยใช้สิทธิ์ทดลองแล้ว' : 'free'})`)
     res.json({ success: true, data: {
       activated: true, plan: trial?.plan ?? 'free', trialDays: trial ? TRIAL_DAYS : 0,
-      ...(selection && trialUsed ? { trialDenied: 'เบอร์โทรนี้เคยใช้สิทธิ์ทดลองฟรีแล้ว บริษัทใหม่จึงเริ่มที่แพ็ก Free — อัปเกรดได้ที่ ตั้งค่า → แพ็กเกจ' } : {}),
+      ...(selection && trialUsed ? { trialDenied: 'เบอร์โทรหรืออีเมลนี้เคยใช้สิทธิ์ทดลองฟรีแล้ว บริษัทใหม่จึงเริ่มที่แพ็ก Free — อัปเกรดได้ที่ ตั้งค่า → แพ็กเกจ' } : {}),
     } })
   } catch (error) {
     if (error instanceof ProvisionError) return res.status(error.status).json({ success: false, message: error.message })

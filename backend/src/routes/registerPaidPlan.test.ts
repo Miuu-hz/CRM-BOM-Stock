@@ -97,6 +97,17 @@ describe('POST /api/auth/register — สมัครแล้วใช้ได
     expect(trialFor(row)).toBeNull()
   })
 
+  it('อีเมลเดิมแบบหลบ (+แท็ก / จุดใน Gmail) เบอร์ใหม่ → ไม่ได้ทดลองซ้ำ', async () => {
+    const id = generateId().slice(0, 8)
+    // บริษัทเดิมถูกลบไปแล้ว แต่ประวัติการสมัครยังอยู่ (อีเมลจึงสมัครใหม่ได้)
+    db.prepare(`INSERT INTO signup_requests (id, business_name, admin_name, email, password_hash, phone, status, reviewed_by, created_at)
+      VALUES (?, 'เก่า', 'เก่า', ?, 'x', '0611111111', 'approved', 'self', datetime('now'))`).run(generateId(), `shop${id}@gmail.com`)
+    const res = await register(body({ plan: 'solo', cycle: 'monthly', email: `s.h.o.p${id}+trial2@gmail.com` }))
+    expect(res.status).toBe(200)
+    expect(res.body.data).toMatchObject({ plan: 'free', trialDays: 0 })
+    expect(res.body.data.trialDenied).toContain('อีเมล')
+  })
+
   it('แพ็กเสียเงินต้องมีเบอร์โทร (ใช้กันทดลองซ้ำ)', async () => {
     const res = await register(body({ plan: 'solo', cycle: 'monthly', phone: '' }))
     expect(res.status).toBe(400)
