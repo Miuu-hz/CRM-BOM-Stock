@@ -28,6 +28,7 @@ import POSClearing from './pages/Accounting/POSClearing'
 import { UserManagement } from './pages/Users'
 import MasterPanel from './pages/MasterPanel'
 import ApprovalInbox from './pages/ApprovalInbox'
+import DigitalTwin from './pages/DigitalTwin'
 
 // Blocks direct-URL access to a route whose menu is restricted in
 // menuPermissions.ts (e.g. typing /users into the address bar as a USER).
@@ -77,6 +78,7 @@ function AppContent() {
         <Route path="/stock" element={<Stock />} />
         <Route path="/stock/subcontractors" element={<SubconStock />} />
         <Route path="/calculator" element={<Calculator />} />
+        <Route path="/digital-twin" element={<DigitalTwin />} />
         <Route path="/marketing" element={<Marketing />} />
         <Route path="/sales" element={<Sales />} />
         <Route path="/receivables" element={<Navigate to="/accounting/phopy-board?view=receivables" replace />} />

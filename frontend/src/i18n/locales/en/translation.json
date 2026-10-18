@@ -106,7 +106,9 @@
       "popupBlocked": "Your browser blocked the new tab. Please allow pop-ups for this site and try again."
     },
     "receivables": "Receivables / Payables",
-    "receivablesDesc": "Track outstanding balances and debt aging"
+    "receivablesDesc": "Track outstanding balances and debt aging",
+    "digitalTwin": "3D Digital Twin",
+    "digitalTwinDesc": "3D Digital Twin of SME Operations Hub"
   },
   "dashboard": {
     "title": "Executive Dashboard",

@@ -77,6 +77,7 @@ import marketingRoutes from './routes/marketing.routes'
 
 
 import searchRoutes from './routes/search.routes'
+import twinRoutes from './routes/twin.routes'
 
 
 import supplierRoutes from './routes/supplier.routes'
@@ -539,6 +540,7 @@ app.use('/api/marketing', marketingRoutes)
 
 
 app.use('/api/search', searchRoutes)
+app.use('/api/twin', authenticate, subscriptionGate(), twinRoutes)
 
 
 app.use('/api/suppliers', supplierRoutes)

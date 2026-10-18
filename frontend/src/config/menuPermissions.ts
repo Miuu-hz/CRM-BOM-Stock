@@ -16,6 +16,7 @@ const NOT_USER: Role[] = ['MASTER', 'ADMIN', 'MANAGER', 'POWERUSER']
 // entry only when a menu needs to be narrower than "everyone logged in".
 export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/': ALL_ROLES,
+  '/digital-twin': ALL_ROLES,
   '/crm': ALL_ROLES,
   '/production': ALL_ROLES,
   '/bom': ALL_ROLES,

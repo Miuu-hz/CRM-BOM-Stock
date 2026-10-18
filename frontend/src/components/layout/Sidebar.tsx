@@ -30,6 +30,7 @@ import {
   Wallet,
   Wrench,
   Building2,
+  Box,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../services/api'
@@ -57,6 +58,7 @@ const KANBAN_SSO_PATH = 'https://kanban.phopy.net'
 
 const menuItems: MenuItem[] = [
   { path: '/', tKey: 'sidebar.dashboard', icon: LayoutDashboard },
+  { path: '/digital-twin', tKey: 'sidebar.digitalTwin', icon: Box, descriptionKey: 'sidebar.digitalTwinDesc', beta: true },
   { path: '/crm', tKey: 'sidebar.crm', icon: Users, descriptionKey: 'sidebar.crmDesc' },
   {
     path: '/production',
