@@ -247,7 +247,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               <div className="receipt-divider" />
               <div className="receipt-row"><span>เลขที่</span><span>{data.docNumber}</span></div>
               <div className="receipt-row"><span>วันที่</span><span>{formatThaiDateTime(data.docDate)}</span></div>
-              {data.buyer?.name && <div className="receipt-row"><span>{config.labels.buyer}</span><span>{data.buyer.name}</span></div>}
+              {data.buyer?.name && data.buyer.name !== '-' && <div className="receipt-row"><span>{config.labels.buyer}</span><span>{data.buyer.name}</span></div>}
               {config.fields.showBuyerTaxId && data.buyer.taxId && (
                 <div className="receipt-row"><span>เลขภาษี</span><span>{data.buyer.taxId}</span></div>
               )}
@@ -255,7 +255,8 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
 
               {data.items.map(item => (
                 <div key={item.id} className="receipt-item">
-                  <div>{item.name}</div>
+                  <div className="receipt-item-name">{item.name}</div>
+                  {item.description && <div className="receipt-item-note">* {item.description}</div>}
                   <div className="receipt-row">
                     <span>{item.quantity} {unitLabel(item.unit)} × {formatCurrency(item.price)}</span>
                     <span>{formatCurrency(item.total)}</span>
@@ -264,9 +265,16 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               ))}
 
               <div className="receipt-divider" />
-              <div className="receipt-row"><span>มูลค่าก่อน VAT</span><span>{formatCurrency(data.subtotal)}</span></div>
+              {data.discountTotal > 0 && (
+                <div className="receipt-row"><span>ส่วนลด</span><span>-{formatCurrency(data.discountTotal)}</span></div>
+              )}
+              {/* ร้านที่ไม่เก็บ VAT ไม่มี "มูลค่าก่อน VAT" — เดิมพิมพ์ยอดเต็มโดยติดป้ายนี้ อ่านแล้วเหมือนคิดภาษีผิด
+                  ฐานต้องหักส่วนลดก่อน ไม่งั้น ฐาน + VAT ≠ รวมทั้งสิ้น (ทั้งโหมดรวม/บวก VAT ใช้สูตรเดียวกัน ดู utils/vat.ts) */}
               {columns.vat && data.vatTotal > 0 && (
-                <div className="receipt-row"><span>VAT {data.vatRate ?? 7}%</span><span>{formatCurrency(data.vatTotal)}</span></div>
+                <>
+                  <div className="receipt-row"><span>มูลค่าก่อน VAT</span><span>{formatCurrency(data.subtotal - data.discountTotal)}</span></div>
+                  <div className="receipt-row"><span>VAT {data.vatRate ?? 7}%</span><span>{formatCurrency(data.vatTotal)}</span></div>
+                </>
               )}
               <div className="receipt-row receipt-total-row"><span>รวมทั้งสิ้น</span><span>{formatCurrency(data.total)}</span></div>
               {data.supersededBy && (
@@ -274,7 +282,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   <span>ออกใบกำกับภาษีเต็มรูปแทนแล้ว</span><span>{data.supersededBy}</span>
                 </div>
               )}
-              {data.vatInclusive && (
+              {data.vatInclusive && data.vatTotal > 0 && (
                 <div className="receipt-row" style={{ fontSize: '0.72rem' }}>
                   <span>ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว</span><span />
                 </div>
@@ -293,23 +301,16 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                       <div className="receipt-row"><span>เลขบัญชี</span><span>{data.bankAccountNumber}</span></div>
                     </>
                   )}
-                  {showQr && (data.qrCode || data.receiptQrCode) && (
+                  {/* สลิป 80mm ไม่พิมพ์ QR ดูใบเสร็จออนไลน์ (เจ้าของร้านขอเอาออก — เปลืองกระดาษ) ยังมีใน A4/A5 */}
+                  {showQr && data.qrCode && (
                     <div className="receipt-qr-pair">
-                      {data.qrCode && (
-                        <div className="receipt-qr-cell">
-                          <img className="receipt-qr" src={data.qrCode} alt="QR โอนเงิน" />
-                          <div className="receipt-qr-label">โอนเงิน</div>
-                        </div>
-                      )}
-                      {data.receiptQrCode && (
-                        <div className="receipt-qr-cell">
-                          <img className="receipt-qr" src={data.receiptQrCode} alt="QR ดูใบเสร็จ" />
-                          <div className="receipt-qr-label">ดูใบเสร็จ</div>
-                        </div>
-                      )}
+                      <div className="receipt-qr-cell">
+                        <img className="receipt-qr" src={data.qrCode} alt="QR โอนเงิน" />
+                        <div className="receipt-qr-label">โอนเงิน</div>
+                      </div>
                     </div>
                   )}
-                  {showQr && !data.qrCode && !data.receiptQrCode && (
+                  {showQr && !data.qrCode && (
                     <div className="receipt-qr-placeholder">QR</div>
                   )}
                 </div>

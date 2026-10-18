@@ -356,6 +356,8 @@ export const BILL_CSS = `
 .receipt-divider { border-top: 1px dashed #9aa; margin: 7px 0; }
 .receipt-row { display: flex; justify-content: space-between; gap: 8px; }
 .receipt-item { margin-bottom: 5px; }
+.receipt-item-note { font-size: 10.5px; color: #4b5563; padding-left: 4px; font-style: italic; }
+.bill-thermal .receipt-item-note { font-size: 11px; color: #000000; font-weight: 700; font-style: normal; }
 .receipt-total-row { font-size: 14px; font-weight: 800; }
 .receipt-pay { background: #f2f4f8; border-radius: 6px; padding: 6px 8px; margin: 7px 0; font-size: 10.5px; }
 .receipt-qr { width: 96px; height: 96px; display: block; margin: 5px auto 0; }

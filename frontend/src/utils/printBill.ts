@@ -83,7 +83,7 @@ function toItems(raw: any[]): BillItem[] {
       id: String(it.id ?? i),
       no: i + 1,
       name: String(it.product_name || it.material_name || it.name || it.description || '-'),
-      description: it.description && it.description !== it.product_name ? String(it.description) : undefined,
+      description: (it.special_instructions || it.note || it.notes || (it.description && it.description !== it.product_name ? it.description : undefined)) ? String(it.special_instructions || it.note || it.notes || it.description) : undefined,
       sku: it.sku || it.code || undefined,
       quantity: qty,
       unit: String(it.unit || ''),
@@ -118,7 +118,8 @@ function partyOf(d: any, side: DocSpec['party']): BillParty {
   const p = side === 'customer' ? 'customer' : 'supplier'
   return {
     code: d[`${p}_code`] || undefined,
-    name: String(d[`${p}_name`] || '-'),
+    // บิล POS ลูกค้าขาจรไม่ได้อยู่ใน CRM — แคชเชียร์ตั้งชื่อบิลเป็นเลขโต๊ะ/ชื่อเล่นไว้ที่ display_name
+    name: String(d[`${p}_name`] || d.display_name || '-'),
     address: String(d[`${p}_address`] || ''),
     taxId: String(d[`${p}_tax_id`] || ''),
     tel: String(d[`${p}_phone`] || ''),
@@ -299,10 +300,18 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
   w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>พิมพ์เอกสาร</title></head><body>${html}</body></html>`)
   w.document.close()
   w.focus()
-  setTimeout(() => {
-    if (format === 'thermal') fitThermalPage(w.document)
-    w.print()
-  }, 600)
+  // รอรูป (โลโก้ร้าน/QR) โหลดเสร็จก่อน — สั่งพิมพ์ก่อนรูปมา = โลโก้ไม่ติด และวัดความสูงบิลได้สั้นกว่าจริง (ท้ายบิลโดนตัด)
+  await waitForImages(w.document)
+  if (w.closed) return
+  if (format === 'thermal') fitThermalPage(w.document)
+  w.print()
+}
+
+/** รอทุก <img> โหลด/ถอดรหัสเสร็จ (สำเร็จหรือพังก็ได้) แต่ไม่เกิน timeoutMs กันค้าง */
+function waitForImages(doc: Document, timeoutMs = 3000): Promise<void> {
+  const loads = Array.from(doc.images).map(img => img.decode().catch(() => undefined))
+  const timeout = new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+  return Promise.race([Promise.all(loads).then(() => undefined), timeout])
 }
 
 /**
