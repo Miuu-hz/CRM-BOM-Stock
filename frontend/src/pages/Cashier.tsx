@@ -146,6 +146,7 @@ export default function Cashier() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditNameModal, setShowEditNameModal] = useState(false)
+  const [editingItemNote, setEditingItemNote] = useState<BillItem | null>(null)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showAssignMemberModal, setShowAssignMemberModal] = useState(false)
   const [showReceiptQR, setShowReceiptQR] = useState(false)
@@ -411,6 +412,23 @@ export default function Cashier() {
       }
     } catch (error) {
       toast.error('Failed to open bill')
+    }
+  }
+
+  // Save item special instructions (note)
+  const handleSaveItemNote = async (itemId: string, note: string) => {
+    if (!currentBill) return
+    try {
+      const res = await posBillService.updateItem(currentBill.id, itemId, {
+        special_instructions: note
+      })
+      if (res.success) {
+        const billRes = await posBillService.getBill(currentBill.id)
+        if (billRes.success) setCurrentBill(billRes.data)
+        toast.success('บันทึกหมายเหตุสำเร็จ')
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'บันทึกหมายเหตุไม่สำเร็จ')
     }
   }
 
@@ -1000,9 +1018,28 @@ export default function Cashier() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h4 className="font-medium text-[var(--fg-1)]">{item.product_name}</h4>
-                          {item.special_instructions && (
-                            <p className="text-xs text-[var(--fg-4)] mt-1">{item.special_instructions}</p>
-                          )}
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {item.special_instructions ? (
+                              <button
+                                type="button"
+                                onClick={() => setEditingItemNote(item)}
+                                disabled={!isBillEditable(currentBill)}
+                                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-warning/15 text-warning hover:bg-warning/25 transition-colors border border-warning/30 font-medium"
+                              >
+                                <Star className="w-3 h-3 fill-warning text-warning" />
+                                <span>{item.special_instructions}</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setEditingItemNote(item)}
+                                disabled={!isBillEditable(currentBill)}
+                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-[var(--fg-4)] hover:text-phopy-indigo hover:bg-[var(--surface)] transition-colors opacity-70 hover:opacity-100"
+                              >
+                                <span>+ โน้ต/หวาน</span>
+                              </button>
+                            )}
+                          </div>
                           <div className="flex items-center gap-4 mt-2">
                             <div className="flex items-center gap-2">
                               <button
@@ -1323,6 +1360,20 @@ export default function Cashier() {
             </button>
           </motion.div>
         </div>
+      )}
+
+      {/* Item Note Modal */}
+      {editingItemNote && (
+        <ItemNoteModal
+          isOpen={!!editingItemNote}
+          onClose={() => setEditingItemNote(null)}
+          itemName={editingItemNote.product_name}
+          initialNote={editingItemNote.special_instructions || ''}
+          onSave={(note) => {
+            handleSaveItemNote(editingItemNote.id, note)
+            setEditingItemNote(null)
+          }}
+        />
       )}
 
       {/* Edit Name Modal */}
@@ -2098,6 +2149,143 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
               onClose()
             }}
             className="flex-1 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white rounded-lg hover:opacity-90"
+          >
+            บันทึก
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ==================== Item Note Modal ====================
+
+const QUICK_NOTES = [
+  'หวานน้อย (50%)',
+  'หวานปกติ (100%)',
+  'ไม่หวาน (0%)',
+  'หวาน 25%',
+  'เพิ่มหวาน (125%)',
+  'แยกน้ำแข็ง',
+  'ไม่ใส่น้ำแข็ง',
+  'ไม่ใส่นม',
+  'ไม่ใส่ผัก',
+  'ไม่ใส่กระเทียม',
+  'ไม่เผ็ด',
+  'เผ็ดน้อย',
+  'เผ็ดมาก',
+  'พิเศษ',
+  'แยกน้ำ',
+  'ใส่ถุงกลับบ้าน',
+]
+
+function ItemNoteModal({ isOpen, onClose, itemName, initialNote, onSave }: {
+  isOpen: boolean
+  onClose: () => void
+  itemName: string
+  initialNote: string
+  onSave: (note: string) => void
+}) {
+  useModalClose(onClose)
+  const [note, setNote] = useState(initialNote)
+
+  useEffect(() => {
+    setNote(initialNote)
+  }, [initialNote, isOpen])
+
+  if (!isOpen) return null
+
+  const handleToggleChip = (chip: string) => {
+    if (!note) {
+      setNote(chip)
+      return
+    }
+    const parts = note.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.includes(chip)) {
+      setNote(parts.filter(p => p !== chip).join(', '))
+    } else {
+      setNote([...parts, chip].join(', '))
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-[var(--fg-1)]">หมายเหตุ / ปรับแต่งรายการ</h2>
+            <p className="text-xs text-[var(--fg-3)] mt-0.5">{itemName}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Quick Chips */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-[var(--fg-3)] mb-2 block">ตัวเลือกยอดนิยม</label>
+          <div className="flex flex-wrap gap-1.5">
+            {QUICK_NOTES.map(chip => {
+              const active = note.split(',').map(s => s.trim()).includes(chip)
+              return (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => handleToggleChip(chip)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                    active
+                      ? 'bg-phopy-indigo text-white border-phopy-indigo font-medium shadow-sm'
+                      : 'bg-[var(--bg)] text-[var(--fg-2)] border-[var(--border)] hover:border-phopy-indigo/50'
+                  }`}
+                >
+                  {chip}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Custom Textarea */}
+        <div className="mb-5">
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-xs font-semibold text-[var(--fg-3)]">รายละเอียดเพิ่มเติม</label>
+            {note && (
+              <button
+                type="button"
+                onClick={() => setNote('')}
+                className="text-[11px] text-danger hover:underline"
+              >
+                ล้างข้อความ
+              </button>
+            )}
+          </div>
+          <textarea
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="เช่น หวานน้อย 50%, ไม่ใส่ต้นหอม, สุกปานกลาง"
+            className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+          />
+        </div>
+
+        {/* Footer Actions */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(note.trim())}
+            className="flex-1 px-4 py-2 bg-gradient-to-r from-phopy-indigo to-purple-500 text-white text-sm font-semibold rounded-lg hover:opacity-90"
           >
             บันทึก
           </button>

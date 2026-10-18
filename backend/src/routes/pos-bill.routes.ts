@@ -416,8 +416,39 @@ router.post('/bills/:id/items', (req, res) => {
       return res.status(404).json({ success: false, message: 'Menu not found' })
     }
 
+    const rawNote = typeof (special_instructions ?? req.body.notes) === 'string'
+      ? (special_instructions ?? req.body.notes).trim()
+      : ''
+    const noteVal = rawNote || null
+
+    // ponytail: ถ้ามีรายการเมนูเดียวกันที่ยังไม่ส่งครัว (sent_to_kds = 0) และมีหมายเหตุตรงกัน ให้บวกจำนวนแทนการสร้างแถวใหม่
+    const existing = db.prepare(`
+      SELECT id, quantity, unit_price FROM pos_bill_items
+      WHERE bill_id = ? AND tenant_id = ? AND pos_menu_id = ?
+        AND (sent_to_kds = 0 OR sent_to_kds IS NULL)
+        AND COALESCE(TRIM(special_instructions), '') = ?
+      ORDER BY added_at ASC LIMIT 1
+    `).get(id, tenantId, pos_menu_id, rawNote) as any
+
+    if (existing) {
+      const mergedQty = existing.quantity + numQty
+      const mergedTotal = mergedQty * existing.unit_price
+      db.prepare(`
+        UPDATE pos_bill_items
+        SET quantity = ?, total_price = ?
+        WHERE id = ? AND bill_id = ? AND tenant_id = ?
+      `).run(mergedQty, mergedTotal, existing.id, id, tenantId)
+
+      recalculateBillTotals(id)
+      return res.json({
+        success: true,
+        message: 'Item quantity updated',
+        data: { id: existing.id, quantity: mergedQty }
+      })
+    }
+
     const itemId = generateId()
-    const totalPrice = (menu as any).pos_price * quantity
+    const totalPrice = (menu as any).pos_price * numQty
 
     const stmt = db.prepare(`
       INSERT INTO pos_bill_items (
@@ -428,7 +459,7 @@ router.post('/bills/:id/items', (req, res) => {
 
     stmt.run(
       itemId, tenantId, id, pos_menu_id, (menu as any).product_name || (menu as any).product_code || 'Unknown',
-      quantity, (menu as any).pos_price, totalPrice, special_instructions || null, userId
+      numQty, (menu as any).pos_price, totalPrice, noteVal, userId
     )
     
     // Recalculate bill totals
@@ -490,6 +521,11 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     const unitPrice = (item as any).unit_price
     const newTotal = newQty * unitPrice
     
+    const hasInstructionsUpdate = req.body.special_instructions !== undefined || req.body.notes !== undefined
+    const finalInstructions = hasInstructionsUpdate
+      ? (String(req.body.special_instructions ?? req.body.notes ?? '').trim() || null)
+      : (item as any).special_instructions
+
     const stmt = db.prepare(`
       UPDATE pos_bill_items 
       SET quantity = ?, total_price = ?, special_instructions = ?
@@ -498,7 +534,17 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
       )
     `)
     
-    stmt.run(newQty, newTotal, special_instructions || null, itemId, billId, billId, tenantId)
+    stmt.run(newQty, newTotal, finalInstructions, itemId, billId, billId, tenantId)
+
+    // ถ้าออเดอร์ส่งครัวไปแล้ว และมีการแก้หมายเหตุ ให้อัปเดตตั๋วครัวที่ยังทำไม่เสร็จด้วย
+    if (hasInstructionsUpdate && (item as any).sent_to_kds) {
+      const activeTickets = `SELECT id FROM pos_kds_tickets WHERE tenant_id = ? AND status IN ('PENDING', 'IN_PROGRESS')`
+      db.prepare(`
+        UPDATE pos_kds_ticket_items
+        SET special_instructions = ?
+        WHERE bill_item_id = ? AND ticket_id IN (${activeTickets})
+      `).run(finalInstructions, itemId, tenantId)
+    }
     
     // Recalculate bill totals
     recalculateBillTotals(billId)
