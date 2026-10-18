@@ -38,6 +38,7 @@ import { useApprovalGate } from '../components/common/ApprovalGate'
 import StockAliasPanel from '../components/common/StockAliasPanel'
 import api from '../services/api'
 import stockService, { StockItem, StockStats } from '../services/stock'
+import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import subcontractService, { SubconStockRow, SubconStockSummary } from '../services/subcontract'
 import companySettingsService from '../services/companySettings.service'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
@@ -415,6 +416,11 @@ function Stock() {
       setDetailModal({ open: true, item })
     }
   }
+  // คลิกผลค้นหา สต็อก → กรองตาราง + ดึงตาม id แล้วเปิดหน้ารายละเอียดพร้อมประวัติเคลื่อนไหวทันที
+  useOpenFromSearch((_type, id, item) => {
+    if (item?.name || item?.sku) setSearchTerm(item.name || item.sku)
+    stockService.getById(id).then(handleOpenDetail).catch(() => toast.error('ไม่พบรายการสต็อกนี้'))
+  })
 
   if (loading) {
     return (

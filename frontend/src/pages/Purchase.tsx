@@ -41,6 +41,7 @@ import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { useModalClose } from '../hooks/useModalClose'
+import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { normalizeUnit } from '../utils/unitNormalize'
@@ -2905,6 +2906,7 @@ const Purchase = () => {
     order:   '/purchase-orders',
     receipt: '/purchase/goods-receipts',
     invoice: '/purchase/invoices',
+    payment: '/purchase/payments',
     return:  '/purchase/returns',
   }
   const openModalWithDetail = async (type: string, mode: 'edit' | 'view', id: string, fallback?: any) => {
@@ -2916,6 +2918,19 @@ const Purchase = () => {
       else openModal(type, mode, fallback)
     } catch { openModal(type, mode, fallback) }
   }
+  useOpenFromSearch((type, id, item) => {
+    const map: Record<string, { tab: typeof activeTab; modal: string }> = {
+      purchase_order:   { tab: 'orders',   modal: 'order' },
+      PURCHASE_ORDER:   { tab: 'orders',   modal: 'order' },
+      PURCHASE_REQUEST: { tab: 'requests', modal: 'request' },
+      GOODS_RECEIPT:    { tab: 'receipts', modal: 'receipt' },
+      PURCHASE_INVOICE: { tab: 'invoices', modal: 'invoice' },
+      SUPPLIER_PAYMENT: { tab: 'payments', modal: 'payment' },
+    }
+    const go = map[type] || { tab: 'orders', modal: 'order' }
+    setActiveTab(go.tab)
+    openModalWithDetail(go.modal, 'view', id, item)
+  })
 
   // Multi-field update helpers (for auto-fill on material select)
   const updateRequestItemFields = (index: number, fields: Partial<RequestItem>) => {

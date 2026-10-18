@@ -11,6 +11,7 @@ import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'
 import { useModalClose } from '../hooks/useModalClose'
+import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { useTranslation } from 'react-i18next'
 import { unitLabel } from '../hooks/useUnits'
 import { VatModeField } from '../components/common/VatModeSelector'
@@ -161,6 +162,16 @@ function CRM() {
   const [orderPageNum, setOrderPageNum] = useState(1)
   const [orderLimit, setOrderLimit] = useState(25)
   const [orderPageLoading, setOrderPageLoading] = useState(false)
+
+  // เปิดจากผลค้นหาบนหัว: ลูกค้า/ออเดอร์ → modal ลูกค้า, ผู้ขาย → แท็บผู้ขายแล้วเปิดรายละเอียด
+  const [openSupplier, setOpenSupplier] = useState<{ id: string } | null>(null)
+  useOpenFromSearch((type, id) => {
+    if (type === 'supplier') { setMainTab('suppliers'); setOpenSupplier({ id }); return }
+    setMainTab('customers')
+    setSelectedCustomerId(id)
+    setActiveTab(type === 'order' ? 'orders' : 'overview')
+    setShowModal(true)
+  })
 
   // Add new activity
   const handleAddActivity = async (type: string, note: string) => {
@@ -388,7 +399,7 @@ function CRM() {
       </div>
 
       {/* Suppliers Tab Content */}
-      {mainTab === 'suppliers' && <SupplierTab />}
+      {mainTab === 'suppliers' && <SupplierTab open={openSupplier} />}
 
       {/* Customers Tab Content */}
       {mainTab === 'customers' && (<>

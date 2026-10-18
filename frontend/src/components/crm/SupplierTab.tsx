@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {Truck, Plus, Search, Edit2, Trash2, X, Star, Loader2, Phone, Mail, MapPin, ShoppingCart, TrendingUp, Package, ChevronDown, ChevronUp, Pencil, User} from 'lucide-react'
 import supplierService, { Supplier, SupplierStats } from '../../services/supplier'
@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { VatModeField } from '../common/VatModeSelector'
 
-export default function SupplierTab() {
+export default function SupplierTab({ open }: { open?: { id: string } | null } = {}) {
   const { t } = useTranslation()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [stats, setStats] = useState<SupplierStats | null>(null)
@@ -18,6 +18,14 @@ export default function SupplierTab() {
   const [detailSupplier, setDetailSupplier] = useState<Supplier | null>(null)
 
   useEffect(() => { loadData() }, [])
+
+  // เปิดรายละเอียดผู้ขายที่คลิกมาจากผลค้นหา — จำ object คำขอไว้ กัน loadData รอบหลังเปิดซ้ำ
+  const handledOpen = useRef<{ id: string } | null>(null)
+  useEffect(() => {
+    if (!open || handledOpen.current === open) return
+    const s = suppliers.find(x => x.id === open.id)
+    if (s) { handledOpen.current = open; setDetailSupplier(s) }
+  }, [open, suppliers])
 
   const loadData = async () => {
     setLoading(true)

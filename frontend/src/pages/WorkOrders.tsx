@@ -26,6 +26,7 @@ import {
   Landmark,
 } from 'lucide-react'
 import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
+import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import subcontractService, { Subcontract } from '../services/subcontract'
 import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
@@ -115,6 +116,7 @@ function WorkOrders() {
       console.error(err)
     }
   }
+  useOpenFromSearch((_type, id) => { handleViewDetail({ id } as WorkOrder) })
 
   const filtered = (orders || []).filter((o) => {
     const matchSearch = o.wo_number.toLowerCase().includes(searchTerm.toLowerCase()) ||

@@ -32,6 +32,20 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { SourceDocModal } from '../accounting/SourceDocModal'
 
+const SEARCH_ROUTE: Record<string, string> = {
+  customer: '/crm', order: '/crm', supplier: '/crm',
+  product: '/bom', bom: '/bom', material: '/bom',
+  stock: '/stock',
+  purchase_order: '/purchase', work_order: '/work-orders',
+  sales_order: '/sales', quotation: '/sales', invoice: '/sales',
+}
+
+const DOC_ROUTE: Record<string, string> = {
+  PURCHASE_REQUEST: '/purchase', GOODS_RECEIPT: '/purchase',
+  PURCHASE_INVOICE: '/purchase', SUPPLIER_PAYMENT: '/purchase',
+  CREDIT_NOTE: '/sales', PAYMENT: '/sales',
+}
+
 interface HeaderProps {
   onMenuClick: () => void
 }
@@ -46,6 +60,7 @@ function Header({ onMenuClick }: HeaderProps) {
   const [searchResults, setSearchResults] = useState<any>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [showNotifications, setShowNotifications] = useState(false)
   const [sourceDocModal, setSourceDocModal] = useState<{ kind: string; refId: string; title: string } | null>(null)
@@ -61,6 +76,7 @@ function Header({ onMenuClick }: HeaderProps) {
         try {
           const results = await searchService.search(searchQuery)
           setSearchResults(results)
+          setActiveIndex(-1)
           setSearchError(null)
           setShowResults(true)
         } catch (error) {
@@ -118,48 +134,21 @@ function Header({ onMenuClick }: HeaderProps) {
     (item: any) => {
       setShowResults(false)
       setSearchQuery('')
+      setActiveIndex(-1)
 
-      switch (item.type) {
-        case 'customer':
-          navigate('/crm', { state: { highlightCustomer: item.id } })
-          break
-        case 'order':
-          navigate('/crm', { state: { highlightOrder: item.id } })
-          break
-        case 'product':
-          navigate('/bom', { state: { highlightProduct: item.id } })
-          break
-        case 'material':
-          navigate('/bom', { state: { tab: 'materials', highlightMaterial: item.id } })
-          break
-        case 'bom':
-          navigate('/bom', { state: { highlightBom: item.id } })
-          break
-        case 'stock':
-          navigate('/stock', { state: { highlightStock: item.id } })
-          break
-        case 'supplier':
-          navigate('/crm', { state: { tab: 'suppliers', highlightSupplier: item.id } })
-          break
-        case 'purchase_order':
-          navigate('/purchase', { state: { highlightPO: item.id } })
-          break
-        case 'work_order':
-          navigate('/work-orders', { state: { highlightWO: item.id } })
-          break
-        case 'sales_order':
-          navigate('/sales', { state: { highlightSO: item.id } })
-          break
-        case 'quotation':
-          navigate('/sales', { state: { highlightQuotation: item.id } })
-          break
-        case 'invoice':
-          navigate('/sales', { state: { highlightInvoice: item.id } })
-          break
-        case 'document':
-          setSourceDocModal({ kind: item.docKind, refId: item.id, title: item.label })
-          break
+      if (item.type === 'document') {
+        const docPath = DOC_ROUTE[item.docKind]
+        const openId = item.docKind === 'PAYMENT' ? item.invoiceId : item.id
+        if (docPath && openId) {
+          navigate(docPath, { state: { openType: item.docKind, openId, openItem: item } })
+          return
+        }
+        setSourceDocModal({ kind: item.docKind, refId: item.id, title: item.label })
+        return
       }
+      // หน้าปลายทางรับ state นี้ผ่าน useOpenFromSearch แล้วเปิดรายการนั้นให้เลย
+      const path = SEARCH_ROUTE[item.type]
+      if (path) navigate(path, { state: { openType: item.type, openId: item.type === 'order' ? item.customer_id : item.id, openItem: item } })
     },
     [navigate]
   )
@@ -219,6 +208,7 @@ function Header({ onMenuClick }: HeaderProps) {
     { key: 'invoices', items: searchResults?.invoices, icon: Receipt, color: 'text-danger' },
     { key: 'documents', items: searchResults?.documents, icon: FileText, color: 'text-[var(--primary)]' },
   ]
+  const flatItems = sectionConfig.flatMap(s => s.items || [])
 
   return (
     <>
@@ -247,6 +237,12 @@ function Header({ onMenuClick }: HeaderProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchQuery.length >= 2 && setShowResults(true)}
+              onKeyDown={(e) => {
+                if (!flatItems.length) return
+                if (e.key === 'ArrowDown') { e.preventDefault(); setShowResults(true); setActiveIndex(i => (i + 1) % flatItems.length) }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setShowResults(true); setActiveIndex(i => (i <= 0 ? flatItems.length - 1 : i - 1)) }
+                else if (e.key === 'Enter' && showResults) { e.preventDefault(); handleResultClick(flatItems[activeIndex >= 0 ? activeIndex : 0]) }
+              }}
               className="w-64 lg:w-96 h-10 pl-10 pr-10 text-sm rounded-full bg-[var(--surface-2)]/60 hover:bg-[var(--surface)]/90 focus:bg-[var(--surface)] border border-[var(--border)]/60 hover:border-phopy-indigo/40 focus:border-phopy-indigo text-[var(--fg-1)] placeholder-[var(--fg-4)] transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-phopy-indigo/15 shadow-sm"
             />
             {isSearching ? (
@@ -297,6 +293,7 @@ function Header({ onMenuClick }: HeaderProps) {
                             title={key === 'documents' ? 'เอกสาร' : t(`header.${key}`)}
                             icon={icon}
                             items={items}
+                            activeItem={flatItems[activeIndex]}
                             onItemClick={handleResultClick}
                             color={color}
                           />
@@ -437,12 +434,14 @@ function ResultSection({
   title,
   icon: Icon,
   items,
+  activeItem,
   onItemClick,
   color,
 }: {
   title: string
   icon: any
   items: any[]
+  activeItem?: any
   onItemClick: (item: any) => void
   color: string
 }) {
@@ -456,19 +455,25 @@ function ResultSection({
         </span>
       </div>
       <div className="space-y-1">
-        {(items || []).map((item) => (
-          <motion.button
-            key={`${item.type}-${item.id}`}
-            whileHover={{ x: 4 }}
-            onClick={() => onItemClick(item)}
-            className="w-full text-left px-4 py-2 rounded-lg hover:bg-[var(--primary-soft)] transition-colors group"
-          >
-            <p className="text-[var(--fg-1)] group-hover:text-[var(--primary)] transition-colors text-sm">
-              {item.label}
-            </p>
-            <p className="text-xs text-[var(--fg-4)]">{item.subtitle}</p>
-          </motion.button>
-        ))}
+        {(items || []).map((item) => {
+          const isActive = activeItem === item
+          return (
+            <motion.button
+              key={`${item.type}-${item.docKind || ''}-${item.id}`}
+              ref={(el) => { if (isActive && el) el.scrollIntoView({ block: 'nearest' }) }}
+              whileHover={{ x: 4 }}
+              onClick={() => onItemClick(item)}
+              className={`w-full text-left px-4 py-2 rounded-lg transition-colors group ${
+                isActive ? 'bg-[var(--primary-soft)] ring-1 ring-[var(--primary)]/40' : 'hover:bg-[var(--primary-soft)]'
+              }`}
+            >
+              <p className={`transition-colors text-sm ${isActive ? 'text-[var(--primary)] font-medium' : 'text-[var(--fg-1)] group-hover:text-[var(--primary)]'}`}>
+                {item.label}
+              </p>
+              <p className="text-xs text-[var(--fg-4)]">{item.subtitle}</p>
+            </motion.button>
+          )
+        })}
       </div>
     </div>
   )

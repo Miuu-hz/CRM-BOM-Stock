@@ -14,6 +14,7 @@ import { normalizeUnit, unitLabelTh } from '../utils/unitNormalize'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import { useModalClose } from '../hooks/useModalClose'
+import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
@@ -553,6 +554,11 @@ const Sales = () => {
       else setDetailInv(doc)   // INV และ RC — ใบเสร็จเปิดใบแจ้งหนี้ต้นทาง
     } catch { toast.error(t('sales.error.loadFailed')) }
   }
+  // คลิกผลค้นหา ใบเสนอราคา/ใบสั่งขาย/ใบแจ้งหนี้/ใบลดหนี้/ใบเสร็จ → ใช้ทางเดียวกับฟีดความเคลื่อนไหว
+  useOpenFromSearch((type, id) => {
+    const kind = ({ quotation: 'QT', sales_order: 'SO', invoice: 'INV', CREDIT_NOTE: 'CN', PAYMENT: 'RC' } as Record<string, string>)[type]
+    if (kind) openActivity({ kind, open_id: id } as SalesActivity)
+  })
 
   const handleEditQT = async (q: Quotation) => {
     try {

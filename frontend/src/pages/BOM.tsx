@@ -34,6 +34,7 @@ import MaterialsTab from '../components/bom/MaterialsTab'
 import ProductionCalculator from '../components/bom/ProductionCalculator'
 import CostSimulation from '../components/bom/CostSimulation'
 import { unitLabel } from '../hooks/useUnits'
+import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 
 // Types for Nested BOM
 interface BOMItem {
@@ -293,6 +294,16 @@ function BOMPage() {
     setIsModalOpen(true)
   }
 
+  // คลิกผลค้นหา BOM → เปิดสูตรนั้นเลย | วัตถุดิบ → แท็บวัตถุดิบแล้วเปิดแก้ไข | สินค้า → กรองรายการ BOM
+  const [openMaterial, setOpenMaterial] = useState<{ id: string; name?: string } | null>(null)
+  useOpenFromSearch((type, id, item) => {
+    if (type === 'material') { setActiveTab('materials'); setOpenMaterial({ id, name: item?.name }); return }
+    setActiveTab('bom')
+    if (type === 'product') { setSearchTerm(item?.name || ''); return }
+    setSearchTerm(item?.product_name || '')
+    handleEdit({ id, version: item?.version, status: item?.status, productName: item?.product_name, productCode: item?.product_code } as BOM)
+  })
+
   // Handle copy BOM
   const handleCopy = (bom: BOM) => {
     setEditingBOM(null)
@@ -486,7 +497,7 @@ function BOMPage() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'materials' && <MaterialsTab />}
+        {activeTab === 'materials' && <MaterialsTab open={openMaterial} />}
         {activeTab === 'calculator' && <ProductionCalculator />}
         {activeTab === 'simulation' && <CostSimulation />}
 
