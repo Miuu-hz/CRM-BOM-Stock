@@ -282,8 +282,8 @@ export default function PeriodClosing() {
 
             {preview.alreadyClosed && (
               <div className="p-4 rounded-lg border bg-[var(--info-soft)] border-info/30 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0" />
-                <span className="text-blue-400">ปิดบัญชีสิ้นปี {preview.year} ไปแล้ว (เลขที่ {preview.existingEntryNumber})</span>
+                <CheckCircle2 className="w-5 h-5 text-[var(--primary)] shrink-0" />
+                <span className="text-[var(--primary)]">ปิดบัญชีสิ้นปี {preview.year} ไปแล้ว (เลขที่ {preview.existingEntryNumber})</span>
               </div>
             )}
 

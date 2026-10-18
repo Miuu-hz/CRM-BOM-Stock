@@ -172,8 +172,6 @@ interface LedgerTransaction {
   balance: number
   journalEntryId?: string
   sourceNumber?: string
-  accountCode?: string
-  accountName?: string
 }
 
 interface LedgerData {
@@ -242,7 +240,7 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
 
   const trend = data ? monthlyTrendFrom(data.openingBalance, data.transactions) : []
   const recentLines = data
-    ? [...data.transactions].slice(-10).reverse().map(t => ({
+    ? [...data.transactions].slice(-15).reverse().map(t => ({
         ...t,
         impact: data.account.normalBalance === 'DEBIT' ? t.debit - t.credit : t.credit - t.debit,
       }))
@@ -317,7 +315,7 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-[var(--fg-2)]">10 รายการล่าสุด</p>
+                  <p className="text-sm text-[var(--fg-3)]">รายการล่าสุด</p>
                   {data.transactions.length > 0 && (
                     <p className="text-xs text-[var(--fg-4)]">{data.transactions.length} รายการ (6 เดือน)</p>
                   )}
@@ -329,41 +327,15 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
                     {recentLines.map((t, i) => {
                       const rowBody = (
                         <>
-                          <div className="min-w-0 flex-1">
-                            {t.accountCode && t.accountCode !== data.account.code && (
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--primary)] font-medium">
-                                  {t.accountCode}
-                                </span>
-                                {t.accountName && (
-                                  <span className="text-[11px] text-[var(--fg-3)] truncate">
-                                    {t.accountName}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            <p className="text-sm text-[var(--fg-1)] truncate font-medium">
-                              {t.lineDescription || t.entryDescription || 'รายการสมุดรายวัน'}
-                            </p>
-                            <p className="text-xs text-[var(--fg-4)] flex items-center gap-1 flex-wrap mt-0.5">
-                              <span className="font-mono">{t.entryNumber}</span>
-                              {t.sourceNumber && <span>• {t.sourceNumber}</span>}
-                              {t.referenceType && (
-                                <span className="px-1 py-0.2 rounded text-[10px] bg-[var(--surface-3)] text-[var(--fg-3)]">
-                                  {t.referenceType}
-                                </span>
-                              )}
-                              <span>• {t.date}</span>
+                          <div className="min-w-0">
+                            <p className="text-sm text-[var(--fg-1)] truncate">{t.lineDescription || t.entryDescription}</p>
+                            <p className="text-xs text-[var(--fg-4)]">
+                              {t.entryNumber}{t.sourceNumber ? ` • ${t.sourceNumber}` : ''} • {t.date}
                             </p>
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-semibold num text-[var(--fg-1)]">
-                              {t.impact >= 0 ? '+' : '−'}{fmtMoney(Math.abs(t.impact))}
-                            </p>
-                            <p className="text-[10px] text-[var(--fg-4)]">
-                              Dr {fmtMoney(t.debit)} / Cr {fmtMoney(t.credit)}
-                            </p>
-                          </div>
+                          <p className="text-sm font-semibold shrink-0 num text-[var(--fg-1)]">
+                            {t.impact >= 0 ? '+' : '−'}{fmtMoney(Math.abs(t.impact))}
+                          </p>
                         </>
                       )
                       return t.journalEntryId ? (
@@ -371,7 +343,7 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
                           key={i}
                           type="button"
                           onClick={() => setViewingEntry({ id: t.journalEntryId!, entryNumber: t.entryNumber, date: t.date })}
-                          className="w-full text-left p-3 rounded-lg bg-[var(--surface-2)] hover:bg-[var(--surface)] border border-transparent hover:border-[var(--border)] transition-all flex items-center justify-between gap-3"
+                          className="w-full text-left p-3 rounded-lg bg-[var(--surface-2)] hover:bg-[var(--surface)] flex items-center justify-between gap-3"
                         >
                           {rowBody}
                         </button>
@@ -590,7 +562,7 @@ const ChartOfAccounts = () => {
   // Empty state - no accounts
   if (accounts.length === 0) {
     return (
-      <div className="p-6">
+      <div className="space-y-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[var(--fg-1)] flex items-center gap-2">
             <BookOpen className="w-8 h-8 text-[var(--primary)]" />
@@ -674,7 +646,7 @@ const ChartOfAccounts = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>

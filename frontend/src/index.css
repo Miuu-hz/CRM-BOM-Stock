@@ -435,6 +435,23 @@
     background: var(--surface);
     border-color: var(--border-strong);
   }
+
+  /* Phopy Segmented & Navigation Tabs (Accounting, Tax, CRM, etc.) */
+  .phopy-tab {
+    @apply flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all cursor-pointer;
+    @apply bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)];
+  }
+  .phopy-tab:hover {
+    @apply text-[var(--fg-1)] border-[var(--border-strong)] bg-[var(--surface-2)];
+  }
+  .phopy-tab.active,
+  .phopy-tab-active {
+    @apply bg-phopy-indigo text-white border-transparent font-semibold shadow-1;
+  }
+  .phopy-tab.active:hover,
+  .phopy-tab-active:hover {
+    background: var(--primary-hover);
+  }
 }
 
 /* KPI number styling */

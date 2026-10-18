@@ -99,7 +99,7 @@ const FinancialReports = () => {
   ]
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-[var(--fg-1)] flex items-center gap-2">
@@ -325,7 +325,7 @@ const FinancialReports = () => {
                   </div>
                 </div>
                 
-                <h3 className="text-lg font-bold text-purple-400 mt-6 mb-4">
+                <h3 className="text-lg font-bold text-[var(--equity-strong)] mt-6 mb-4">
                   ส่วนของผู้ถือหุ้น
                 </h3>
                 
@@ -342,7 +342,7 @@ const FinancialReports = () => {
                 ))}
                 
                 <div className="border-t border-[var(--border)] pt-2">
-                  <div className="flex justify-between font-bold text-purple-400">
+                  <div className="flex justify-between font-bold text-[var(--equity-strong)]">
                     <span>รวมส่วนของผู้ถือหุ้น</span>
                     <span>{formatCurrency(balanceSheet.equity.total)}</span>
                   </div>
@@ -492,7 +492,7 @@ const FinancialReports = () => {
 
               {/* Investing Activities */}
               <div>
-                <h3 className="text-lg font-bold text-cyan-400 mb-3 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-[var(--primary)] mb-3 flex items-center gap-2">
                   <Calculator className="w-5 h-5" />
                   กระแสเงินสดจากกิจกรรมลงทุน (Investing Activities)
                 </h3>
@@ -508,7 +508,7 @@ const FinancialReports = () => {
                     ))}
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-cyan-400 border-t border-[var(--border)] pt-2 mt-2">
+                <div className="flex justify-between font-bold text-[var(--primary)] border-t border-[var(--border)] pt-2 mt-2">
                   <span>เงินสดสุทธิจากกิจกรรมลงทุน</span>
                   <span className="font-mono">{formatCurrency(cashFlow.investing.total)}</span>
                 </div>
@@ -516,7 +516,7 @@ const FinancialReports = () => {
 
               {/* Financing Activities */}
               <div>
-                <h3 className="text-lg font-bold text-purple-400 mb-3 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-[var(--equity-strong)] mb-3 flex items-center gap-2">
                   <Scale className="w-5 h-5" />
                   กระแสเงินสดจากกิจกรรมจัดหาเงิน (Financing Activities)
                 </h3>
@@ -532,7 +532,7 @@ const FinancialReports = () => {
                     ))}
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-purple-400 border-t border-[var(--border)] pt-2 mt-2">
+                <div className="flex justify-between font-bold text-[var(--equity-strong)] border-t border-[var(--border)] pt-2 mt-2">
                   <span>เงินสดสุทธิจากกิจกรรมจัดหาเงิน</span>
                   <span className="font-mono">{formatCurrency(cashFlow.financing.total)}</span>
                 </div>

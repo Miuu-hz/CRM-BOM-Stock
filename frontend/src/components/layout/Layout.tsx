@@ -15,12 +15,12 @@ function Layout({ children }: LayoutProps) {
   const toggleSidebar = () =>
     setSidebarMode(m => (m === 'full' ? 'rail' : 'full'))
 
-  // Tier 3: ปิดแสงสำหรับหน้าที่ต้องการความคมชัดสูงสุด / POS / จอครัว / เอกสารบัญชีภาษี
-  const noLimelightRoutes = ['/cashier', '/kds', '/accounting', '/tax']
+  // Tier 3: ปิดแสงสำหรับหน้าที่ต้องการความคมชัดสูงสุด / POS / จอครัว / ภาษี
+  const noLimelightRoutes = ['/cashier', '/kds', '/tax']
   const isNoLight = noLimelightRoutes.some(r => path.startsWith(r))
 
   // Tier 2: แสงระดับนุ่มนวล (ลด opacity 50%) สำหรับหน้าทำงานข้อมูลตารางหนาแน่น
-  const subtleRoutes = ['/stock', '/sales', '/purchase', '/bom', '/work-orders', '/qc', '/crm', '/receivables']
+  const subtleRoutes = ['/stock', '/sales', '/purchase', '/bom', '/work-orders', '/qc', '/crm', '/receivables', '/accounting']
   const isSubtle = subtleRoutes.some(r => path.startsWith(r))
 
   return (

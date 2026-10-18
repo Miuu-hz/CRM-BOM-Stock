@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Link } from 'react-router-dom'
 import {
   Wallet,
   Building2,
@@ -73,9 +72,9 @@ const localDateStr = () => {
 
 const paymentIcon = (method: string) => {
   if (method === 'CASH') return <Banknote className="w-4 h-4 text-warning" />
-  if (method === 'QR_CODE') return <QrCode className="w-4 h-4 text-blue-400" />
-  if (method === 'CREDIT_CARD') return <CreditCard className="w-4 h-4 text-purple-400" />
-  return <Building2 className="w-4 h-4 text-cyan-400" />
+  if (method === 'QR_CODE') return <QrCode className="w-4 h-4 text-[var(--primary)]" />
+  if (method === 'CREDIT_CARD') return <CreditCard className="w-4 h-4 text-[var(--equity-strong)]" />
+  return <Building2 className="w-4 h-4 text-[var(--primary)]" />
 }
 
 const paymentLabel = (method: string) => {
@@ -212,7 +211,7 @@ export default function POSClearing() {
             </div>
           )}
           {bankTotal > 0 && (
-            <div className="flex items-center gap-1 text-xs text-blue-400">
+            <div className="flex items-center gap-1 text-xs text-[var(--primary)]">
               <QrCode className="w-3 h-3" /> โอน/QR {fmt(bankTotal)}
             </div>
           )}
@@ -267,7 +266,7 @@ export default function POSClearing() {
           <div className="px-5 py-4 border-b border-[var(--border)]">
             <h2 className="font-semibold text-[var(--fg-1)] flex items-center gap-2">
               <Receipt className="w-4 h-4 text-[var(--primary)]" />
-              ประวัติการขาย{dateLabel()} ({new Set(pendingBills.map(b => b.id)).size} บิล)
+              บิลที่รอนำเงินเข้า ({pendingBills.length} บิล)
             </h2>
           </div>
 
@@ -296,8 +295,8 @@ export default function POSClearing() {
       {pendingBills.length === 0 && !loading && (
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-10 text-center">
           <CheckCircle2 className="w-14 h-14 mx-auto mb-3 text-success" />
-          <p className="text-[var(--fg-1)] font-medium">ไม่มีการขาย{dateLabel()}</p>
-          <p className="text-[var(--fg-4)] text-sm mt-1">เลือกวันอื่นด้านบนเพื่อดูประวัติการขาย</p>
+          <p className="text-[var(--fg-1)] font-medium">ทุกยอดได้รับการนำเข้าบัญชีแล้ว</p>
+          <p className="text-[var(--fg-4)] text-sm mt-1">ไม่มีบิลค้างอยู่</p>
         </div>
       )}
 
@@ -382,9 +381,9 @@ function BillGroup({
   color: 'yellow' | 'blue'
 }) {
   const [expanded, setExpanded] = useState(false)
-  const borderColor = color === 'yellow' ? 'border-yellow-500/20' : 'border-blue-500/20'
-  const bgColor = color === 'yellow' ? 'bg-yellow-500/5' : 'bg-blue-500/5'
-  const textColor = color === 'yellow' ? 'text-warning' : 'text-blue-400'
+  const borderColor = color === 'yellow' ? 'border-warning/30' : 'border-[var(--primary)]/30'
+  const bgColor = color === 'yellow' ? 'bg-[var(--warning-soft)]' : 'bg-[var(--primary-soft)]'
+  const textColor = color === 'yellow' ? 'text-warning' : 'text-[var(--primary)]'
 
   return (
     <div className={`border-b last:border-b-0 ${borderColor}`}>
@@ -411,8 +410,7 @@ function BillGroup({
             className="overflow-hidden"
           >
             {bills.map((bill) => (
-              <Link key={`${bill.id}-${bill.payment_method}`} to={`/cashier?bill=${bill.id}`} title="เปิดบิลนี้ในหน้าแคชเชียร์ (พิมพ์ซ้ำ/ออกใบกำกับภาษี)"
-                className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20 hover:bg-[var(--bg)]">
+              <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20">
                 <div>
                   <p className="text-sm text-[var(--fg-1)]">{bill.display_name || bill.bill_number}</p>
                   <p className="text-xs text-[var(--fg-4)]">
@@ -420,7 +418,7 @@ function BillGroup({
                   </p>
                 </div>
                 <p className="text-sm font-medium text-[var(--fg-1)]">{fmt(bill.total_amount)}</p>
-              </Link>
+              </div>
             ))}
           </motion.div>
         )}
@@ -549,15 +547,15 @@ function DepositModal({
               </div>
             )}
             {bankTotal > 0 && (
-              <div className="flex justify-between items-center px-4 py-3 bg-blue-500/10">
+              <div className="flex justify-between items-center px-4 py-3 bg-[var(--primary-soft)] rounded-lg">
                 <div className="flex items-center gap-2">
-                  <QrCode className="w-4 h-4 text-blue-400" />
+                  <QrCode className="w-4 h-4 text-[var(--primary)]" />
                   <div>
-                    <p className="text-sm font-medium text-blue-400">QR / โอนเงิน</p>
+                    <p className="text-sm font-medium text-[var(--primary)]">QR / โอนเงิน</p>
                     <p className="text-xs text-[var(--fg-4)]">{bankBills.length} บิล</p>
                   </div>
                 </div>
-                <p className="font-semibold text-blue-400">{fmt(bankTotal)}</p>
+                <p className="font-semibold text-[var(--primary)]">{fmt(bankTotal)}</p>
               </div>
             )}
           </div>
@@ -591,14 +589,14 @@ function DepositModal({
                   onChange={(e) => setCashAmount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="0.00"
-                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-warning/30 rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-yellow-400"
+                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-warning/30 rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-warning"
                 />
               </div>
             )}
             {bankTotal > 0 && (
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                  <QrCode className="w-4 h-4 text-blue-400" />
+                  <QrCode className="w-4 h-4 text-[var(--primary)]" />
                   <span className="text-xs text-[var(--fg-4)]">ธนาคาร</span>
                 </div>
                 <input
@@ -607,7 +605,7 @@ function DepositModal({
                   onChange={(e) => setBankAmount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="0.00"
-                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-info/30 rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-blue-400"
+                  className="w-full pl-24 pr-3 py-2.5 bg-[var(--bg)] border border-info/30 rounded-lg text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
                 />
               </div>
             )}
