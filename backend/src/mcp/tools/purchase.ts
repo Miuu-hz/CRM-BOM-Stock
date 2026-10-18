@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { normalizeUnit } from '../../services/unitConversion.service'
-import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, resolveDocRef } from './shared'
+import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, findDuplicateAttachment, resolveDocRef } from './shared'
 import { formatDocumentNumber, docYear, thaiDateStr } from '../../utils/id'
 import { isCashMethod } from '../../services/purchaseBilling.service'
 import { calcVat, vatModeToFields, type VatMode } from '../../utils/vat'
@@ -136,38 +136,49 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         image_base64, image_name, bill_date,
       } = args
       if (bill_date && !isRealDate(bill_date)) return ok({ success: false, message: badDateMessage(bill_date) })
-      const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      // เลขที่ตามรูปแบบใน Settings + วันที่บนบิล (เดิมใช้วันที่กดสร้างเสมอ บิลย้อนหลังได้วันผิดในเลข)
-      const poNumber = formatDocumentNumber('PO', tenantId, 'PO', docYear(bill_date), 5, bill_date)
       const now = new Date().toISOString()
       const orderDate = bill_date || thaiDateStr() // เก็บเป็นวันที่ไทย ไม่ใช่ UTC ISO
 
-      // ── Auto-find or create supplier ────────────────────────────────────────
-      let supplierId: string | null = null
-      let supplierCreated = false
-      if (supplier_hint) {
-        const existing = db.prepare(
-          `SELECT id, name FROM suppliers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1`
-        ).get(tenantId, `%${supplier_hint}%`, `%${supplier_hint}%`) as any
-        if (existing) {
-          supplierId = existing.id
-        } else {
-          // เดิม COUNT(*)+1 — ลบผู้ขายไปสักรายแล้วรหัสชน UNIQUE(tenant_id, code) ทำให้สร้างบิลไม่ได้ทั้งใบ
-          // ใช้ตัวนับกลาง + ข้ามรหัสที่มีอยู่แล้ว แบบเดียวกับ CUS ใน sales.ts
-          const codeTaken = db.prepare('SELECT 1 FROM suppliers WHERE tenant_id = ? AND code = ?')
-          let supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
-          while (codeTaken.get(tenantId, supCode)) { // ตัวนับกลางเดินหน้าทุกรอบ จึงจบเสมอ
-            supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
-          }
-          const supId = randomUUID().replace(/-/g, '').substring(0, 25)
-          db.prepare(`
-            INSERT INTO suppliers (id, tenant_id, code, name, contact_name, status, type, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'RAW_MATERIAL', ?, ?)
-          `).run(supId, tenantId, supCode, supplier_hint, supplier_hint, now, now)
-          supplierId = supId
-          supplierCreated = true
+      // ── 1) บล็อกบิลซ้ำจากไฟล์รูปภาพสลิป/ใบเสร็จ (ถ้าแนบมา) ──────────────────
+      if (image_base64) {
+        const dupImg = findDuplicateAttachment(tenantId, image_base64)
+        if (dupImg) {
+          return ok({
+            success: false,
+            code: 'DUPLICATE_BILL',
+            existingPoNumber: dupImg.docNum,
+            message: `บิลซ้ำ: รูปสลิป/ใบเสร็จนี้เคยอัปโหลดไว้แล้วใน${dupImg.label} ${dupImg.docNum}`,
+          })
         }
       }
+
+      // ── 2) บล็อกบิลซ้ำจากเลขที่ใบเสร็จ / เลขอ้างอิงการชำระเงิน (payment_reference) ──
+      const refTrim = payment_reference?.trim() || ''
+      if (refTrim.length >= 4 && /\d/.test(refTrim)) {
+        const dupRef = db.prepare(`
+          SELECT po_number FROM purchase_orders
+          WHERE tenant_id = ? AND status != 'CANCELLED' AND LOWER(TRIM(payment_reference)) = LOWER(?)
+          LIMIT 1
+        `).get(tenantId, refTrim) as { po_number: string } | undefined
+        if (dupRef) {
+          return ok({
+            success: false,
+            code: 'DUPLICATE_BILL',
+            existingPoNumber: dupRef.po_number,
+            message: `บิลซ้ำ: เลขที่ใบเสร็จ/อ้างอิง "${refTrim}" เคยบันทึกไว้แล้วในใบสั่งซื้อ ${dupRef.po_number}`,
+          })
+        }
+      }
+
+      // ── Find existing supplier first (ยังไม่สร้างผู้ขายใหม่จนกว่าจะผ่านการตรวจบิลซ้ำ) ──
+      let supplierId: string | null = null
+      let supplierCreated = false
+      const existingSupplier = supplier_hint
+        ? (db.prepare(
+            `SELECT id, name FROM suppliers WHERE tenant_id = ? AND (name LIKE ? OR code LIKE ?) AND status = 'ACTIVE' LIMIT 1`
+          ).get(tenantId, `%${supplier_hint}%`, `%${supplier_hint}%`) as any)
+        : null
+      if (existingSupplier) supplierId = existingSupplier.id
 
       // lineTotal (ราคารวมต่อบรรทัด) มี priority ก่อน unitPrice
       const resolveLineTotal = (i: { quantity: number; lineTotal?: number; unitPrice?: number }): number => {
@@ -192,6 +203,62 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       const subtotal = vatCalc.subtotal
       const totalAmount = vatCalc.totalAmount
 
+      // ── 3) บล็อกบิลซ้ำจาก ผู้ขาย + วันที่บนบิล + ยอดรวม + รายการสินค้าตรงกันทุกบรรทัด ──
+      if (supplierId || !supplier_hint) {
+        const itemSig = (rows: { description: string; quantity: number; total: number }[]) =>
+          rows.map(r => `${String(r.description || '').trim().toLowerCase()}|${Number(r.quantity)}|${Math.round(Number(r.total) * 100)}`).sort().join(';;')
+        const incomingSig = itemSig(items.map((i: any) => ({ description: i.description, quantity: i.quantity, total: resolveLineTotal(i) })))
+        const candidates = db.prepare(`
+          SELECT id, po_number FROM purchase_orders
+          WHERE tenant_id = ? AND status != 'CANCELLED'
+            AND substr(order_date, 1, 10) = substr(?, 1, 10)
+            AND ((? IS NULL AND supplier_id IS NULL) OR supplier_id = ?)
+        `).all(tenantId, orderDate, supplierId, supplierId) as { id: string; po_number: string }[]
+        for (const cand of candidates) {
+          const candItems = db.prepare(
+            'SELECT description, quantity, total_price as total FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?'
+          ).all(cand.id, tenantId) as { description: string; quantity: number; total: number }[]
+          if (candItems.length === items.length && itemSig(candItems) === incomingSig) {
+            return ok({
+              success: false,
+              code: 'DUPLICATE_BILL',
+              existingPoNumber: cand.po_number,
+              message: `บิลซ้ำ: พบใบสั่งซื้อ ${cand.po_number} วันที่ ${orderDate.slice(0, 10)} ยอดรวม ฿${enteredTotal.toLocaleString()} และรายการสินค้าเดียวกันอยู่ในระบบแล้ว`,
+            })
+          }
+        }
+      }
+
+      // Resolve expenseAccountCode -> id ต่อบรรทัดก่อนเขียน DB — ผิดแล้วต้องรู้ก่อนสร้าง PO ไม่ใช่เขียนไปแล้วแก้ยาก
+      const resolvedExpenseAccountIds: (string | null)[] = []
+      for (const item of items) {
+        if (!item.expenseAccountCode) { resolvedExpenseAccountIds.push(null); continue }
+        const acc = db.prepare("SELECT id FROM accounts WHERE tenant_id = ? AND code = ? AND type = 'EXPENSE'")
+          .get(tenantId, item.expenseAccountCode) as any
+        if (!acc) return ok({ success: false, message: `ไม่พบบัญชีค่าใช้จ่ายรหัส "${item.expenseAccountCode}" หรือไม่ใช่บัญชีประเภทค่าใช้จ่ายของกิจการนี้` })
+        resolvedExpenseAccountIds.push(acc.id)
+      }
+
+      // ── สร้างผู้ขายใหม่ (ถ้ามี supplier_hint ที่ยังไม่อยู่ในระบบ) และออกเลข PO หลังผ่านทุกการ์ดแล้ว ──
+      if (supplier_hint && !supplierId) {
+        const codeTaken = db.prepare('SELECT 1 FROM suppliers WHERE tenant_id = ? AND code = ?')
+        let supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
+        while (codeTaken.get(tenantId, supCode)) {
+          supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
+        }
+        const supId = randomUUID().replace(/-/g, '').substring(0, 25)
+        db.prepare(`
+          INSERT INTO suppliers (id, tenant_id, code, name, contact_name, status, type, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'RAW_MATERIAL', ?, ?)
+        `).run(supId, tenantId, supCode, supplier_hint, supplier_hint, now, now)
+        supplierId = supId
+        supplierCreated = true
+      }
+
+      const id = randomUUID().replace(/-/g, '').substring(0, 25)
+      // เลขที่ตามรูปแบบใน Settings + วันที่บนบิล (เดิมใช้วันที่กดสร้างเสมอ บิลย้อนหลังได้วันผิดในเลข)
+      const poNumber = formatDocumentNumber('PO', tenantId, 'PO', docYear(bill_date), 5, bill_date)
+
       // ── Resolve payment & cash purchase status ───────────────────────────
       const resolvedIsPaid = is_paid ?? (Boolean(payment_reference) || Boolean(payment_method))
       const resolvedPaidAmount = paid_amount ?? (resolvedIsPaid ? totalAmount : 0)
@@ -214,16 +281,6 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
           SELECT id FROM bank_accounts WHERE tenant_id = ? AND is_active = 1 LIMIT 1
         `).get(tenantId) as any
         if (defaultBank) resolvedBankAccountId = defaultBank.id
-      }
-
-      // Resolve expenseAccountCode -> id ต่อบรรทัดก่อนเขียน DB — ผิดแล้วต้องรู้ก่อนสร้าง PO ไม่ใช่เขียนไปแล้วแก้ยาก
-      const resolvedExpenseAccountIds: (string | null)[] = []
-      for (const item of items) {
-        if (!item.expenseAccountCode) { resolvedExpenseAccountIds.push(null); continue }
-        const acc = db.prepare("SELECT id FROM accounts WHERE tenant_id = ? AND code = ? AND type = 'EXPENSE'")
-          .get(tenantId, item.expenseAccountCode) as any
-        if (!acc) return ok({ success: false, message: `ไม่พบบัญชีค่าใช้จ่ายรหัส "${item.expenseAccountCode}" หรือไม่ใช่บัญชีประเภทค่าใช้จ่ายของกิจการนี้` })
-        resolvedExpenseAccountIds.push(acc.id)
       }
 
       db.prepare(`
@@ -910,6 +967,16 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
         return ok({
           success: false,
           message: `ไม่พบเอกสารประเภท ${doc_type} ที่มี ID หรือเลขที่ "${doc_id_or_number}" ในระบบ`,
+        })
+      }
+
+      const dupImg = findDuplicateAttachment(tenantId, image_base64)
+      if (dupImg) {
+        return ok({
+          success: false,
+          code: 'DUPLICATE_ATTACHMENT',
+          existingDocNumber: dupImg.docNum,
+          message: `ไฟล์แนบซ้ำ: รูปหลักฐานนี้เคยอัปโหลดแนบไว้แล้วใน${dupImg.label} ${dupImg.docNum}`,
         })
       }
 

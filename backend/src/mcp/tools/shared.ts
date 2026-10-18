@@ -252,6 +252,40 @@ export function resolveDocRef(
 // ซึ่ง route เสิร์ฟไฟล์ (/api/attachments/:id/file) มองไม่เห็น ใช้โฟลเดอร์เดียวกับหน้าเว็บแทน
 const ATTACHMENT_DIR = invoiceUploadDir
 
+// ตรวจว่ารูปสลิป/บิลนี้เคยแนบกับเอกสารอื่นที่ยังไม่ถูกยกเลิกในกิจการเดียวกันไปแล้วหรือยัง
+// เทียบเฉพาะแถวที่ file_size เท่ากันก่อน แล้วค่อยเทียบ Buffer.equals บนดิสก์ (ไม่ต้องเพิ่มคอลัมน์ hash)
+export function findDuplicateAttachment(
+  tenantId: string,
+  base64Data: string
+): { refType: string; refId: string; docNum: string; label: string } | null {
+  const clean = base64Data.trim().replace(/^data:[^;]+;base64,/, '')
+  const buffer = Buffer.from(clean, 'base64')
+  if (!buffer.length) return null
+  const rows = db.prepare(
+    'SELECT ref_type, ref_id, file_path FROM payment_attachments WHERE tenant_id = ? AND file_size = ?'
+  ).all(tenantId, buffer.length) as { ref_type: string; ref_id: string; file_path: string }[]
+  for (const r of rows) {
+    const p = path.join(ATTACHMENT_DIR, path.basename(r.file_path))
+    if (!fs.existsSync(p)) continue
+    try {
+      if (!fs.readFileSync(p).equals(buffer)) continue
+    } catch { continue }
+    const resolved = resolveDocRef(tenantId, r.ref_type, r.ref_id)
+    if (!resolved) continue
+    try {
+      const st = (db.prepare(`SELECT status FROM ${resolved.table} WHERE id = ? AND tenant_id = ?`).get(resolved.id, tenantId) as any)?.status
+      if (st === 'CANCELLED') continue
+    } catch { /* ตารางที่ไม่มีคอลัมน์ status เช่น receipts/pos_payments */ }
+    return {
+      refType: r.ref_type,
+      refId: r.ref_id,
+      docNum: resolved.doc_num,
+      label: REF_TYPE_DOCS[r.ref_type]?.label || r.ref_type,
+    }
+  }
+  return null
+}
+
 export function saveBase64Attachment(params: {
   tenantId: string
   userId: string

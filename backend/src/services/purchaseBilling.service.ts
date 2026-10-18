@@ -38,7 +38,8 @@ export class PurchaseBillingError extends Error {
       | 'OVER_BALANCE'
       | 'OVER_PAID'
       | 'CR_ACCOUNT_INVALID'
-      | 'PERIOD_CLOSED',
+      | 'PERIOD_CLOSED'
+      | 'DUPLICATE_SUPPLIER_INVOICE',
     message: string
   ) {
     super(message)
@@ -421,6 +422,23 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const closedLabel = closedPeriodLabel(tenantId, finalInvoiceDate)
   if (closedLabel) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกใบแจ้งหนี้วันที่นี้ไม่ได้`)
 
+  // กันเลขบิล/ใบกำกับภาษีผู้ขายซ้ำในผู้ขายรายเดียวกัน (เฉพาะใบที่ยังไม่ยกเลิก)
+  const cleanSupInv = supplierInvoiceNumber?.trim()
+  if (cleanSupInv) {
+    const dupPi = db.prepare(`
+      SELECT pi_number FROM purchase_invoices
+      WHERE tenant_id = ? AND supplier_id = ? AND status != 'CANCELLED'
+        AND LOWER(TRIM(supplier_invoice_number)) = LOWER(?)
+      LIMIT 1
+    `).get(tenantId, baseSupplierId, cleanSupInv) as { pi_number: string } | undefined
+    if (dupPi) {
+      throw new PurchaseBillingError(
+        'DUPLICATE_SUPPLIER_INVOICE',
+        `เลขที่ใบแจ้งหนี้/ใบกำกับภาษีผู้ขาย "${cleanSupInv}" ซ้ำกับใบแจ้งหนี้ซื้อ ${dupPi.pi_number} ของผู้ขายรายนี้`
+      )
+    }
+  }
+
   // ── ตรวจครบทุกอย่างมาถึงตรงนี้แล้ว — เพิ่งเบิร์นเลขที่เอกสาร ไม่งั้น request ที่ถูกปฏิเสธจะกินเลขไปเปล่า ๆ ──
   const id = generateId()
   // เลขที่ตามวันที่ใบแจ้งหนี้ (บิลย้อนหลังได้เลขของวันบนบิล) ไม่ใช่วันที่กดสร้าง
@@ -604,6 +622,22 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
   if (hasFinancialChange) {
     const newClosed = closedPeriodLabel(tenantId, newInvoiceDate)
     if (newClosed) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${newClosed} ปิดแล้ว บันทึกวันที่นี้ไม่ได้`)
+  }
+
+  const cleanSupInv = payload.supplierInvoiceNumber?.trim()
+  if (cleanSupInv) {
+    const dupPi = db.prepare(`
+      SELECT pi_number FROM purchase_invoices
+      WHERE tenant_id = ? AND supplier_id = ? AND status != 'CANCELLED'
+        AND id != ? AND LOWER(TRIM(supplier_invoice_number)) = LOWER(?)
+      LIMIT 1
+    `).get(tenantId, pi.supplier_id, id, cleanSupInv) as { pi_number: string } | undefined
+    if (dupPi) {
+      throw new PurchaseBillingError(
+        'DUPLICATE_SUPPLIER_INVOICE',
+        `เลขที่ใบแจ้งหนี้/ใบกำกับภาษีผู้ขาย "${cleanSupInv}" ซ้ำกับใบแจ้งหนี้ซื้อ ${dupPi.pi_number} ของผู้ขายรายนี้`
+      )
+    }
   }
 
   if (!hasFinancialChange) {
