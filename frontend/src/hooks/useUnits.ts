@@ -139,7 +139,10 @@ const isEnglish = (): boolean => String(i18n.language || 'th').toLowerCase().sta
 const knownLabel = (code: string): string | undefined =>
   isEnglish() ? (UNIT_LABELS_EN[code] ?? UNIT_LABELS[code]) : UNIT_LABELS[code]
 
-const labelOf = (code: string): string => knownLabel(code) ?? code
+const labelOf = (code: string): string => {
+  const c = canonicalUnitCode(normalizeUnit(code))
+  return knownLabel(c) ?? knownLabel(code) ?? code
+}
 
 /** Display name for a unit code in the reader's language. */
 export const unitLabel = (unit: string | null | undefined): string => {
@@ -164,7 +167,10 @@ const relabelSpecials = (list: UnitSpecial[]): UnitSpecial[] =>
     const baseLabel = knownLabel(s.baseUnit) ?? s.baseLabel ?? s.baseUnit
     return { ...s, label, baseLabel, note: `1 ${label} = ${fmtFactor(s.factor)} ${baseLabel}` }
   })
-const categoryOf = (code: string): UnitCategory => UNIT_CATEGORY[code] ?? 'other'
+const categoryOf = (code: string): UnitCategory => {
+  const c = canonicalUnitCode(normalizeUnit(code))
+  return UNIT_CATEGORY[c] ?? UNIT_CATEGORY[code] ?? 'other'
+}
 const aliasesOf = (code: string): string[] => UNIT_ALIASES[code] ?? []
 
 const mkOption = (code: string, scope: UnitScope): UnitOption => ({
@@ -181,7 +187,7 @@ const mkOption = (code: string, scope: UnitScope): UnitOption => ({
  */
 export const BASE_UNITS: UnitOption[] = [
   'pcs', 'kg', 'hg', 'g', 'm', 'cm', 'yard', 'roll', 'box', 'pack',
-  'set', 'pair', 'sheet', 'l', 'bottle', 'bag', 'sachet',
+  'set', 'pair', 'sheet', 'l', 'ml', 'tsp', 'tbsp', 'bottle', 'bag', 'sachet',
 ].map(c => mkOption(c, 'base'))
 
 const BASE_SET = new Set(BASE_UNITS.map(u => u.value))

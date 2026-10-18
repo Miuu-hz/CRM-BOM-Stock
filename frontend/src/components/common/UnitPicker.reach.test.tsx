@@ -46,4 +46,11 @@ describe('UnitPicker — แปลงหลายทอด', () => {
   it("ชุด→ชิ้น ไม่มีกฎ ต้องเตือน (หมวดนับเหมือนกันไม่ได้แปลว่าแปลงได้)", () => expect(warns("set", "pcs")).toBe(true))
   it("โหล→ชิ้น มาตราสากล ไม่เตือน", () => expect(warns("dozen", "pcs")).toBe(false))
   it("กก.→กรัม มาตราสากล ไม่เตือน", () => expect(warns("kg", "g")).toBe(false))
+  it('tsp→ml มาตราสากลปริมาตร ไม่เตือน', () => expect(warns('tsp', 'ml')).toBe(false))
+  it('ช้อนชา→มิลลิลิตร (ชื่อภาษาไทย) ไม่เตือน', () => expect(warns('ช้อนชา', 'มิลลิลิตร')).toBe(false))
+  it('hideUnreachableHint ซ่อนข้อความเตือนยาวใต้ช่อง', () => {
+    const { unmount } = render(<UnitPicker value="box" onChange={() => {}} baseUnit="ml" hideUnreachableHint />)
+    expect(screen.queryAllByText(/unitPicker\.unreachableHint/).length).toBe(0)
+    unmount()
+  })
 })

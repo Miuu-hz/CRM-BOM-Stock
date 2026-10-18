@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -22,7 +22,7 @@ import {
 import materialsService, { Material, MaterialStats, CreateMaterialInput, MaterialCategory } from '../../services/materials'
 import { unitLabel } from '../../hooks/useUnits'
 
-function MaterialsTab() {
+function MaterialsTab({ open }: { open?: { id: string; name?: string } | null } = {}) {
   const { t } = useTranslation()
   const [materials, setMaterials] = useState<Material[]>([])
   const [categories, setCategories] = useState<MaterialCategory[]>([])
@@ -61,6 +61,15 @@ function MaterialsTab() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  // เปิดหน้าต่างแก้ไขวัตถุดิบที่คลิกมาจากผลค้นหา
+  const handledOpen = useRef<{ id: string; name?: string } | null>(null)
+  useEffect(() => {
+    if (!open || handledOpen.current === open) return
+    if (open.name) setSearchTerm(open.name)
+    const m = materials.find(x => x.id === open.id)
+    if (m) { handledOpen.current = open; setEditingMaterial(m); setIsModalOpen(true) }
+  }, [open, materials])
 
   // Filter materials
   const filteredMaterials = (materials || []).filter(

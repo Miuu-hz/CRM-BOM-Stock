@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { ChevronDown, Search, Sparkles, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useUnits, unitLabelOf, unitCategoryOf, type UnitCategory, type UnitOption, type UnitSpecial } from '../../hooks/useUnits'
+import { useUnits, unitLabel, unitLabelOf, unitCategoryOf, type UnitCategory, type UnitOption, type UnitSpecial } from '../../hooks/useUnits'
 import { normalizeUnit, canonicalUnitCode } from '../../utils/unitNormalize'
 import UnitChainModal from './UnitChainModal'
 
@@ -35,6 +35,8 @@ interface UnitPickerProps {
    * จึงส่งเป็นชื่อไทยหรือ alias มาก็ได้ · ไม่ส่งมา = ไม่กรองอะไรเลย (พฤติกรรมเดิม)
    */
   exclude?: string[]
+  /** ซ่อนข้อความแจ้งเตือนยาวใต้ช่อง (เช่น ในตารางที่มีพื้นที่แนวตั้งจำกัด) แล้วแสดงเป็นไอคอนเตือนในปุ่มแทน */
+  hideUnreachableHint?: boolean
 }
 
 /** แถวที่เลือกได้ในลิสต์ */
@@ -66,6 +68,7 @@ export function UnitPicker({
   baseUnit,
   restrict = 'warn',
   exclude,
+  hideUnreachableHint = false,
 }: UnitPickerProps) {
   const { t } = useTranslation()
   const { units, specials, loading } = useUnits(materialId || null)
@@ -148,7 +151,10 @@ export function UnitPicker({
   )
   const restrictActive = !!baseUnitCode && restrict !== 'none'
   const categoryOfCode = useCallback(
-    (code: string) => unitByCode.get(code)?.category ?? unitCategoryOf(code),
+    (code: string) => {
+      const c = canonicalUnitCode(normalizeUnit(code))
+      return unitByCode.get(c)?.category ?? unitByCode.get(code)?.category ?? unitCategoryOf(c)
+    },
     [unitByCode]
   )
   const baseUnitCategory = useMemo(
@@ -175,8 +181,10 @@ export function UnitPicker({
   }, [baseUnitCategory, baseUnitCode])
 
   const isReachable = useCallback(
-    (code: string, category?: UnitCategory, sp?: UnitSpecial): boolean => {
+    (rawCode: string, category?: UnitCategory, sp?: UnitSpecial): boolean => {
       if (!restrictActive || !baseUnitCode) return true
+      const code = canonicalUnitCode(normalizeUnit(String(rawCode || '')))
+      if (!code) return true
       if (code === baseUnitCode) return true
       const cat = category ?? categoryOfCode(code)
       if (sameScale(code, cat)) return true
@@ -277,9 +285,10 @@ export function UnitPicker({
   /** ลิสต์แบน ใช้กับคีย์บอร์ด */
   const flatRows: Row[] = useMemo(() => displayGroups.flatMap(g => g.rows), [displayGroups])
 
-  const selectedUnit = unitByCode.get(value)
-  const selectedSpecial = specialByCode.get(value)
-  const selectedLabel = selectedUnit?.label || (value ? value : '')
+  const normValue = useMemo(() => (value ? canonicalUnitCode(normalizeUnit(String(value))) : ''), [value])
+  const selectedUnit = unitByCode.get(normValue) || unitByCode.get(value)
+  const selectedSpecial = specialByCode.get(normValue) || specialByCode.get(value)
+  const selectedLabel = selectedUnit?.label || (value ? unitLabel(value) : '')
   const valueUnreachable =
     restrictActive && !!value && !isReachable(value, selectedUnit?.category, selectedSpecial)
 
@@ -557,12 +566,24 @@ export function UnitPicker({
             />
           )}
         </span>
-        <ChevronDown
-          className={`w-3.5 h-3.5 text-[var(--fg-4)] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <div className="flex items-center gap-1 shrink-0">
+          {valueUnreachable && hideUnreachableHint && (
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); setChainOpen(true) }}
+              title={t('unitPicker.unreachableHint', { base: baseUnitLabel })}
+              className="text-warning hover:text-[var(--warning-strong)] p-0.5 cursor-pointer"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+            </span>
+          )}
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-[var(--fg-4)] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </div>
       </button>
       {open && createPortal(dropdown, document.body)}
-      {valueUnreachable && (
+      {valueUnreachable && !hideUnreachableHint && (
         <div className="mt-1 flex items-start gap-1 text-[11px] text-warning">
           <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
           <span>

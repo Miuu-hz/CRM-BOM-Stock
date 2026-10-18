@@ -755,27 +755,19 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                               />
                             </div>
 
-                            {/* Unit Dropdown */}
+                            {/* Unit Dropdown & Search with categories */}
                             <div className="col-span-2">
                               {isMaterial && row.materialId ? (
-                                <select
+                                <UnitPicker
                                   value={row.unit || getMaterialUnit(row.materialId) || ''}
-                                  onChange={(e) => handleItemChange(row.id, 'unit', e.target.value)}
-                                  className="phopy-input w-full text-sm"
-                                >
-                                  {(() => {
-                                    const unitCode = row.unit || getMaterialUnit(row.materialId) || ''
-                                    const opts = compatibleUnits[row.id] || []
-                                    const hasCurrent = opts.some(u => u.code === unitCode)
-                                    const allOpts = hasCurrent || !unitCode ? opts : [{ code: unitCode, label: unitCode }, ...opts]
-                                    if (allOpts.length === 0) {
-                                      return <option value="">{t('bomModal.unitOptions.selectUnit')}</option>
-                                    }
-                                    return allOpts.map((u) => (
-                                      <option key={u.code} value={u.code}>{u.label}</option>
-                                    ))
-                                  })()}
-                                </select>
+                                  onChange={(u) => handleItemChange(row.id, 'unit', u)}
+                                  materialId={row.materialId}
+                                  baseUnit={getMaterialUnit(row.materialId)}
+                                  restrict="warn"
+                                  size="sm"
+                                  hideUnreachableHint
+                                  placeholder={t('bomModal.unitOptions.selectUnit')}
+                                />
                               ) : (
                                 <div className="phopy-input w-full text-sm bg-[var(--surface-2)] text-[var(--primary)] font-semibold flex items-center justify-center">
                                   {selectedChildBOM ? t('bomModal.unitOptions.set') : '-'}
@@ -1170,20 +1162,14 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                 </div>
               </div>
 
-              {/* Unit - เลือกได้จากหมวดหมู่หรือ override */}
+              {/* Unit - เลือกได้จากหมวดหมู่หรือ override (Dropdown & Search พร้อมหมวด) */}
               <div>
                 <label className="block text-sm text-[var(--fg-3)] mb-1">{t('bomModal.createMaterial.labels.unit')} *</label>
-                <select
+                <UnitPicker
                   value={formData.unit || selectedCategory?.defaultUnit || ''}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  className="phopy-input w-full text-sm"
-                  required
-                >
-                  <option value="">{t('bomModal.createMaterial.placeholders.selectUnit')}</option>
-                  {availableUnits.map((u) => (
-                    <option key={u.value} value={u.value}>{u.label} ({u.value})</option>
-                  ))}
-                </select>
+                  onChange={(u) => setFormData({ ...formData, unit: u })}
+                  placeholder={t('bomModal.createMaterial.placeholders.selectUnit')}
+                />
                 {selectedCategory?.defaultUnit && (
                   <p className="text-xs text-[var(--fg-4)] mt-1">
                     {t('bomModal.createMaterial.defaultUnit', { unit: selectedCategory.defaultUnit })}

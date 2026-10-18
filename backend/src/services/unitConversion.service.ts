@@ -62,6 +62,13 @@ const STANDARD_CONVERSIONS: Record<string, number> = {
   'l->gallon': 0.264172,
   'fl_oz->ml': 29.5735,
   'ml->fl_oz': 0.033814,
+  // ?????? / ???????? (????????????????: 1 ?????? = 5 ml, 1 ???????? = 15 ml, 1 ???????? = 3 ??????)
+  'tsp->ml': 5,
+  'ml->tsp': 0.2,
+  'tbsp->ml': 15,
+  'ml->tbsp': 0.066667,
+  'tbsp->tsp': 3,
+  'tsp->tbsp': 0.333333,
 
   // พื้นที่
   'm2->cm2': 10000,
@@ -215,7 +222,7 @@ function getUnitAliases(code: string): string[] {
 const UNIT_CATEGORIES: Record<string, string[]> = {
   weight: ['kg', 'g', 'mg', 'hg', 'lb', 'oz'],
   length: ['inch', 'cm', 'mm', 'm', 'km', 'ft', 'yard'],
-  volume: ['l', 'ml', 'gallon', 'fl_oz'],
+  volume: ['l', 'ml', 'gallon', 'fl_oz', 'tsp', 'tbsp'],
   area: ['m2', 'cm2'],
   count: [
     'dozen', 'pcs', 'gross', 'pair', 'box', 'pack', 'set', 'roll', 'sheet',
