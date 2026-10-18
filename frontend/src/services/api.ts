@@ -17,6 +17,18 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Throttled activity update to sync multi-tab session on active usage
+let lastApiActivitySync = 0
+function touchActivity() {
+  const now = Date.now()
+  if (now - lastApiActivitySync > 15_000) {
+    lastApiActivitySync = now
+    try {
+      localStorage.setItem('crm_last_activity', String(now))
+    } catch { /* storage full / disabled */ }
+  }
+}
+
 // Handle auth errors — try a token refresh before logging the user out.
 function clearAuthAndRedirect() {
   localStorage.removeItem('crm_user')
@@ -24,6 +36,7 @@ function clearAuthAndRedirect() {
   localStorage.removeItem('crm_refresh_token')
   localStorage.removeItem('crm_tenant')
   localStorage.removeItem('crm_original_tenant')
+  localStorage.removeItem('crm_last_activity')
   window.location.href = '/login'
 }
 
@@ -37,7 +50,10 @@ const SUBSCRIPTION_ERROR_CODES = new Set([
 ])
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    touchActivity()
+    return response
+  },
   async (error) => {
     const code = error.response?.data?.code
     if (code && SUBSCRIPTION_ERROR_CODES.has(code)) {

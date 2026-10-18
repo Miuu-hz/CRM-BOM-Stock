@@ -2,8 +2,9 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, Re
 import api from '../services/api'
 import { invalidateDocumentSettings } from '../utils/printBill'
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000
-const WARN_BEFORE_MS  = 60 * 1000
+const IDLE_TIMEOUT_MS = 8 * 60 * 60 * 1000 // 8 ชั่วโมงสำหรับเวลาทำงานทั้งวัน
+const WARN_BEFORE_MS  = 5 * 60 * 1000      // เตือนล่วงหน้า 5 นาที
+const ACTIVITY_THROTTLE_MS = 15 * 1000     // บันทึกกิจกรรมลง localStorage ทุก 15 วินาที
 
 interface User {
   id: string
@@ -61,41 +62,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [allTenants, setAllTenants] = useState<TenantInfo[]>([])
 
   const lastActivityRef = useRef<number>(Date.now())
+  const lastSyncRef = useRef<number>(0)
   const timeoutCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    const savedUser     = localStorage.getItem('crm_user')
-    const savedToken    = localStorage.getItem('crm_token')
-    const savedTenant   = localStorage.getItem('crm_tenant')
-    const savedOriginal = localStorage.getItem('crm_original_tenant')
-    if (savedUser && savedToken) {
-      setUser(JSON.parse(savedUser))
-      setToken(savedToken)
-      if (savedTenant)   setTenant(JSON.parse(savedTenant))
-      if (savedOriginal) setOriginalTenantId(savedOriginal)
+    try {
+      const savedUser     = localStorage.getItem('crm_user')
+      const savedToken    = localStorage.getItem('crm_token')
+      const savedTenant   = localStorage.getItem('crm_tenant')
+      const savedOriginal = localStorage.getItem('crm_original_tenant')
+      const savedActivity = localStorage.getItem('crm_last_activity')
+      if (savedUser && savedToken) {
+        setUser(JSON.parse(savedUser))
+        setToken(savedToken)
+        if (savedTenant)   setTenant(JSON.parse(savedTenant))
+        if (savedOriginal) setOriginalTenantId(savedOriginal)
+        if (savedActivity) {
+          const act = Number(savedActivity)
+          if (!Number.isNaN(act) && act > 0) lastActivityRef.current = act
+        }
+      }
+    } catch (err) {
+      console.warn('Corrupted auth session in localStorage, clearing:', err)
+      localStorage.removeItem('crm_user')
+      localStorage.removeItem('crm_token')
+      localStorage.removeItem('crm_refresh_token')
+      localStorage.removeItem('crm_tenant')
+      localStorage.removeItem('crm_original_tenant')
+      localStorage.removeItem('crm_last_activity')
+      setUser(null)
+      setToken(null)
+      setTenant(null)
+    } finally {
+      setIsReady(true)
     }
-    setIsReady(true)
   }, [])
 
-  const resetActivity = useCallback(() => {
-    lastActivityRef.current = Date.now()
+  const resetActivity = useCallback((writeStorage = true) => {
+    const now = Date.now()
+    lastActivityRef.current = now
     setShowTimeoutWarning(false)
-  }, [])
-
-  useEffect(() => {
-    if (!user) return
-    const events = ['click', 'keydown', 'mousemove', 'touchstart', 'scroll']
-    events.forEach(e => window.addEventListener(e, resetActivity, { passive: true }))
-    timeoutCheckRef.current = setInterval(() => {
-      const idle = Date.now() - lastActivityRef.current
-      if (idle >= IDLE_TIMEOUT_MS) doLogout()
-      else if (idle >= IDLE_TIMEOUT_MS - WARN_BEFORE_MS) setShowTimeoutWarning(true)
-    }, 10_000)
-    return () => {
-      events.forEach(e => window.removeEventListener(e, resetActivity))
-      if (timeoutCheckRef.current) clearInterval(timeoutCheckRef.current)
+    if (writeStorage && now - lastSyncRef.current > ACTIVITY_THROTTLE_MS) {
+      lastSyncRef.current = now
+      try {
+        localStorage.setItem('crm_last_activity', String(now))
+      } catch { /* storage full / disabled */ }
     }
-  }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // แคชที่ผูกกับบริษัท — เก็บใน localStorage โดยไม่ได้ใส่ tenant ไว้ในคีย์
   // ถ้าไม่ล้าง ชื่อบริษัท/โลโก้/เลขบัญชีของบริษัทก่อนหน้าจะติดไปบนเอกสารของ
@@ -103,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ขึ้นชื่อและโลโก้ Kids House Cafe ที่ค้างจาก session ก่อน)
   // เลขบัญชีธนาคารข้ามบริษัทคือเคสที่เสียหายที่สุด — ลูกค้าโอนเงินผิดร้าน
   const clearTenantScopedCache = useCallback(() => {
-    for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings', 'pos_billing_settings', 'pos_loyalty_settings']) {
+    for (const k of ['crm_company_settings', 'crm_bank_accounts', 'pos_shop_settings']) {
       localStorage.removeItem(k)
     }
     // ตั้งค่าเอกสาร (โลโก้/ตราประทับ/คอลัมน์) ไม่ได้อยู่ใน localStorage แต่เป็นตัวแปร
@@ -125,11 +138,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('crm_refresh_token')
     localStorage.removeItem('crm_tenant')
     localStorage.removeItem('crm_original_tenant')
+    localStorage.removeItem('crm_last_activity')
     clearTenantScopedCache()
     if (timeoutCheckRef.current) clearInterval(timeoutCheckRef.current)
   }, [clearTenantScopedCache])
 
-  const extendSession = useCallback(() => resetActivity(), [resetActivity])
+  useEffect(() => {
+    if (!user) return
+
+    const handleUserActivity = () => resetActivity(true)
+    const events = ['click', 'keydown', 'mousemove', 'touchstart', 'scroll']
+    events.forEach(e => window.addEventListener(e, handleUserActivity, { passive: true }))
+
+    const checkIdle = () => {
+      // ซิงก์เวลากิจกรรมล่าสุดระหว่าง memory กับ localStorage จากแท็บอื่น
+      const storedLast = Number(localStorage.getItem('crm_last_activity') || 0)
+      const lastActive = Math.max(lastActivityRef.current, storedLast)
+      lastActivityRef.current = lastActive
+
+      const idle = Date.now() - lastActive
+      if (idle >= IDLE_TIMEOUT_MS) {
+        doLogout()
+      } else if (idle >= IDLE_TIMEOUT_MS - WARN_BEFORE_MS) {
+        setShowTimeoutWarning(true)
+      } else {
+        // แท็บอื่นมีการขยับ ซ่อน warning ทันที
+        setShowTimeoutWarning(false)
+      }
+    }
+
+    // ฟัง storage event: ถ้าแท็บอื่นมีการเคลื่อนไหว หรือออกจากระบบ ให้ซิงก์ตาม
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'crm_last_activity' && e.newValue) {
+        const ts = Number(e.newValue)
+        if (ts > lastActivityRef.current) {
+          lastActivityRef.current = ts
+          setShowTimeoutWarning(false)
+        }
+      } else if (e.key === 'crm_token' && !e.newValue) {
+        doLogout()
+      }
+    }
+
+    // เมื่อผู้ใช้สลับกลับมาที่แท็บ ให้ตรวจสอบและอัปเดตทันที
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        checkIdle()
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('focus', handleVisibilityOrFocus)
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus)
+
+    timeoutCheckRef.current = setInterval(checkIdle, 10_000)
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handleUserActivity))
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', handleVisibilityOrFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus)
+      if (timeoutCheckRef.current) clearInterval(timeoutCheckRef.current)
+    }
+  }, [user, doLogout, resetActivity])
+
+  const extendSession = useCallback(() => {
+    const now = Date.now()
+    lastActivityRef.current = now
+    lastSyncRef.current = now
+    setShowTimeoutWarning(false)
+    try {
+      localStorage.setItem('crm_last_activity', String(now))
+    } catch { /* storage full / disabled */ }
+  }, [])
 
   const isMaster = user?.role === 'MASTER'
 
@@ -146,16 +227,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.data.success) {
         const { user: apiUser, token: apiToken, refreshToken: apiRefresh } = response.data.data
         const tenantObj = { code: apiUser.tenant_id, name: apiUser.name || apiUser.tenant_id }
+        const now = Date.now()
         setUser(apiUser)
         setToken(apiToken)
         setTenant(tenantObj)
-        lastActivityRef.current = Date.now()
+        lastActivityRef.current = now
+        lastSyncRef.current = now
         // ล้างก่อนเสมอ — เบราว์เซอร์เครื่องเดิมอาจเคยล็อกอินบริษัทอื่นค้างไว้
         clearTenantScopedCache()
         localStorage.setItem('crm_user', JSON.stringify(apiUser))
         localStorage.setItem('crm_token', apiToken)
-        if (apiRefresh) localStorage.setItem('crm_refresh_token', apiRefresh)
+        if (apiRefresh) {
+          localStorage.setItem('crm_refresh_token', apiRefresh)
+        } else {
+          // ล้าง refresh token ของผู้ใช้คนก่อนหน้า ป้องกัน token poisoning ข้าม role (เช่น Master)
+          localStorage.removeItem('crm_refresh_token')
+        }
         localStorage.setItem('crm_tenant', JSON.stringify(tenantObj))
+        localStorage.setItem('crm_last_activity', String(now))
         if (apiUser.role === 'MASTER') {
           setOriginalTenantId(apiUser.tenant_id)
           localStorage.setItem('crm_original_tenant', apiUser.tenant_id)
@@ -166,7 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       return { success: false, message: error.response?.data?.message || 'เข้าสู่ระบบไม่สำเร็จ' }
     }
-  }, [])
+  }, [clearTenantScopedCache])
 
   const logout = useCallback(() => doLogout(), [doLogout])
 
