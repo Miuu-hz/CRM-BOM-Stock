@@ -35,6 +35,7 @@ import ProductionCalculator from '../components/bom/ProductionCalculator'
 import CostSimulation from '../components/bom/CostSimulation'
 import { unitLabel } from '../hooks/useUnits'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
+import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips } from '../components/common/FilterBar'
 
 // Types for Nested BOM
 interface BOMItem {
@@ -203,6 +204,7 @@ function BOMPage() {
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('card')
   const [bomFilter, setBomFilter] = useState<BOMFilterType>('all')
+  const [statusFilter, setStatusFilter] = useState('')
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -260,25 +262,15 @@ function BOMPage() {
     fetchData()
   }, [])
 
-  // Filter BOMs by search term and type
-  const filteredBOMs = (boms || []).filter((bom) => {
-    const matchesSearch = 
-      (bom.productName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (bom.productCode || '').toLowerCase().includes(searchTerm.toLowerCase())
-    
-    if (!matchesSearch) return false
+  // ค้นหา → ประเภท (ชิปแถวแรก) → สถานะ — ชิปแต่ละชั้นนับจากชั้นก่อนหน้า ตัวเลขจะตรงกับที่กดแล้วเห็น
+  const q = searchTerm.toLowerCase()
+  const searchedBOMs = (boms || []).filter(bom =>
+    (bom.productName || '').toLowerCase().includes(q) || (bom.productCode || '').toLowerCase().includes(q))
+  const matchesType = (bom: BOM, f: BOMFilterType) =>
+    f === 'finished' ? !!(bom.isTopLevel || bom.level === 0) : f === 'semi-finished' ? !!bom.isSemiFinished : true
+  const typeBOMs = searchedBOMs.filter(bom => matchesType(bom, bomFilter))
+  const filteredBOMs = typeBOMs.filter(bom => !statusFilter || bom.status === statusFilter)
 
-    switch (bomFilter) {
-      case 'finished':
-        return bom.isTopLevel || bom.level === 0
-      case 'semi-finished':
-        return bom.isSemiFinished
-      case 'tree-view':
-        return true
-      default:
-        return true
-    }
-  })
 
   // Handle create BOM
   const handleCreate = () => {
@@ -440,12 +432,13 @@ function BOMPage() {
     { id: 'simulation' as TabType, label: t('bom.tabs.costSimulation'), icon: TrendingUp },
   ]
 
-  const filterTabs = [
-    { id: 'all' as BOMFilterType, label: t('bom.filter.all'), count: stats?.totalBOMs || 0 },
-    { id: 'tree-view' as BOMFilterType, label: t('bom.filter.treeView'), icon: FolderTree },
-    { id: 'semi-finished' as BOMFilterType, label: t('bom.filter.semiFinished'), count: stats?.semiFinishedBOMs || 0 },
-    { id: 'finished' as BOMFilterType, label: t('bom.filter.finishedGoods') },
+  const filterTabs: { id: BOMFilterType; label: string; count?: number }[] = [
+    { id: 'all', label: t('bom.filter.all'), count: searchedBOMs.length },
+    { id: 'finished', label: t('bom.filter.finishedGoods'), count: searchedBOMs.filter(b => matchesType(b, 'finished')).length },
+    { id: 'semi-finished', label: t('bom.filter.semiFinished'), count: searchedBOMs.filter(b => matchesType(b, 'semi-finished')).length },
+    { id: 'tree-view', label: t('bom.filter.treeView') },
   ]
+  const bomStatusLabel: Record<string, string> = { DRAFT: t('bom.status.draft'), ACTIVE: t('bom.status.active'), ARCHIVED: t('bom.status.archived') }
 
   return (
     <>
@@ -532,70 +525,30 @@ function BOMPage() {
               />
             </div>
 
-            {/* Filter Tabs */}
-            <div className="flex gap-2 border-b border-[var(--border)]/50 pb-2 overflow-x-auto">
-              {filterTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setBomFilter(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap text-sm ${
-                    bomFilter === tab.id
-                      ? 'bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/30'
-                      : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)] border border-transparent'
-                  }`}
-                >
-                  {tab.icon && <tab.icon className="w-4 h-4" />}
-                  {tab.label}
-                  {tab.count !== undefined && (
-                    <span className="ml-1 px-2 py-0.5 bg-[var(--bg)] rounded-full text-xs">
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Search & View Toggle */}
-            <div className="phopy-card p-6">
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--fg-3)]" />
-                  <input
-                    type="text"
-                    placeholder={t('bom.searchPlaceholder')}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="phopy-input pl-10 w-full"
-                  />
+            {/* แถบกรองแบบหน้าคลังสินค้า: ค้นหา · ประเภท · สถานะ (นับจำนวน) · มุมมอง */}
+            <FilterBar>
+              <FilterSearch value={searchTerm} onChange={setSearchTerm} placeholder={t('bom.searchPlaceholder')} />
+              <FilterChips>
+                {filterTabs.map(tab => (
+                  <FilterChip key={tab.id} label={tab.label} count={tab.count} active={bomFilter === tab.id} onClick={() => setBomFilter(tab.id)} />
+                ))}
+                <ChipDivider />
+                <StatusChips rows={typeBOMs} value={statusFilter} onChange={setStatusFilter}
+                  order={['ACTIVE', 'DRAFT', 'ARCHIVED']} allLabel={t('bom.filter.all')} labelOf={st => bomStatusLabel[st] || st} />
+              </FilterChips>
+              {bomFilter !== 'tree-view' && (
+                <div className="flex items-center gap-0.5 h-9 ml-auto bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1">
+                  <button onClick={() => setViewMode('card')} title="Card View" aria-pressed={viewMode === 'card'}
+                    className={`h-full px-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setViewMode('list')} title="List View" aria-pressed={viewMode === 'list'}
+                    className={`h-full px-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+                    <List className="w-4 h-4" />
+                  </button>
                 </div>
-                {bomFilter !== 'tree-view' && (
-                  <div className="flex items-center gap-1 bg-[var(--surface-2)] rounded-lg p-1 border border-[var(--border)]">
-                    <button
-                      onClick={() => setViewMode('card')}
-                      className={`p-2 rounded-md transition-colors ${
-                        viewMode === 'card'
-                          ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
-                          : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
-                      }`}
-                      title="Card View"
-                    >
-                      <LayoutGrid className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`p-2 rounded-md transition-colors ${
-                        viewMode === 'list'
-                          ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
-                          : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
-                      }`}
-                      title="List View"
-                    >
-                      <List className="w-5 h-5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+              )}
+            </FilterBar>
 
             {/* Empty state */}
             {filteredBOMs.length === 0 && (

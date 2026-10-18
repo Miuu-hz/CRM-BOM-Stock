@@ -15,6 +15,7 @@ import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import { useModalClose } from '../hooks/useModalClose'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
+import { FilterBar, FilterSearch, FilterChips, StatusChips } from '../components/common/FilterBar'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
@@ -244,6 +245,8 @@ const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string
   PARTIAL_PAID: { labelKey: 'sales.status.partialPaid', bg: 'bg-orange-500/15', text: 'text-orange-300' },
   PENDING_APPROVAL: { labelKey: 'sales.status.pendingApproval', bg: 'bg-amber-500/20', text: 'text-amber-400' },
 }
+
+const STATUS_ORDER = Object.keys(STATUS_CONFIG)
 
 /** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — เทียบวันหมดอายุ/วันส่งแบบรายวัน ไม่ใช่รายมิลลิวินาที */
 const todayStr = () => new Date().toLocaleDateString('sv-SE')
@@ -671,7 +674,8 @@ const Sales = () => {
   // เปลี่ยนคำค้น/ช่วงวันที่/ตัวกรองสถานะ → กลับหน้า 1 ไม่งั้นค้างหน้าที่ไม่มีแถวแล้ว
   useEffect(() => { setCurrentPage(1) }, [searchQuery, dateFrom, dateTo, filterStatus])
 
-  const filterItems = <T extends Record<string, any>>(items: T[], keys: (keyof T)[], dateKey?: keyof T) => {
+  // คำค้น + ช่วงวันที่ (ยังไม่กรองสถานะ) — ชิปสถานะนับจากชุดนี้ ตัวเลขบนชิปจะตรงกับที่กดแล้วเห็น
+  const searchItems = <T extends Record<string, any>>(items: T[], keys: (keyof T)[], dateKey?: keyof T) => {
     let result = items.filter(item => !searchQuery || keys.some(k => String(item[k] || '').toLowerCase().includes(searchQuery.toLowerCase())))
     if (dateKey) {
       if (dateFrom) result = result.filter(it => String(it[dateKey] || '').slice(0, 10) >= dateFrom)
@@ -679,6 +683,10 @@ const Sales = () => {
     }
     return result
   }
+  const filterItems = <T extends Record<string, any>>(items: T[], keys: (keyof T)[], dateKey?: keyof T) =>
+    searchItems(items, keys, dateKey).filter(it => !filterStatus || it.status === filterStatus)
+  // สถานะของแต่ละแท็บคนละชุด — เปลี่ยนแท็บแล้วล้าง ไม่งั้นแท็บใหม่ว่างเปล่าเพราะสถานะค้าง
+  useEffect(() => { setFilterStatus('') }, [activeTab])
 
   const paginate = <T,>(items: T[]) => {
     const page = Math.min(currentPage, Math.max(1, Math.ceil(items.length / pageSize)))
@@ -859,55 +867,51 @@ const Sales = () => {
     </div>
   )
 
-  // ── Toolbar (search + date range + limit) ──────────────────────────────────
-  const ListToolbar = ({ placeholder, action }: { placeholder: string; action?: React.ReactNode }) => (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-2 items-center justify-between">
-        <div className="flex flex-wrap gap-2 items-center flex-1 min-w-0">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
-            <input type="text" placeholder={placeholder} value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] placeholder-gray-500 focus:outline-none focus:border-phopy-indigo w-52 text-sm" />
-          </div>
-          {/* Date range */}
-          <div className="flex items-center gap-1.5 text-sm">
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
-            <span className="text-[var(--fg-4)] text-xs">{t('sales.common.to')}</span>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
-            {(dateFrom || dateTo) && (
-              <button onClick={() => { setDateFrom(''); setDateTo('') }}
-                className="text-[var(--fg-4)] hover:text-danger text-xs px-1.5 py-1 rounded">{t('sales.common.clear')}</button>
-            )}
-          </div>
-          {/* Limit */}
-          <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-1 py-1">
-            {([25, 50, 100] as const).map(n => (
-              <button key={n} onClick={() => { setPageSize(n); setCurrentPage(1) }}
-                className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${pageSize === n ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
-                {n}
-              </button>
-            ))}
-          </div>
-          {/* View mode toggle */}
-          <div className="flex items-center gap-0.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg p-1">
-            <button onClick={() => setViewMode('list')} title={t('sales.view.list')}
-              className={`p-1 rounded transition-colors ${viewMode === 'list' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
-              <LayoutList className="w-3.5 h-3.5" />
+  // ── Toolbar: ค้นหา + ชิปสถานะ (นับจำนวน) + ช่วงวันที่ + จำนวนต่อหน้า — หน้าตาเดียวกับหน้าคลังสินค้า ──
+  const ListToolbar = ({ placeholder, action, rows }: { placeholder: string; action?: React.ReactNode; rows?: Record<string, any>[] }) => (
+    <FilterBar>
+      <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder={placeholder} />
+      {rows && (
+        <FilterChips>
+          <StatusChips rows={rows} value={filterStatus} onChange={setFilterStatus} order={STATUS_ORDER}
+            allLabel={t('sales.common.all')} labelOf={st => t((STATUS_CONFIG[st]?.labelKey ?? st) as any)} />
+        </FilterChips>
+      )}
+      <div className="flex flex-wrap items-center gap-2 ml-auto">
+        <div className="flex items-center gap-1.5 text-sm">
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} aria-label="ตั้งแต่วันที่"
+            className="h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] px-2.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]" />
+          <span className="text-[var(--fg-4)] text-xs">{t('sales.common.to')}</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} aria-label="ถึงวันที่"
+            className="h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] px-2.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]" />
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo('') }}
+              className="text-[var(--fg-4)] hover:text-danger text-xs px-1.5 py-1 rounded">{t('sales.common.clear')}</button>
+          )}
+        </div>
+        <div className="flex items-center gap-0.5 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1">
+          {([25, 50, 100] as const).map(n => (
+            <button key={n} onClick={() => { setPageSize(n); setCurrentPage(1) }}
+              className={`h-full px-2.5 rounded-md text-xs font-medium transition-colors ${pageSize === n ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+              {n}
             </button>
-            <button onClick={() => setViewMode('card')} title={t('sales.view.card')}
-              className={`p-1 rounded transition-colors ${viewMode === 'card' ? 'bg-phopy-indigo text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
-              <LayoutGrid className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-0.5 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1">
+          <button onClick={() => setViewMode('list')} title={t('sales.view.list')} aria-pressed={viewMode === 'list'}
+            className={`h-full px-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+            <LayoutList className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => setViewMode('card')} title={t('sales.view.card')} aria-pressed={viewMode === 'card'}
+            className={`h-full px-1.5 rounded-md transition-colors ${viewMode === 'card' ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+            <LayoutGrid className="w-3.5 h-3.5" />
+          </button>
         </div>
         {action && <div className="flex gap-2 shrink-0">{action}</div>}
       </div>
-    </div>
+    </FilterBar>
   )
+
 
   // ── Quotations ─────────────────────────────────────────────────────────────
   const QuotationsContent = () => {
@@ -919,7 +923,7 @@ const Sales = () => {
     }
     return (
       <div className="space-y-3">
-        {ListToolbar({ placeholder: t('sales.searchQuotation'), action: (
+        {ListToolbar({ rows: searchItems(quotations, ['quotation_number', 'customer_name'], 'quotation_date'), placeholder: t('sales.searchQuotation'), action: (
           <>
             {PageSizeSelect()}
             <button onClick={() => setActiveTab('templates')}
@@ -1080,7 +1084,6 @@ const Sales = () => {
 
   const OrdersContent = () => {
     const filtered = filterItems(salesOrders, ['so_number', 'customer_name'], 'order_date')
-      .filter(o => !filterStatus || o.status === filterStatus)
     const items = paginate(filtered)
     const soNextStatus: Record<string, { status: string; label: string; color: string }> = {
       DRAFT:      { status: 'CONFIRMED',  label: t('sales.status.confirmed'),       color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
@@ -1094,7 +1097,7 @@ const Sales = () => {
 
     return (
       <div className="space-y-3">
-        {ListToolbar({ placeholder: t('sales.searchOrder'), action: (
+        {ListToolbar({ rows: searchItems(salesOrders, ['so_number', 'customer_name'], 'order_date'), placeholder: t('sales.searchOrder'), action: (
           <>
             {PageSizeSelect()}
             <button onClick={handleCreateSalesOrder}
@@ -1103,20 +1106,6 @@ const Sales = () => {
             </button>
           </>
         ) })}
-
-        {/* Delivery status filter pills */}
-        <div className="flex flex-wrap gap-1.5">
-          <button onClick={() => setFilterStatus('')}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!filterStatus ? 'bg-phopy-indigo text-white border-phopy-indigo' : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
-            {t('sales.common.all')}
-          </button>
-          {SO_DELIVERY_STEPS.map(s => (
-            <button key={s.status} onClick={() => setFilterStatus(s.status === filterStatus ? '' : s.status)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filterStatus === s.status ? 'bg-[var(--bg)] border-phopy-indigo text-[var(--fg-1)]' : 'border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
-              {s.label}
-            </button>
-          ))}
-        </div>
 
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyOrder')}</p></div>
@@ -1342,7 +1331,7 @@ const Sales = () => {
     const items = paginate(filtered)
     return (
       <div className="space-y-3">
-        {ListToolbar({ placeholder: t('sales.searchInvoice'), action: (
+        {ListToolbar({ rows: searchItems(invoices, ['invoice_number', 'customer_name'], 'invoice_date'), placeholder: t('sales.searchInvoice'), action: (
           <>
             {PageSizeSelect()}
             <button onClick={handleCreateInvoice}
@@ -1498,7 +1487,7 @@ const Sales = () => {
     const items = filterItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date')
     return (
       <div className="space-y-3">
-        {ListToolbar({ placeholder: t('sales.searchCreditNote'), action: (
+        {ListToolbar({ rows: searchItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date'), placeholder: t('sales.searchCreditNote'), action: (
           <button onClick={handleCreateCreditNote}
             className="flex items-center gap-1.5 px-4 py-2 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 text-sm">
             <Plus className="w-4 h-4" /> {t('sales.createCreditNote')}
@@ -1605,7 +1594,7 @@ const Sales = () => {
     const items = filterItems(backorders, ['bo_number', 'customer_name'])
     return (
       <div className="space-y-3">
-        {ListToolbar({ placeholder: t('sales.search.backorder'), action: (
+        {ListToolbar({ rows: searchItems(backorders, ['bo_number', 'customer_name']), placeholder: t('sales.search.backorder'), action: (
           <button onClick={handleCreateBackorder}
             className="flex items-center gap-1.5 px-4 py-2 bg-orange-500/80 text-white font-semibold rounded-lg hover:bg-orange-500 text-sm">
             <Plus className="w-4 h-4" /> {t('sales.createBackorder')}
@@ -1698,7 +1687,7 @@ const Sales = () => {
     }
     return (
       <div className="space-y-3">
-        {ListToolbar({ placeholder: t('sales.searchDelivery'), action: (
+        {ListToolbar({ rows: searchItems(deliveryOrders, ['do_number', 'customer_name'], 'delivery_date'), placeholder: t('sales.searchDelivery'), action: (
           <>
             {PageSizeSelect()}
             <button onClick={() => toast(t('sales.actions.createDeliveryFromSO'))}

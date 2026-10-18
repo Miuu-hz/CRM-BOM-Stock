@@ -42,6 +42,7 @@ import { useApprovalGate } from '../components/common/ApprovalGate'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { useModalClose } from '../hooks/useModalClose'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
+import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips } from '../components/common/FilterBar'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { normalizeUnit } from '../utils/unitNormalize'
@@ -1363,6 +1364,9 @@ const NextStepCell = ({ step }: { step: NextStep }) => {
   )
 }
 
+// ลำดับชิปสถานะตามขั้นของเอกสาร
+const PURCHASE_STATUS_ORDER = ['DRAFT', 'PENDING', 'SUBMITTED', 'APPROVED', 'CONFIRMED', 'PARTIAL', 'RECEIVED', 'CONVERTED', 'ISSUED', 'UNPAID', 'OVERDUE', 'PAID', 'REJECTED', 'CANCELLED']
+
 const Purchase = () => {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -1380,6 +1384,9 @@ const Purchase = () => {
   const [openRow, setOpenRow] = useState<string | null>(null)
   // ชิปกรองบนแถบค้นหา: ทั้งหมด / รอคุณจัดการ / ค้างจ่าย
   const [rowFilter, setRowFilter] = useState<'all' | 'mine' | 'due'>('all')
+  const [statusFilter, setStatusFilter] = useState('')
+  // สถานะของแต่ละแท็บคนละชุด — เปลี่ยนแท็บแล้วล้าง ไม่งั้นแท็บใหม่ว่างเพราะสถานะค้าง
+  useEffect(() => { setStatusFilter('') }, [activeTab])
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
   const [currentPage, setCurrentPage] = useState(1)
   const [summary, setSummary] = useState<PurchaseSummary | null>(null)
@@ -2642,25 +2649,33 @@ const Purchase = () => {
   // ชิปกรองบนแถบค้นหา — "ค้างจ่าย" โผล่เฉพาะแท็บที่มีความหมายจริง (PO/ใบแจ้งหนี้)
   // แท็บใบขอซื้อกับใบรับของไม่มีหนี้ให้ค้าง จึงซ่อนไปเลย ดีกว่าโชว์แล้วกดได้ 0 รายการ
   const rowFilterChips = (showDue: boolean) => {
-    const chips: Array<['all' | 'mine' | 'due', string]> = [
-      ['all', t('purchase.filter.all')],
-      ['mine', t('purchase.filter.mine')],
-    ]
+    const chips: Array<['mine' | 'due', string]> = [['mine', t('purchase.filter.mine')]]
     if (showDue) chips.push(['due', t('purchase.filter.due')])
-    return (
-      <div className="flex items-center gap-2">
-        {chips.map(([key, label]) => (
-          <button key={key} onClick={() => { setRowFilter(key); setCurrentPage(1) }} aria-pressed={rowFilter === key}
-            className={`h-9 px-3.5 rounded-lg text-xs font-semibold border whitespace-nowrap transition-colors ${
-              rowFilter === key
-                ? 'bg-phopy-indigo/10 text-[var(--primary)] border-phopy-indigo/40'
-                : 'bg-[var(--bg)] text-[var(--fg-3)] border-[var(--border)] hover:text-[var(--fg-1)]'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-    )
+    return chips.map(([key, label]) => (
+      <FilterChip key={key} label={label} tone={key === 'due' ? 'warning' : 'neutral'} active={rowFilter === key}
+        onClick={() => { setRowFilter(rowFilter === key ? 'all' : key); setCurrentPage(1) }} />
+    ))
   }
+
+  // ── แถบกรองแบบหน้าคลังสินค้า: ค้นหา · ต้องทำ/ค้างจ่าย · สถานะพร้อมจำนวน · ต่อหน้า/มุมมอง ──
+  // rows = ผ่านคำค้น + ชิปงานแล้ว แต่ยังไม่กรองสถานะ (ตัวเลขบนชิปจะตรงกับที่กดแล้วเห็น)
+  const listFilters = (placeholder: string, rows: any[], due: boolean | null, field = 'status', labelOf: (s: string) => string = s => statusCfg(s).label) => (
+    <FilterBar>
+      <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder={placeholder} />
+      <FilterChips>
+        {due !== null && <>{rowFilterChips(due)}<ChipDivider /></>}
+        <StatusChips rows={rows} field={field} value={statusFilter} labelOf={labelOf} order={PURCHASE_STATUS_ORDER}
+          allLabel={t('purchase.filter.all')} onChange={v => { setStatusFilter(v); setCurrentPage(1) }} />
+      </FilterChips>
+      <div className="flex items-center gap-2 ml-auto">
+        <PageSizeSelect />
+        <ViewToggle />
+      </div>
+    </FilterBar>
+  )
+
+
+  const byStatus = (field: string) => (r: any) => !statusFilter || r[field] === statusFilter
 
   // ผ่านตัวกรองไหม — 'mine' = ยังมีอะไรให้ทำ · 'due' = ยังค้างจ่าย
   const passesRowFilter = (step: NextStep, due: boolean) =>
@@ -3045,7 +3060,7 @@ const Purchase = () => {
 
   // ─── UI Components ───────────────────────────────────────────────
 
-  const StatusBadge = ({ status }: { status: string }) => {
+  const statusCfg = (status: string) => {
     const cfg: Record<string, { bg: string; text: string; label: string }> = {
       DRAFT:     { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-3)]',   label: t('purchase.status.draft') },
       PENDING:   { bg: 'bg-yellow-500/15', text: 'text-warning', label: t('purchase.status.pendingApproval') },
@@ -3062,7 +3077,10 @@ const Purchase = () => {
       CANCELLED: { bg: 'bg-gray-500/15',   text: 'text-[var(--fg-4)]',   label: t('purchase.actions.cancel') },
       ISSUED:    { bg: 'bg-blue-500/15',   text: 'text-blue-400',   label: t('purchase.status.issued') },
     }
-    const c = cfg[status] || { bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]', label: status }
+    return cfg[status] || { bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]', label: status }
+  }
+  const StatusBadge = ({ status }: { status: string }) => {
+    const c = statusCfg(status)
     return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label}</span>
   }
 
@@ -3269,13 +3287,6 @@ const Purchase = () => {
   }
 
   // ─── Shared card list helpers ─────────────────────────────────────
-  const SearchBar = ({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (v: string) => void }) => (
-    <div className="relative flex-1 max-w-xs">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
-      <input type="text" placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)}
-        className="w-full pl-9 pr-4 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] placeholder-gray-500 focus:outline-none focus:border-phopy-indigo text-sm" />
-    </div>
-  )
 
   const EmptyState = ({ text }: { text: string }) => (
     <div className="text-center py-16 text-[var(--fg-4)] bg-[var(--surface)] border border-[var(--border)] rounded-xl">{text}</div>
@@ -3338,23 +3349,16 @@ const Purchase = () => {
 
   // ─── Document list content components ────────────────────────────
   const RequestsContent = () => {
-    const filtered = requests.filter(r =>
+    const base = requests.filter(r =>
       (r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.requester_name?.toLowerCase().includes(searchQuery.toLowerCase()))
       && passesRowFilter(prNextStep(r), false)
     )
+    const filtered = base.filter(byStatus('status'))
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <SearchBar placeholder={t('purchase.search.requestsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          {rowFilterChips(false)}
-          <div className="flex items-center gap-2 ml-auto">
-            <PageSizeSelect />
-            <ViewToggle />
-          </div>
-        </div>
+        {listFilters(t('purchase.search.requestsPlaceholder'), base, false)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.requests')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
@@ -3451,23 +3455,16 @@ const Purchase = () => {
   }
 
   const OrdersContent = () => {
-    const filtered = orders.filter(o =>
+    const base = orders.filter(o =>
       (o.po_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         o.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))
       && passesRowFilter(poNextStep(o), !!poUnpaidInvoice(o))
     )
+    const filtered = base.filter(byStatus('status'))
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <SearchBar placeholder={t('purchase.search.ordersPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          {rowFilterChips(true)}
-          <div className="flex items-center gap-2 ml-auto">
-            <PageSizeSelect />
-            <ViewToggle />
-          </div>
-        </div>
+        {listFilters(t('purchase.search.ordersPlaceholder'), base, true)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.orders')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
@@ -3617,23 +3614,16 @@ const Purchase = () => {
   }
 
   const ReceiptsContent = () => {
-    const filtered = receipts.filter(r =>
+    const base = receipts.filter(r =>
       (r.gr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.po_number?.toLowerCase().includes(searchQuery.toLowerCase()))
       && passesRowFilter(grNextStep(r), false)
     )
+    const filtered = base.filter(byStatus('status'))
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <SearchBar placeholder={t('purchase.search.receiptsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          {rowFilterChips(false)}
-          <div className="flex items-center gap-2 ml-auto">
-            <PageSizeSelect />
-            <ViewToggle />
-          </div>
-        </div>
+        {listFilters(t('purchase.search.receiptsPlaceholder'), base, false)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.receipts')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
@@ -3715,23 +3705,16 @@ const Purchase = () => {
   }
 
   const InvoicesContent = () => {
-    const filtered = invoices.filter(i =>
+    const base = invoices.filter(i =>
       (i.pi_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         i.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))
       && passesRowFilter(invNextStep(i), i.balance_amount > 0 && i.status !== 'CANCELLED')
     )
+    const filtered = base.filter(byStatus('status'))
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
-        {/* ปุ่มสร้างย้ายไปอยู่หัวหน้าเพียงที่เดียว (เปลี่ยนตามแท็บให้เอง) */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <SearchBar placeholder={t('purchase.search.invoicesPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          {rowFilterChips(true)}
-          <div className="flex items-center gap-2 ml-auto">
-            <PageSizeSelect />
-            <ViewToggle />
-          </div>
-        </div>
+        {listFilters(t('purchase.search.invoicesPlaceholder'), base, true)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.invoices')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
@@ -3820,22 +3803,16 @@ const Purchase = () => {
   }
 
   const PaymentsContent = () => {
-    const filtered = payments.filter(p =>
+    const base = payments.filter(p =>
       p.payment_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    const filtered = base.filter(byStatus('payment_method'))
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const methodLabel: Record<string, string> = { CASH: t('purchase.paymentMethod.cash'), TRANSFER: t('purchase.paymentMethod.transfer'), CHEQUE: t('purchase.paymentMethod.cheque'), CREDIT_CARD: t('purchase.paymentMethod.creditCard') }
     return (
       <div className="space-y-4">
-        {/* ใบจ่ายเงินเป็นปลายทาง ไม่มีอะไรค้างให้ทำ จึงไม่มีชิปกรอง — โครงแถบเหมือนแท็บอื่น */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <SearchBar placeholder={t('purchase.search.paymentsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          <div className="flex items-center gap-2 ml-auto">
-            <PageSizeSelect />
-            <ViewToggle />
-          </div>
-        </div>
+        {listFilters(t('purchase.search.paymentsPlaceholder'), base, null, 'payment_method', m => methodLabel[m] || m)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.payments')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
@@ -3917,10 +3894,11 @@ const Purchase = () => {
   }
 
   const ReturnsContent = () => {
-    const filtered = returns.filter(r => passesRowFilter(retNextStep(r), false) &&
-      r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    const base = returns.filter(r => passesRowFilter(retNextStep(r), false) &&
+      (r.pr_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))
     )
+    const filtered = base.filter(byStatus('status'))
     const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const reasonLabel: Record<string, string> = {
       DEFECTIVE: t('purchase.returnReason.defective'), WRONG_ITEM: t('purchase.returnReason.wrongItem'),
@@ -3929,14 +3907,7 @@ const Purchase = () => {
     }
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <SearchBar placeholder={t('purchase.search.returnsPlaceholder')} value={searchQuery} onChange={setSearchQuery} />
-          {rowFilterChips(false)}
-          <div className="flex items-center gap-2 ml-auto">
-            <PageSizeSelect />
-            <ViewToggle />
-          </div>
-        </div>
+        {listFilters(t('purchase.search.returnsPlaceholder'), base, false)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.returns')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">

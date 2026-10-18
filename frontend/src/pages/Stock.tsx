@@ -39,6 +39,7 @@ import StockAliasPanel from '../components/common/StockAliasPanel'
 import api from '../services/api'
 import stockService, { StockItem, StockStats } from '../services/stock'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
+import { FilterChip as FilterButton } from '../components/common/FilterBar'
 import subcontractService, { SubconStockRow, SubconStockSummary } from '../services/subcontract'
 import companySettingsService from '../services/companySettings.service'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
@@ -2568,49 +2569,6 @@ export function EditModal({
 }
 
 // Movement Modal Component
-function FilterButton({
-  label,
-  active,
-  onClick,
-  count,
-  tone = 'neutral',
-  dot = false,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-  count?: number
-  tone?: 'neutral' | 'warning' | 'danger'
-  /** จุดสีนำหน้าชิปสถานะ — กวาดตาแยกหมด/ใกล้หมดได้โดยไม่ต้องอ่าน */
-  dot?: boolean
-}) {
-  const empty = count === 0
-  const activeCls =
-    tone === 'danger' ? 'bg-[var(--danger-soft)] text-danger border-danger/40'
-      : tone === 'warning' ? 'bg-[var(--warning-soft)] text-warning border-warning/40'
-        : 'bg-[var(--primary)] text-white border-[var(--primary)]'
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm whitespace-nowrap transition-colors ${
-        active ? activeCls
-          : `bg-transparent border-[var(--border)] hover:border-phopy-indigo/30 ${empty ? 'text-[var(--fg-4)]' : 'text-[var(--fg-3)]'}`
-      }`}
-    >
-      {dot && (
-        <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${
-          tone === 'danger' ? 'bg-[var(--danger)]' : tone === 'warning' ? 'bg-[var(--warning)]' : 'bg-[var(--fg-4)]'
-        }`} />
-      )}
-      {label}
-      {count !== undefined && (
-        <span className={`text-[11px] tabular-nums ${active ? 'opacity-70' : 'text-[var(--fg-4)]'}`}>{count}</span>
-      )}
-    </button>
-  )
-}
-
 // Map any category value (Thai or English) to a display group
 function getCategoryGroup(category: string): 'raw' | 'wip' | 'finished' | 'service' | 'material' {
   const raw = ['[วัตถุดิบ]', '[วัสดุย่อย]', 'raw', 'raw material']

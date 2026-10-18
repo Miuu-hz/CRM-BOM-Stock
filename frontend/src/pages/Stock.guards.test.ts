@@ -13,7 +13,7 @@ const slice = (from: string, to: string) => {
 }
 // หมุดท้ายต้องเป็นสิ่งที่อยู่ถัดจาก EditModal จริง ๆ ณ ตอนนี้
 // ถ้าหมุดหาย indexOf คืน -1 แล้ว slice จะกินไปจนจบไฟล์โดยไม่มีอะไรเตือน
-const EDIT_MODAL = slice('export function EditModal({', 'function FilterButton({')
+const EDIT_MODAL = slice('export function EditModal({', '// Map any category value')
 const DETAIL_MODAL = slice('function DetailModal({', 'export function EditModal({')
 // AddStockModal เป็นคอมโพเนนต์ตัวท้ายไฟล์ จึงไม่มีหมุดท้ายให้ยึด — ตัดถึงท้ายไฟล์เลย
 // แต่หมุดหัวต้องล้มเสียงดังเหมือน slice() ตัวอื่น ไม่ใช่เงียบแล้วได้สตริงว่าง
