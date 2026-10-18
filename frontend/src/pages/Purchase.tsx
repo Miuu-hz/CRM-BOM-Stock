@@ -42,7 +42,7 @@ import { useApprovalGate } from '../components/common/ApprovalGate'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
 import { useModalClose } from '../hooks/useModalClose'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
-import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips } from '../components/common/FilterBar'
+import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips, SortLabel, sortRows, type SortState } from '../components/common/FilterBar'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { normalizeUnit } from '../utils/unitNormalize'
@@ -1364,6 +1364,11 @@ const NextStepCell = ({ step }: { step: NextStep }) => {
   )
 }
 
+// สถานะหลักของแต่ละแท็บ — ชิปโชว์เสมอแม้ยังไม่มีเอกสาร
+const PURCHASE_TAB_STATUSES: Record<string, string[]> = {
+  requests: ['DRAFT', 'SUBMITTED', 'APPROVED', 'CONVERTED', 'REJECTED', 'CANCELLED'],
+  orders: ['DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIAL', 'RECEIVED', 'CANCELLED'],
+}
 // ลำดับชิปสถานะตามขั้นของเอกสาร
 const PURCHASE_STATUS_ORDER = ['DRAFT', 'PENDING', 'SUBMITTED', 'APPROVED', 'CONFIRMED', 'PARTIAL', 'RECEIVED', 'CONVERTED', 'ISSUED', 'UNPAID', 'OVERDUE', 'PAID', 'REJECTED', 'CANCELLED']
 
@@ -1385,8 +1390,11 @@ const Purchase = () => {
   // ชิปกรองบนแถบค้นหา: ทั้งหมด / รอคุณจัดการ / ค้างจ่าย
   const [rowFilter, setRowFilter] = useState<'all' | 'mine' | 'due'>('all')
   const [statusFilter, setStatusFilter] = useState('')
-  // สถานะของแต่ละแท็บคนละชุด — เปลี่ยนแท็บแล้วล้าง ไม่งั้นแท็บใหม่ว่างเพราะสถานะค้าง
-  useEffect(() => { setStatusFilter('') }, [activeTab])
+  const [sort, setSort] = useState<SortState>(null)
+  // สถานะ/การเรียงของแต่ละแท็บคนละชุด — เปลี่ยนแท็บแล้วล้าง ไม่งั้นแท็บใหม่ว่างเพราะสถานะค้าง
+  useEffect(() => { setStatusFilter(''); setSort(null) }, [activeTab])
+  const sortLabel = (label: string, key: string, align?: 'right') =>
+    <SortLabel label={label} sortKey={key} sort={sort} align={align} onSort={s => { setSort(s); setCurrentPage(1) }} />
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
   const [currentPage, setCurrentPage] = useState(1)
   const [summary, setSummary] = useState<PurchaseSummary | null>(null)
@@ -2664,7 +2672,7 @@ const Purchase = () => {
       <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder={placeholder} />
       <FilterChips>
         {due !== null && <>{rowFilterChips(due)}<ChipDivider /></>}
-        <StatusChips rows={rows} field={field} value={statusFilter} labelOf={labelOf} order={PURCHASE_STATUS_ORDER}
+        <StatusChips rows={rows} field={field} value={statusFilter} labelOf={labelOf} order={PURCHASE_STATUS_ORDER} always={PURCHASE_TAB_STATUSES[activeTab]}
           allLabel={t('purchase.filter.all')} onChange={v => { setStatusFilter(v); setCurrentPage(1) }} />
       </FilterChips>
       <div className="flex items-center gap-2 ml-auto">
@@ -3355,16 +3363,16 @@ const Purchase = () => {
       && passesRowFilter(prNextStep(r), false)
     )
     const filtered = base.filter(byStatus('status'))
-    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.requestsPlaceholder'), base, false)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.requests')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.requests.headers.number')}</span><span className="col-span-3">{t('purchase.requests.headers.requester')}</span>
-              <span className="col-span-1">{t('purchase.requests.headers.requestDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
-              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
+              <span className="col-span-2">{sortLabel(t('purchase.requests.headers.number'), 'pr_number')}</span><span className="col-span-3">{sortLabel(t('purchase.requests.headers.requester'), 'requester_name')}</span>
+              <span className="col-span-1">{sortLabel(t('purchase.requests.headers.requestDate'), 'request_date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{sortLabel(t('purchase.common.total'), 'total_amount', 'right')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((req, i) => (
               <div key={req.id}>
@@ -3461,16 +3469,16 @@ const Purchase = () => {
       && passesRowFilter(poNextStep(o), !!poUnpaidInvoice(o))
     )
     const filtered = base.filter(byStatus('status'))
-    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.ordersPlaceholder'), base, true)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.orders')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.orders.headers.poNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-1">{t('purchase.orders.headers.orderDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
-              <span className="col-span-1 text-right">{t('purchase.common.total')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
+              <span className="col-span-2">{sortLabel(t('purchase.orders.headers.poNumber'), 'po_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
+              <span className="col-span-1">{sortLabel(t('purchase.orders.headers.orderDate'), 'order_date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{sortLabel(t('purchase.common.total'), 'total_amount', 'right')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((order, i) => (
               <div key={order.id}>
@@ -3620,15 +3628,15 @@ const Purchase = () => {
       && passesRowFilter(grNextStep(r), false)
     )
     const filtered = base.filter(byStatus('status'))
-    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.receiptsPlaceholder'), base, false)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.receipts')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.receipts.headers.grNumber')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.receipts.headers.receiptDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-2">{sortLabel(t('purchase.receipts.headers.grNumber'), 'gr_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
+              <span className="col-span-2">{sortLabel(t('purchase.receipts.headers.receiptDate'), 'receipt_date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
               <span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((receipt, i) => (
@@ -3711,16 +3719,16 @@ const Purchase = () => {
       && passesRowFilter(invNextStep(i), i.balance_amount > 0 && i.status !== 'CANCELLED')
     )
     const filtered = base.filter(byStatus('status'))
-    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.invoicesPlaceholder'), base, true)}
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.invoices')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.invoices.headers.piNumber')}</span><span className="col-span-2">{t('purchase.common.supplier')}</span>
-              <span className="col-span-2">{t('purchase.invoices.headers.dueDate')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
-              <span className="col-span-1 text-right">{t('purchase.invoices.headers.balance')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
+              <span className="col-span-2">{sortLabel(t('purchase.invoices.headers.piNumber'), 'pi_number')}</span><span className="col-span-2">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
+              <span className="col-span-2">{sortLabel(t('purchase.invoices.headers.dueDate'), 'due_date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{sortLabel(t('purchase.invoices.headers.balance'), 'balance_amount', 'right')}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((invoice, i) => (
               <div key={invoice.id}>
@@ -3808,7 +3816,7 @@ const Purchase = () => {
       p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
     )
     const filtered = base.filter(byStatus('payment_method'))
-    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const methodLabel: Record<string, string> = { CASH: t('purchase.paymentMethod.cash'), TRANSFER: t('purchase.paymentMethod.transfer'), CHEQUE: t('purchase.paymentMethod.cheque'), CREDIT_CARD: t('purchase.paymentMethod.creditCard') }
     return (
       <div className="space-y-4">
@@ -3816,9 +3824,9 @@ const Purchase = () => {
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.payments')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.payments.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-1">{t('purchase.payments.headers.date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
-              <span className="col-span-1 text-right">{t('purchase.payments.headers.amount')}</span>
+              <span className="col-span-2">{sortLabel(t('purchase.payments.headers.number'), 'payment_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
+              <span className="col-span-1">{sortLabel(t('purchase.payments.headers.date'), 'payment_date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{sortLabel(t('purchase.payments.headers.amount'), 'amount', 'right')}</span>
               <span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((payment, i) => (
@@ -3899,7 +3907,7 @@ const Purchase = () => {
         r.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase()))
     )
     const filtered = base.filter(byStatus('status'))
-    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
     const reasonLabel: Record<string, string> = {
       DEFECTIVE: t('purchase.returnReason.defective'), WRONG_ITEM: t('purchase.returnReason.wrongItem'),
       WRONG_QUANTITY: t('purchase.returnReason.wrongQuantity'), QUALITY_ISSUE: t('purchase.returnReason.qualityIssue'),
@@ -3911,9 +3919,9 @@ const Purchase = () => {
         {filtered.length === 0 ? <EmptyState text={t('purchase.empty.returns')} /> : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-              <span className="col-span-2">{t('purchase.returns.headers.number')}</span><span className="col-span-3">{t('purchase.common.supplier')}</span>
-              <span className="col-span-1">{t('purchase.returns.headers.date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
-              <span className="col-span-1 text-right">{t('purchase.returns.headers.amount')}</span>
+              <span className="col-span-2">{sortLabel(t('purchase.returns.headers.number'), 'pr_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
+              <span className="col-span-1">{sortLabel(t('purchase.returns.headers.date'), 'return_date')}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+              <span className="col-span-1 text-right">{sortLabel(t('purchase.returns.headers.amount'), 'total_amount', 'right')}</span>
               <span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1"></span>
             </div>
             {paginated.map((ret, i) => (

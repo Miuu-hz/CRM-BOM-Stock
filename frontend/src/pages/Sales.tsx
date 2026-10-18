@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import { useModalClose } from '../hooks/useModalClose'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
-import { FilterBar, FilterSearch, FilterChips, StatusChips } from '../components/common/FilterBar'
+import { FilterBar, FilterSearch, FilterChips, StatusChips, SortLabel, sortRows, type SortState } from '../components/common/FilterBar'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
@@ -247,6 +247,13 @@ const STATUS_CONFIG: Record<string, { labelKey: string; bg: string; text: string
 }
 
 const STATUS_ORDER = Object.keys(STATUS_CONFIG)
+// สถานะหลักของแต่ละแท็บ — ชิปโชว์เสมอแม้ยังไม่มีเอกสาร
+const TAB_STATUSES: Record<string, string[]> = {
+  quotations: ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'CANCELLED'],
+  orders: ['DRAFT', 'CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED', 'CANCELLED'],
+  'delivery-orders': ['DRAFT', 'READY', 'SHIPPED', 'DELIVERED', 'CANCELLED'],
+  invoices: ['ISSUED', 'PARTIAL', 'PAID', 'OVERDUE', 'CANCELLED'],
+}
 
 /** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — เทียบวันหมดอายุ/วันส่งแบบรายวัน ไม่ใช่รายมิลลิวินาที */
 const todayStr = () => new Date().toLocaleDateString('sv-SE')
@@ -683,10 +690,13 @@ const Sales = () => {
     }
     return result
   }
+  const [sort, setSort] = useState<SortState>(null)
   const filterItems = <T extends Record<string, any>>(items: T[], keys: (keyof T)[], dateKey?: keyof T) =>
-    searchItems(items, keys, dateKey).filter(it => !filterStatus || it.status === filterStatus)
-  // สถานะของแต่ละแท็บคนละชุด — เปลี่ยนแท็บแล้วล้าง ไม่งั้นแท็บใหม่ว่างเปล่าเพราะสถานะค้าง
-  useEffect(() => { setFilterStatus('') }, [activeTab])
+    sortRows(searchItems(items, keys, dateKey).filter(it => !filterStatus || it.status === filterStatus), sort)
+  // สถานะ/การเรียงของแต่ละแท็บคนละชุด — เปลี่ยนแท็บแล้วล้าง ไม่งั้นแท็บใหม่ว่างเปล่าเพราะสถานะค้าง
+  useEffect(() => { setFilterStatus(''); setSort(null) }, [activeTab])
+  const sortLabel = (label: string, key: string, align?: 'right') =>
+    <SortLabel label={label} sortKey={key} sort={sort} align={align} onSort={s => { setSort(s); setCurrentPage(1) }} />
 
   const paginate = <T,>(items: T[]) => {
     const page = Math.min(currentPage, Math.max(1, Math.ceil(items.length / pageSize)))
@@ -873,7 +883,7 @@ const Sales = () => {
       <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder={placeholder} />
       {rows && (
         <FilterChips>
-          <StatusChips rows={rows} value={filterStatus} onChange={setFilterStatus} order={STATUS_ORDER}
+          <StatusChips rows={rows} value={filterStatus} onChange={setFilterStatus} order={STATUS_ORDER} always={TAB_STATUSES[activeTab]}
             allLabel={t('sales.common.all')} labelOf={st => t((STATUS_CONFIG[st]?.labelKey ?? st) as any)} />
         </FilterChips>
       )}
@@ -944,12 +954,12 @@ const Sales = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{t('sales.common.date')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.expiryDate')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.total')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'quotation_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel(t('sales.common.date'), 'quotation_date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.expiryDate'), 'expiry_date')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.total'), 'total_amount', 'right')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1114,13 +1124,13 @@ const Sales = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{t('sales.common.orderDate')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.deliveryDate')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.deliveryStatus')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium hidden lg:table-cell">{t('sales.common.payment')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.total')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'so_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel(t('sales.common.orderDate'), 'order_date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.deliveryDate'), 'delivery_date')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.deliveryStatus'), 'status')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium hidden lg:table-cell">{sortLabel(t('sales.common.payment'), 'payment_status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.total'), 'total_amount', 'right')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1351,14 +1361,14 @@ const Sales = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.date')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.dueDate')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.total')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.balance')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'invoice_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('SO', 'so_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.date'), 'invoice_date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.dueDate'), 'due_date')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.total'), 'total_amount', 'right')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.balance'), 'balance_amount', 'right')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1504,13 +1514,13 @@ const Sales = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">INV</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.date')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'cn_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('INV', 'invoice_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.date'), 'credit_date')}</th>
                   <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.reason')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{t('sales.common.amount')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
+                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.amount'), 'total_amount', 'right')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1611,11 +1621,11 @@ const Sales = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.originalDO')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'bo_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('SO', 'so_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.originalDO'), 'original_do')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>
@@ -1704,11 +1714,11 @@ const Sales = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{t('sales.common.customer')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">SO</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.deliveryDate')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{t('sales.common.status')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'do_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('SO', 'so_number')}</th>
+                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.deliveryDate'), 'delivery_date')}</th>
+                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
                   <th className="text-right px-4 py-2.5 font-medium">Action</th>
                 </tr>
               </thead>

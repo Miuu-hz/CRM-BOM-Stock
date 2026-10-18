@@ -35,7 +35,7 @@ import ProductionCalculator from '../components/bom/ProductionCalculator'
 import CostSimulation from '../components/bom/CostSimulation'
 import { unitLabel } from '../hooks/useUnits'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
-import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips } from '../components/common/FilterBar'
+import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips, SortLabel, sortRows, type SortState } from '../components/common/FilterBar'
 
 // Types for Nested BOM
 interface BOMItem {
@@ -205,6 +205,7 @@ function BOMPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('card')
   const [bomFilter, setBomFilter] = useState<BOMFilterType>('all')
   const [statusFilter, setStatusFilter] = useState('')
+  const [sort, setSort] = useState<SortState>(null)
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -269,7 +270,8 @@ function BOMPage() {
   const matchesType = (bom: BOM, f: BOMFilterType) =>
     f === 'finished' ? !!(bom.isTopLevel || bom.level === 0) : f === 'semi-finished' ? !!bom.isSemiFinished : true
   const typeBOMs = searchedBOMs.filter(bom => matchesType(bom, bomFilter))
-  const filteredBOMs = typeBOMs.filter(bom => !statusFilter || bom.status === statusFilter)
+  const filteredBOMs = sortRows(typeBOMs.filter(bom => !statusFilter || bom.status === statusFilter), sort)
+  const sortLabel = (label: string, key: string) => <SortLabel label={label} sortKey={key} sort={sort} onSort={setSort} />
 
 
   // Handle create BOM
@@ -534,7 +536,7 @@ function BOMPage() {
                 ))}
                 <ChipDivider />
                 <StatusChips rows={typeBOMs} value={statusFilter} onChange={setStatusFilter}
-                  order={['ACTIVE', 'DRAFT', 'ARCHIVED']} allLabel={t('bom.filter.all')} labelOf={st => bomStatusLabel[st] || st} />
+                  always={['ACTIVE', 'DRAFT', 'ARCHIVED']} allLabel={t('bom.filter.all')} labelOf={st => bomStatusLabel[st] || st} />
               </FilterChips>
               {bomFilter !== 'tree-view' && (
                 <div className="flex items-center gap-0.5 h-9 ml-auto bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1">
@@ -672,13 +674,13 @@ function BOMPage() {
                   <thead>
                     <tr>
                       <th className="w-8"></th>
-                      <th>{t('bom.list.product')}</th>
-                      <th>{t('bom.list.level')}</th>
+                      <th>{sortLabel(t('bom.list.product'), 'productName')}</th>
+                      <th>{sortLabel(t('bom.list.level'), 'level')}</th>
                       <th>{t('bom.list.type')}</th>
-                      <th>{t('bom.list.version')}</th>
-                      <th>{t('bom.list.items')}</th>
-                      <th>{t('bom.list.status')}</th>
-                      <th>{t('bom.list.totalCost')}</th>
+                      <th>{sortLabel(t('bom.list.version'), 'version')}</th>
+                      <th>{sortLabel(t('bom.list.items'), 'itemCount')}</th>
+                      <th>{sortLabel(t('bom.list.status'), 'status')}</th>
+                      <th>{sortLabel(t('bom.list.totalCost'), 'totalCost')}</th>
                       <th className="text-right">{t('bom.list.actions')}</th>
                     </tr>
                   </thead>

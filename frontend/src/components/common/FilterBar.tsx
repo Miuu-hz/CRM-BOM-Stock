@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react'
 
 // แถบกรองแถวเดียวแบบหน้าคลังสินค้า — ช่องค้นหา + ชิปพร้อมจำนวน + ปุ่มด้านขวา
 // ใช้ร่วมกันใน Stock / Sales / Purchase / BOM หน้าตาจะได้เหมือนกันทุกหน้า
@@ -89,14 +89,16 @@ export const statusTone = (s: string): ChipTone => (DANGER.has(s) ? 'danger' : W
 /**
  * ชิป "ทั้งหมด" + ชิปต่อสถานะที่มีอยู่จริงในรายการ พร้อมจำนวน
  * rows = รายการที่ผ่านคำค้น/ตัวกรองอื่นแล้ว แต่ยังไม่กรองสถานะ — ตัวเลขบนชิปจะได้ตรงกับที่กดแล้วเห็น
- * สถานะที่นับได้ 0 ถูกซ่อน (ยกเว้นตัวที่เลือกค้างอยู่) เรียงตาม order ที่ส่งมา ที่เหลือต่อท้าย
+ * always = สถานะหลักของเอกสารชนิดนั้น โชว์เสมอแม้นับได้ 0 (ร้านข้อมูลน้อยจะได้ไม่เห็นแถบโล่ง)
+ * สถานะอื่นที่นับได้ 0 ถูกซ่อน · เรียงตาม order ที่ส่งมา ที่เหลือต่อท้าย
  */
-export function StatusChips({ rows, value, onChange, labelOf, order = [], allLabel = 'ทั้งหมด', field = 'status' }: {
+export function StatusChips({ rows, value, onChange, labelOf, order = [], always = [], allLabel = 'ทั้งหมด', field = 'status' }: {
   rows: Record<string, any>[]
   value: string
   onChange: (status: string) => void
   labelOf: (status: string) => string
   order?: string[]
+  always?: string[]
   allLabel?: string
   field?: string
 }) {
@@ -105,10 +107,10 @@ export function StatusChips({ rows, value, onChange, labelOf, order = [], allLab
     const s = r[field]
     if (s) counts.set(s, (counts.get(s) || 0) + 1)
   }
-  if (value && !counts.has(value)) counts.set(value, 0)
-  const rank = (s: string) => { const i = order.indexOf(s); return i < 0 ? order.length : i }
+  for (const s of [...always, value]) if (s && !counts.has(s)) counts.set(s, 0)
+  const sortKey = always.length ? always : order
+  const rank = (s: string) => { const i = sortKey.indexOf(s); return i < 0 ? sortKey.length : i }
   const statuses = [...counts.keys()].sort((a, b) => rank(a) - rank(b))
-  if (statuses.length === 0) return null
   return (
     <>
       <FilterChip label={allLabel} count={rows.length} active={!value} onClick={() => onChange('')} />
@@ -117,5 +119,39 @@ export function StatusChips({ rows, value, onChange, labelOf, order = [], allLab
           active={value === s} onClick={() => onChange(value === s ? '' : s)} />
       ))}
     </>
+  )
+}
+
+// ── เรียงขึ้น/ลงจากหัวตาราง (แบบหน้าคลังสินค้า) — กดซ้ำ: ขึ้น → ลง → เลิกเรียง ──
+export type SortState = { key: string; dir: 'asc' | 'desc' } | null
+
+export const nextSort = (cur: SortState, key: string): SortState =>
+  cur?.key !== key ? { key, dir: 'asc' } : cur.dir === 'asc' ? { key, dir: 'desc' } : null
+
+export function sortRows<T>(rows: T[], s: SortState): T[] {
+  if (!s) return rows
+  const sign = s.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a: any, b: any) => {
+    const x = a?.[s.key], y = b?.[s.key]
+    if (x == null || x === '') return 1   // ค่าว่างไปท้ายเสมอ ไม่ว่าเรียงทางไหน
+    if (y == null || y === '') return -1
+    if (typeof x === 'number' && typeof y === 'number') return (x - y) * sign
+    return String(x).localeCompare(String(y), 'th', { numeric: true }) * sign
+  })
+}
+
+export function SortLabel({ label, sortKey, sort, onSort, align = 'left' }: {
+  label: string; sortKey: string; sort: SortState; onSort: (s: SortState) => void; align?: 'left' | 'right'
+}) {
+  const active = sort?.key === sortKey
+  return (
+    <button type="button" onClick={() => onSort(nextSort(sort, sortKey))}
+      aria-label={`เรียงตาม${label}`}
+      className={`inline-flex items-center gap-1 select-none hover:text-[var(--primary)] transition-colors ${align === 'right' ? 'justify-end w-full' : ''} ${active ? 'text-[var(--primary)]' : ''}`}>
+      {label}
+      {active
+        ? (sort!.dir === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)
+        : <ChevronsUpDown className="w-3.5 h-3.5 text-[var(--fg-4)]" />}
+    </button>
   )
 }
