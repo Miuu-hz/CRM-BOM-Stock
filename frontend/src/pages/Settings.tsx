@@ -53,6 +53,7 @@ import ApprovalSettings from './settings/ApprovalSettings'
 import DocumentNumberSettings from './settings/DocumentNumberSettings'
 import DocumentSettings from './settings/DocumentSettings'
 import MCPSettings from './settings/MCPSettings'
+import QrMarketingSettings from './settings/QrMarketingSettings'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import companySettingsService, { getCachedCompanySettings } from '../services/companySettings.service'
@@ -72,8 +73,8 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  type SettingsTab = 'general' | 'subscription' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp'
-  const VALID_TABS: SettingsTab[] = ['general', 'subscription', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp']
+  type SettingsTab = 'general' | 'subscription' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp' | 'qr-marketing'
+  const VALID_TABS: SettingsTab[] = ['general', 'subscription', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp', 'qr-marketing']
   // รองรับลิงก์ตรงมาแท็บที่ต้องการ เช่น /settings?tab=units (จาก UnitPicker เมื่อเจอหน่วยที่แปลงไม่ถึง)
   const [searchParams] = useSearchParams()
   const tabFromUrl = searchParams.get('tab') as SettingsTab | null
@@ -111,7 +112,7 @@ export default function SettingsPage() {
   // รายการนี้ต้องตรงกับ show: ของแต่ละแท็บในกลุ่มด้านล่าง
   useEffect(() => {
     const alwaysVisible: SettingsTab[] = ['general', 'units', 'security', 'mcp']
-    const adminOrMasterOnly: SettingsTab[] = ['subscription', 'material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'billing', 'loyalty', 'line', 'bank-accounts']
+    const adminOrMasterOnly: SettingsTab[] = ['subscription', 'material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'billing', 'loyalty', 'qr-marketing', 'line', 'bank-accounts']
     const masterOnly: SettingsTab[] = ['backup']
     const visible = alwaysVisible.includes(activeTab)
       || (adminOrMasterOnly.includes(activeTab) && (isAdmin || isMaster))
@@ -166,6 +167,7 @@ export default function SettingsPage() {
               { id: 'pos' as const, icon: Store, label: t('settings.settingsPage.tabs.pos'), show: isAdmin || isMaster },
               { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster },
               { id: 'loyalty' as const, icon: Star, label: t('settings.settingsPage.tabs.loyalty'), show: isAdmin || isMaster },
+              { id: 'qr-marketing' as const, icon: Gift, label: 'QR โปร / แลกแต้ม / โฆษณา', show: isAdmin || isMaster },
               { id: 'line' as const, icon: MessageSquare, label: t('settings.settingsPage.tabs.line'), show: isAdmin || isMaster, beta: true },
               { id: 'bank-accounts' as const, icon: Landmark, label: t('settings.settingsPage.tabs.bankAccounts'), show: isAdmin || isMaster },
             ],
@@ -249,6 +251,8 @@ export default function SettingsPage() {
         {activeTab === 'billing' && (isAdmin || isMaster) && <BillingSettings />}
 
         {activeTab === 'loyalty' && (isAdmin || isMaster) && <LoyaltySettings />}
+
+        {activeTab === 'qr-marketing' && (isAdmin || isMaster) && <QrMarketingSettings />}
 
         {activeTab === 'units' && <UnitConversions />}
 

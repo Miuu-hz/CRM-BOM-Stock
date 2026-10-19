@@ -10,5 +10,5 @@ export const PACK_FEATURES: Record<string, string[]> = {
 }
 
 // add-on ที่เป็นโมดูล (จำนวน > 0 = เปิด) — extra_users เป็นจำนวนที่นั่ง บวกเข้า maxUsers
-export const ADDON_FEATURES = ['smart_unit', 'multi_currency', 'subcontract', 'api_access', 'backup'] as const
+export const ADDON_FEATURES = ['smart_unit', 'multi_currency', 'subcontract', 'api_access', 'backup', 'qr_ad'] as const
 export const EXTRA_USERS = 'extra_users'

@@ -21,7 +21,7 @@
 | **POS/Cashier** | ✅ | Open Bill System, Stock Integration, Accounting Link |
 | **POS Shift System** | ✅ | เปิด/ปิดกะ, กรอกเงินเปิดกะ, นับเงินปิดกะแบบ blind count, ผลต่าง, แท็บสรุปวันนี้ (เงินในลิ้นชัก/สด/โอน), ปิดกะแล้วส่งสรุปเข้า LINE ส่วนตัวของ Admin |
 | **POS Clearing Transfer** | ✅ | นำเงินเข้าบัญชีประจำวัน, เลือกวันที่, Cash Over/Short (5901) |
-| **QR สั่งที่โต๊ะ + สมาชิกเบอร์โทร** | 🚧 | ผังโต๊ะ, QR ถาวร/เปลี่ยนทุกรอบ, ลูกค้าสั่งเข้า KDS เอง, สมัครสมาชิกด้วยเบอร์ (แคชเชียร์ยืนยันแทน OTP) — เสร็จเฟส 0–2 ยังไม่ deploy (ดู Session Log 19–20 ต.ค.)
+| **QR สั่งที่โต๊ะ + สมาชิกเบอร์โทร** | 🚧 | ผังโต๊ะ, QR ถาวร/เปลี่ยนทุกรอบ, ลูกค้าสั่งเข้า KDS เอง, สมัครสมาชิกด้วยเบอร์ (แคชเชียร์ยืนยันแทน OTP) — เฟส 0–4 ครบ: + โปร/แลกแต้มเป็นของแถมบนมือถือ, Pop-up โฆษณา add-on ฿19 (ดู Session Log 19–20 ต.ค.)
 | **Bill Void** | ✅ | ยกเลิกบิล (PAID→VOID) + Reversal Journal Entry อัตโนมัติ |
 | **Accounting** | ✅ | Chart of Accounts, Journal Entries (T-account UX), VAT |
 | **Tax Management** | ✅ | VAT ทิศทาง WHT ครบ, ภ.ง.ด.3/53, ภาษีซื้อต้องห้าม, ภาษีขายครบช่องทาง, CIT ขั้นบันได SME, alerts กำหนดยื่น |
@@ -1532,7 +1532,17 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 ### ก่อน deploy
 - `/opt/crm` มีงานค้างของ session อื่น (`kds.routes.ts`, `migrations.ts`, `KDS.tsx` …) ชนไฟล์เดียวกัน — merge ให้เรียบร้อยก่อน · deploy backend = build + `pm2 restart crm-backend` · frontend build ขึ้นทันที (`public/qr` ติดไปกับ dist)
 
-## 📅 แผน — เฟส 3–4 ของ QR สั่งที่โต๊ะ (ยังไม่สร้าง)
+## 📅 เฟส 3–4 ของ QR สั่งที่โต๊ะ — ✅ สร้างแล้ว 20 ต.ค. 2026
+
+**ทำจริง (ต่างจากแผนด้านล่างตรงไหนบอกไว้):**
+- ตาราง `pos_promotions`, `pos_rewards`, `pos_redemptions`, `pos_ad_slots`, `pos_ad_events` (ใน `db/posQrMigrations.ts`) · service `services/qrRewards.service.ts` · API ร้าน `routes/qr-marketing.routes.ts` (`/api/pos/qr-marketing/*`) · หน้าตั้งค่า **Settings → QR โปร / แลกแต้ม / โฆษณา** (`pages/settings/QrMarketingSettings.tsx`)
+- รางวัลแลกแต้มทำแบบ **ของแถมเท่านั้น** (เข้าบิลราคา 0 ตัดสต็อกตามสูตร) — ส่วนลดเป็นบาทใช้ "แลกแต้ม" ที่เคาน์เตอร์ที่มีอยู่แล้ว · แลกได้เฉพาะเครื่องที่แคชเชียร์ยืนยันแล้วและเป็นสมาชิกของบิลนั้น
+- จองแต้มตอนส่งออเดอร์ → ตัดจริงใน transaction รับชำระ (`useBillRewards`) · แคชเชียร์ลบรายการของแถม = RETURNED ไม่ตัด · ถอด/เปลี่ยนสมาชิกที่บิลแล้วจ่าย = 409 `REWARD_MEMBER_MISMATCH` จนกว่าจะแก้ · แต้มที่ใช้ได้บนมือถือ = แต้มคงเหลือ − ที่จองกับบิลที่ยังเปิด
+- Pop-up: add-on `qr_ad` ฿19/ด. ใน `subscription.features.ts` + `billing.catalog.ts` (ต้องมี Pack Shop) — **ต้องรัน `node dist/scripts/stripeSetup.js` เพื่อสร้าง price ใน Stripe** · รูป JPG/PNG/WebP ≤ 5MB เก็บ `uploads/qr-ads/` (ยังไม่ย่อเป็น WebP — ไม่มี sharp) · ขึ้นหลัง pop-up สมาชิก 0.8 วิ ครั้งเดียวต่อรอบโต๊ะต่อเครื่อง · สถิติ 30 วันในหน้าตั้งค่า
+- ยังไม่ทำ: ปุ่ม MASTER ระงับรูป (มีคอลัมน์ `suspended_at` แล้ว) · ช่วงเวลาโปรรายวัน (มีแค่ช่วงวันที่)
+- เทสต์ `routes/qrRewards.test.ts`
+
+### แผนเดิม (อ้างอิง)
 
 ### เฟส 3 — แท็บ "โปรและแลกแต้ม" บนมือถือลูกค้า
 | งาน | รายละเอียด |

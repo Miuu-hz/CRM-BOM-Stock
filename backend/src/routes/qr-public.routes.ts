@@ -10,6 +10,7 @@ import {
   DEVICE_COOKIE, DEVICE_DAYS, bindDevice, findOrCreateMember, forgetDevice, getDevice, isKnownToken, memberView, mintDeviceToken,
 } from '../services/posMember.service'
 import { maskPhone, normalizeThaiMobile } from '../utils/phone'
+import { RewardError, activeAd, activePromotions, activeRewards, reservedPoints, reserveRewards } from '../services/qrRewards.service'
 import { recalculateBillTotals } from './pos-bill.routes'
 
 // ====================================================================
@@ -116,6 +117,12 @@ router.get('/session', (req, res) => {
       data.billMember = r.bill.customer_id
         ? (device && device.customer_id === r.bill.customer_id ? { mine: true, phone: maskPhone(r.bill.customer_phone) } : { mine: false })
         : null
+      // เฟส 3: แท็บโปรและแลกแต้ม · แต้มที่ใช้ได้ = แต้มคงเหลือ − ที่จองไว้กับบิลที่ยังไม่จ่าย
+      data.promotions = activePromotions(r.tenantId, !!device?.verified_at)
+      data.rewards = loyalty.enabled ? activeRewards(r.tenantId) : []
+      if (device?.verified_at && data.member) (data.member as any).available = Math.max(0, Math.floor(device.loyalty_points || 0) - reservedPoints(r.tenantId, device.customer_id))
+      // เฟส 4: Pop-up โฆษณา (add-on qr_ad)
+      data.ad = activeAd(r.tenantId)
     } else if (r.state === 'closed') {
       data.bill = { number: r.bill.bill_number, total: r.bill.total_amount || 0, paid: r.bill.status === 'PAID' }
     }
@@ -140,14 +147,15 @@ router.post('/order', orderLimiter, (req, res) => {
       qty: Number(l?.qty),
       note: typeof l?.note === 'string' ? l.note.trim().slice(0, MAX_NOTE) : '',
     }))
-    if (!lines.length || lines.length > MAX_LINES
+    const rewardIds = Array.isArray(req.body?.rewards) ? (req.body.rewards as unknown[]).map(x => String(x ?? '')).filter(Boolean).slice(0, 10) : []
+    if ((!lines.length && !rewardIds.length) || lines.length > MAX_LINES
       || lines.some((l: any) => !l.menuId || !Number.isInteger(l.qty) || l.qty < 1 || l.qty > MAX_QTY)) {
       return res.status(400).json({ success: false, message: `ตะกร้าไม่ถูกต้อง (สูงสุด ${MAX_LINES} รายการ รายการละ 1–${MAX_QTY} ที่)` })
     }
 
     // ราคา/ชื่อ/ของหมด อ่านจากเมนูของร้านเสมอ ไม่เชื่อค่าจากมือถือ
     const menuIds = [...new Set(lines.map((l: any) => l.menuId))] as string[]
-    const menus = db.prepare(`
+    const menus = !menuIds.length ? [] : db.prepare(`
       SELECT pmc.id, pmc.pos_price, pmc.is_available, COALESCE(si.name, si.sku, 'เมนู') AS name
       FROM pos_menu_configs pmc LEFT JOIN stock_items si ON si.id = pmc.product_id
       WHERE pmc.tenant_id = ? AND pmc.is_pos_enabled = 1 AND pmc.id IN (${menuIds.map(() => '?').join(',')})
@@ -166,6 +174,15 @@ router.post('/order', orderLimiter, (req, res) => {
         special_instructions, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'QR')
     `)
+    // แลกแต้ม: เฉพาะเครื่องที่แคชเชียร์ยืนยันแล้ว และเป็นสมาชิกที่ผูกกับบิลนี้
+    let rewardMember: string | null = null
+    if (rewardIds.length) {
+      const device = getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])
+      if (!device?.verified_at) return res.status(403).json({ success: false, code: 'MEMBER_NOT_VERIFIED', message: 'แลกแต้มได้หลังแคชเชียร์ยืนยันสมาชิก 1 ครั้ง' })
+      if (bill.customer_id !== device.customer_id) return res.status(409).json({ success: false, code: 'NOT_BILL_MEMBER', message: 'บิลนี้สะสมแต้มให้สมาชิกคนอื่นอยู่ แลกแต้มในบิลนี้ไม่ได้' })
+      rewardMember = device.customer_id
+    }
+
     const ticket = db.transaction(() => {
       const ids = lines.map((l: any) => {
         const m = byId.get(l.menuId)
@@ -173,12 +190,14 @@ router.post('/order', orderLimiter, (req, res) => {
         insert.run(id, r.tenantId, bill.id, m.id, m.name, l.qty, m.pos_price, m.pos_price * l.qty, l.note || null)
         return id
       })
+      if (rewardMember) ids.push(...reserveRewards(r.tenantId, bill.id, rewardMember, rewardIds))
       recalculateBillTotals(bill.id)
       return createKdsTicket(r.tenantId, bill, ids)
     })()
 
-    res.json({ success: true, data: { round: ticket?.round ?? null, items: lines.length } })
+    res.json({ success: true, data: { round: ticket?.round ?? null, items: lines.length, rewards: rewardIds.length } })
   } catch (error) {
+    if (error instanceof RewardError) return res.status(409).json({ success: false, code: 'REWARD_INVALID', message: error.message })
     console.error('QR order error:', error)
     res.status(500).json({ success: false, message: 'ส่งออเดอร์ไม่สำเร็จ ลองกดส่งอีกครั้ง' })
   }
@@ -196,6 +215,21 @@ router.post('/call-bill', orderLimiter, (req, res) => {
   } catch (error) {
     console.error('QR call-bill error:', error)
     res.status(500).json({ success: false, message: 'เรียกเช็คบิลไม่สำเร็จ ลองอีกครั้ง หรือเรียกพนักงาน' })
+  }
+})
+
+// POST /qr/api/ad-event { t, type: shown|tap|close } — สถิติ Pop-up โฆษณา (ร้านดูในหน้าตั้งค่า)
+router.post('/ad-event', orderLimiter, (req, res) => {
+  try {
+    const r = resolveOr404(req, res)
+    if (!r) return
+    const type = String(req.body?.type ?? '')
+    if (!['shown', 'tap', 'close'].includes(type) || !activeAd(r.tenantId)) return res.status(400).json({ success: false })
+    db.prepare('INSERT INTO pos_ad_events (id, tenant_id, type, created_at) VALUES (?, ?, ?, ?)').run(generateId(), r.tenantId, type, new Date().toISOString())
+    res.json({ success: true })
+  } catch (error) {
+    console.error('QR ad-event error:', error)
+    res.status(500).json({ success: false })
   }
 })
 

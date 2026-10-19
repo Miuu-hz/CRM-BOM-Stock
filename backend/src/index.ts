@@ -145,6 +145,7 @@ import posClearingRoutes from './routes/pos-clearing.routes'
 
 import kdsRoutes from './routes/kds.routes'
 import posTablesRoutes from './routes/pos-tables.routes'
+import qrMarketingRoutes from './routes/qr-marketing.routes'
 import qrPublicRoutes from './routes/qr-public.routes'
 
 
@@ -486,6 +487,7 @@ app.use('/api/pos', authenticate, subscriptionGate('pos'))
 app.use('/api/pos/kds', authenticate, subscriptionGate('kds'))
 // QR สั่งที่โต๊ะอยู่ใน Pack Shop คู่กับ KDS (ดู routes/qr-public.routes.ts)
 app.use('/api/pos/tables', authenticate, subscriptionGate('kds'))
+app.use('/api/pos/qr-marketing', authenticate, subscriptionGate('kds'))
 app.use('/api/bom', authenticate, subscriptionGate('bom'))
 app.use('/api/calculator', authenticate, subscriptionGate('bom'))
 app.use('/api/work-orders', authenticate, subscriptionGate('work_orders'))
@@ -608,6 +610,7 @@ app.use('/api/pos', posMenuRoutes)
 
 app.use('/api/pos', posBillRoutes)
 app.use('/api/pos', posTablesRoutes)
+app.use('/api/pos/qr-marketing', qrMarketingRoutes)
 
 
 app.use('/api/pos', posClearingRoutes)

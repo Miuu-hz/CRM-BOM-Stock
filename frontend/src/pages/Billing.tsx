@@ -51,6 +51,7 @@ const ADDON_LABEL: Record<string, string> = {
   multi_currency: 'Multi-Currency หลายสกุลเงิน',
   subcontract: 'Subcontract จ้างผลิตภายนอก',
   api_access: 'API & Webhook',
+  qr_ad: 'Pop-up โฆษณาบนหน้า QR สั่งที่โต๊ะ',
 }
 const baht = (n: number) => `฿${n.toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
 // รายปีคิด yearlyMonths เดือน (10) — โชว์เป็น "ราคา 1 ปีที่ลดแล้ว" เทียบกับจ่ายรายเดือน 12 เดือน

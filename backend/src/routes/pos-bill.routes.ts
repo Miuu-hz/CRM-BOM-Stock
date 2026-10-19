@@ -7,6 +7,7 @@ import { cancelPosBill } from '../services/posBillCancel.service'
 import { getLoyaltySettings } from '../services/loyaltySettings'
 import { mintQrToken } from '../services/posQr.service'
 import { verifyBillMember } from '../services/posMember.service'
+import { billRewardConflict, useBillRewards } from '../services/qrRewards.service'
 import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass } from '../services/approvalGate.service'
 
 // ลด/ลบรายการที่ส่งครัวแล้ว = ของอาจเสิร์ฟไปแล้วแต่ไม่อยู่ในบิล → ต้องมีเหตุผล + ลงบันทึกความเคลื่อนไหว
@@ -692,6 +693,8 @@ router.post('/bills/:id/pay', async (req, res) => {
       if (redeemError) return res.status(400).json({ success: false, code: 'REDEEM_INVALID', message: redeemError })
       redeemBaht = Math.floor(redeemPts / loyalty.redeemRate)
     }
+    const rewardConflict = billRewardConflict(tenantId, id, (bill as any).customer_id || null)
+    if (rewardConflict) return res.status(409).json({ success: false, code: 'REWARD_MEMBER_MISMATCH', message: rewardConflict })
 
     // ส่วนลด/ค่าขนส่งที่แคชเชียร์ใส่หน้าจอต้องลงบิลก่อนคำนวณ ไม่งั้นลูกค้าจ่ายยอดหนึ่ง
     // แต่บัญชี/VAT/ใบกำกับบันทึกอีกยอดหนึ่ง (เดิมสองค่านี้ไม่เคยถูกส่งมาที่ backend เลย)
@@ -781,7 +784,8 @@ router.post('/bills/:id/pay', async (req, res) => {
           pointsEarned = loyalty.enabled ? Math.floor(totalAmount / loyalty.earnRate) : 0
 
           const balanceBefore = customer.loyalty_points || 0
-          pointsRedeemed = redeemPts
+          // แต้มที่จองไว้กับของแถม (แลกผ่าน QR) ตัดจริงพร้อมแต้มที่แลกที่เคาน์เตอร์
+          pointsRedeemed = redeemPts + useBillRewards(tenantId, id)
 
           if (pointsRedeemed > balanceBefore) {
             throw new Error('คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก')

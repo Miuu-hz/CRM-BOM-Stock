@@ -79,7 +79,7 @@ describe('สมาชิกด้วยเบอร์โทรผ่าน QR 
 
     expect((await request(app).post(`/api/pos/bills/${s.billId}/verify-member`).set(auth(s.token))).status).toBe(200)
     const verified = (await phone.get('/qr/api/session').query({ t: s.qr })).body.data.member
-    expect(verified).toEqual({ status: 'verified', phone: '081-xxx-5678', name: 'มิ้นท์', points: 500, marketing: true })
+    expect(verified).toEqual({ status: 'verified', phone: '081-xxx-5678', name: 'มิ้นท์', points: 500, marketing: true, available: 500 })
 
     const pay = await request(app).post(`/api/pos/bills/${s.billId}/pay`).set(auth(s.token)).send({ payment_method: 'CASH', redeem_points: 100 })
     expect(pay.status, JSON.stringify(pay.body)).toBe(200)

@@ -52,6 +52,70 @@ export function runPosQrMigrations(db: any): void {
     )`,
     // บิลนี้ผูกสมาชิกมาจากมือถือเครื่องไหน (รอแคชเชียร์ยืนยัน) · ผูกที่เคาน์เตอร์เอง = NULL
     'ALTER TABLE pos_running_bills ADD COLUMN member_device_id TEXT',
+
+    // ==================== เฟส 3: โปรโมชัน + แลกแต้มเป็นของแถมบนหน้า QR ====================
+    // โปร = ป้ายบนแท็บ "โปรและแลกแต้ม" + ปุ่มสั่งเมนูที่ผูกไว้ (ราคา/ส่วนลดจริงยังคิดที่ POS ตามปกติ)
+    `CREATE TABLE IF NOT EXISTS pos_promotions (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      pos_menu_id TEXT,
+      starts_on TEXT,
+      ends_on TEXT,
+      members_only INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`,
+    // รางวัลแลกแต้ม = เมนูของแถม (เข้าบิลราคา 0 ตัดสต็อกตามปกติ)
+    `CREATE TABLE IF NOT EXISTS pos_rewards (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      points_cost INTEGER NOT NULL CHECK (points_cost > 0),
+      pos_menu_id TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`,
+    // จองแต้มตอนส่งออเดอร์ (RESERVED) → ตัดจริงตอนรับชำระ (USED) · รายการของแถมถูกลบ/บิลยกเลิก = ไม่ตัด (RETURNED)
+    `CREATE TABLE IF NOT EXISTS pos_redemptions (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      bill_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      reward_id TEXT NOT NULL,
+      bill_item_id TEXT NOT NULL,
+      points INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'RESERVED' CHECK (status IN ('RESERVED', 'USED', 'RETURNED')),
+      created_at TEXT NOT NULL
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_pos_redemptions_bill ON pos_redemptions(bill_id)',
+    'CREATE INDEX IF NOT EXISTS idx_pos_redemptions_customer ON pos_redemptions(tenant_id, customer_id, status)',
+
+    // ==================== เฟส 4: Pop-up โฆษณา (add-on qr_ad ฿19/ด.) ====================
+    // 1 ร้าน 1 ช่อง 1 รูป (PRIMARY KEY tenant_id) · อัปโหลดใหม่ = แทนที่รูปเดิม
+    `CREATE TABLE IF NOT EXISTS pos_ad_slots (
+      tenant_id TEXT PRIMARY KEY,
+      image_url TEXT,
+      link_type TEXT DEFAULT 'none' CHECK (link_type IN ('none', 'promo', 'menu')),
+      link_menu_id TEXT,
+      starts_on TEXT,
+      ends_on TEXT,
+      daily_start TEXT,
+      daily_end TEXT,
+      is_enabled INTEGER DEFAULT 1,
+      suspended_at TEXT,
+      updated_at TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS pos_ad_events (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('shown', 'tap', 'close')),
+      created_at TEXT NOT NULL
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_pos_ad_events ON pos_ad_events(tenant_id, created_at)',
   ].forEach(sql => {
     try { db.exec(sql) } catch (e: any) {
       // ADD COLUMN ซ้ำ = รันไปแล้ว · error อื่นต้องเห็น ไม่งั้นตารางหายเงียบ ๆ

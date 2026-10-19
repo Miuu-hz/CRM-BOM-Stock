@@ -150,12 +150,24 @@ button{cursor:pointer}
 .plus{color:var(--success-strong);font-weight:700}
 .minus{color:var(--danger-strong);font-weight:700}
 @keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+/* ---------- Pop-up โฆษณา: รูป 82% ของจอ ปุ่มปิดวงกลม 30px ใต้รูป พื้นที่กด 44px ไม่มีนับถอยหลัง ---------- */
+.ad-layer{position:fixed;inset:0;z-index:60;background:var(--scrim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px 0;animation:fade .25s ease-out}
+.ad-frame{width:82%;max-width:460px;aspect-ratio:4/5;border-radius:16px;overflow:hidden;background:#111;box-shadow:0 20px 40px -16px rgba(0,0,0,.6);border:0;padding:0}
+.ad-frame img{width:100%;height:100%;object-fit:contain;display:block}
+.ad-x{width:44px;height:44px;border:0;background:none;display:grid;place-items:center;padding:0}
+.ad-x span{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.95);display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.ad-x svg{width:12px;height:12px;stroke:#111114;stroke-width:2.4}
+@keyframes fade{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
 <div id="app"><div class="state"><div class="spinner" role="status" aria-label="กำลังโหลด"></div></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="ad-layer" id="ad-layer" hidden role="dialog" aria-modal="true" aria-label="โปรโมชันจากร้าน">
+  <button class="ad-frame" id="ad-frame" data-act="ad-tap" aria-label="ดูโปรโมชันนี้"></button>
+  <button class="ad-x" data-act="ad-close" aria-label="ปิดโฆษณา"><span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 1l10 10M11 1L1 11" fill="none"/></svg></span></button>
+</div>
 <div class="sheet-layer" id="sheet" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" id="sheet-body"></div></div>
 <noscript><div class="state"><h1>เปิด JavaScript ก่อนนะครับ</h1><p>หน้าสั่งอาหารต้องใช้ JavaScript</p></div></noscript>
 <script src="/qr/app.js?v=1" defer></script>

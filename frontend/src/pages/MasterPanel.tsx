@@ -85,6 +85,7 @@ const ADDON_MODULES = [
   { code: 'subcontract', label: 'Subcontract' },
   { code: 'backup', label: 'Backup Google Drive' },
   { code: 'api_access', label: 'API / Webhook' },
+  { code: 'qr_ad', label: 'Pop-up โฆษณา QR' },
 ]
 const emptyDraft = (): PlanDraft => ({ planCode: 'free', billingCycle: 'monthly', packs: [], addons: {} })
 
@@ -129,6 +130,7 @@ function computeDraftTotal(draft: PlanDraft) {
     subcontract: 290,
     multi_currency: 390,
     api_access: 590,
+    qr_ad: 19,
   }
   let addonsCost = 0
   for (const [key, val] of Object.entries(draft.addons)) {

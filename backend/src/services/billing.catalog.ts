@@ -29,19 +29,19 @@ export const PLAN_PRICING: Record<string, PlanPricing> = {
   },
   business: {
     name: 'Business', monthly: 690, includedPacks: 2, canBuyPacks: true,
-    extraUser: { price: 150, maxExtra: 2 }, addons: { backup: 99, smart_unit: 290 },
+    extraUser: { price: 150, maxExtra: 2 }, addons: { backup: 99, smart_unit: 290, qr_ad: 19 },
   },
   business_plus: {
     name: 'Business+', monthly: 990, includedPacks: 3, canBuyPacks: true,
-    extraUser: { price: 150, maxExtra: 5 }, addons: { subcontract: 290 },
+    extraUser: { price: 150, maxExtra: 5 }, addons: { subcontract: 290, qr_ad: 19 },
   },
   pro: {
     name: 'Pro', monthly: 1950, includedPacks: 'all', canBuyPacks: false,
-    extraUser: { price: 120, maxExtra: 100 }, addons: { api_access: 590 },
+    extraUser: { price: 120, maxExtra: 100 }, addons: { api_access: 590, qr_ad: 19 },
   },
   enterprise_ai: {
     name: 'Enterprise AI', monthly: 3490, includedPacks: 'all', canBuyPacks: false,
-    extraUser: { price: 100, maxExtra: 100 }, addons: {},
+    extraUser: { price: 100, maxExtra: 100 }, addons: { qr_ad: 19 },
   },
 }
 
@@ -108,6 +108,11 @@ export function parseSelection(input: unknown): Selection {
   // จ้างผลิตภายนอกต้องมีระบบผลิต (Pack Maker) ก่อน — Pro มี Maker อยู่แล้ว
   if (addons.subcontract && pricing.includedPacks !== 'all' && !packs.includes('maker')) {
     throw new BillingError('Add-on Subcontract ต้องเลือก Pack Maker ด้วย')
+  }
+
+  // Pop-up โฆษณาบนหน้า QR สั่งที่โต๊ะ — ต้องมีระบบ QR (Pack Shop) ก่อน · Pro/Enterprise มีครบทุก Pack
+  if (addons.qr_ad && pricing.includedPacks !== 'all' && !packs.includes('shop')) {
+    throw new BillingError('Add-on Pop-up โฆษณา QR ต้องเลือก Pack Shop ด้วย')
   }
 
   return { plan, cycle, packs, addons }

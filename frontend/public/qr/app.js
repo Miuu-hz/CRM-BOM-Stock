@@ -26,13 +26,15 @@
     sending: false,
     memberAsked: !!store.get('memberAsked'),  // ถาม pop-up สมาชิกครั้งเดียวต่อรอบโต๊ะ
     attachTried: false,
+    gifts: store.get('gifts') || [],  // รางวัลแลกแต้มที่ใส่ตะกร้า (reward id ซ้ำได้)
     ledger: null,
   }
-  var saveCart = function () { store.set('cart', S.cart) }
+  var saveCart = function () { store.set('cart', S.cart); store.set('gifts', S.gifts) }
 
   var ICONS = {
     menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
     bill: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/><path d="M9 8h6M9 12h6"/></svg>',
+    promo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.4"/></svg>',
     me: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>',
   }
   var loyaltyOn = function () { return !!(S.data && S.data.loyalty && S.data.loyalty.enabled) }
@@ -78,12 +80,15 @@
   // เครื่องที่เคยผูกเบอร์ไว้ → ให้บิลโต๊ะนี้สะสมแต้มอัตโนมัติ · ยังไม่เคย → ชวนสมัครครั้งเดียวต่อรอบโต๊ะ
   function afterLoad() {
     var d = S.data
-    if (!d || d.state !== 'open' || !loyaltyOn()) return
+    if (!d || d.state !== 'open') return
+    if (!loyaltyOn()) { setTimeout(maybeAd, 800); return }
     if (d.member && !d.billMember && !S.attachTried) { S.attachTried = true; attachMember() }
     else if (!d.member && !d.billMember && !S.memberAsked && $('#sheet').hidden) {
       S.memberAsked = true; store.set('memberAsked', true)
       setTimeout(function () { openMemberSheet() }, 400)
+      return
     }
+    if ($('#sheet').hidden) setTimeout(maybeAd, 800)
   }
 
   function attachMember() {
@@ -109,7 +114,11 @@
 
   // ---------- helpers ----------
   var menuById = function (id) { return (S.data && S.data.menu || []).filter(function (m) { return m.id === id })[0] }
-  var cartCount = function () { return Object.keys(S.cart).reduce(function (a, id) { return a + S.cart[id].qty }, 0) }
+  var cartCount = function () { return Object.keys(S.cart).reduce(function (a, id) { return a + S.cart[id].qty }, 0) + S.gifts.length }
+  var rewardById = function (id) { return (S.data && S.data.rewards || []).filter(function (x) { return x.id === id })[0] }
+  var giftPoints = function () { return S.gifts.reduce(function (a, id) { var w = rewardById(id); return a + (w ? w.points : 0) }, 0) }
+  // แต้มที่ยังแลกได้ = ที่ server บอก (หักที่จองกับบิลอื่นแล้ว) − ที่อยู่ในตะกร้า
+  var pointsLeft = function () { var m = S.data && S.data.member; return m && m.status === 'verified' ? (m.available != null ? m.available : m.points) - giftPoints() : 0 }
   var cartSum = function () {
     return Object.keys(S.cart).reduce(function (a, id) { var m = menuById(id); return a + (m ? m.price * S.cart[id].qty : 0) }, 0)
   }
@@ -151,7 +160,8 @@
     var keep = window.scrollY
     var prevTab = app.dataset.tab
     if (S.tab === 'me' && !loyaltyOn()) S.tab = 'menu'
-    var body = S.tab === 'bill' ? billTab(d) : S.tab === 'me' ? meTab(d) : menuTab(d)
+    if (S.tab === 'promo' && !hasPromoTab()) S.tab = 'menu'
+    var body = S.tab === 'bill' ? billTab(d) : S.tab === 'me' ? meTab(d) : S.tab === 'promo' ? promoTab(d) : menuTab(d)
     app.innerHTML = header(d, tableName) + '<main class="body">' + body + '</main>' + bottom()
     app.dataset.tab = S.tab
     document.documentElement.style.setProperty('--head-h', $('.head').offsetHeight + 'px')
@@ -221,7 +231,7 @@
 
     h += '<span class="h-sm">ตะกร้า (ยังไม่ส่ง)</span>'
     var ids = Object.keys(S.cart)
-    if (!ids.length) h += '<div class="card muted">ยังไม่มีรายการ เลือกจากแท็บเมนูได้เลย</div>'
+    if (!ids.length && !S.gifts.length) h += '<div class="card muted">ยังไม่มีรายการ เลือกจากแท็บเมนูได้เลย</div>'
     else {
       h += '<div class="card">'
       ids.forEach(function (id) {
@@ -229,6 +239,11 @@
         var c = S.cart[id]
         h += '<div class="line"><div><div class="nm">' + esc(m.name) + '</div><div class="small muted num">' + baht(m.price * c.qty) + '</div></div>' + stepper(m) +
           '<input class="note-in" data-note="' + esc(id) + '" maxlength="100" placeholder="หมายเหตุ เช่น ไม่เผ็ด ไม่ใส่ผัก" value="' + esc(c.note || '') + '" aria-label="หมายเหตุ ' + esc(m.name) + '"></div>'
+      })
+      S.gifts.forEach(function (gid, i) {
+        var w = rewardById(gid); if (!w) return
+        h += '<div class="line"><div><div class="nm">🎁 ' + esc(w.name) + '</div><div class="small muted">แลก ' + w.points + ' แต้ม · จองไว้ ตัดจริงเมื่อชำระเงิน</div></div>' +
+          '<button class="btn ghost" data-act="ungift" data-id="' + i + '">เอาออก</button></div>'
       })
       h += '<div class="row total"><span>รวมรอบนี้</span><span class="num">' + baht(cartSum()) + '</span></div>' +
         '<button class="btn primary block" data-act="send"' + (S.sending ? ' disabled' : '') + '>' + (S.sending ? 'กำลังส่ง…' : 'ส่งออเดอร์เข้าครัว') + '</button></div>'
@@ -292,11 +307,77 @@
     return h + '</div>'
   }
 
+  var hasPromoTab = function () { return !!(S.data && ((S.data.promotions || []).length || (S.data.rewards || []).length)) }
+
+  function promoTab(d) {
+    var m = d.member, h = '<div class="pad">'
+    if ((d.rewards || []).length) {
+      if (m && m.status === 'verified') {
+        var held = m.points - pointsLeft()
+        h += '<div class="card member"><small>แต้มของคุณ' + esc(m.name) + '</small><div class="big num">' + pointsLeft().toLocaleString('th-TH') + ' แต้ม</div>' +
+          (held > 0 ? '<small>จองไว้กับของแถม ' + held.toLocaleString('th-TH') + ' แต้ม ตัดจริงเมื่อชำระเงิน</small>' : '<small>ทุก ' + baht(d.loyalty.earnRate) + ' ได้ 1 แต้ม</small>') + '</div>'
+      } else if (!m) {
+        h += '<div class="card"><span class="h-sm">สมัครสมาชิกเพื่อสะสมและแลกแต้ม</span><button class="btn primary" data-act="member-open">สมัครด้วยเบอร์โทร</button></div>'
+      } else {
+        h += '<div class="banner">แลกแต้มได้หลังแคชเชียร์ยืนยันสมาชิก — บอกพนักงานว่าสมัครผ่าน QR</div>'
+      }
+    }
+    if ((d.promotions || []).length) {
+      h += '<span class="h-sm">โปรโมชัน</span>'
+      d.promotions.forEach(function (p) {
+        h += '<div class="card"><div class="row"><div><b>' + esc(p.title) + '</b>' + (p.membersOnly ? ' <span class="badge">สมาชิก</span>' : '') +
+          (p.description ? '<div class="small muted">' + esc(p.description) + '</div>' : '') +
+          (p.endsOn ? '<div class="small muted">ถึง ' + esc(new Date(p.endsOn).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })) + '</div>' : '') + '</div>' +
+          (p.menuId ? '<button class="btn primary" style="min-height:40px;padding:8px 14px" data-act="promo-order" data-id="' + esc(p.menuId) + '">สั่งเลย</button>' : '') + '</div></div>'
+      })
+    }
+    if ((d.rewards || []).length) {
+      var canRedeem = m && m.status === 'verified' && d.billMember && d.billMember.mine
+      h += '<span class="h-sm">แลกแต้ม</span>'
+      d.rewards.forEach(function (w) {
+        var btn = !w.available ? '<button class="btn" disabled>หมด</button>'
+          : !m ? '<button class="btn" data-act="member-open">สมัครก่อน</button>'
+          : !canRedeem ? '<button class="btn" disabled>รอยืนยัน</button>'
+          : pointsLeft() < w.points ? '<button class="btn" disabled>ขาดอีก ' + (w.points - pointsLeft()) + '</button>'
+          : '<button class="btn primary" data-act="gift" data-id="' + esc(w.id) + '">แลก</button>'
+        h += '<div class="card"><div class="row"><div><b>🎁 ' + esc(w.name) + '</b><div><span class="badge">' + w.points.toLocaleString('th-TH') + ' แต้ม</span></div></div>' + btn + '</div></div>'
+      })
+    }
+    return h + '</div>'
+  }
+
+  // ---------- Pop-up โฆษณา (add-on) — ครั้งเดียวต่อรอบโต๊ะต่อเครื่อง ไม่ซ้อนกับ pop-up สมาชิก ----------
+  function maybeAd() {
+    var d = S.data
+    if (!d || d.state !== 'open' || !d.ad || !$('#sheet').hidden || !$('#ad-layer').hidden) return
+    var key = 'ad:' + (d.bill && d.bill.number) + ':' + d.ad.version
+    if (store.get(key)) return
+    store.set(key, true)
+    $('#ad-frame').innerHTML = '<img src="' + esc(d.ad.image) + '" alt="โปรโมชันจากร้าน">'
+    $('#ad-layer').hidden = false
+    adEvent('shown')
+    setTimeout(function () { var x = $('.ad-x'); if (x) x.focus({ preventScroll: true }) }, 30)
+  }
+  function adEvent(type) { api('POST', '/ad-event', { type: type }).catch(function () { /* สถิติหายได้ ไม่กวนลูกค้า */ }) }
+  function closeAd(tapped) {
+    if ($('#ad-layer').hidden) return
+    $('#ad-layer').hidden = true
+    var ad = S.data && S.data.ad
+    adEvent(tapped ? 'tap' : 'close')
+    if (!tapped || !ad || ad.link === 'none') return
+    if (ad.link === 'promo' && hasPromoTab()) { S.tab = 'promo'; render(); window.scrollTo(0, 0) }
+    else if (ad.link === 'menu' && ad.menuId && menuById(ad.menuId)) {
+      S.tab = 'menu'; render()
+      var el = document.querySelector('[data-act="inc"][data-id="' + ad.menuId.replace(/"/g, '') + '"]')
+      if (el) el.scrollIntoView({ block: 'center' })
+    }
+  }
+
   function bottom() {
     var n = cartCount()
     var bar = S.tab === 'menu' && n
       ? '<button class="cartbar" data-act="tab" data-id="bill"><span>ตะกร้า ' + n + ' รายการ</span><span class="num">' + baht(cartSum()) + ' →</span></button>' : ''
-    var tabs = [['menu', 'เมนู'], ['bill', 'บิล']].concat(loyaltyOn() ? [['me', 'สมาชิก']] : [])
+    var tabs = [['menu', 'เมนู']].concat(hasPromoTab() ? [['promo', 'โปรและแลกแต้ม']] : [], [['bill', 'บิล']], loyaltyOn() ? [['me', 'สมาชิก']] : [])
     var nav = '<nav class="nav" style="--tabs:' + tabs.length + '" aria-label="เมนูหลัก">' + tabs.map(function (t) {
       return '<button data-act="tab" data-id="' + t[0] + '"' + (S.tab === t[0] ? ' class="on" aria-current="page"' : '') + '>' + ICONS[t[0]] +
         '<span>' + t[1] + '</span>' + (t[0] === 'bill' && n ? '<span class="dot">' + n + '</span>' : '') + '</button>'
@@ -304,7 +385,7 @@
     return '<div class="bottom">' + bar + nav + '</div>'
   }
 
-  function closeSheet() { $('#sheet').hidden = true }
+  function closeSheet() { var was = !$('#sheet').hidden; $('#sheet').hidden = true; if (was) setTimeout(maybeAd, 800) }
 
   // ---------- sheet (สมัครสมาชิก) — PDPA: ความยินยอม 2 ข้อแยกกัน ไม่ติ๊กไว้ให้ล่วงหน้า ----------
   function openMemberSheet() {
@@ -369,15 +450,16 @@
   // ---------- actions ----------
   function send() {
     var ids = Object.keys(S.cart)
-    if (!ids.length || S.sending) return
+    if ((!ids.length && !S.gifts.length) || S.sending) return
     S.sending = true; render()
     var items = ids.map(function (id) { return { menuId: id, qty: S.cart[id].qty, note: S.cart[id].note || '' } })
-    api('POST', '/order', { items: items }).then(function (r) {
+    api('POST', '/order', { items: items, rewards: S.gifts }).then(function (r) {
       if (r.ok) {
-        S.cart = {}; saveCart()
+        S.cart = {}; S.gifts = []; saveCart()
         toast('ส่งเข้าครัวแล้ว' + (r.body.data && r.body.data.round ? ' · รอบที่ ' + r.body.data.round : ''))
         return load()
       }
+      if (['REWARD_INVALID', 'MEMBER_NOT_VERIFIED', 'NOT_BILL_MEMBER'].indexOf(r.body.code) >= 0) { S.gifts = []; saveCart() }
       if (r.body.code === 'MENU_UNAVAILABLE') {
         (r.body.data && r.body.data.menuIds || []).forEach(function (id) { delete S.cart[id] }); saveCart()
       }
@@ -411,6 +493,19 @@
         if (id === 'me' && S.data && S.data.member && S.data.member.status === 'verified') loadLedger()
         render(); window.scrollTo(0, 0); break
       case 'member-open': openMemberSheet(); break
+      case 'gift': {
+        var w = rewardById(id); if (!w) break
+        if (pointsLeft() < w.points) { toast('แต้มไม่พอ'); break }
+        S.gifts.push(id); saveCart(); render(); toast('ใส่ตะกร้าแล้ว แต้มจะถูกจองเมื่อส่งออเดอร์'); break
+      }
+      case 'ungift': S.gifts.splice(+id, 1); saveCart(); render(); break
+      case 'promo-order': {
+        var pm = menuById(id); if (!pm || !pm.available) break
+        var pc = S.cart[id] || { qty: 0, note: '' }; pc.qty = Math.min(MAX_QTY, pc.qty + 1); S.cart[id] = pc; saveCart(); render()
+        toast('ใส่ ' + pm.name + ' ลงตะกร้าแล้ว'); break
+      }
+      case 'ad-close': closeAd(false); break
+      case 'ad-tap': closeAd(true); break
       case 'm-join': joinMember(); break
       case 'logout': memberPost('/member/logout', {}, 'ออกจากระบบบนเครื่องนี้แล้ว · แต้มยังอยู่ครบกับเบอร์ของคุณ'); break
       case 'delete-open': openDeleteSheet(); break
@@ -443,6 +538,7 @@
   })
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet()
+    if (e.key === 'Escape' && !$('#ad-layer').hidden) closeAd(false)
     if (e.key === 'Enter' && (e.target.id === 'm-phone' || e.target.id === 'm-name')) joinMember()
   })
   $('#sheet').addEventListener('click', function (e) { if (e.target.id === 'sheet') closeSheet() })
