@@ -111,8 +111,8 @@ function computeDraftTotal(draft: PlanDraft) {
   const planPrices: Record<string, { base: number; includedPacks: number; extraUserPrice: number; nextPlan?: { code: string; name: string; price: number } }> = {
     free: { base: 0, includedPacks: 0, extraUserPrice: 190, nextPlan: { code: 'solo', name: 'Solo', price: 299 } },
     solo: { base: 299, includedPacks: 0, extraUserPrice: 190, nextPlan: { code: 'business', name: 'Business', price: 690 } },
-    business: { base: 690, includedPacks: 2, extraUserPrice: 150, nextPlan: { code: 'business_plus', name: 'Business+', price: 990 } },
-    business_plus: { base: 990, includedPacks: 3, extraUserPrice: 150, nextPlan: { code: 'pro', name: 'Pro', price: 1950 } },
+    business: { base: 690, includedPacks: 2, extraUserPrice: 150, nextPlan: { code: 'business_plus', name: 'Business+', price: 950 } },
+    business_plus: { base: 950, includedPacks: 3, extraUserPrice: 150, nextPlan: { code: 'pro', name: 'Pro', price: 1950 } },
     pro: { base: 1950, includedPacks: 4, extraUserPrice: 120, nextPlan: { code: 'enterprise_ai', name: 'Enterprise AI', price: 3490 } },
     enterprise_ai: { base: 3490, includedPacks: 4, extraUserPrice: 100 },
   }

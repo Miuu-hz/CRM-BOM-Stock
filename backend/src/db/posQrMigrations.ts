@@ -116,6 +116,11 @@ export function runPosQrMigrations(db: any): void {
       created_at TEXT NOT NULL
     )`,
     'CREATE INDEX IF NOT EXISTS idx_pos_ad_events ON pos_ad_events(tenant_id, created_at)',
+
+    // ราคา Business+ = ฿950 (เจ้าของเลือกตาม Phopy_Price.xlsx 2026-10-20) — migration v2.1 ใน migrations.ts
+    // ยังดัน 950 → 990 ทุกครั้งที่บูต ตัวนี้รันต่อจากนั้นจึงได้ 950 เสมอ
+    // ponytail: วางไว้ที่นี่เพราะ migrations.ts มีงานค้างของ session อื่น — ตอนเขา commit แล้วให้ลบบรรทัด 990 ที่โน่นแทน
+    "UPDATE subscription_plans SET price_monthly = 950, price_yearly = 9500 WHERE code = 'business_plus' AND price_monthly = 990",
   ].forEach(sql => {
     try { db.exec(sql) } catch (e: any) {
       // ADD COLUMN ซ้ำ = รันไปแล้ว · error อื่นต้องเห็น ไม่งั้นตารางหายเงียบ ๆ

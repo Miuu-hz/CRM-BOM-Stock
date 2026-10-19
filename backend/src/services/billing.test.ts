@@ -56,7 +56,7 @@ describe('รายการคิดเงิน (lineItems / subtotal)', () =>
   it('ราคาแพ็กตรงกับ Excel และทุก lookup key ที่ checkout ใช้มี Price ให้สร้าง', () => {
     const defs = new Map(priceDefinitions().map(d => [d.lookupKey, d.unitAmountBaht]))
     expect([...['solo', 'business', 'business_plus', 'pro', 'enterprise_ai']].map(p => defs.get(`phopy_plan_${p}_monthly`)))
-      .toEqual([299, 690, 990, 1950, 3490])
+      .toEqual([299, 690, 950, 1950, 3490])
     expect(defs.get('phopy_plan_solo_yearly')).toBe(2990)
     const s = sel({ plan: 'business_plus', packs: ['shop', 'maker', 'online', 'accounting'], addons: { extra_users: 5, subcontract: 1 } })
     for (const item of lineItems(s)) expect(defs.has(item.lookupKey)).toBe(true)
