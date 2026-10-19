@@ -43,8 +43,22 @@ router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
       name, address, phone, email, tax_id, tax_branch, vat_inclusive, logo_base64, pos_bom_deduct,
       pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate,
       qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, vat_registered,
-      stock_alias_enabled
+      stock_alias_enabled, loyalty_enabled, loyalty_earn_rate, loyalty_redeem_rate, loyalty_min_redeem,
+      pos_qr_mode
     } = req.body
+
+    // QR สั่งที่โต๊ะ: static = QR ถาวรบนโต๊ะ · rotate = พิมพ์ QR ใหม่ทุกครั้งที่เปิดโต๊ะ
+    if (pos_qr_mode !== undefined && pos_qr_mode !== 'static' && pos_qr_mode !== 'rotate') {
+      return res.status(400).json({ success: false, message: 'pos_qr_mode ต้องเป็น static หรือ rotate' })
+    }
+
+    // แต้มสะสม — POS/QR คิดแต้มจากค่านี้ (services/loyaltySettings.ts) · ส่งมาเฉพาะช่องที่จะแก้
+    const loyaltyEnabled = parseAliasFlag(loyalty_enabled)
+    const rateOk = (v: unknown) => v === undefined || (Number.isFinite(Number(v)) && Number(v) > 0)
+    if ((loyalty_enabled !== undefined && loyaltyEnabled === null) || !rateOk(loyalty_earn_rate) || !rateOk(loyalty_redeem_rate)
+      || (loyalty_min_redeem !== undefined && !(Number.isInteger(Number(loyalty_min_redeem)) && Number(loyalty_min_redeem) >= 0))) {
+      return res.status(400).json({ success: false, message: 'ค่าแต้มสะสมไม่ถูกต้อง: อัตราต้องมากกว่า 0 และแต้มขั้นต่ำต้องเป็นจำนวนเต็มไม่ติดลบ' })
+    }
 
     if (allow_negative_stock !== undefined || require_pos_shift !== undefined || vat_registered !== undefined || stock_alias_enabled !== undefined) {
       const callerRole = (req as any).user!.role
@@ -133,6 +147,11 @@ router.put('/company', requireRole('ADMIN', 'MASTER'), (req, res) => {
     if (aliasEnabled !== null) {
       db.prepare('UPDATE company_settings SET stock_alias_enabled = ? WHERE tenant_id = ?').run(aliasEnabled, tenantId)
     }
+    if (loyaltyEnabled !== null) db.prepare('UPDATE company_settings SET loyalty_enabled = ? WHERE tenant_id = ?').run(loyaltyEnabled, tenantId)
+    if (loyalty_earn_rate !== undefined) db.prepare('UPDATE company_settings SET loyalty_earn_rate = ? WHERE tenant_id = ?').run(Number(loyalty_earn_rate), tenantId)
+    if (loyalty_redeem_rate !== undefined) db.prepare('UPDATE company_settings SET loyalty_redeem_rate = ? WHERE tenant_id = ?').run(Number(loyalty_redeem_rate), tenantId)
+    if (loyalty_min_redeem !== undefined) db.prepare('UPDATE company_settings SET loyalty_min_redeem = ? WHERE tenant_id = ?').run(Number(loyalty_min_redeem), tenantId)
+    if (pos_qr_mode !== undefined) db.prepare('UPDATE company_settings SET pos_qr_mode = ? WHERE tenant_id = ?').run(pos_qr_mode, tenantId)
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)
     res.json({ success: true, data: updated })

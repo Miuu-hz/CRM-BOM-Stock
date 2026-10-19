@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { phoneDigits } from '../utils/phone'
 
 const router = Router()
 
@@ -66,6 +67,9 @@ router.get('/search', (req: Request, res: Response) => {
     }
 
     const term = `%${q.trim()}%`
+    // เบอร์: เทียบแค่ตัวเลข — พิมพ์ 0812345678 ต้องเจอลูกค้าที่บันทึกไว้เป็น 081-234-5678 / +66 81 234 5678
+    const digits = phoneDigits(q)
+    const phoneTerm = digits.length >= 3 ? `%${digits}%` : null
     const parsedLimit = Math.min(100, Math.max(1, parseInt(limit as string) || 10))
     // ค้นด้วยเลขผู้เสียภาษีได้ด้วย และคืน tax_id/address/tax_branch มาเลย — โมดัล "ออกใบกำกับภาษี"
     // ในหน้า POS ต้องให้แคชเชียร์ยืนยันข้อมูลผู้ซื้อก่อนกดออกใบ ไม่ใช่เห็นแค่ชื่อกับเบอร์
@@ -75,10 +79,11 @@ router.get('/search', (req: Request, res: Response) => {
              loyalty_points, total_spent, status
       FROM customers
       WHERE tenant_id = ? AND status = 'ACTIVE'
-        AND (name LIKE ? OR contact_name LIKE ? OR phone LIKE ? OR code LIKE ? OR tax_id LIKE ?)
+        AND (name LIKE ? OR contact_name LIKE ? OR phone LIKE ? OR code LIKE ? OR tax_id LIKE ?
+             OR (? IS NOT NULL AND phone_digits(phone) LIKE ?))
       ORDER BY name ASC
       LIMIT ?
-    `).all(tenantId, term, term, term, term, term, parsedLimit) as any[]
+    `).all(tenantId, term, term, term, term, term, phoneTerm, phoneTerm, parsedLimit) as any[]
 
     res.json({ success: true, data: customers })
   } catch (error) {

@@ -55,6 +55,7 @@ import DocumentSettings from './settings/DocumentSettings'
 import MCPSettings from './settings/MCPSettings'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
+import companySettingsService, { getCachedCompanySettings } from '../services/companySettings.service'
 import { stripNonAscii } from '../utils/email'
 
 interface ChildUser {
@@ -574,24 +575,51 @@ export const DEFAULT_LOYALTY: LoyaltyConfig = {
   minRedeemPoints: 100,
 }
 
+// ค่าจริงอยู่ที่ backend (company_settings.loyalty_*) — server คิดแต้ม/ส่วนลดจากค่านั้นตอนรับชำระ
+// ลำดับ: ค่าจาก server (แคชตอนโหลด /settings/company) > ค่าเก่าที่เคยเก็บแค่ใน localStorage ของเครื่องนี้ > ค่าตั้งต้น
+// คอลัมน์ฝั่ง server เป็น NULL = ร้านยังไม่เคยกดบันทึกหลังย้ายมาเก็บที่ server
 export function loadLoyaltyConfig(): LoyaltyConfig {
-  try {
-    const saved = localStorage.getItem('pos_loyalty_settings')
-    return saved ? { ...DEFAULT_LOYALTY, ...JSON.parse(saved) } : DEFAULT_LOYALTY
-  } catch {
-    return DEFAULT_LOYALTY
-  }
+  let legacy: Partial<LoyaltyConfig> = {}
+  try { legacy = JSON.parse(localStorage.getItem('pos_loyalty_settings') || '{}') } catch { /* ค่าเสีย ใช้ค่าตั้งต้น */ }
+  const s = getCachedCompanySettings()
+  const server: Partial<LoyaltyConfig> = {}
+  if (s.loyalty_enabled != null) server.enabled = Number(s.loyalty_enabled) === 1
+  if (s.loyalty_earn_rate != null) server.earnRate = Number(s.loyalty_earn_rate)
+  if (s.loyalty_redeem_rate != null) server.redeemRate = Number(s.loyalty_redeem_rate)
+  if (s.loyalty_min_redeem != null) server.minRedeemPoints = Number(s.loyalty_min_redeem)
+  return { ...DEFAULT_LOYALTY, ...legacy, ...server }
 }
 
 function LoyaltySettings() {
   const { t } = useTranslation()
   const [cfg, setCfg] = useState<LoyaltyConfig>(loadLoyaltyConfig)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  const save = () => {
-    localStorage.setItem('pos_loyalty_settings', JSON.stringify(cfg))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  useEffect(() => {
+    let alive = true
+    companySettingsService.get().then(() => { if (alive) setCfg(loadLoyaltyConfig()) })
+      .catch(() => toast.error(t('settings.settingsPage.general.saveFailed')))
+    return () => { alive = false }
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await companySettingsService.update({
+        loyalty_enabled: cfg.enabled,
+        loyalty_earn_rate: cfg.earnRate,
+        loyalty_redeem_rate: cfg.redeemRate,
+        loyalty_min_redeem: Math.floor(cfg.minRedeemPoints),
+      })
+      localStorage.removeItem('pos_loyalty_settings')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || t('settings.settingsPage.general.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const ToggleSwitch = ({ enabled, onChange, label, sub }: { enabled: boolean; onChange: (v: boolean) => void; label: string; sub: string }) => (
@@ -741,7 +769,8 @@ function LoyaltySettings() {
 
       <button
         onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
+        disabled={saving}
+        className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${saved ? 'bg-[var(--success-soft)] text-success border border-success/50' : 'phopy-btn-primary'}`}
       >
         {saved ? <><CheckCircle className="w-5 h-5" /> {t('common.saved')}</> : t('settings.settingsPage.loyalty.save')}
       </button>

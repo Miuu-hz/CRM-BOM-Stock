@@ -22,6 +22,13 @@ export interface CompanySettings {
   allow_negative_stock?: number | boolean  // 1=อนุญาตขาย/เบิกแม้สต็อกไม่พอ (POS/ใบสั่งขาย/ใบสั่งผลิต ติดลบได้), 0=บล็อกตามเดิม (default 0)
   require_pos_shift?: number | boolean  // 1=ต้องเปิดกะก่อนจึงจะรับชำระเงินที่ POS ได้, 0=ขายได้โดยไม่ต้องเปิดกะ (default 0)
   stock_alias_enabled?: number | boolean  // 1=ใช้ชื่อเรียกแทน SKU ได้ (ชื่อที่ไม่ตรง SKU ผูกเข้า SKU เดิม ซื้อ/ขาย/MCP), 0=ต้องตรงชื่อ SKU เท่านั้น (default 1)
+  // แต้มสะสม — null = ร้านยังไม่เคยตั้ง (ใช้ค่าตั้งต้นใน loadLoyaltyConfig)
+  loyalty_enabled?: number | boolean | null
+  loyalty_earn_rate?: number | null      // ใช้จ่าย X บาท ได้ 1 แต้ม
+  loyalty_redeem_rate?: number | null    // X แต้ม = ลด 1 บาท
+  loyalty_min_redeem?: number | null
+  // QR สั่งที่โต๊ะ: static = QR ถาวรบนโต๊ะ (ค่าตั้งต้น), rotate = พิมพ์ใหม่ทุกครั้งที่เปิดโต๊ะ · pin = ขอ PIN ก่อนส่งออเดอร์แรก
+  pos_qr_mode?: 'static' | 'rotate' | null
   subscription_plan_code?: string  // read-only, attached by GET /settings/company from tenant_subscriptions
   subscription_plan_name?: string
   subscription_status?: string

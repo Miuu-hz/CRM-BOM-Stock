@@ -24,6 +24,7 @@ const posBillService = {
     customer_phone?: string
     customer_id?: string
     notes?: string
+    table_id?: string  // เปิดโต๊ะ: ผูกบิลกับโต๊ะ + ออก QR/PIN ของรอบ
   }) => {
     const response = await api.post('/pos/bills', data)
     return response.data
@@ -31,6 +32,12 @@ const posBillService = {
 
   assignMember: async (billId: string, customerId: string | null) => {
     const response = await api.patch(`/pos/bills/${billId}/member`, { customer_id: customerId })
+    return response.data
+  },
+
+  // ลูกค้าผูกเบอร์เองผ่าน QR → แคชเชียร์ยืนยันตัวตนแทน OTP
+  verifyMember: async (billId: string) => {
+    const response = await api.post(`/pos/bills/${billId}/verify-member`)
     return response.data
   },
 

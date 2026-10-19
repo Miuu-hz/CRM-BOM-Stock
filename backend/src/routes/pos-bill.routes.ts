@@ -4,6 +4,9 @@ import db from '../db/sqlite'
 import posStockService from '../services/pos-stock.service'
 import posAccountingService from '../services/pos-accounting.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
+import { getLoyaltySettings } from '../services/loyaltySettings'
+import { mintQrToken } from '../services/posQr.service'
+import { verifyBillMember } from '../services/posMember.service'
 import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass } from '../services/approvalGate.service'
 
 // ลด/ลบรายการที่ส่งครัวแล้ว = ของอาจเสิร์ฟไปแล้วแต่ไม่อยู่ในบิล → ต้องมีเหตุผล + ลงบันทึกความเคลื่อนไหว
@@ -155,12 +158,15 @@ router.get('/bills/:id', async (req, res) => {
     // Get bill (JOIN customer loyalty_points + ข้อมูลสำหรับพิมพ์ใบกำกับภาษี)
     // ⚠️ ห้ามตั้ง alias ว่า customer_name เฉย ๆ เพราะ b.* มีคอลัมน์ customer_name อยู่แล้ว
     // ชื่อซ้ำกันตัวหลังทับตัวหน้า = เอา null ไปทับชื่อจริง (ดูคอมเมนต์เดียวกันใน sales/invoices.ts GET /:id)
+    // member_device_verified_at: สมาชิกที่ผูกมาจากมือถือลูกค้า (QR) — NULL ทั้งที่มี member_device_id = รอแคชเชียร์ยืนยัน
     const billStmt = db.prepare(`
       SELECT b.*, c.loyalty_points as customer_loyalty_points,
         c.name as customer_name_crm, c.code as customer_code, c.tax_id as customer_tax_id,
-        c.address as customer_address, c.tax_branch as customer_tax_branch
+        c.address as customer_address, c.tax_branch as customer_tax_branch,
+        d.verified_at as member_device_verified_at
       FROM pos_running_bills b
       LEFT JOIN customers c ON b.customer_id = c.id
+      LEFT JOIN pos_member_devices d ON d.id = b.member_device_id
       WHERE b.id = ? AND b.tenant_id = ?
     `)
     const bill = billStmt.get(id, tenantId)
@@ -204,10 +210,17 @@ router.post('/bills', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const userId = (req as any).user!.userId
-    const { display_name, customer_name, customer_phone, customer_id, notes } = req.body
+    const { display_name, customer_name, customer_phone, customer_id, notes, table_id } = req.body
 
     const openShift = requireSellableShift(tenantId, res)
     if (!openShift) return
+
+    // เปิดโต๊ะ = บิลที่ผูกโต๊ะ + QR ของรอบนี้ (ลูกค้าสแกนสั่งเองได้ ดู routes/qr-public.routes.ts)
+    let table: { id: string; name: string } | undefined
+    if (table_id) {
+      table = db.prepare('SELECT id, name FROM pos_tables WHERE id = ? AND tenant_id = ? AND is_active = 1').get(table_id, tenantId) as any
+      if (!table) return res.status(404).json({ success: false, message: 'ไม่พบโต๊ะนี้' })
+    }
 
     // If customer_id provided, pull name/phone from CRM
     let resolvedCustomerName = customer_name || null
@@ -222,30 +235,37 @@ router.post('/bills', (req, res) => {
 
     const id = generateId()
     const billNumber = generateBillNumber(tenantId)
-    const defaultDisplayName = display_name || `บิล ${billNumber.split('-')[2]}`
+    const defaultDisplayName = table?.name || display_name || `บิล ${billNumber.split('-')[2]}`
 
     // Tag the bill with the open shift so shift-close can sum sales by shift_id
     db.prepare(`
       INSERT INTO pos_running_bills (
         id, tenant_id, bill_number, display_name, customer_name, customer_phone,
-        customer_id, status, opened_at, notes, created_by, shift_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
+        customer_id, status, opened_at, notes, created_by, shift_id, table_id, qr_token
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?)
     `).run(
       id, tenantId, billNumber, defaultDisplayName,
       resolvedCustomerName, resolvedCustomerPhone, customer_id || null,
-      now(), notes || null, userId, openShift.id
+      now(), notes || null, userId, openShift.id,
+      table?.id || null, table ? mintQrToken() : null
     )
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Bill created successfully',
-      data: { 
-        id, 
+      data: {
+        id,
         bill_number: billNumber,
-        display_name: defaultDisplayName
+        display_name: defaultDisplayName,
       }
     })
-  } catch (error) {
+  } catch (error: any) {
+    // idx_pos_bills_open_table: อีกเครื่องเปิดโต๊ะนี้ไปก่อนแล้ว
+    if (String(error?.code).startsWith('SQLITE_CONSTRAINT') && req.body?.table_id) {
+      const open = db.prepare(`SELECT id FROM pos_running_bills WHERE tenant_id = ? AND table_id = ? AND status = 'OPEN'`)
+        .get((req as any).user!.tenantId, req.body.table_id) as any
+      return res.status(409).json({ success: false, code: 'TABLE_ALREADY_OPEN', message: 'โต๊ะนี้เปิดอยู่แล้ว', data: { bill_id: open?.id } })
+    }
     console.error('Error creating bill:', error)
     res.status(500).json({ success: false, message: 'Failed to create bill' })
   }
@@ -317,9 +337,10 @@ router.patch('/bills/:id/member', (req, res) => {
       customerPhone = cust.phone
     }
 
+    // แคชเชียร์เลือก/เปลี่ยนสมาชิกเอง = ไม่ใช่สมาชิกที่ผูกจากมือถือลูกค้าแล้ว (ไม่ต้องรอยืนยัน)
     const result = db.prepare(`
       UPDATE pos_running_bills
-      SET customer_id = ?, customer_name = ?, customer_phone = ?
+      SET customer_id = ?, customer_name = ?, customer_phone = ?, member_device_id = NULL
       WHERE id = ? AND tenant_id = ? AND status IN ('OPEN', 'PAID')
     `).run(customer_id || null, customerName, customerPhone, id, tenantId)
 
@@ -336,6 +357,19 @@ router.patch('/bills/:id/member', (req, res) => {
   } catch (error) {
     console.error('Assign member error:', error)
     res.status(500).json({ success: false, message: 'ไม่สามารถกำหนดสมาชิกได้' })
+  }
+})
+
+// POST /bills/:id/verify-member — แคชเชียร์ยืนยันว่าลูกค้าที่โต๊ะเป็นเจ้าของเบอร์ที่สมัครผ่าน QR
+// (แทน OTP) → มือถือเครื่องนั้นเห็นชื่อ/แต้ม และแลกแต้มได้
+router.post('/bills/:id/verify-member', (req, res) => {
+  try {
+    const ok = verifyBillMember((req as any).user!.tenantId, req.params.id)
+    if (!ok) return res.status(404).json({ success: false, message: 'บิลนี้ไม่มีสมาชิกที่สมัครผ่าน QR รอยืนยัน' })
+    res.json({ success: true, message: 'ยืนยันสมาชิกแล้ว' })
+  } catch (error) {
+    console.error('Verify member error:', error)
+    res.status(500).json({ success: false, message: 'ยืนยันสมาชิกไม่สำเร็จ' })
   }
 })
 
@@ -638,13 +672,34 @@ router.post('/bills/:id/pay', async (req, res) => {
       })
     }
 
+    // แลกแต้ม = ส่วนลดท้ายบิล คิดด้วยอัตราของร้านฝั่ง server (เดิมหน้าจอหักเองแต่บิล/บัญชี/VAT บันทึกยอดเต็ม)
+    const loyalty = getLoyaltySettings(tenantId)
+    const redeemPts = Math.max(0, Math.floor(Number(redeem_points) || 0))
+    let redeemBaht = 0
+    if (redeemPts > 0) {
+      const member = (bill as any).customer_id
+        ? db.prepare('SELECT loyalty_points FROM customers WHERE id = ? AND tenant_id = ?').get((bill as any).customer_id, tenantId) as any
+        : null
+      // สมาชิกที่ลูกค้าผูกเองจากมือถือ (ไม่มี OTP) ต้องให้แคชเชียร์ยืนยันตัวตนก่อนจึงแลกแต้มได้
+      const unverified = (bill as any).member_device_id
+        && !(db.prepare('SELECT verified_at FROM pos_member_devices WHERE id = ?').get((bill as any).member_device_id) as any)?.verified_at
+      const redeemError = !loyalty.enabled ? 'ร้านปิดระบบแต้มสะสมอยู่'
+        : !member ? 'บิลนี้ยังไม่ได้ผูกสมาชิก แลกแต้มไม่ได้'
+        : unverified ? 'สมาชิกสมัครผ่าน QR ยังไม่ได้ยืนยันตัวตน — กด "ยืนยันสมาชิก" ที่บิลก่อนแลกแต้ม'
+        : redeemPts < loyalty.minRedeem ? `ต้องแลกขั้นต่ำ ${loyalty.minRedeem} แต้ม`
+        : redeemPts > (member.loyalty_points || 0) ? 'คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก'
+        : null
+      if (redeemError) return res.status(400).json({ success: false, code: 'REDEEM_INVALID', message: redeemError })
+      redeemBaht = Math.floor(redeemPts / loyalty.redeemRate)
+    }
+
     // ส่วนลด/ค่าขนส่งที่แคชเชียร์ใส่หน้าจอต้องลงบิลก่อนคำนวณ ไม่งั้นลูกค้าจ่ายยอดหนึ่ง
     // แต่บัญชี/VAT/ใบกำกับบันทึกอีกยอดหนึ่ง (เดิมสองค่านี้ไม่เคยถูกส่งมาที่ backend เลย)
-    if (discount_amount !== undefined || extra_charge_amount !== undefined) {
+    if (discount_amount !== undefined || extra_charge_amount !== undefined || redeemBaht > 0) {
       db.prepare(`UPDATE pos_running_bills
         SET discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?
         WHERE id = ? AND tenant_id = ?`)
-        .run(Math.max(0, Number(discount_amount) || 0), Math.max(0, Number(extra_charge_amount) || 0),
+        .run(discountBaht + redeemBaht, Math.max(0, Number(extra_charge_amount) || 0),
           extra_charge_label || null, id, tenantId)
     }
 
@@ -721,13 +776,12 @@ router.post('/bills/:id/pay', async (req, res) => {
         const customerId = (refreshedBill as any).customer_id
         const customer = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
         if (customer) {
-          // earn_rate: admin คนเดียวที่ตั้งค่าได้ในระบบ ดึงจาก company_settings ไม่รับค่าจาก client
-          const settingRow = db.prepare("SELECT value FROM company_settings WHERE tenant_id = ? AND key = 'loyalty_earn_rate'").get(tenantId) as any
-          const rate = (settingRow && Number(settingRow.value) > 0) ? Number(settingRow.value) : 1
-          pointsEarned = Math.floor(totalAmount / rate)
+          // อัตราแต้มเป็นของร้าน (Settings → แต้มสะสม เก็บใน company_settings) ไม่รับค่าจาก client
+          // เดิมอ่านคอลัมน์ key/value ที่ไม่มีอยู่จริง → บิลที่ผูกสมาชิกทุกใบจ่ายเงินไม่ผ่าน (500)
+          pointsEarned = loyalty.enabled ? Math.floor(totalAmount / loyalty.earnRate) : 0
 
           const balanceBefore = customer.loyalty_points || 0
-          pointsRedeemed = redeem_points && redeem_points > 0 ? Math.floor(redeem_points) : 0
+          pointsRedeemed = redeemPts
 
           if (pointsRedeemed > balanceBefore) {
             throw new Error('คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก')
@@ -796,6 +850,7 @@ router.post('/bills/:id/pay', async (req, res) => {
         journal_entry_id: accountingResult.journalEntryId,
         points_earned: pointsEarned,
         points_redeemed: pointsRedeemed,
+        redeem_discount: redeemBaht,
       }
     })
   } catch (error) {

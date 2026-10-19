@@ -15,6 +15,7 @@ import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { useTranslation } from 'react-i18next'
 import { unitLabel } from '../hooks/useUnits'
 import { VatModeField } from '../components/common/VatModeSelector'
+import { loadLoyaltyConfig } from './Settings'
 
 type CustomerType = 'HOTEL' | 'RETAIL' | 'WHOLESALE'
 type CustomerSegment = 'VIP' | 'PREMIUM' | 'GROWING' | 'AT_RISK' | 'NEW' | 'SEASONAL' | 'REGULAR'
@@ -2130,13 +2131,7 @@ function LoyaltyTab({ customerId, initialPoints, onPointsChange }: { customerId:
     setPoints(initialPoints)
   }, [initialPoints])
 
-  // Read loyalty config from localStorage (same as Settings page)
-  const loyaltyCfg = (() => {
-    try {
-      const s = localStorage.getItem('pos_loyalty_settings')
-      return s ? JSON.parse(s) : { enabled: true, earnRate: 100, redeemRate: 10, minRedeemPoints: 100 }
-    } catch { return { enabled: true, earnRate: 100, redeemRate: 10, minRedeemPoints: 100 } }
-  })()
+  const loyaltyCfg = loadLoyaltyConfig()
 
   const fetchLoyalty = async () => {
     setLoading(true)

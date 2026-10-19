@@ -16,7 +16,8 @@ import { VatModeField } from '../components/common/VatModeSelector'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
 import { accountsApi } from '../services/accounting'
 import api from '../services/api'
-import { getCachedCompanySettings } from '../services/companySettings.service'
+import companySettingsService, { getCachedCompanySettings } from '../services/companySettings.service'
+import TableBoard from '../components/cashier/TableBoard'
 
 // ==================== Types ====================
 
@@ -96,6 +97,10 @@ interface CurrentBill {
   receipt_url?: string
   receipt_qr?: string
   invoice?: { id: string; invoice_number: string; status: string } | null
+  table_id?: string | null
+  bill_requested_at?: string | null
+  member_device_id?: string | null
+  member_device_verified_at?: string | null
 }
 
 interface POSShift {
@@ -133,7 +138,14 @@ export default function Cashier() {
   // State
   const [view, setView] = useState<'bills' | 'menu'>('bills')
   const [openBills, setOpenBills] = useState<OpenBill[]>([])
-  const [billsMode, setBillsMode] = useState<'OPEN' | 'PAID'>('OPEN')
+  // ร้านที่ใช้ผังโต๊ะ/QR เปิดหน้าจอมาแล้วเจอผังโต๊ะเลย — จำแท็บล่าสุดของเครื่องนี้ (ชำระแล้วไม่จำ เป็นแค่สรุป)
+  const [billsMode, setBillsModeState] = useState<'OPEN' | 'PAID' | 'TABLES'>(() => {
+    try { return localStorage.getItem('pos_bills_mode') === 'TABLES' ? 'TABLES' : 'OPEN' } catch { return 'OPEN' }
+  })
+  const setBillsMode = (m: 'OPEN' | 'PAID' | 'TABLES') => {
+    setBillsModeState(m)
+    try { if (m !== 'PAID') localStorage.setItem('pos_bills_mode', m) } catch { /* โหมดส่วนตัว: ไม่จำก็ได้ */ }
+  }
   const [todaySales, setTodaySales] = useState<TodaySale[]>([])
   const [drawerMoves, setDrawerMoves] = useState<CashMovement[]>([])
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
@@ -175,6 +187,13 @@ export default function Cashier() {
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  // อัตราแต้มอยู่ที่ server แล้ว — ดึงใหม่ตอนเปิดหน้า ไม่งั้นเครื่องที่ไม่เคยเปิดหน้าตั้งค่าใช้ค่าตั้งต้น
+  // โหลดไม่ได้ (เน็ตหลุด) ใช้ค่าที่แคชไว้ต่อ — backend คิดแต้มจริงจากค่าของตัวเองอยู่แล้ว
+  useEffect(() => {
+    companySettingsService.get().then(() => setLoyalty(loadLoyaltyConfig()))
+      .catch(err => console.warn('[Cashier] โหลดค่าแต้มสะสมไม่ได้ ใช้ค่าที่แคชไว้', err))
   }, [])
 
   // Prime the bank-account cache (used for the QR payment step + receipt printing)
@@ -398,6 +417,46 @@ export default function Cashier() {
     }
   }
 
+  // เปิดโต๊ะจากผังโต๊ะ = บิลผูกโต๊ะ (ลูกค้าสแกน QR สั่งเข้าบิลนี้ได้) · อีกเครื่องเปิดไปก่อนแล้ว = ใช้บิลนั้น
+  const createTableBill = async (tableId: string): Promise<{ id: string } | null> => {
+    try {
+      const res = await posBillService.createBill({ table_id: tableId })
+      if (!res.success) return null
+      fetchData()
+      return { id: res.data.id }
+    } catch (error: any) {
+      if (handleShiftGuardError(error)) return null
+      const body = error?.response?.data
+      if (body?.code === 'TABLE_ALREADY_OPEN' && body.data?.bill_id) return { id: body.data.bill_id }
+      toast.error(body?.message || 'เปิดโต๊ะไม่สำเร็จ')
+      return null
+    }
+  }
+
+  // บิลของโต๊ะที่เปิดดูอยู่: ลูกค้าสั่งเพิ่ม/เรียกเช็คบิลผ่าน QR ได้ตลอด → ดึงใหม่เป็นระยะ ไม่งั้นแคชเชียร์เก็บเงินขาด
+  // ponytail: poll 8 วิ เฉพาะตอนเปิดบิลโต๊ะอยู่และไม่มีหน้าต่างชำระเงินค้าง — ถ้าร้านใหญ่ค่อยเปลี่ยนเป็น push
+  useEffect(() => {
+    const billId = currentBill?.table_id ? currentBill.id : null
+    if (!billId || view !== 'menu' || showPaymentModal) return
+    const refresh = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const res = await posBillService.getBill(billId)
+        if (!res.success) return
+        setCurrentBill(prev => {
+          if (!prev || prev.id !== billId) return prev
+          const changed = res.data.items?.length !== prev.items.length || res.data.total_amount !== prev.total_amount
+            || res.data.bill_requested_at !== prev.bill_requested_at || res.data.status !== prev.status
+            || res.data.customer_id !== prev.customer_id || res.data.member_device_verified_at !== prev.member_device_verified_at
+          return changed ? res.data : prev
+        })
+      } catch { /* รอบหน้าลองใหม่ */ }
+    }
+    const id = setInterval(refresh, 8000)
+    document.addEventListener('visibilitychange', refresh)  // สลับกลับมาที่จอนี้ = ดึงทันที
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', refresh) }
+  }, [currentBill?.id, currentBill?.table_id, view, showPaymentModal])
+
   // Open bill
   const openBill = async (billId: string) => {
     try {
@@ -538,7 +597,6 @@ export default function Cashier() {
     try {
       const res = await posBillService.payBill(currentBill.id, {
         payment_method: method,
-        earn_rate: loyalty.enabled ? loyalty.earnRate : undefined,
         redeem_points: loyalty.enabled && redeemPoints ? redeemPoints : undefined,
         bank_account_id: bankAccountId,
         // ต้องส่งไปด้วย ไม่งั้น backend คิดยอด/VAT/บัญชีจากบิลเปล่า ๆ คนละยอดกับที่ลูกค้าจ่าย
@@ -565,7 +623,8 @@ export default function Cashier() {
           toast.success(`ชำระเงินสำเร็จ!`, { icon: '<Banknote className="w-4 h-4" />' })
         }
         // Auto-print thermal receipt after payment
-        const receiptData = buildReceiptData(currentBill, method, cashReceived, billDiscountAmount(currentBill))
+        // ส่วนลดจากแต้ม backend คิดเป็นส่วนลดท้ายบิลแล้ว — ใบเสร็จต้องเห็นยอดเดียวกัน
+        const receiptData = buildReceiptData(currentBill, method, cashReceived, billDiscountAmount(currentBill) + (res.data?.redeem_discount || 0))
         printPOSReceipt(receiptData, 'thermal')
         setCurrentBill(null)
         setShowPaymentModal(false)
@@ -729,9 +788,17 @@ export default function Cashier() {
                 <div className="flex justify-between items-center flex-wrap gap-3">
                   <div className="flex items-center gap-3">
                     <h2 className="text-lg font-semibold text-[var(--fg-1)]">
-                      {billsMode === 'OPEN' ? 'บิลที่เปิดอยู่' : 'สรุปวันนี้'}
+                      {billsMode === 'OPEN' ? 'บิลที่เปิดอยู่' : billsMode === 'TABLES' ? 'ผังโต๊ะ' : 'สรุปวันนี้'}
                     </h2>
                     <div className="flex bg-[var(--bg)] rounded-lg p-1">
+                      <button
+                        onClick={() => setBillsMode('TABLES')}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-all ${
+                          billsMode === 'TABLES' ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                        }`}
+                      >
+                        ผังโต๊ะ
+                      </button>
                       <button
                         onClick={() => setBillsMode('OPEN')}
                         className={`px-3 py-1.5 rounded-md text-sm transition-all ${
@@ -763,7 +830,9 @@ export default function Cashier() {
                 </div>
 
                 {/* Bills Grid */}
-                {billsMode === 'PAID' ? (
+                {billsMode === 'TABLES' ? (
+                  <TableBoard activeBillId={currentBill?.id} canOpenNew={!isStaleShift} onOpenBill={openBill} createTableBill={createTableBill} />
+                ) : billsMode === 'PAID' ? (
                   <TodaySummary shift={currentShift} sales={todaySales} moves={drawerMoves} onOpenBill={openBill} />
                 ) : loading ? (
                   <div className="text-center py-12">
@@ -954,7 +1023,10 @@ export default function Cashier() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                     </div>
-                    <p className="text-sm text-[var(--fg-3)]">{currentBill.bill_number}</p>
+                    <p className="text-sm text-[var(--fg-3)]">
+                      {currentBill.bill_number}
+                      {currentBill.table_id && <span className="ml-2 text-[var(--primary)]">· สั่งผ่าน QR ได้</span>}
+                    </p>
                   </div>
                   <button
                     onClick={() => { setCurrentBill(null); setView('bills') }}
@@ -964,6 +1036,11 @@ export default function Cashier() {
                     <X className="w-5 h-5" />
                   </button>
                 </div>
+                {currentBill.bill_requested_at && isBillEditable(currentBill) && (
+                  <div className="mt-2 px-3 py-2 rounded-lg bg-[var(--warning-soft)] border border-warning/40 text-sm font-medium text-[var(--warning-strong)]">
+                    ลูกค้าเรียกเช็คบิลจากมือถือ · {new Date(currentBill.bill_requested_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
                 {/* Member row */}
                 {currentBill.customer_id ? (
                   <div className="mt-2 flex items-center justify-between bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-lg px-3 py-2">
@@ -988,7 +1065,29 @@ export default function Cashier() {
                       <UserX className="w-4 h-4" />
                     </button>
                   </div>
-                ) : (
+                ) : null}
+                {/* ลูกค้าสมัคร/ผูกเบอร์เองจากมือถือ (ไม่มี OTP) — แคชเชียร์ยืนยันตัวตน 1 ครั้ง แล้วลูกค้าดูแต้ม/แลกแต้มได้ */}
+                {currentBill.customer_id && currentBill.member_device_id && !currentBill.member_device_verified_at && isBillEditable(currentBill) && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg px-3 py-2 bg-[var(--warning-soft)] border border-warning/40">
+                    <p className="flex-1 text-xs text-[var(--warning-strong)]">
+                      ลูกค้าใส่เบอร์เองผ่าน QR · ถามชื่อให้ตรงกับ <b>{currentBill.customer_name}</b> แล้วกดยืนยัน (ยืนยันแล้วจึงแลกแต้มได้)
+                    </p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await posBillService.verifyMember(currentBill.id)
+                          const r = await posBillService.getBill(currentBill.id)
+                          if (r.success) setCurrentBill(r.data)
+                          toast.success('ยืนยันสมาชิกแล้ว')
+                        } catch (e: any) { toast.error(e?.response?.data?.message || 'ยืนยันสมาชิกไม่สำเร็จ') }
+                      }}
+                      className="shrink-0 px-2.5 py-1.5 rounded-md bg-[var(--primary)] text-white text-xs font-medium hover:opacity-90"
+                    >
+                      ยืนยันสมาชิก
+                    </button>
+                  </div>
+                )}
+                {!currentBill.customer_id && (
                   <button
                     onClick={() => setShowAssignMemberModal(true)}
                     className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-[var(--border)] text-xs text-[var(--fg-4)] hover:text-[var(--primary)] hover:border-phopy-indigo/40 transition-colors"
@@ -1392,6 +1491,8 @@ export default function Cashier() {
           return billTotals(currentBill, billing,
             { discount: billDiscountAmount(currentBill), extraCharge: extraCharge.amount }).totalAmount
         })()}
+        totalWithRedeem={(redeemBaht) => billTotals(currentBill, billing,
+          { discount: billDiscountAmount(currentBill) + redeemBaht, extraCharge: extraCharge.amount }).totalAmount}
         onPay={processPayment}
         loyalty={loyalty}
         customerPoints={currentBill?.customer_id ? (currentBill.customer_loyalty_points ?? null) : null}
@@ -2569,10 +2670,12 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   )
 }
 
-function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }: {
+function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty, customerPoints }: {
   isOpen: boolean
   onClose: () => void
   total: number
+  /** ยอดเมื่อหักแต้มเป็นส่วนลดท้ายบิล (ก่อน VAT) — ต้องคิดแบบเดียวกับ backend ตอนรับชำระ */
+  totalWithRedeem: (redeemBaht: number) => number
   onPay: (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => void
   loyalty: LoyaltyConfig
   customerPoints: number | null
@@ -2593,7 +2696,7 @@ function PaymentModal({ isOpen, onClose, total, onPay, loyalty, customerPoints }
     : 0
   const canRedeem = maxRedeemable >= (loyalty.minRedeemPoints || 0) && maxRedeemable > 0
   const redeemDiscount = redeemInput > 0 ? Math.floor(redeemInput / loyalty.redeemRate) : 0
-  const finalTotal = Math.max(0, total - redeemDiscount)
+  const finalTotal = redeemDiscount > 0 ? totalWithRedeem(redeemDiscount) : total
 
   const handlePay = (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD') => {
     // Show the QR to the customer first when a bank account with a QR image is

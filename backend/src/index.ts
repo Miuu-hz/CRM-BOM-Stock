@@ -144,6 +144,8 @@ import posClearingRoutes from './routes/pos-clearing.routes'
 
 
 import kdsRoutes from './routes/kds.routes'
+import posTablesRoutes from './routes/pos-tables.routes'
+import qrPublicRoutes from './routes/qr-public.routes'
 
 
 import lineBotRoutes from './routes/line-bot.routes'
@@ -396,6 +398,7 @@ app.use(['/mcp', '/mcp/*'], express.json({ limit: '15mb' }))
 // กันคนนอกยิงบอดี้ 10MB ให้ parse ก่อนโดนปฏิเสธ 401 (413 handler ภาษาไทยยังใช้ได้ตามเดิม)
 const largeJsonParser = express.json({ limit: '10mb' })
 app.use(['/api/settings/company', '/api/bank-accounts'], (req, res, next) => (req.headers.authorization ? largeJsonParser(req, res, next) : next()))
+app.use('/qr/api', express.json({ limit: '16kb' }))  // หน้าลูกค้า QR ส่งแค่ตะกร้าเล็ก ๆ
 app.use(express.json({ limit: '1mb' }))
 
 
@@ -446,6 +449,9 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // inside receipt.routes.ts (this path is outside /api, so the global limiter above
 // does not cover it). Must stay mounted before the SPA catch-all at the bottom.
 app.use('/r', receiptRoutes)
+// Public QR สั่งที่โต๊ะ — API ของหน้าลูกค้า (frontend/public/qr/) ไม่มี login เข้าด้วย token บน QR
+// อยู่นอก /api เหมือน /r: มี rate limit ของตัวเอง ไม่แย่งโควตา 200/นาที/IP กับเครื่องแคชเชียร์ที่ใช้ Wi-Fi เดียวกัน
+app.use('/qr/api', qrPublicRoutes)
 
 
 // API Routes
@@ -478,6 +484,8 @@ app.use('/api/pos', authenticate, subscriptionGate('pos'))
 // ponytail: request /api/pos/kds ผ่าน gate 'pos' (ด้านบน) แล้วมาเจอ gate 'kds' ซ้อน —
 // ไม่เป็นไรเพราะทุกแพ็กเกจที่มี kds มี pos อยู่แล้ว
 app.use('/api/pos/kds', authenticate, subscriptionGate('kds'))
+// QR สั่งที่โต๊ะอยู่ใน Pack Shop คู่กับ KDS (ดู routes/qr-public.routes.ts)
+app.use('/api/pos/tables', authenticate, subscriptionGate('kds'))
 app.use('/api/bom', authenticate, subscriptionGate('bom'))
 app.use('/api/calculator', authenticate, subscriptionGate('bom'))
 app.use('/api/work-orders', authenticate, subscriptionGate('work_orders'))
@@ -599,6 +607,7 @@ app.use('/api/pos', posMenuRoutes)
 
 
 app.use('/api/pos', posBillRoutes)
+app.use('/api/pos', posTablesRoutes)
 
 
 app.use('/api/pos', posClearingRoutes)
