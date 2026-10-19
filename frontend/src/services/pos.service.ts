@@ -142,8 +142,9 @@ const posService = {
     return response.data
   },
 
-  openShift: async (opening_cash: number, notes?: string) => {
-    const response = await api.post('/sales/pos-shifts/open', { opening_cash, notes })
+  // opening_gap_reason: เงินเปิดกะน้อยกว่ายอดปิดกะก่อน — ระบุแล้วระบบลงเป็นเงินจาก POS รอจับคู่บิล (1182)
+  openShift: async (opening_cash: number, notes?: string, opening_gap_reason?: string) => {
+    const response = await api.post('/sales/pos-shifts/open', { opening_cash, notes, opening_gap_reason })
     return response.data
   },
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, RefreshCw, Store, Landmark, Package, Truck } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, RefreshCw, Store, Landmark, Package, Truck, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -38,6 +38,7 @@ const ICONS: Record<string, React.ElementType> = {
   '1181': Landmark,
   '1112': Truck,
   '2109': Package,
+  '1182': Wallet,
 }
 
 // ==================== Main Component ====================
@@ -101,7 +102,7 @@ export default function ClearingReconcile() {
         </div>
       )}
 
-      {/* การ์ด 4 บัญชีพัก */}
+      {/* การ์ดบัญชีพัก */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {buckets.map((b) => {
           const Icon = ICONS[b.code] || Package

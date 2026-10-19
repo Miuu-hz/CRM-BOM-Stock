@@ -54,6 +54,27 @@ function getShiftCashMovementTotals(tenantId: string, shiftId: string): { cashIn
   return { cashIn: row?.cash_in || 0, paidOut: row?.paid_out || 0 }
 }
 
+/**
+ * เงินออกจากลิ้นชักที่ยังไม่มีบิล — Dr 1182 เงินจ่ายจาก POS รอจับคู่บิล / Cr เงินสด
+ * ยอดค้างใน 1182 จะถูกปิดตอนบันทึกจ่ายเงินผู้ขายด้วยวิธี "เงินจาก POS" (paySupplier, POS_CASH)
+ * OPENING_GAP = เงินที่หายไประหว่างปิดกะก่อนกับเปิดกะนี้ (ไม่นับใน expected_cash ของกะ)
+ */
+function recordPosPayoutPending(
+  tenantId: string, userId: string, shift: { id: string; shift_number: string },
+  type: 'PAID_OUT' | 'OPENING_GAP', amount: number, reason: string, nowStr: string,
+): string {
+  const movementId = generateId()
+  const pendingAccId = getOrCreateAccount(tenantId, ACC.POS_PAYOUT_PENDING)
+  db.prepare(`
+    INSERT INTO pos_shift_cash_movements (id, tenant_id, shift_id, type, amount, reason, account_id, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(movementId, tenantId, shift.id, type, amount, reason, pendingAccId, userId, nowStr)
+  const label = type === 'OPENING_GAP' ? 'เงินออกจากลิ้นชักก่อนเปิด' : 'จ่ายออกจากลิ้นชัก'
+  postSimpleJournal(tenantId, userId, thaiDateStr(), 'POS_CASH_MOVEMENT', movementId,
+    `${label} กะ ${shift.shift_number} - ${reason}`, pendingAccId, getOrCreateAccount(tenantId, ACC.CASH), amount)
+  return movementId
+}
+
 // Sales inside a shift: prefer bills tagged with this shift_id (set at bill
 // creation once a shift is open); fall back to the old opened_at time-range
 // match for bills created before the shift_id column existed.
@@ -508,6 +529,7 @@ router.post('/pos-shifts/open', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const userId = req.user!.userId
     const { notes } = req.body
+    const openingGapReason = typeof req.body.opening_gap_reason === 'string' ? req.body.opening_gap_reason.trim() : ''
     const opening_cash = parseCashAmount(req.body.opening_cash)
     if (opening_cash === null) {
       return res.status(400).json({ success: false, message: 'กรุณาระบุเงินสดเปิดกะเป็นตัวเลขตั้งแต่ 0 ขึ้นไป' })
@@ -540,12 +562,30 @@ router.post('/pos-shifts/open', (req: Request, res: Response) => {
     const id = generateId()
     const nowStr = new Date().toISOString()
 
-    db.prepare(`
-      INSERT INTO pos_shifts (id, tenant_id, shift_number, status, opened_at, opening_cash, opened_by, notes, created_at)
-      VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)
-    `).run(id, tenantId, shiftNumber, nowStr, opening_cash, userId, notes || null, nowStr)
+    // เงินเปิดกะน้อยกว่าที่นับได้ตอนปิดกะก่อน = มีเงินออกจากลิ้นชักระหว่างกะ (เช่นพนักงานเอาไปซื้อของ)
+    // ถ้าระบุหมายเหตุมา ให้ลงเป็นรายการ OPENING_GAP เข้าบัญชีพัก 1182 รอจับคู่กับบิลในหน้าจ่ายเงินผู้ขาย
+    // ไม่นับใน expected_cash ของกะนี้ เพราะเงินออกไปก่อนนับยอดเปิดกะแล้ว
+    const lastClosed = db.prepare(`
+      SELECT closing_cash_counted FROM pos_shifts
+      WHERE tenant_id = ? AND status = 'CLOSED' ORDER BY closed_at DESC, opened_at DESC LIMIT 1
+    `).get(tenantId) as { closing_cash_counted: number | null } | undefined
+    const openingGap = lastClosed?.closing_cash_counted != null
+      ? Math.round((lastClosed.closing_cash_counted - opening_cash) * 100) / 100
+      : 0
 
-    res.json({ success: true, message: 'เปิดกะสำเร็จ', data: { id, shift_number: shiftNumber, opened_at: nowStr } })
+    let gapMovementId: string | null = null
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO pos_shifts (id, tenant_id, shift_number, status, opened_at, opening_cash, opened_by, notes, created_at)
+        VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)
+      `).run(id, tenantId, shiftNumber, nowStr, opening_cash, userId, notes || null, nowStr)
+
+      if (openingGap > 0 && openingGapReason) {
+        gapMovementId = recordPosPayoutPending(tenantId, userId, { id, shift_number: shiftNumber }, 'OPENING_GAP', openingGap, openingGapReason, nowStr)
+      }
+    })()
+
+    res.json({ success: true, message: 'เปิดกะสำเร็จ', data: { id, shift_number: shiftNumber, opened_at: nowStr, opening_gap: openingGap, opening_gap_movement_id: gapMovementId } })
   } catch (error) {
     console.error('Open shift error:', error)
     res.status(500).json({ success: false, message: 'Failed to open shift' })
@@ -789,8 +829,8 @@ router.post('/pos-shifts/:id/cash-movement', (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์บันทึกเงินเข้า/ออกลิ้นชัก — ต้องเป็น ADMIN/MANAGER/MASTER/POWERUSER' })
     }
 
-    if (type !== 'PAID_OUT' && type !== 'CASH_IN') {
-      return res.status(400).json({ success: false, message: 'ประเภทไม่ถูกต้อง (ต้องเป็น PAID_OUT หรือ CASH_IN)' })
+    if (type !== 'PAID_OUT' && type !== 'CASH_IN' && type !== 'OPENING_GAP') {
+      return res.status(400).json({ success: false, message: 'ประเภทไม่ถูกต้อง (ต้องเป็น PAID_OUT, CASH_IN หรือ OPENING_GAP)' })
     }
     const amt = Number(amount)
     if (!amt || amt <= 0) {
@@ -818,8 +858,8 @@ router.post('/pos-shifts/:id/cash-movement', (req: Request, res: Response) => {
 
     const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
     const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย (nowStr เป็น UTC → 00:00–06:59 ได้วันก่อน)
-    const desc = `${type === 'PAID_OUT' ? 'จ่ายออกจากลิ้นชัก' : 'รับเข้าลิ้นชัก'} กะ ${shift.shift_number}${reason ? ' - ' + reason : ''}`
-    const journalEntryId = type === 'PAID_OUT'
+    const desc = `${type === 'CASH_IN' ? 'รับเข้าลิ้นชัก' : type === 'OPENING_GAP' ? 'เงินออกจากลิ้นชักก่อนเปิด' : 'จ่ายออกจากลิ้นชัก'} กะ ${shift.shift_number}${reason ? ' - ' + reason : ''}`
+    const journalEntryId = type !== 'CASH_IN'
       // จ่ายออก: Dr บัญชีค่าใช้จ่ายที่เลือก / Cr เงินสด
       ? postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, account_id, cashAccountId, amt)
       // รับเข้า: Dr เงินสด / Cr บัญชีที่เลือก

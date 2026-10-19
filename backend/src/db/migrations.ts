@@ -1924,6 +1924,13 @@ export function runMigrations(db: any): void {
     console.error('⚠️ pos_shift_cash_movements migration error:', e)
   }
 
+  // Migration: ใบจ่ายเงินผู้ขายที่จ่ายด้วย "เงินจาก POS" — ผูกกลับไปหารายการเงินออกจากลิ้นชัก
+  // (pos_shift_cash_movements ที่ลงบัญชี 1182) ยอดคงเหลือรอจับคู่คำนวณสดจากผลรวมใบจ่ายที่ไม่ถูกยกเลิก
+  try {
+    db.exec(`ALTER TABLE supplier_payments ADD COLUMN pos_cash_movement_id TEXT`)
+    console.log('✅ Migration: supplier_payments.pos_cash_movement_id added')
+  } catch { /* column already exists */ }
+
   // Migration: purchase_return_items.material_id FK rebuild — it pointed at
   // materials(id), but every writer of this column (the return-modal's
   // MaterialSearchInput, backed by stockService.getAll() the same way

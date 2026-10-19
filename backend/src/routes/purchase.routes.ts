@@ -26,6 +26,7 @@ import {
   createPurchaseInvoice,
   updatePurchaseInvoice,
   paySupplier,
+  listPosCashUnmatched,
   PurchaseBillingError,
 } from '../services/purchaseBilling.service'
 
@@ -1371,6 +1372,17 @@ router.get('/payments', async (req: Request, res: Response) => {
   }
 })
 
+// GET เงินออกจากลิ้นชัก POS ที่ยังไม่ได้จับคู่บิล — ตัวเลือกของวิธีจ่าย "เงินจาก POS"
+// (path ไม่อยู่ใต้ /payments/ เพราะจะชนกับ /payments/:id ด้านล่าง)
+router.get('/pos-cash-unmatched', (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: listPosCashUnmatched(req.user!.tenantId) })
+  } catch (error) {
+    console.error('Get unmatched POS cash error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch unmatched POS cash' })
+  }
+})
+
 // GET single supplier payment
 router.get('/payments/:id', async (req: Request, res: Response) => {
   try {
@@ -1398,9 +1410,10 @@ router.post('/payments', async (req: Request, res: Response) => {
     if (!canHandleBilling(req.user!, 'purchase')) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
     }
-    const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, notes, bankAccountId } = req.body
+    const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, notes, bankAccountId, posCashMovementId } = req.body
 
     const payment = paySupplier(tenantId, req.user!.email, {
+      posCashMovementId,
       supplierId,
       purchaseInvoiceId,
       paymentDate,

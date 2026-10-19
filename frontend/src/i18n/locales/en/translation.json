@@ -881,7 +881,8 @@
       "cash": "Cash",
       "transfer": "Bank Transfer",
       "cheque": "Cheque",
-      "creditCard": "Credit Card"
+      "creditCard": "Credit Card",
+      "posCash": "Cash from POS"
     },
     "returnReason": {
       "defective": "Defective/Damaged",
@@ -1047,6 +1048,12 @@
       "reference": "Reference (slip / cheque no.)",
       "referencePlaceholder": "e.g. 20250316001",
       "payFrom": "Paid out of which account",
+      "posCashPick": "Match with cash taken from the POS drawer",
+      "posCashPlaceholder": "— Pick an unmatched item —",
+      "posCashNone": "No unmatched POS drawer cash — record the paid-out in Cashier (account 1182) or when opening the shift first",
+      "posCashOption": "{{shift}} · {{date}} · {{reason}} · {{amount}} left",
+      "posCashOver": "Amount exceeds what is left to match on this item ({{amount}})",
+      "posCashHint": "Cash already left the drawer when it was taken out; this payment clears the pending item instead of deducting cash again",
       "payFromAuto": "Let the system pick by payment method (cash / bank)",
       "noBankAccount": "No bank account configured — the system will book by payment method. Add one under Settings › Bank accounts",
       "accountHint": "Debit = the debt being cleared · Credit = the money actually leaving",
@@ -1087,6 +1094,7 @@
       "vat": "VAT",
       "total": "Total",
       "bankDeposit": "1102 Bank Deposit",
+      "posCashPending": "1182 POS payout pending bill",
       "cash": "1101 Cash",
       "withholdingTaxPayable": "2180 WHT Payable",
       "reducePayable": "Reduce payable",

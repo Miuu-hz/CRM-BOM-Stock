@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { ACC, ACC_META } from '../config/accountCodes'
+import { listPosCashUnmatched } from '../services/purchaseBilling.service'
 
 const router = Router()
 
@@ -13,6 +14,7 @@ const CLEARING_LABELS: Record<string, { title: string; zeroWhen: string }> = {
   [ACC.PLATFORM_CLEARING]: { title: 'ขายออนไลน์แล้วรอแพลตฟอร์มโอนเงิน',     zeroWhen: 'แพลตฟอร์มโอนเข้าบัญชีแล้ว' },
   [ACC.SUBCON_MATERIAL]:   { title: 'ส่งวัตถุดิบไปให้ผู้รับจ้างช่วง ยังไม่ได้คืน', zeroWhen: 'รับของคืนครบแล้ว' },
   [ACC.GRNI]:              { title: 'ของเข้าคลังแล้ว ผู้ขายยังไม่วางบิล',    zeroWhen: 'ได้ใบแจ้งหนี้ครบแล้ว' },
+  [ACC.POS_PAYOUT_PENDING]: { title: 'จ่ายเงินจาก POS แล้ว ยังไม่ได้รับของ/ลงบิล', zeroWhen: 'ลงบิลแล้วจ่ายด้วย "เงินจาก POS" ครบ' },
 }
 
 // ยอด "ค้าง" ของบัญชีพักหนึ่งตัว ปรับให้เป็นบวกเสมอตามทิศ normal balance ของบัญชี
@@ -78,9 +80,13 @@ router.get('/reconcile', async (req: Request, res: Response) => {
       ORDER BY total_value DESC
     `).all(tenantId) as Array<{ id: string; supplier_name: string; item_name: string; quantity: number; value: number }>
 
+    // ---------- 1182 เงินจาก POS: เงินออกจากลิ้นชักแล้ว ยังไม่มีใบจ่ายเงินผู้ขายมาจับคู่ ----------
+    const posPayoutItems = listPosCashUnmatched(tenantId)
+
     const buckets = [
       { code: ACC.GRNI, items: grniItems.map(r => ({ id: r.id, docNumber: r.gr_number, date: r.receipt_date, party: r.supplier_name || '-', value: r.value })) },
       { code: ACC.POS_CLEARING, items: posItems.map(r => ({ id: r.id, docNumber: r.bill_number, date: r.closed_at, party: '-', value: r.value })) },
+      { code: ACC.POS_PAYOUT_PENDING, items: posPayoutItems.map(r => ({ id: r.id, docNumber: r.shift_number || '-', date: r.created_at, party: `${r.reason || '-'}${r.created_by_name ? ` · ${r.created_by_name}` : ''}${r.remaining < r.amount ? ` (จับคู่แล้ว ฿${(r.amount - r.remaining).toLocaleString()} จาก ฿${r.amount.toLocaleString()})` : ''}`, value: r.remaining })) },
       { code: ACC.SUBCON_MATERIAL, items: subconItems.map(r => ({ id: r.id, docNumber: r.item_name, date: null, party: r.supplier_name, quantity: r.quantity, value: r.value })) },
       { code: ACC.PLATFORM_CLEARING, items: [] as Array<{ id: string; docNumber: string; date: string | null; party: string; value: number }> }, // ยังไม่มีแหล่งข้อมูลจริง (ตามที่ระบุในโจทย์)
     ]

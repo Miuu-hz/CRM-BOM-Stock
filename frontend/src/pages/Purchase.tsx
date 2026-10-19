@@ -1428,6 +1428,13 @@ const Purchase = () => {
   const [crAccounts, setCrAccounts] = useState<Account[]>([])
   // บัญชีธนาคาร/เงินสดที่เงินจะออก — backend รับ bankAccountId อยู่แล้ว แต่หน้าเว็บไม่เคยส่งให้
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  // เงินออกจากลิ้นชัก POS ที่ยังไม่มีบิลมาจับคู่ (บัญชี 1182) — ตัวเลือกของวิธีจ่าย "เงินจาก POS"
+  const [posCashItems, setPosCashItems] = useState<Array<{ id: string; amount: number; remaining: number; reason: string | null; created_at: string; shift_number: string | null; created_by_name: string | null }>>([])
+  const fetchPosCashUnmatched = () => {
+    api.get('/purchase/pos-cash-unmatched')
+      .then(({ data }) => { if (data.success) setPosCashItems(data.data || []) })
+      .catch(() => setPosCashItems([]))
+  }
   // สลิปที่เลือกไว้ตอนยังไม่ได้บันทึก — ใบจ่ายเงินยังไม่เกิด จึงยังไม่มี id ให้ผูกไฟล์
   // เก็บค้างไว้ก่อน แล้วอัปโหลดทันทีหลังบันทึกสำเร็จ
   const [slipFile, setSlipFile] = useState<File | null>(null)
@@ -1554,6 +1561,7 @@ const Purchase = () => {
     withholding_tax: 0,
     notes: '',
     bank_account_id: '',   // '' = ให้ระบบเลือกตามวิธีจ่าย (เงินสด 1101 / อื่น ๆ 1102)
+    pos_cash_movement_id: '', // วิธีจ่าย POS_CASH — รายการเงินออกจากลิ้นชักที่บิลนี้จับคู่
   })
 
   const [returnForm, setReturnForm] = useState({
@@ -2370,6 +2378,13 @@ const Purchase = () => {
   const handleCreatePayment = async () => {
     const selInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
     if (selInv && paymentForm.amount > selInv.balance_amount) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
+    if (paymentForm.payment_method === 'POS_CASH') {
+      const mv = posCashItems.find(m => m.id === paymentForm.pos_cash_movement_id)
+      if (!mv) { toast.error(t('purchase.paymentModal.posCashPlaceholder')); return }
+      if (paymentForm.amount - paymentForm.withholding_tax > mv.remaining + 0.005) {
+        toast.error(t('purchase.paymentModal.posCashOver', { amount: formatCurrency(mv.remaining) })); return
+      }
+    }
     setFormLoading(true)
     try {
       if (selInv?.purchase_order_id) {
@@ -2387,7 +2402,8 @@ const Purchase = () => {
         paymentReference: paymentForm.payment_reference,
         amount: paymentForm.amount,
         withholdingTax: paymentForm.withholding_tax,
-        bankAccountId: paymentForm.bank_account_id || undefined,
+        bankAccountId: paymentForm.payment_method === 'POS_CASH' ? undefined : (paymentForm.bank_account_id || undefined),
+        posCashMovementId: paymentForm.payment_method === 'POS_CASH' ? paymentForm.pos_cash_movement_id : undefined,
         notes: paymentForm.notes,
       })
       if (data.success) {
@@ -2760,6 +2776,7 @@ const Purchase = () => {
     setModalOpen(type)
     setModalMode(mode)
     setModalData(data)
+    if (type === 'payment') fetchPosCashUnmatched()
     if (data) {
       if (type === 'request') {
         setRequestForm({
@@ -2881,6 +2898,7 @@ const Purchase = () => {
           withholding_tax: data.withholding_tax || 0,
           notes: data.notes || '',
           bank_account_id: data.bank_account_id || defaultBankId(),
+          pos_cash_movement_id: data.pos_cash_movement_id || '',
         })
       } else if (type === 'return') {
         setReturnForm({
@@ -2902,7 +2920,7 @@ const Purchase = () => {
       if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
       if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
       if (type === 'invoice') setInvoiceForm({ invoice_id: '', supplier_id: '', goods_receipt_ids: [], items: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, discount_amount: 0, notes: '', dr_account_id: '', cr_account_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _preselect_po_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
-      if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId() })
+      if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId(), pos_cash_movement_id: '' })
       if (type === 'return') setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
   }
@@ -3826,7 +3844,7 @@ const Purchase = () => {
     )
     const filtered = base.filter(byStatus('payment_method'))
     const paginated = sortRows(filtered, sort).slice((currentPage - 1) * pageSize, currentPage * pageSize)
-    const methodLabel: Record<string, string> = { CASH: t('purchase.paymentMethod.cash'), TRANSFER: t('purchase.paymentMethod.transfer'), CHEQUE: t('purchase.paymentMethod.cheque'), CREDIT_CARD: t('purchase.paymentMethod.creditCard') }
+    const methodLabel: Record<string, string> = { CASH: t('purchase.paymentMethod.cash'), TRANSFER: t('purchase.paymentMethod.transfer'), CHEQUE: t('purchase.paymentMethod.cheque'), CREDIT_CARD: t('purchase.paymentMethod.creditCard'), POS_CASH: t('purchase.paymentMethod.posCash') }
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.paymentsPlaceholder'), base, null, 'payment_method', m => methodLabel[m] || m)}
@@ -5500,14 +5518,54 @@ const Purchase = () => {
             </Field>
             <Field label={t('purchase.paymentModal.paymentMethod')}>
               <select value={paymentForm.payment_method}
-                onChange={e => setPaymentForm(p => ({ ...p, payment_method: e.target.value }))} className={inputCls()}>
+                onChange={e => {
+                  const method = e.target.value
+                  if (method === 'POS_CASH') fetchPosCashUnmatched()
+                  setPaymentForm(p => ({ ...p, payment_method: method }))
+                }} className={inputCls()}>
                 <option value="CASH">{t('purchase.paymentMethod.cash')}</option>
+                <option value="POS_CASH">{t('purchase.paymentMethod.posCash')}</option>
                 <option value="TRANSFER">{t('purchase.paymentMethod.transfer')}</option>
                 <option value="CHEQUE">{t('purchase.paymentMethod.cheque')}</option>
                 <option value="CREDIT_CARD">{t('purchase.paymentMethod.creditCard')}</option>
               </select>
             </Field>
           </div>
+
+          {/* เงินจาก POS — เงินออกจากลิ้นชักไปก่อนแล้ว (ตอนเปิดกะ/เงินออกระหว่างกะ ลงบัญชี 1182)
+              ใบจ่ายนี้แค่จับคู่บิลกับรายการนั้น ไม่หักเงินสดซ้ำ */}
+          {paymentForm.payment_method === 'POS_CASH' && (
+            <Field label={t('purchase.paymentModal.posCashPick')}>
+              {posCashItems.length === 0 ? (
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-[var(--warning-soft)] border border-warning/30">
+                  <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                  <p className="text-xs text-[var(--fg-2)] leading-relaxed">{t('purchase.paymentModal.posCashNone')}</p>
+                </div>
+              ) : (
+                <>
+                  <select value={paymentForm.pos_cash_movement_id}
+                    onChange={e => {
+                      const id = e.target.value
+                      const mv = posCashItems.find(m => m.id === id)
+                      // ยังไม่ได้เลือกใบแจ้งหนี้ → เติมยอดตามเงินที่เหลือให้จับคู่
+                      setPaymentForm(p => ({ ...p, pos_cash_movement_id: id, amount: !p.purchase_invoice_id && mv ? mv.remaining : p.amount }))
+                    }}
+                    className={inputCls()}>
+                    <option value="">{t('purchase.paymentModal.posCashPlaceholder')}</option>
+                    {posCashItems.map(m => (
+                      <option key={m.id} value={m.id}>{t('purchase.paymentModal.posCashOption', {
+                        shift: m.shift_number || '-',
+                        date: new Date(m.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }),
+                        reason: m.reason || '-',
+                        amount: formatCurrency(m.remaining),
+                      })}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-[var(--fg-4)] mt-1.5">{t('purchase.paymentModal.posCashHint')}</p>
+                </>
+              )}
+            </Field>
+          )}
 
           {/* Amount + WHT */}
           <div className="p-4 bg-[var(--bg)] rounded-xl space-y-3">
@@ -5557,7 +5615,7 @@ const Purchase = () => {
 
           {/* เงินออกจากบัญชีไหน — เดิมไม่มีช่องนี้เลย ระบบเดาจากวิธีจ่ายอย่างเดียว
               (เงินสด -> 1101 · อื่น ๆ -> 1102) พอมีหลายบัญชีธนาคารก็แยกไม่ออก */}
-          <Field label={t('purchase.paymentModal.payFrom')}>
+          {paymentForm.payment_method !== 'POS_CASH' && <Field label={t('purchase.paymentModal.payFrom')}>
             {bankAccounts.length === 0 ? (
               <div className="px-3 py-2.5 rounded-xl border border-dashed border-[var(--border-strong)] text-xs text-[var(--fg-3)]">
                 {t('purchase.paymentModal.noBankAccount')}
@@ -5572,12 +5630,12 @@ const Purchase = () => {
                 ))}
               </select>
             )}
-          </Field>
+          </Field>}
 
           {/* ตารางลงบัญชี — ชุดเดียวกับโมดัลใบแจ้งหนี้ จะได้อ่านแบบเดียวกัน */}
           {paymentForm.amount > 0 && (() => {
-            const picked = bankAccounts.find(b => b.id === paymentForm.bank_account_id)
-            const outLabel = picked
+            const picked = paymentForm.payment_method === 'POS_CASH' ? undefined : bankAccounts.find(b => b.id === paymentForm.bank_account_id)
+            const outLabel = paymentForm.payment_method === 'POS_CASH' ? t('purchase.journal.posCashPending') : picked
               ? `${picked.gl_code ? picked.gl_code + ' ' : ''}${picked.bank_name} · ${picked.account_number}`
               : paymentForm.payment_method === 'CASH' ? t('purchase.journal.cash') : t('purchase.journal.bankDeposit')
             return (

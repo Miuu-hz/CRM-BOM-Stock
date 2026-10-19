@@ -39,7 +39,10 @@ export class PurchaseBillingError extends Error {
       | 'OVER_PAID'
       | 'CR_ACCOUNT_INVALID'
       | 'PERIOD_CLOSED'
-      | 'DUPLICATE_SUPPLIER_INVOICE',
+      | 'DUPLICATE_SUPPLIER_INVOICE'
+      | 'POS_CASH_REQUIRED'
+      | 'POS_CASH_NOT_FOUND'
+      | 'POS_CASH_OVER',
     message: string
   ) {
     super(message)
@@ -757,6 +760,45 @@ export interface PaySupplierPayload {
   withholdingTax?: number
   notes?: string
   bankAccountId?: string | null
+  /** วิธีจ่าย POS_CASH — รายการเงินออกจากลิ้นชัก (pos_shift_cash_movements บัญชี 1182) ที่บิลนี้จับคู่ */
+  posCashMovementId?: string | null
+}
+
+/** วิธีจ่าย "เงินจาก POS" — เงินออกจากลิ้นชักไปก่อนแล้ว ใบจ่ายนี้แค่จับคู่บิลเข้ากับรายการนั้น */
+export const POS_CASH_METHOD = 'POS_CASH'
+
+export interface PosCashUnmatched {
+  id: string
+  type: string
+  amount: number
+  remaining: number
+  reason: string | null
+  created_at: string
+  shift_number: string | null
+  created_by_name: string | null
+}
+
+/**
+ * เงินออกจากลิ้นชัก POS ที่ยังไม่ได้จับคู่บิลครบ (ลงบัญชี 1182 ไว้)
+ * ยอดคงเหลือ = ยอดที่เอาออก − ผลรวมใบจ่ายเงินผู้ขายที่ผูกไว้และยังไม่ถูกยกเลิก
+ * ส่ง movementId มาเพื่อดูรายการเดียว (รวมที่จับคู่ครบแล้วด้วย)
+ */
+export function listPosCashUnmatched(tenantId: string, movementId?: string): PosCashUnmatched[] {
+  const rows = db.prepare(`
+    SELECT m.id, m.type, m.amount, m.reason, m.created_at, s.shift_number, u.name AS created_by_name,
+      ROUND(m.amount - COALESCE((
+        SELECT SUM(sp.net_amount) FROM supplier_payments sp
+        WHERE sp.tenant_id = m.tenant_id AND sp.pos_cash_movement_id = m.id
+          AND (sp.status IS NULL OR sp.status != 'CANCELLED')
+      ), 0), 2) AS remaining
+    FROM pos_shift_cash_movements m
+    JOIN accounts a ON a.id = m.account_id AND a.code = ?
+    LEFT JOIN pos_shifts s ON s.id = m.shift_id
+    LEFT JOIN users u ON u.id = m.created_by
+    WHERE m.tenant_id = ? AND m.type IN ('PAID_OUT', 'OPENING_GAP') ${movementId ? 'AND m.id = ?' : ''}
+    ORDER BY m.created_at
+  `).all(...[ACC.POS_PAYOUT_PENDING, tenantId, ...(movementId ? [movementId] : [])]) as PosCashUnmatched[]
+  return movementId ? rows : rows.filter(r => r.remaining > 0.005)
 }
 
 /**
@@ -764,7 +806,11 @@ export interface PaySupplierPayload {
  * Dr เจ้าหนี้การค้า = Cr เงินสด/ธนาคาร + Cr ภาษีหัก ณ ที่จ่าย (ถ้ามี)
  */
 export function paySupplier(tenantId: string, actorEmail: string, payload: PaySupplierPayload) {
-  const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, notes, bankAccountId } = payload
+  const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, notes } = payload
+  const isPosCash = paymentMethod === POS_CASH_METHOD
+  // เงินจาก POS ไม่ได้ออกจากบัญชีธนาคาร — ไม่สนใจ bankAccountId ที่ติดมาจากฟอร์ม
+  const bankAccountId = isPosCash ? null : payload.bankAccountId
+  const posCashMovementId = isPosCash ? (payload.posCashMovementId || null) : null
   if (!supplierId) throw new PurchaseBillingError('SUPPLIER_REQUIRED', 'Supplier and amount are required')
   if (!amount) throw new PurchaseBillingError('AMOUNT_REQUIRED', 'Supplier and amount are required')
 
@@ -782,6 +828,18 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   const closedLabel = closedPeriodLabel(tenantId, paymentDate || new Date().toISOString())
   if (closedLabel) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกการจ่ายเงินวันที่นี้ไม่ได้`)
 
+  const wht0 = payload.withholdingTax || 0
+  let posCashAccId: string | null = null
+  if (isPosCash) {
+    if (!posCashMovementId) throw new PurchaseBillingError('POS_CASH_REQUIRED', 'เลือกรายการเงินออกจาก POS ที่จะจับคู่กับบิลนี้ก่อน')
+    const mv = listPosCashUnmatched(tenantId, posCashMovementId)[0]
+    if (!mv) throw new PurchaseBillingError('POS_CASH_NOT_FOUND', 'ไม่พบรายการเงินออกจาก POS ที่เลือก')
+    if (amount - wht0 > mv.remaining + 0.005) {
+      throw new PurchaseBillingError('POS_CASH_OVER', `รายการเงินออกจาก POS นี้เหลือให้จับคู่ ฿${mv.remaining.toLocaleString()} แต่จะจ่าย ฿${(amount - wht0).toLocaleString()}`)
+    }
+    posCashAccId = getOrCreateAccount(tenantId, ACC.POS_PAYOUT_PENDING)
+  }
+
   const id = generateId()
   // prefix 'SP' ใช้เฉพาะตอนยังไม่เปิดรูปแบบใน Settings (ถ้าเปิด จะใช้ prefix ที่ตั้งไว้ เช่น PAY)
   const paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', docYear(paymentDate), 5, paymentDate)
@@ -795,7 +853,8 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
   // MCP เก็บวิธีจ่ายเป็นข้อความไทยจากบิล ("เงินสด") — เดิมเทียบแค่ === 'CASH' บิลเงินสดเลยไปลงธนาคาร
   const cashCode = isCashMethod(paymentMethod) ? ACC.CASH : ACC.BANK
-  const cashAccId = linkedAccountId || getOrCreateAccount(
+  // เงินจาก POS: เงินสดถูกตัดไปแล้วตอนเอาออกจากลิ้นชัก (Dr 1182 / Cr เงินสด) ขานี้จึงปิด 1182 แทนเงินสด
+  const cashAccId = posCashAccId || linkedAccountId || getOrCreateAccount(
     tenantId, cashCode, ACC_META[cashCode]!.name, ACC_META[cashCode]!.type, ACC_META[cashCode]!.category, ACC_META[cashCode]!.normalBalance
   )
   const whtAccId = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
@@ -805,10 +864,10 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   const transaction = db.transaction(() => {
     db.prepare(`
       INSERT INTO supplier_payments (id, tenant_id, payment_number, supplier_id, purchase_invoice_id,
-        payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, bank_account_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, bank_account_id, pos_cash_movement_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, tenantId, paymentNumber, supplierId, purchaseInvoiceId || null, paymentDate || now,
-      paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', bankAccountId || null, now, now)
+      paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', bankAccountId || null, posCashMovementId, now, now)
 
     if (invoice) {
       const r2 = (n: number) => Math.round(n * 100) / 100

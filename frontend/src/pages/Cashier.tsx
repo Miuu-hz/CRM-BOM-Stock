@@ -110,7 +110,7 @@ interface POSShift {
 
 interface CashMovement {
   id: string
-  type: 'PAID_OUT' | 'CASH_IN'
+  type: 'PAID_OUT' | 'CASH_IN' | 'OPENING_GAP'
   amount: number
   reason?: string
   account_name?: string
@@ -1583,7 +1583,7 @@ function TodaySummary({ shift, sales, moves, onOpenBill }: {
                   ? <ArrowDownToLine className="w-4 h-4 text-success shrink-0" />
                   : <ArrowUpFromLine className="w-4 h-4 text-danger shrink-0" />}
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm text-[var(--fg-1)] truncate">{r.move!.type === 'CASH_IN' ? 'เงินเข้าลิ้นชัก' : 'เงินออกลิ้นชัก'}{r.move!.reason ? ` — ${r.move!.reason}` : ''}</span>
+                  <span className="block text-sm text-[var(--fg-1)] truncate">{r.move!.type === 'CASH_IN' ? 'เงินเข้าลิ้นชัก' : r.move!.type === 'OPENING_GAP' ? 'เงินออกก่อนเปิดกะ' : 'เงินออกลิ้นชัก'}{r.move!.reason ? ` — ${r.move!.reason}` : ''}</span>
                   {r.move!.account_name && <span className="block text-xs text-[var(--fg-4)]">{r.move!.account_name}</span>}
                 </span>
                 <span className={`text-sm font-semibold ${r.move!.type === 'CASH_IN' ? 'text-success' : 'text-danger'}`}>
@@ -2741,6 +2741,7 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
   // ช่องนับเริ่มว่าง — เดิมเติมยอดควรมีไว้ให้ กดยืนยันได้โดยไม่ต้องนับเงินเลย เงินขาดจึงไม่เคยถูกจับ
   const [closingCash, setClosingCash] = useState('')
   const [notes, setNotes] = useState('')
+  const [gapReason, setGapReason] = useState('')
   const [saving, setSaving] = useState(false)
 
   // ดึงเงินคงเหลือจากกะก่อนหน้าตอนเปิดกะ
@@ -2761,10 +2762,15 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
   const adjustedExpectedCash = Math.round((expectedCash - totalNewExpenses) * 100) / 100
   const diff = (parseFloat(closingCash) || 0) - adjustedExpectedCash
 
+  // เงินเปิดกะน้อยกว่าที่นับได้ตอนปิดกะก่อน = มีคนเอาเงินออกจากลิ้นชักไปแล้ว
+  const openingGap = lastClosedShift?.closing_cash_counted != null && openingCash.trim() !== ''
+    ? Math.round(((lastClosedShift.closing_cash_counted || 0) - (parseFloat(openingCash) || 0)) * 100) / 100
+    : 0
+
   const handleOpen = async () => {
     setSaving(true)
     try {
-      const res = await posService.openShift(parseFloat(openingCash) || 0, notes || undefined)
+      const res = await posService.openShift(parseFloat(openingCash) || 0, notes || undefined, openingGap > 0 ? gapReason.trim() || undefined : undefined)
       if (res.success) {
         toast.success(`เปิดกะสำเร็จ: ${res.data.shift_number}`)
         onDone(); onClose()
@@ -2843,6 +2849,15 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
               <div className="mb-4 text-xs text-[var(--fg-3)] bg-[var(--bg)] p-2.5 rounded-lg border border-[var(--border)] flex items-center justify-between">
                 <span>เงินคงเหลือจากกะก่อน ({lastClosedShift.shift_number}):</span>
                 <span className="font-semibold text-success">฿{(lastClosedShift.closing_cash_counted || 0).toLocaleString()}</span>
+              </div>
+            )}
+            {openingGap > 0 && (
+              <div className="mb-4 p-3 rounded-lg bg-[var(--warning-soft)] border border-warning/30">
+                <p className="text-sm font-semibold text-warning mb-1">เงินน้อยกว่ายอดปิดกะก่อน ฿{openingGap.toLocaleString()}</p>
+                <p className="text-xs text-[var(--fg-3)] mb-2">ถ้าเอาเงินไปซื้อของ ให้ใส่หมายเหตุไว้ ระบบจะเก็บเป็น "เงินจาก POS" รอจับคู่กับบิลในหน้าจ่ายเงินซื้อ</p>
+                <input type="text" value={gapReason} onChange={e => setGapReason(e.target.value)}
+                  placeholder="เช่น พนักงานเอาไปซื้อน้ำแข็ง/ของสด"
+                  className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
               </div>
             )}
           </>
