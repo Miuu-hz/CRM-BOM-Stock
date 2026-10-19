@@ -1407,6 +1407,10 @@ const Purchase = () => {
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([])
   const [payments, setPayments] = useState<SupplierPayment[]>([])
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
+  const tabHasData = {
+    overview: !!summary, requests: requests.length > 0, orders: orders.length > 0, receipts: receipts.length > 0,
+    invoices: invoices.length > 0, payments: payments.length > 0, returns: returns.length > 0,
+  }[activeTab]
   // Whole-category badge numbers from GET /purchase/badge-counts — fetched once on
   // mount (not gated behind opening a tab) and refreshed after any mutation via the
   // fetchXxx() helpers below, so every tab shows its pending count immediately.
@@ -1433,7 +1437,11 @@ const Purchase = () => {
     setSlipFile(null)
     setSlipPreview('')
   }
-  const [loading, setLoading] = useState(true)
+  // หน้านี้ยิงโหลดพร้อมกัน 5–6 ชุดตอนเปิด — เดิมใช้ boolean ตัวเดียว ใครเสร็จก่อนก็ปิด spinner
+  // ทั้งที่ตัวอื่นยังไม่มา จอเลยสลับไปมา · นับจำนวนที่ค้างแทน (เริ่ม 1 = ยังไม่ได้เริ่มโหลด)
+  const [loadingCount, setLoadingCount] = useState(1)
+  const loading = loadingCount > 0
+  const setLoading = (on: boolean) => setLoadingCount(c => Math.max(0, c + (on ? 1 : -1)))
   const [searchQuery, setSearchQuery] = useState('')
 
   // Modal states
@@ -1578,6 +1586,7 @@ const Purchase = () => {
       }
     }).catch(() => {})
     bankAccountsService.list().then(setBankAccounts).catch(() => {})
+    setLoading(false) // ปิดตัวนับเริ่มต้น — โหลดข้างบนนับตัวเองไปแล้ว
   }, [])
 
   // ใบแจ้งหนี้เปลี่ยนมาเลือกผู้ขายก่อนแล้วค่อยติ๊ก GR — โหลดรายการที่วางบิลได้ใหม่ทุกครั้งที่
@@ -5902,19 +5911,22 @@ const Purchase = () => {
       </motion.div>
 
       {/* Content */}
-      {loading ? (
+      {/* spinner เฉพาะตอนแท็บนี้ยังไม่มีข้อมูลเลย — โหลดซ้ำหลังกดปุ่มให้ตารางเดิมค้างไว้ ไม่วูบเป็นจอว่าง
+          เนื้อหาแท็บเรียกเป็นฟังก์ชัน ไม่ใช่ <OrdersContent /> — คอมโพเนนต์ที่ประกาศในนี้เป็นตัวใหม่ทุก render
+          React จะถอด-ประกอบทั้งแท็บใหม่ทุกครั้งที่ข้อมูลชุดไหนมาถึง (ตอนเปิดหน้ามา 6 ชุด = กระพริบ 6 ที) */}
+      {loading && !tabHasData ? (
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-phopy-indigo" />
         </div>
       ) : (
         <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-          {activeTab === 'overview'  && <OverviewContent />}
-          {activeTab === 'requests'  && <RequestsContent />}
-          {activeTab === 'orders'    && <OrdersContent />}
-          {activeTab === 'receipts'  && <ReceiptsContent />}
-          {activeTab === 'invoices'  && <InvoicesContent />}
-          {activeTab === 'payments'  && <PaymentsContent />}
-          {activeTab === 'returns'   && <ReturnsContent />}
+          {activeTab === 'overview'  && OverviewContent()}
+          {activeTab === 'requests'  && RequestsContent()}
+          {activeTab === 'orders'    && OrdersContent()}
+          {activeTab === 'receipts'  && ReceiptsContent()}
+          {activeTab === 'invoices'  && InvoicesContent()}
+          {activeTab === 'payments'  && PaymentsContent()}
+          {activeTab === 'returns'   && ReturnsContent()}
         </motion.div>
       )}
 
