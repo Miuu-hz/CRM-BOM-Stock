@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { Plus, Printer, RefreshCw, Trash2, X } from 'lucide-react'
 import api from '../../services/api'
 import companySettingsService from '../../services/companySettings.service'
+import { useAuth } from '../../contexts/AuthContext'
 import { useModalClose } from '../../hooks/useModalClose'
 import type { PosTable, QrSettings } from './TableBoard'
 import { printTableStickers } from './qrPrint'
@@ -28,6 +29,8 @@ function nextBatch(existing: string[], count = 10): string[] {
 
 export default function TableManager({ tables, settings, onClose, onChanged }: Props) {
   useModalClose(onClose)
+  const { user } = useAuth()
+  const canConfigMode = user?.role === 'ADMIN' || user?.role === 'MASTER'
   const [names, setNames] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -86,12 +89,15 @@ export default function TableManager({ tables, settings, onClose, onChanged }: P
 
         {/* โหมด QR */}
         <section className="space-y-2">
-          <p className="text-sm font-semibold text-[var(--fg-2)]">แบบของ QR</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-[var(--fg-2)]">แบบของ QR</p>
+            {!canConfigMode && <span className="text-xs text-[var(--fg-4)]">เฉพาะ Admin / Master เปลี่ยนได้</span>}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             {([['static', 'QR ถาวรบนโต๊ะ', 'พิมพ์สติกเกอร์ครั้งเดียว ใช้ได้เมื่อแคชเชียร์เปิดโต๊ะ'],
                ['rotate', 'เปลี่ยนทุกรอบ', 'พิมพ์ใบ QR ใหม่ตอนเปิดโต๊ะ ใบเก่าใช้ไม่ได้ทันทีที่ปิดบิล']] as const).map(([mode, label, sub]) => (
-              <button key={mode} onClick={() => saveSettings({ pos_qr_mode: mode })} aria-pressed={settings.mode === mode}
-                className={`p-3 rounded-xl border text-left transition-all ${settings.mode === mode ? 'border-phopy-indigo bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--border-strong)]'}`}>
+              <button key={mode} disabled={!canConfigMode} onClick={() => saveSettings({ pos_qr_mode: mode })} aria-pressed={settings.mode === mode}
+                className={`p-3 rounded-xl border text-left transition-all ${settings.mode === mode ? 'border-phopy-indigo bg-[var(--primary-soft)]' : 'border-[var(--border)] hover:border-[var(--border-strong)]'} ${!canConfigMode ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <p className={`text-sm font-semibold ${settings.mode === mode ? 'text-[var(--primary)]' : 'text-[var(--fg-2)]'}`}>{label}</p>
                 <p className="text-xs text-[var(--fg-4)] mt-0.5">{sub}</p>
               </button>

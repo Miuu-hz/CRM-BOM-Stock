@@ -9,6 +9,9 @@ import { getLoyaltySettings } from '../services/loyaltySettings'
 import {
   DEVICE_COOKIE, DEVICE_DAYS, bindDevice, findOrCreateMember, forgetDevice, getDevice, isKnownToken, memberView, mintDeviceToken,
 } from '../services/posMember.service'
+import {
+  GUEST_COOKIE, GUEST_DAYS, createGuest, forgetGuest, getGuest, guestView, linkItems, retroPoints,
+} from '../services/posGuest.service'
 import { maskPhone, normalizeThaiMobile } from '../utils/phone'
 import { RewardError, activeAd, activePromotions, activeRewards, reservedPoints, reserveRewards } from '../services/qrRewards.service'
 import { recalculateBillTotals } from './pos-bill.routes'
@@ -68,6 +71,22 @@ function resolveOr404(req: Request, res: Response): ResolvedQr | null {
   return r
 }
 
+/**
+ * ponytail: สติกเกอร์โต๊ะที่เปิดอยู่ ห้ามสั่งหรือทำรายการตรงๆ — ต้อง redirect ไปใช้ session token ประจำรอบ
+ */
+function requireSession(r: ResolvedQr, res: Response): boolean {
+  if (r.via === 'table' && r.state === 'open') {
+    res.status(409).json({
+      success: false,
+      code: 'SESSION_REQUIRED',
+      message: 'กรุณาสั่งอาหารผ่านลิงก์ประจำรอบของโต๊ะ',
+      data: { sessionToken: r.sessionToken },
+    })
+    return false
+  }
+  return true
+}
+
 function publicMenu(tenantId: string) {
   return db.prepare(`
     SELECT pmc.id, COALESCE(si.name, si.sku, 'เมนู') AS name, pmc.pos_price AS price, pmc.image_url AS image,
@@ -104,10 +123,22 @@ router.get('/session', (req, res) => {
   try {
     const r = resolveOr404(req, res)
     if (!r) return
+    // ponytail: โต๊ะเปิดในโหมด static ให้ redirect ไปลิงก์สุ่มประจำรอบ — สั่งอาหารบน session link เท่านั้น
+    if (r.via === 'table' && r.state === 'open') {
+      return res.set('Cache-Control', 'no-store').json({
+        success: true,
+        data: { state: 'redirect', sessionToken: r.sessionToken },
+      })
+    }
     const shop = db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(r.tenantId) as any
     const data: Record<string, unknown> = { state: r.state, shop: { name: shop?.name || '' }, table: { name: r.table?.name || '' } }
+    if (r.sessionToken) data.sessionToken = r.sessionToken
     const device = getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])
     data.member = memberView(device)
+    const guestToken = !device ? req.cookies?.[GUEST_COOKIE] : undefined
+    const guest = !device ? getGuest(r.tenantId, guestToken) : null
+    if (guest && typeof guestToken === 'string') setGuestCookie(req, res, guestToken)
+    data.guest = guestView(r.tenantId, guest)
     if (r.state === 'open') {
       data.menu = publicMenu(r.tenantId)
       data.bill = publicBill(r.bill)
@@ -133,13 +164,22 @@ router.get('/session', (req, res) => {
   }
 })
 
-// POST /qr/api/order { t, items: [{ menuId, qty, note? }] } — ลงบิลของโต๊ะแล้วส่งครัวทันที
+// POST /qr/api/order { t, items: [{ menuId, qty, note? }], orderKey? } — ลงบิลของโต๊ะแล้วส่งครัวทันที
 router.post('/order', orderLimiter, (req, res) => {
   try {
     const r = resolveOr404(req, res)
     if (!r) return
+    if (!requireSession(r, res)) return
     if (r.state !== 'open') return res.status(409).json({ success: false, code: 'TABLE_NOT_OPEN', message: 'โต๊ะนี้ยังไม่เปิดหรือปิดบิลไปแล้ว กรุณาติดต่อพนักงาน' })
     const bill = r.bill
+
+    const rawKey = req.body?.orderKey
+    if (rawKey !== undefined) {
+      if (typeof rawKey !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(rawKey)) {
+        return res.status(400).json({ success: false, message: 'orderKey ไม่ถูกต้อง' })
+      }
+    }
+    const orderKey: string | null = rawKey || null
 
     const raw = Array.isArray(req.body?.items) ? req.body.items : []
     const lines = raw.map((l: any) => ({
@@ -153,49 +193,95 @@ router.post('/order', orderLimiter, (req, res) => {
       return res.status(400).json({ success: false, message: `ตะกร้าไม่ถูกต้อง (สูงสุด ${MAX_LINES} รายการ รายการละ 1–${MAX_QTY} ที่)` })
     }
 
-    // ราคา/ชื่อ/ของหมด อ่านจากเมนูของร้านเสมอ ไม่เชื่อค่าจากมือถือ
-    const menuIds = [...new Set(lines.map((l: any) => l.menuId))] as string[]
-    const menus = !menuIds.length ? [] : db.prepare(`
-      SELECT pmc.id, pmc.pos_price, pmc.is_available, COALESCE(si.name, si.sku, 'เมนู') AS name
-      FROM pos_menu_configs pmc LEFT JOIN stock_items si ON si.id = pmc.product_id
-      WHERE pmc.tenant_id = ? AND pmc.is_pos_enabled = 1 AND pmc.id IN (${menuIds.map(() => '?').join(',')})
-    `).all(r.tenantId, ...menuIds) as any[]
-    const byId = new Map(menus.map(m => [m.id, m]))
-    const unavailable = menuIds.filter(id => !byId.get(id) || byId.get(id).is_available !== 1)
-    if (unavailable.length) {
-      return res.status(409).json({
-        success: false, code: 'MENU_UNAVAILABLE', data: { menuIds: unavailable },
-        message: `ขออภัย เมนูนี้หมดแล้ว: ${unavailable.map(id => byId.get(id)?.name || 'เมนูที่ถูกปิด').join(', ')}`,
-      })
-    }
+    const twoDaysAgo = new Date(Date.now() - 2 * 86400_000).toISOString()
 
-    const insert = db.prepare(`
-      INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name, quantity, unit_price, total_price,
-        special_instructions, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'QR')
-    `)
-    // แลกแต้ม: เฉพาะเครื่องที่แคชเชียร์ยืนยันแล้ว และเป็นสมาชิกที่ผูกกับบิลนี้
-    let rewardMember: string | null = null
-    if (rewardIds.length) {
-      const device = getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])
-      if (!device?.verified_at) return res.status(403).json({ success: false, code: 'MEMBER_NOT_VERIFIED', message: 'แลกแต้มได้หลังแคชเชียร์ยืนยันสมาชิก 1 ครั้ง' })
-      if (bill.customer_id !== device.customer_id) return res.status(409).json({ success: false, code: 'NOT_BILL_MEMBER', message: 'บิลนี้สะสมแต้มให้สมาชิกคนอื่นอยู่ แลกแต้มในบิลนี้ไม่ได้' })
-      rewardMember = device.customer_id
-    }
+    const result = db.transaction(() => {
+      // ponytail: ลบ key เก่าเกิน 2 วันแบบ opportunistic กันตารางบวม
+      db.prepare('DELETE FROM pos_qr_order_keys WHERE tenant_id = ? AND created_at < ?').run(r.tenantId, twoDaysAgo)
 
-    const ticket = db.transaction(() => {
+      if (orderKey) {
+        const existing = db.prepare('SELECT bill_id, response FROM pos_qr_order_keys WHERE tenant_id = ? AND order_key = ?')
+          .get(r.tenantId, orderKey) as any
+        if (existing) {
+          if (existing.bill_id !== bill.id) {
+            return { conflict: true }
+          }
+          return { cached: true, response: JSON.parse(existing.response) }
+        }
+      }
+
+      // ราคา/ชื่อ/ของหมด อ่านจากเมนูของร้านเสมอ ไม่เชื่อค่าจากมือถือ
+      const menuIds = [...new Set(lines.map((l: any) => l.menuId))] as string[]
+      const menus = !menuIds.length ? [] : db.prepare(`
+        SELECT pmc.id, pmc.pos_price, pmc.is_available, COALESCE(si.name, si.sku, 'เมนู') AS name
+        FROM pos_menu_configs pmc LEFT JOIN stock_items si ON si.id = pmc.product_id
+        WHERE pmc.tenant_id = ? AND pmc.is_pos_enabled = 1 AND pmc.id IN (${menuIds.map(() => '?').join(',')})
+      `).all(r.tenantId, ...menuIds) as any[]
+      const byId = new Map(menus.map(m => [m.id, m]))
+      const unavailable = menuIds.filter(id => !byId.get(id) || byId.get(id).is_available !== 1)
+      if (unavailable.length) {
+        return {
+          unavailable: true,
+          data: { menuIds: unavailable },
+          message: `ขออภัย เมนูนี้หมดแล้ว: ${unavailable.map(id => byId.get(id)?.name || 'เมนูที่ถูกปิด').join(', ')}`,
+        }
+      }
+
+      // แลกแต้ม: เฉพาะเครื่องที่แคชเชียร์ยืนยันแล้ว และเป็นสมาชิกที่ผูกกับบิลนี้
+      let rewardMember: string | null = null
+      if (rewardIds.length) {
+        const device = getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])
+        if (!device?.verified_at) return { memberNotVerified: true }
+        if (bill.customer_id !== device.customer_id) return { notBillMember: true }
+        rewardMember = device.customer_id
+      }
+
+      const insert = db.prepare(`
+        INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name, quantity, unit_price, total_price,
+          special_instructions, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'QR')
+      `)
       const ids = lines.map((l: any) => {
         const m = byId.get(l.menuId)
         const id = generateId()
         insert.run(id, r.tenantId, bill.id, m.id, m.name, l.qty, m.pos_price, m.pos_price * l.qty, l.note || null)
         return id
       })
+      const itemIds = [...ids]
+      if (!getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])) {
+        const guest = getGuest(r.tenantId, req.cookies?.[GUEST_COOKIE])
+        if (guest && itemIds.length) linkItems(r.tenantId, guest.id, bill.id, itemIds)
+      }
       if (rewardMember) ids.push(...reserveRewards(r.tenantId, bill.id, rewardMember, rewardIds))
       recalculateBillTotals(bill.id)
-      return createKdsTicket(r.tenantId, bill, ids)
+      const ticket = createKdsTicket(r.tenantId, bill, ids)
+
+      const responseBody = { success: true, data: { round: ticket?.round ?? null, items: lines.length, rewards: rewardIds.length, itemIds } }
+
+      if (orderKey) {
+        db.prepare(`
+          INSERT INTO pos_qr_order_keys (tenant_id, order_key, bill_id, response, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(r.tenantId, orderKey, bill.id, JSON.stringify(responseBody), new Date().toISOString())
+      }
+
+      return { cached: false, response: responseBody }
     })()
 
-    res.json({ success: true, data: { round: ticket?.round ?? null, items: lines.length, rewards: rewardIds.length } })
+    if (result.conflict) {
+      return res.status(409).json({ success: false, code: 'ORDER_KEY_REUSED', message: 'orderKey นี้ถูกใช้กับบิลอื่นแล้ว' })
+    }
+    if (result.unavailable) {
+      return res.status(409).json({ success: false, code: 'MENU_UNAVAILABLE', data: result.data, message: result.message })
+    }
+    if (result.memberNotVerified) {
+      return res.status(403).json({ success: false, code: 'MEMBER_NOT_VERIFIED', message: 'แลกแต้มได้หลังแคชเชียร์ยืนยันสมาชิก 1 ครั้ง' })
+    }
+    if (result.notBillMember) {
+      return res.status(409).json({ success: false, code: 'NOT_BILL_MEMBER', message: 'บิลนี้สะสมแต้มให้สมาชิกคนอื่นอยู่ แลกแต้มในบิลนี้ไม่ได้' })
+    }
+
+    res.json(result.response)
   } catch (error) {
     if (error instanceof RewardError) return res.status(409).json({ success: false, code: 'REWARD_INVALID', message: error.message })
     console.error('QR order error:', error)
@@ -208,6 +294,7 @@ router.post('/call-bill', orderLimiter, (req, res) => {
   try {
     const r = resolveOr404(req, res)
     if (!r) return
+    if (!requireSession(r, res)) return
     if (r.state !== 'open') return res.status(409).json({ success: false, code: 'TABLE_NOT_OPEN', message: 'โต๊ะนี้ปิดบิลไปแล้ว' })
     db.prepare(`UPDATE pos_running_bills SET bill_requested_at = COALESCE(bill_requested_at, ?) WHERE id = ? AND status = 'OPEN'`)
       .run(new Date().toISOString(), r.bill.id)
@@ -223,6 +310,7 @@ router.post('/ad-event', orderLimiter, (req, res) => {
   try {
     const r = resolveOr404(req, res)
     if (!r) return
+    if (!requireSession(r, res)) return
     const type = String(req.body?.type ?? '')
     if (!['shown', 'tap', 'close'].includes(type) || !activeAd(r.tenantId)) return res.status(400).json({ success: false })
     db.prepare('INSERT INTO pos_ad_events (id, tenant_id, type, created_at) VALUES (?, ?, ?, ?)').run(generateId(), r.tenantId, type, new Date().toISOString())
@@ -239,6 +327,55 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{20,100}$/
 const setDeviceCookie = (req: Request, res: Response, token: string) => res.cookie(DEVICE_COOKIE, token, {
   httpOnly: true, sameSite: 'lax', secure: req.secure || process.env.NODE_ENV === 'production', path: '/qr/api', maxAge: DEVICE_DAYS * 86400_000,
 })
+const setGuestCookie = (req: Request, res: Response, token: string) => res.cookie(GUEST_COOKIE, token, {
+  httpOnly: true, sameSite: 'lax', secure: req.secure || process.env.NODE_ENV === 'production', path: '/qr/api', maxAge: GUEST_DAYS * 86400_000,
+})
+
+// POST /qr/api/guest { t, itemIds? } — ลูกค้าทั่วไปกดยินยอมให้จำเมนูที่สั่งบนเครื่องนี้
+router.post('/guest', orderLimiter, (req, res) => {
+  try {
+    const r = resolveOr404(req, res)
+    if (!r) return
+    if (!requireSession(r, res)) return
+    if (r.state !== 'open') return res.status(409).json({ success: false, code: 'TABLE_NOT_OPEN', message: 'โต๊ะนี้ยังไม่เปิดหรือปิดบิลไปแล้ว' })
+    if (getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])) {
+      return res.status(403).json({ success: false, code: 'ALREADY_MEMBER', message: 'เครื่องนี้ผูกเป็นสมาชิกอยู่แล้ว' })
+    }
+    let token = req.cookies?.[GUEST_COOKIE]
+    const existing = getGuest(r.tenantId, token)
+    let guestId: string
+    if (existing && typeof token === 'string') {
+      guestId = existing.id
+    } else {
+      const created = createGuest(r.tenantId)
+      guestId = created.id
+      token = created.token
+    }
+    if (Array.isArray(req.body?.itemIds) && req.body.itemIds.length) {
+      linkItems(r.tenantId, guestId, r.bill.id, req.body.itemIds)
+    }
+    setGuestCookie(req, res, token)
+    const guest = getGuest(r.tenantId, token)
+    res.json({ success: true, data: { guest: guestView(r.tenantId, guest) } })
+  } catch (error) {
+    console.error('QR guest error:', error)
+    res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง' })
+  }
+})
+
+// POST /qr/api/guest/forget { t } — ลบข้อมูลที่จำไว้ทั้งหมดและหยุดจำเครื่องนี้ (PDPA)
+router.post('/guest/forget', (req, res) => {
+  try {
+    const r = resolveOr404(req, res)
+    if (!r) return
+    if (!requireSession(r, res)) return
+    forgetGuest(r.tenantId, req.cookies?.[GUEST_COOKIE])
+    res.clearCookie(GUEST_COOKIE, { path: '/qr/api' }).json({ success: true })
+  } catch (error) {
+    console.error('QR guest forget error:', error)
+    res.status(500).json({ success: false, message: 'ลบข้อมูลไม่สำเร็จ' })
+  }
+})
 
 // POST /qr/api/member { t, phone, name?, consentPoints: true, consentMarketing? } — สมัคร/ผูกเบอร์ แล้วให้บิลนี้สะสมแต้ม
 // POST /qr/api/member { t } — เครื่องนี้ผูกเบอร์ไว้แล้ว: ให้บิลโต๊ะนี้สะสมแต้มให้สมาชิกคนเดิม
@@ -247,11 +384,13 @@ router.post('/member', memberLimiter, (req, res) => {
   try {
     const r = resolveOr404(req, res)
     if (!r) return
+    if (!requireSession(r, res)) return
     if (r.state !== 'open') return res.status(409).json({ success: false, code: 'TABLE_NOT_OPEN', message: 'สมัครได้เฉพาะตอนโต๊ะเปิดอยู่' })
     if (!getLoyaltySettings(r.tenantId).enabled) return res.status(409).json({ success: false, message: 'ร้านนี้ยังไม่เปิดระบบสะสมแต้ม' })
 
     let token = req.cookies?.[DEVICE_COOKIE]
     let device = getDevice(r.tenantId, token)
+    let awardedRetro: number | undefined
     if (req.body?.phone !== undefined) {
       const mobile = normalizeThaiMobile(req.body.phone)
       if (!mobile) return res.status(400).json({ success: false, message: 'เบอร์ไม่ถูกต้อง ใส่เบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 06, 08 หรือ 09' })
@@ -259,10 +398,44 @@ router.post('/member', memberLimiter, (req, res) => {
       const nickname = String(req.body.name ?? '').trim().slice(0, 30)
       // ไม่รับ token ที่ client เลือกเองมาผูกสมาชิกใหม่ (กันถูกฝัง cookie แล้วรอแคชเชียร์ยืนยันให้)
       if (typeof token !== 'string' || !TOKEN_RE.test(token) || !isKnownToken(token)) token = mintDeviceToken()
+      const guestToken = req.cookies?.[GUEST_COOKIE]
       db.transaction(() => {
         const customerId = findOrCreateMember(r.tenantId, mobile, nickname)
         bindDevice(r.tenantId, token, customerId, req.body.consentMarketing === true)
+        const guest = getGuest(r.tenantId, guestToken)
+        if (guest) {
+          const gv = guestView(r.tenantId, guest)
+          const alreadyAwarded = db.prepare(`
+            SELECT 1 FROM loyalty_transactions
+            WHERE tenant_id = ? AND reference_type = 'QR_GUEST_RETRO' AND (reference_id = ? OR customer_id = ?)
+            LIMIT 1
+          `).get(r.tenantId, guest.id, customerId)
+          const retro = alreadyAwarded ? 0 : retroPoints(r.tenantId, guest)
+          const nowIso = new Date().toISOString()
+          if (retro > 0) {
+            const cust = db.prepare('SELECT loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
+              .get(customerId, r.tenantId) as { loyalty_points: number } | undefined
+            const balanceAfter = (Number(cust?.loyalty_points) || 0) + retro
+            db.prepare('UPDATE customers SET loyalty_points = ? WHERE id = ? AND tenant_id = ?')
+              .run(balanceAfter, customerId, r.tenantId)
+            db.prepare(`
+              INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+              VALUES (?, ?, ?, 'ADJUST', ?, ?, 'QR_GUEST_RETRO', ?, ?, 'QR', ?)
+            `).run(
+              generateId(), r.tenantId, customerId, retro, balanceAfter, guest.id,
+              `แต้มย้อนหลัง ${guest.visits} ครั้งก่อนสมัครสมาชิก`, nowIso
+            )
+          }
+          const favText = gv?.favorite || '-'
+          const crmNote = `ประวัติก่อนสมัคร: มา ${guest.visits} ครั้ง ยอด ฿${Number(guest.spent || 0).toLocaleString('th-TH')} เมนูที่สั่งบ่อย ${favText}`
+          db.prepare(`INSERT INTO activity_logs (id, customer_id, type, note, created_by, tenant_id, created_at) VALUES (?, ?, 'NOTE', ?, 'QR', ?, ?)`)
+            .run(generateId(), customerId, crmNote, r.tenantId, nowIso)
+          db.prepare('DELETE FROM pos_guest_bill_items WHERE tenant_id = ? AND guest_id = ?').run(r.tenantId, guest.id)
+          db.prepare('DELETE FROM pos_guest_devices WHERE id = ? AND tenant_id = ?').run(guest.id, r.tenantId)
+          awardedRetro = retro
+        }
       })()
+      if (awardedRetro !== undefined) res.clearCookie(GUEST_COOKIE, { path: '/qr/api' })
       setDeviceCookie(req, res, token)
       device = getDevice(r.tenantId, token)
     }
@@ -274,7 +447,9 @@ router.post('/member', memberLimiter, (req, res) => {
       WHERE id = ? AND tenant_id = ? AND status = 'OPEN' AND customer_id IS NULL`)
       .run(device.customer_id, device.id, device.customer_id, device.customer_id, r.bill.id, r.tenantId)
     const bill = db.prepare('SELECT customer_id FROM pos_running_bills WHERE id = ?').get(r.bill.id) as any
-    res.json({ success: true, data: { member: memberView(device), linked: bill?.customer_id === device.customer_id } })
+    const out: Record<string, unknown> = { member: memberView(device), linked: bill?.customer_id === device.customer_id }
+    if (awardedRetro !== undefined) out.retroPoints = awardedRetro
+    res.json({ success: true, data: out })
   } catch (error) {
     console.error('QR member error:', error)
     res.status(500).json({ success: false, message: 'สมัครสมาชิกไม่สำเร็จ ลองอีกครั้ง' })
@@ -285,6 +460,7 @@ router.post('/member', memberLimiter, (req, res) => {
 function verifiedDevice(req: Request, res: Response) {
   const r = resolveOr404(req, res)
   if (!r) return null
+  if (!requireSession(r, res)) return null
   const device = getDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])
   if (!device?.verified_at) { res.status(403).json({ success: false, code: 'MEMBER_NOT_VERIFIED', message: 'ให้แคชเชียร์ยืนยันสมาชิกก่อน 1 ครั้ง' }); return null }
   return { r, device }
@@ -344,6 +520,7 @@ router.post('/member/logout', (req, res) => {
   try {
     const r = resolveOr404(req, res)
     if (!r) return
+    if (!requireSession(r, res)) return
     forgetDevice(r.tenantId, req.cookies?.[DEVICE_COOKIE])
     res.clearCookie(DEVICE_COOKIE, { path: '/qr/api' }).json({ success: true })
   } catch (error) {

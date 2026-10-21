@@ -570,6 +570,7 @@ export interface LoyaltyConfig {
   earnRate: number       // spend X baht → earn 1 point
   redeemRate: number     // X points → 1 baht discount
   minRedeemPoints: number
+  retroCap: number       // แต้มย้อนหลังตอนลูกค้าทั่วไปสมัครสมาชิก (สูงสุด) · 0 = ไม่ให้
 }
 
 export const DEFAULT_LOYALTY: LoyaltyConfig = {
@@ -577,6 +578,7 @@ export const DEFAULT_LOYALTY: LoyaltyConfig = {
   earnRate: 100,
   redeemRate: 10,
   minRedeemPoints: 100,
+  retroCap: 100,
 }
 
 // ค่าจริงอยู่ที่ backend (company_settings.loyalty_*) — server คิดแต้ม/ส่วนลดจากค่านั้นตอนรับชำระ
@@ -585,12 +587,13 @@ export const DEFAULT_LOYALTY: LoyaltyConfig = {
 export function loadLoyaltyConfig(): LoyaltyConfig {
   let legacy: Partial<LoyaltyConfig> = {}
   try { legacy = JSON.parse(localStorage.getItem('pos_loyalty_settings') || '{}') } catch { /* ค่าเสีย ใช้ค่าตั้งต้น */ }
-  const s = getCachedCompanySettings()
+  const s = getCachedCompanySettings() as any
   const server: Partial<LoyaltyConfig> = {}
   if (s.loyalty_enabled != null) server.enabled = Number(s.loyalty_enabled) === 1
   if (s.loyalty_earn_rate != null) server.earnRate = Number(s.loyalty_earn_rate)
   if (s.loyalty_redeem_rate != null) server.redeemRate = Number(s.loyalty_redeem_rate)
   if (s.loyalty_min_redeem != null) server.minRedeemPoints = Number(s.loyalty_min_redeem)
+  if (s.loyalty_retro_cap != null) server.retroCap = Number(s.loyalty_retro_cap)
   return { ...DEFAULT_LOYALTY, ...legacy, ...server }
 }
 
@@ -615,7 +618,8 @@ function LoyaltySettings() {
         loyalty_earn_rate: cfg.earnRate,
         loyalty_redeem_rate: cfg.redeemRate,
         loyalty_min_redeem: Math.floor(cfg.minRedeemPoints),
-      })
+        loyalty_retro_cap: Math.max(0, Math.min(100000, Math.floor(cfg.retroCap || 0))),
+      } as any)
       localStorage.removeItem('pos_loyalty_settings')
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -746,6 +750,28 @@ function LoyaltySettings() {
                 onFocus={(e) => e.target.select()}
                 className="phopy-input w-28 text-center text-lg font-bold"
                 min="0"
+                step="1"
+              />
+              <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.pointsUnit')}</span>
+            </div>
+          </div>
+
+          {/* Retroactive Points Cap for QR Guests */}
+          <div className="p-4 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] space-y-3">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-[var(--fg-3)]" />
+              <p className="font-medium text-[var(--fg-2)]">แต้มย้อนหลังตอนลูกค้าทั่วไปสมัครสมาชิก (สูงสุด)</p>
+            </div>
+            <p className="text-xs text-[var(--fg-4)]">0 = ไม่ให้</p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={cfg.retroCap}
+                onChange={(e) => setCfg({ ...cfg, retroCap: Math.max(0, Math.min(100000, Math.floor(parseFloat(e.target.value) || 0))) })}
+                onFocus={(e) => e.target.select()}
+                className="phopy-input w-28 text-center text-lg font-bold"
+                min="0"
+                max="100000"
                 step="1"
               />
               <span className="text-[var(--fg-3)] text-sm">{t('settings.settingsPage.loyalty.pointsUnit')}</span>

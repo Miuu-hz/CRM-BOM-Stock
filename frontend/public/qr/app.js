@@ -16,7 +16,32 @@
   var store = {
     get: function (k) { try { return JSON.parse(sessionStorage.getItem('qr:' + token + ':' + k)) } catch (e) { return null } },
     set: function (k, v) { try { sessionStorage.setItem('qr:' + token + ':' + k, JSON.stringify(v)) } catch (e) { /* โหมดส่วนตัว: ไม่จำตะกร้าก็ยังสั่งได้ */ } },
+    del: function (k) { try { sessionStorage.removeItem('qr:' + token + ':' + k) } catch (e) {} },
   }
+
+  function randomOrderKey() {
+    var bytes = new Uint8Array(24)
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes)
+    } else {
+      for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+    }
+    var hex = ''
+    for (var j = 0; j < bytes.length; j++) {
+      hex += ('0' + bytes[j].toString(16)).slice(-2)
+    }
+    return hex
+  }
+
+  function cartFingerprint() {
+    var sortedCart = {}
+    Object.keys(S.cart).sort().forEach(function (k) {
+      sortedCart[k] = { qty: S.cart[k].qty, note: S.cart[k].note || '' }
+    })
+    return JSON.stringify({ c: sortedCart, g: S.gifts })
+  }
+
+  var clearOrderKey = function () { store.del('orderKey') }
 
   var S = {
     data: null,        // ผลจาก /session
@@ -27,9 +52,46 @@
     memberAsked: !!store.get('memberAsked'),  // ถาม pop-up สมาชิกครั้งเดียวต่อรอบโต๊ะ
     attachTried: false,
     gifts: store.get('gifts') || [],  // รางวัลแลกแต้มที่ใส่ตะกร้า (reward id ซ้ำได้)
+    orderItems: store.get('orderItems') || [], // item id ที่เครื่องนี้สั่งไปในรอบนี้ (ไว้ผูกย้อนหลังเมื่อกดยินยอมจำเมนู)
+    guestRefused: false,
+    confirmForgetGuest: false,
     ledger: null,
   }
-  var saveCart = function () { store.set('cart', S.cart); store.set('gifts', S.gifts) }
+  var saveCart = function () { store.set('cart', S.cart); store.set('gifts', S.gifts); clearOrderKey() }
+
+  var GUEST_REFUSE_KEY = 'qr:guestRefusedUntil'
+  function guestRefused() {
+    if (S.guestRefused) return true
+    try {
+      return Number(localStorage.getItem(GUEST_REFUSE_KEY) || 0) > Date.now()
+    } catch (e) { return false }
+  }
+  function refuseGuest() {
+    S.guestRefused = true
+    try {
+      localStorage.setItem(GUEST_REFUSE_KEY, String(Date.now() + 90 * 86400000))
+    } catch (e) { /* โหมดส่วนตัว: จำเฉพาะในหน้านี้ */ }
+  }
+
+  function switchToken(newToken) {
+    if (!newToken || newToken === token) return
+    var oldCart = S.cart
+    var oldGifts = S.gifts
+    var oldOrderItems = S.orderItems
+    token = newToken
+    try {
+      history.replaceState(null, '', location.pathname + '?t=' + encodeURIComponent(token))
+    } catch (e) {}
+    // ponytail: ย้าย session storage key ไปตาม token ใหม่ พร้อมถือตะกร้าต่อ
+    S.cart = store.get('cart') || oldCart || {}
+    S.gifts = store.get('gifts') || oldGifts || []
+    S.orderItems = store.get('orderItems') || oldOrderItems || []
+    store.set('orderItems', S.orderItems)
+    saveCart()
+    S.memberAsked = !!store.get('memberAsked')
+    S.attachTried = false
+    S.ledger = null
+  }
 
   var ICONS = {
     menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
@@ -50,23 +112,65 @@
       body: body ? JSON.stringify(Object.assign({ t: token }, body)) : undefined,
       cache: 'no-store',
     }).then(function (res) {
-      return res.json().catch(function () { return {} }).then(function (j) { return { ok: res.ok, status: res.status, body: j } })
+      return res.json().catch(function () { return {} }).then(function (j) {
+        if (res.status === 409 && j && j.code === 'SESSION_REQUIRED' && j.data && j.data.sessionToken) {
+          switchToken(j.data.sessionToken)
+          load()
+        }
+        return { ok: res.ok, status: res.status, body: j }
+      })
     })
   }
 
   var loading = false
+  var pendingLoad = false
+  var pendingResolvers = []
+
   function load() {
-    if (loading) return Promise.resolve()
+    if (loading) {
+      pendingLoad = true
+      return new Promise(function (resolve) { pendingResolvers.push(resolve) })
+    }
     loading = true
+    return doLoad().then(function () {
+      loading = false
+      render()
+      if (pendingLoad) {
+        pendingLoad = false
+        var resolvers = pendingResolvers
+        pendingResolvers = []
+        return load().then(function () {
+          resolvers.forEach(function (res) { res() })
+        })
+      }
+    })
+  }
+
+  function doLoad() {
     return fetch('/qr/api/session?t=' + encodeURIComponent(token), { cache: 'no-store' })
-      .then(function (res) { return res.json().catch(function () { return {} }).then(function (j) { return { ok: res.ok, body: j } }) })
+      .then(function (res) { return res.json().catch(function () { return {} }).then(function (j) { return { ok: res.ok, status: res.status, body: j } }) })
       .then(function (r) {
-        if (!r.ok) { S.error = { code: r.body.code, message: r.body.message || 'โหลดไม่สำเร็จ' }; S.data = null; return }
+        if (!r.ok) {
+          if (r.status === 409 && r.body && r.body.code === 'SESSION_REQUIRED' && r.body.data && r.body.data.sessionToken) {
+            switchToken(r.body.data.sessionToken)
+            return doLoad()
+          }
+          S.error = { code: r.body.code, message: r.body.message || 'โหลดไม่สำเร็จ' }; S.data = null; return
+        }
+        if (r.body.data && (r.body.data.state === 'redirect' || (r.body.data.sessionToken && r.body.data.sessionToken !== token))) {
+          var nextToken = r.body.data.sessionToken
+          if (nextToken && nextToken !== token) {
+            switchToken(nextToken)
+            return doLoad()
+          }
+        }
         var prev = S.data && S.data.state
         S.error = null
         S.data = r.body.data
         if (S.data.state === 'open') store.set('wasOpen', true)
-        if (prev === 'open' && S.data.state !== 'open') { S.cart = {}; saveCart(); closeSheet() }
+        if (S.data.state === 'closed' || (prev === 'open' && S.data.state !== 'open')) {
+          S.cart = {}; S.gifts = []; S.orderItems = []; store.del('orderItems'); saveCart(); closeSheet()
+        }
         pruneCart()
         afterLoad()
       })
@@ -74,7 +178,6 @@
         // เน็ตหลุดชั่วคราว: คงหน้าจอเดิมไว้ รอบหน้าโหลดใหม่เอง
         if (!S.data) S.error = { code: 'NETWORK', message: 'เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่' }
       })
-      .then(function () { loading = false; render() })
   }
 
   // เครื่องที่เคยผูกเบอร์ไว้ → ให้บิลโต๊ะนี้สะสมแต้มอัตโนมัติ · ยังไม่เคย → ชวนสมัครครั้งเดียวต่อรอบโต๊ะ
@@ -102,14 +205,37 @@
     }).catch(function () { /* รอบหน้าค่อยลองใหม่ ไม่กวนลูกค้า */ S.attachTried = false })
   }
 
-  // เมนูที่ร้านปิด/หมดระหว่างที่ลูกค้าเลือกอยู่ → เอาออกจากตะกร้า
+  // เมนูที่ร้านปิด/หมด หรือของแถมที่หมด/ไม่มีแล้วระหว่างที่ลูกค้าเลือกอยู่ → เอาออกจากตะกร้า
   function pruneCart() {
-    if (!S.data || !S.data.menu) return
-    var avail = {}
-    S.data.menu.forEach(function (m) { if (m.available) avail[m.id] = 1 })
-    var removed = Object.keys(S.cart).filter(function (id) { return !avail[id] })
-    removed.forEach(function (id) { delete S.cart[id] })
-    if (removed.length) { saveCart(); toast('มีเมนูที่หมดแล้ว เอาออกจากตะกร้าให้แล้ว') }
+    if (!S.data) return
+    var menuRemoved = false
+    if (S.data.menu) {
+      var availMenu = {}
+      S.data.menu.forEach(function (m) { if (m.available) availMenu[m.id] = 1 })
+      var removedMenu = Object.keys(S.cart).filter(function (id) { return !availMenu[id] })
+      removedMenu.forEach(function (id) { delete S.cart[id] })
+      if (removedMenu.length) menuRemoved = true
+    }
+    var giftRemoved = false
+    if (S.data.rewards && S.gifts && S.gifts.length) {
+      var availRewards = {}
+      S.data.rewards.forEach(function (w) { if (w.available) availRewards[w.id] = 1 })
+      var keptGifts = S.gifts.filter(function (id) { return availRewards[id] })
+      if (keptGifts.length !== S.gifts.length) {
+        S.gifts = keptGifts
+        giftRemoved = true
+      }
+    }
+    if (menuRemoved || giftRemoved) {
+      saveCart()
+      if (menuRemoved && giftRemoved) {
+        toast('มีเมนูหรือของแถมที่หมดแล้ว เอาออกจากตะกร้าให้แล้ว')
+      } else if (menuRemoved) {
+        toast('มีเมนูที่หมดแล้ว เอาออกจากตะกร้าให้แล้ว')
+      } else {
+        toast('มีของแถมที่หมดแล้ว เอาออกจากตะกร้าให้แล้ว')
+      }
+    }
   }
 
   // ---------- helpers ----------
@@ -153,13 +279,14 @@
       return
     }
     if (d.state === 'closed') {
-      app.innerHTML = stateScreen('✓', 'ok', 'ปิดบิล' + (tableName ? tableName : '') + 'แล้ว',
-        (d.bill && d.bill.paid ? 'ยอดชำระ ' + baht(d.bill.total) + ' · ' : '') + 'ขอบคุณที่มาทานที่ ' + (d.shop.name || 'ร้านเรา'))
+      var closedMsg = (d.bill && d.bill.paid ? 'ยอดชำระ ' + baht(d.bill.total) + ' · ' : '') +
+        'ขอบคุณที่มาทานที่ ' + (d.shop.name || 'ร้านเรา') + ' — สแกน QR ที่โต๊ะอีกครั้งเพื่อสั่งรอบใหม่'
+      app.innerHTML = stateScreen('✓', 'ok', 'ปิดบิล' + (tableName ? ' ' + tableName : '') + 'แล้ว', closedMsg)
       return
     }
     var keep = window.scrollY
     var prevTab = app.dataset.tab
-    if (S.tab === 'me' && !loyaltyOn()) S.tab = 'menu'
+    if (S.tab === 'me' && !loyaltyOn() && !(d && d.guest)) S.tab = 'menu'
     if (S.tab === 'promo' && !hasPromoTab()) S.tab = 'menu'
     var body = S.tab === 'bill' ? billTab(d) : S.tab === 'me' ? meTab(d) : S.tab === 'promo' ? promoTab(d) : menuTab(d)
     app.innerHTML = header(d, tableName) + '<main class="body">' + body + '</main>' + bottom()
@@ -204,12 +331,29 @@
       '<button class="add" data-act="inc" data-id="' + esc(m.id) + '" aria-label="เพิ่ม ' + name + '"' + (q >= MAX_QTY ? ' disabled' : '') + '>+</button></div>'
   }
 
+  function guestReorderCard(d) {
+    var last = d.guest && d.guest.lastOrder
+    if (!last || !last.length) return ''
+    var hasAvail = last.some(function (it) {
+      var m = it && menuById(it.menuId)
+      return !!(it && it.available && m && m.available)
+    })
+    var lines = last.map(function (it) {
+      return '<div class="line"><div><span class="nm">' + esc(it.name) + ' × ' + (Number(it.qty) || 1) + '</span></div>' +
+        (it.available ? '' : '<span class="badge out">หมด</span>') + '</div>'
+    }).join('')
+    return '<div class="pad" style="padding-bottom:0"><div class="card"><span class="h-sm">ครั้งก่อนคุณสั่ง</span>' +
+      lines +
+      '<button class="btn primary block" data-act="reorder-all"' + (hasAvail ? '' : ' disabled') + '>สั่งซ้ำทั้งหมด</button></div></div>'
+  }
+
   function menuTab(d) {
     var gs = groups(d.menu || [])
     if (!gs.length) return '<div class="state"><p>ร้านยังไม่ได้เปิดเมนูให้สั่งผ่าน QR</p></div>'
     var h = gs.length > 1 ? '<nav class="cats" id="cats" aria-label="หมวดเมนู">' + gs.map(function (g, i) {
       return '<button data-act="cat" data-id="' + i + '"' + (i === 0 ? ' class="on"' : '') + '>' + esc(g.name) + '</button>'
     }).join('') + '</nav>' : ''
+    h += guestReorderCard(d)
     gs.forEach(function (g, i) {
       h += '<h2 class="cat-h" id="cat-' + i + '">' + esc(g.name) + '</h2>'
       g.items.forEach(function (m) {
@@ -263,11 +407,23 @@
       if (b.discount) h += '<div class="row muted"><span>ส่วนลด</span><span class="num">−' + baht(b.discount) + '</span></div>'
       if (b.tax) h += '<div class="row muted"><span>VAT</span><span class="num">' + baht(b.tax) + '</span></div>'
       h += '<div class="row total"><span>ยอดบิลตอนนี้</span><span class="num">' + baht(b.total) + '</span></div></div>'
+      h += guestConsentCard(d, b)
       h += earnCard(d, b)
       if (!b.billRequested) h += '<button class="btn mango block" data-act="call-bill">เรียกเช็คบิล</button>'
       h += '<p class="small muted" style="margin:0;text-align:center">ชำระเงินที่แคชเชียร์ · ยอดอาจปรับตามส่วนลดหน้าเคาน์เตอร์</p>'
+    } else {
+      h += guestConsentCard(d, b)
     }
     return h + '</div>'
+  }
+
+  function guestConsentCard(d, b) {
+    if (d.member || d.guest || guestRefused()) return ''
+    if (!S.orderItems.length && !(b.items && b.items.length)) return ''
+    return '<div class="card"><span class="h-sm">ให้เครื่องนี้จำเมนูที่คุณสั่งไหม</span>' +
+      '<span class="small muted">ครั้งหน้าสแกนแล้วกดสั่งซ้ำได้ทันที เก็บแค่รายการอาหาร ไม่เก็บชื่อหรือเบอร์ ลบได้ทุกเมื่อในแท็บสมาชิก</span>' +
+      '<div class="row"><button class="btn primary" style="flex:1" data-act="guest-consent">จำไว้</button>' +
+      '<button class="btn ghost" data-act="guest-refuse">ไม่ต้อง</button></div></div>'
   }
 
   // แต้มคิดจากยอดบิลหลังส่วนลด เข้าบัญชีเมื่อแคชเชียร์รับชำระ (ยอดจริงอาจต่างถ้าเคาน์เตอร์ให้ส่วนลดเพิ่ม)
@@ -283,8 +439,20 @@
   function meTab(d) {
     var m = d.member, h = '<div class="pad">'
     if (!m) {
-      return h + '<div class="card"><span class="h-sm">ยังไม่ได้เป็นสมาชิก</span><span class="small muted">สมัครด้วยเบอร์โทร สะสมแต้มทุกบิล ทุก ' + baht(d.loyalty.earnRate) +
-        ' ได้ 1 แต้ม ครั้งหน้าสแกน QR แล้วระบบจำคุณได้ทันที</span><button class="btn primary" data-act="member-open">สมัครสมาชิก</button></div></div>'
+      if (loyaltyOn()) {
+        h += '<div class="card"><span class="h-sm">ยังไม่ได้เป็นสมาชิก</span><span class="small muted">สมัครด้วยเบอร์โทร สะสมแต้มทุกบิล ทุก ' + baht(d.loyalty.earnRate) +
+          ' ได้ 1 แต้ม ครั้งหน้าสแกน QR แล้วระบบจำคุณได้ทันที</span><button class="btn primary" data-act="member-open">สมัครสมาชิก</button></div>'
+      }
+      if (d.guest) {
+        h += '<div class="card"><span class="small">ข้อมูลที่เครื่องนี้จำไว้: มาแล้ว ' + Number(d.guest.visits || 0) + ' ครั้ง · สั่งบ่อย: ' + esc(d.guest.favorite || '-') + '</span>' +
+          (S.confirmForgetGuest
+            ? '<div class="banner">ยืนยันลบข้อมูลที่จำไว้และหยุดจำเครื่องนี้?</div>' +
+              '<div class="row"><button class="btn" style="flex:1;color:var(--danger-strong)" data-act="guest-forget-ok">ยืนยันลบข้อมูล</button>' +
+              '<button class="btn ghost" data-act="guest-forget-cancel">ยกเลิก</button></div>'
+            : '<button class="btn ghost block" data-act="guest-forget-ask" style="color:var(--danger-strong)">ลบข้อมูลและหยุดจำ</button>') +
+          '</div>'
+      }
+      return h + '</div>'
     }
     if (m.status !== 'verified') {
       return h + '<div class="card"><span class="h-sm">สมัครแล้ว · ' + esc(m.phone) + '</span>' +
@@ -377,7 +545,8 @@
     var n = cartCount()
     var bar = S.tab === 'menu' && n
       ? '<button class="cartbar" data-act="tab" data-id="bill"><span>ตะกร้า ' + n + ' รายการ</span><span class="num">' + baht(cartSum()) + ' →</span></button>' : ''
-    var tabs = [['menu', 'เมนู']].concat(hasPromoTab() ? [['promo', 'โปรและแลกแต้ม']] : [], [['bill', 'บิล']], loyaltyOn() ? [['me', 'สมาชิก']] : [])
+    var showMe = loyaltyOn() || !!(S.data && S.data.guest)
+    var tabs = [['menu', 'เมนู']].concat(hasPromoTab() ? [['promo', 'โปรและแลกแต้ม']] : [], [['bill', 'บิล']], showMe ? [['me', 'สมาชิก']] : [])
     var nav = '<nav class="nav" style="--tabs:' + tabs.length + '" aria-label="เมนูหลัก">' + tabs.map(function (t) {
       return '<button data-act="tab" data-id="' + t[0] + '"' + (S.tab === t[0] ? ' class="on" aria-current="page"' : '') + '>' + ICONS[t[0]] +
         '<span>' + t[1] + '</span>' + (t[0] === 'bill' && n ? '<span class="dot">' + n + '</span>' : '') + '</button>'
@@ -390,8 +559,14 @@
   // ---------- sheet (สมัครสมาชิก) — PDPA: ความยินยอม 2 ข้อแยกกัน ไม่ติ๊กไว้ให้ล่วงหน้า ----------
   function openMemberSheet() {
     var shop = S.data && S.data.shop.name ? S.data.shop.name : 'ร้าน'
-    $('#sheet-body').innerHTML = '<h2 id="sheet-title">รับแต้มทุกครั้งที่มาทาน</h2>' +
-      '<p>สมัครด้วยเบอร์โทร ไม่ต้องลงแอป ทุก ' + baht(S.data.loyalty.earnRate) + ' ได้ 1 แต้ม</p>' +
+    var g = S.data && S.data.guest
+    var hasRetro = !!(g && Number(g.retroPoints) > 0)
+    var title = hasRetro ? 'คุณมาครั้งที่ ' + (Number(g.visits || 0) + 1) + ' แล้ว' : 'รับแต้มทุกครั้งที่มาทาน'
+    var sub = hasRetro
+      ? 'สมัครวันนี้รับแต้มย้อนหลัง ' + Number(g.retroPoints).toLocaleString('th-TH') + ' แต้มจากครั้งก่อนหน้า พร้อมสะสมแต้มทุก ' + baht(S.data.loyalty.earnRate) + ' ได้ 1 แต้ม'
+      : 'สมัครด้วยเบอร์โทร ไม่ต้องลงแอป ทุก ' + baht(S.data.loyalty.earnRate) + ' ได้ 1 แต้ม'
+    $('#sheet-body').innerHTML = '<h2 id="sheet-title">' + esc(title) + '</h2>' +
+      '<p>' + esc(sub) + '</p>' +
       '<label for="m-phone">เบอร์มือถือ</label><input type="tel" id="m-phone" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="08x-xxx-xxxx">' +
       '<label for="m-name">ชื่อเล่น (ไม่บังคับ)</label><input type="text" id="m-name" maxlength="30" autocomplete="nickname" placeholder="ให้ร้านทักคุณด้วยชื่อนี้">' +
       '<label class="check"><input type="checkbox" id="m-c1"> ยินยอมให้' + esc(shop) + 'เก็บเบอร์โทรเพื่อสะสมและแลกแต้ม (จำเป็น)</label>' +
@@ -414,7 +589,11 @@
       .then(function (r) {
         if (!r.ok) { err.textContent = r.body.message || 'สมัครไม่สำเร็จ ลองอีกครั้ง'; btn.disabled = false; return }
         closeSheet()
-        toast(r.body.data.linked ? 'สมัครแล้ว บิลนี้สะสมแต้มให้เบอร์ ' + r.body.data.member.phone : 'สมัครแล้ว (บิลนี้มีสมาชิกอีกคนสะสมแต้มอยู่)')
+        var retro = Number(r.body.data && r.body.data.retroPoints) || 0
+        var baseMsg = r.body.data.linked
+          ? 'สมัครแล้ว บิลนี้สะสมแต้มให้เบอร์ ' + r.body.data.member.phone
+          : 'สมัครแล้ว (บิลนี้มีสมาชิกอีกคนสะสมแต้มอยู่)'
+        toast(baseMsg + (retro > 0 ? ' · ได้แต้มย้อนหลัง +' + retro.toLocaleString('th-TH') + ' แต้ม' : ''))
         return load()
       })
       .catch(function () { err.textContent = 'เชื่อมต่อไม่ได้ ลองอีกครั้ง'; btn.disabled = false })
@@ -452,9 +631,22 @@
     var ids = Object.keys(S.cart)
     if ((!ids.length && !S.gifts.length) || S.sending) return
     S.sending = true; render()
+
+    var fp = cartFingerprint()
+    var saved = store.get('orderKey')
+    var key = (saved && saved.fp === fp && saved.key) ? saved.key : randomOrderKey()
+    store.set('orderKey', { key: key, fp: fp })
+
     var items = ids.map(function (id) { return { menuId: id, qty: S.cart[id].qty, note: S.cart[id].note || '' } })
-    api('POST', '/order', { items: items, rewards: S.gifts }).then(function (r) {
+    api('POST', '/order', { items: items, rewards: S.gifts, orderKey: key }).then(function (r) {
       if (r.ok) {
+        if (r.body.data && Array.isArray(r.body.data.itemIds)) {
+          r.body.data.itemIds.forEach(function (id) {
+            if (id && S.orderItems.indexOf(id) < 0) S.orderItems.push(id)
+          })
+          store.set('orderItems', S.orderItems)
+        }
+        clearOrderKey()
         S.cart = {}; S.gifts = []; saveCart()
         toast('ส่งเข้าครัวแล้ว' + (r.body.data && r.body.data.round ? ' · รอบที่ ' + r.body.data.round : ''))
         return load()
@@ -506,6 +698,35 @@
       }
       case 'ad-close': closeAd(false); break
       case 'ad-tap': closeAd(true); break
+      case 'guest-consent':
+        memberPost('/guest', { itemIds: S.orderItems }, 'จำรายการอาหารไว้บนเครื่องนี้แล้ว')
+        break
+      case 'guest-refuse':
+        refuseGuest(); render(); break
+      case 'guest-forget-ask':
+        S.confirmForgetGuest = true; render(); break
+      case 'guest-forget-cancel':
+        S.confirmForgetGuest = false; render(); break
+      case 'guest-forget-ok':
+        S.confirmForgetGuest = false
+        S.orderItems = []; store.del('orderItems')
+        memberPost('/guest/forget', {}, 'ลบข้อมูลและหยุดจำบนเครื่องนี้แล้ว')
+        break
+      case 'reorder-all': {
+        var last = S.data && S.data.guest && S.data.guest.lastOrder || []
+        var added = 0
+        last.forEach(function (it) {
+          var rm = it && menuById(it.menuId)
+          if (!it || !it.available || !rm || !rm.available) return
+          var rc = S.cart[rm.id] || { qty: 0, note: '' }
+          rc.qty = Math.min(MAX_QTY, rc.qty + (Number(it.qty) || 1))
+          S.cart[rm.id] = rc
+          added++
+        })
+        if (added) { saveCart(); render(); toast('เพิ่มเมนูที่เคยสั่งลงตะกร้าแล้ว') }
+        else toast('เมนูที่เคยสั่งหมดวันนี้')
+        break
+      }
       case 'm-join': joinMember(); break
       case 'logout': memberPost('/member/logout', {}, 'ออกจากระบบบนเครื่องนี้แล้ว · แต้มยังอยู่ครบกับเบอร์ของคุณ'); break
       case 'delete-open': openDeleteSheet(); break

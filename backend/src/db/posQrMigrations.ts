@@ -117,6 +117,45 @@ export function runPosQrMigrations(db: any): void {
     )`,
     'CREATE INDEX IF NOT EXISTS idx_pos_ad_events ON pos_ad_events(tenant_id, created_at)',
 
+    // ==================== ปรับปรุงหลังรีวิว 21 ต.ค. 2026 ====================
+    // ย้าย/รวมโต๊ะ: บิลที่ถูกรวมเข้าบิลอื่น ชี้ไปบิลปลายทาง — มือถือที่ถือลิงก์ของบิลเดิมตามไปสั่งต่อได้
+    'ALTER TABLE pos_running_bills ADD COLUMN merged_into_bill_id TEXT',
+    // กันออเดอร์ซ้ำตอนเน็ตหลุดแล้วลูกค้ากดส่งอีกครั้ง: key ที่มือถือสุ่มต่อ 1 การกดส่ง · ส่งซ้ำ = ตอบผลเดิม ไม่ลงบิลซ้ำ
+    `CREATE TABLE IF NOT EXISTS pos_qr_order_keys (
+      tenant_id TEXT NOT NULL,
+      order_key TEXT NOT NULL,
+      bill_id TEXT NOT NULL,
+      response TEXT,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (tenant_id, order_key)
+    )`,
+    // ลูกค้าทั่วไป (ไม่เป็นสมาชิก) ที่กดยินยอมให้จำเมนู — cookie httpOnly phq_guest เก็บ token ดิบ ตารางเก็บแค่ hash
+    // ไม่มีชื่อ/เบอร์ · ลบเองเมื่อหมดอายุ · สมัครสมาชิกแล้วประวัติย้ายเข้าโปรไฟล์ลูกค้าแล้วลบแถวนี้
+    `CREATE TABLE IF NOT EXISTS pos_guest_devices (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      consent_at TEXT NOT NULL,
+      visits INTEGER NOT NULL DEFAULT 0,
+      spent REAL NOT NULL DEFAULT 0,
+      item_counts TEXT NOT NULL DEFAULT '{}',
+      last_order TEXT NOT NULL DEFAULT '[]',
+      last_visit_at TEXT,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      UNIQUE(tenant_id, token_hash)
+    )`,
+    // รายการในบิลที่มือถือลูกค้าทั่วไปเครื่องไหนสั่ง — นับเข้าประวัติตอนบิลจ่ายเงินแล้วเท่านั้น
+    `CREATE TABLE IF NOT EXISTS pos_guest_bill_items (
+      bill_item_id TEXT PRIMARY KEY,
+      guest_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      bill_id TEXT NOT NULL
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_pos_guest_bill_items_bill ON pos_guest_bill_items(bill_id)',
+    // แต้มย้อนหลังตอนลูกค้าทั่วไปสมัครสมาชิก: เพดานกี่แต้ม · NULL = ค่าตั้งต้น 100 · 0 = ปิด
+    'ALTER TABLE company_settings ADD COLUMN loyalty_retro_cap INTEGER',
+
     // ราคา Business+ = ฿950 (เจ้าของเลือกตาม Phopy_Price.xlsx 2026-10-20) — migration v2.1 ใน migrations.ts
     // ยังดัน 950 → 990 ทุกครั้งที่บูต ตัวนี้รันต่อจากนั้นจึงได้ 950 เสมอ
     // ponytail: วางไว้ที่นี่เพราะ migrations.ts มีงานค้างของ session อื่น — ตอนเขา commit แล้วให้ลบบรรทัด 990 ที่โน่นแทน

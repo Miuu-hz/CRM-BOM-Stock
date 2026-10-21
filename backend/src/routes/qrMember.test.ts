@@ -43,15 +43,25 @@ async function shopWithOpenTable() {
   db.prepare(`INSERT INTO pos_menu_configs (id, tenant_id, product_id, pos_price) VALUES (?, ?, ?, 300)`).run(menuId, u.tenantId, productId)
   await request(app).post('/api/pos/tables').set(auth(u.token)).send({ names: ['T-07'] })
   const table = db.prepare('SELECT id, qr_token FROM pos_tables WHERE tenant_id = ?').get(u.tenantId) as any
-  const open = async () => (await request(app).post('/api/pos/bills').set(auth(u.token)).send({ table_id: table.id })).body.data.id as string
-  const billId = await open()
-  return { ...u, menuId, qr: table.qr_token as string, billId, open }
+  const open = async () => {
+    const res = await request(app).post('/api/pos/bills').set(auth(u.token)).send({ table_id: table.id })
+    const bId = res.body.data.id as string
+    const b = db.prepare('SELECT qr_token FROM pos_running_bills WHERE id = ?').get(bId) as any
+    return { id: bId, sessionToken: b.qr_token as string }
+  }
+  const first = await open()
+  return { ...u, menuId, qr: first.sessionToken, tableQr: table.qr_token as string, billId: first.id, open }
 }
 
 describe('สมาชิกด้วยเบอร์โทรผ่าน QR (แคชเชียร์ยืนยันแทน OTP)', () => {
   it('สมัคร → บิลสะสมแต้มให้ทันที แต่ยังไม่เห็นชื่อ/แต้ม → แคชเชียร์ยืนยัน → เห็นแต้มและแลกได้', async () => {
     const s = await shopWithOpenTable()
     const phone = request.agent(app)
+
+    // สมัครด้วย sticker token บนโต๊ะที่เปิดอยู่ → 409 SESSION_REQUIRED
+    const stickerJoin = await phone.post('/qr/api/member').send({ t: s.tableQr, phone: '081-234-5678', consentPoints: true })
+    expect(stickerJoin.status).toBe(409)
+    expect(stickerJoin.body).toMatchObject({ success: false, code: 'SESSION_REQUIRED', data: { sessionToken: s.qr } })
 
     const join = await phone.post('/qr/api/member').send({ t: s.qr, phone: '081-234-5678', name: 'มิ้นท์', consentPoints: true, consentMarketing: true })
     expect(join.status, JSON.stringify(join.body)).toBe(200)
@@ -121,13 +131,13 @@ describe('สมาชิกด้วยเบอร์โทรผ่าน QR 
 
     // มาอีกวัน: โต๊ะเปิดรอบใหม่ เครื่องเดิมกดผูกบิลได้เลย
     const nextBill = await s.open()
-    const attach = await phone.post('/qr/api/member').send({ t: s.qr })
+    const attach = await phone.post('/qr/api/member').send({ t: nextBill.sessionToken })
     expect(attach.body.data).toMatchObject({ linked: true, member: { status: 'verified' } })
-    expect((db.prepare('SELECT customer_id FROM pos_running_bills WHERE id = ?').get(nextBill) as any).customer_id).toBeTruthy()
+    expect((db.prepare('SELECT customer_id FROM pos_running_bills WHERE id = ?').get(nextBill.id) as any).customer_id).toBeTruthy()
 
-    expect((await phone.post('/qr/api/member/consent').send({ t: s.qr, marketing: true })).body.data.marketing).toBe(true)
-    expect((await phone.post('/qr/api/member/logout').send({ t: s.qr })).status).toBe(200)
-    expect((await phone.get('/qr/api/session').query({ t: s.qr })).body.data.member).toBeNull()
+    expect((await phone.post('/qr/api/member/consent').send({ t: nextBill.sessionToken, marketing: true })).body.data.marketing).toBe(true)
+    expect((await phone.post('/qr/api/member/logout').send({ t: nextBill.sessionToken })).status).toBe(200)
+    expect((await phone.get('/qr/api/session').query({ t: nextBill.sessionToken })).body.data.member).toBeNull()
   })
 
   it('ขอลบข้อมูล → ลงประวัติลูกค้าใน CRM + ถอนความยินยอมรับข่าวสาร + ลืมเครื่อง', async () => {

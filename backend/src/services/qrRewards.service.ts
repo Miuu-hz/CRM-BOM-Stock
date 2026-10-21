@@ -48,7 +48,38 @@ export function reservedPoints(tenantId: string, customerId: string): number {
   `).get(tenantId, customerId) as any).n
 }
 
+export interface AvailablePointsInfo {
+  total: number
+  reserved: number
+  available: number
+  valueOf(): number
+  toString(): string
+}
+
+/** คำนวณแต้มที่ใช้ได้จริง = floor(loyalty_points) − reservedPoints (ของแถมในบิล OPEN) */
+export function availablePoints(tenantId: string, customerId: string): AvailablePointsInfo {
+  const member = db.prepare('SELECT loyalty_points FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
+  const total = Math.floor(member?.loyalty_points || 0)
+  const reserved = reservedPoints(tenantId, customerId)
+  const available = Math.max(0, total - reserved)
+  return {
+    total,
+    reserved,
+    available,
+    valueOf() { return this.available },
+    toString() { return String(this.available) },
+  }
+}
+
 export class RewardError extends Error {}
+
+export class InsufficientPointsError extends Error {
+  code = 'REDEEM_INVALID'
+  constructor(message = 'คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก') {
+    super(message)
+    this.name = 'InsufficientPointsError'
+  }
+}
 
 /**
  * แลกแต้มตอนส่งออเดอร์: ของแถมเข้าบิลราคา 0 + จองแต้มไว้ (ต้องเรียกใน transaction เดียวกับการลงรายการ)
@@ -56,8 +87,7 @@ export class RewardError extends Error {}
  */
 export function reserveRewards(tenantId: string, billId: string, customerId: string, rewardIds: string[]): string[] {
   if (!rewardIds.length) return []
-  const member = db.prepare('SELECT loyalty_points FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
-  let available = Math.floor(member?.loyalty_points || 0) - reservedPoints(tenantId, customerId)
+  let available = availablePoints(tenantId, customerId).available
   const now = new Date().toISOString()
   const ids: string[] = []
   for (const rewardId of rewardIds) {

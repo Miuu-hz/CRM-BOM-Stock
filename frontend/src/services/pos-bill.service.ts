@@ -1,5 +1,18 @@
 import api from './api'
 
+export interface PosBill {
+  id: string
+  bill_number: string
+  status?: string
+  customer_id?: string | null
+  customer_name?: string | null
+  customer_phone?: string | null
+  customer_loyalty_points?: number
+  customer_reserved_points?: number
+  items?: any[]
+  [key: string]: any
+}
+
 const posBillService = {
   // ==================== Bills ====================
   

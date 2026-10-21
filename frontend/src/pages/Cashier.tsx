@@ -85,6 +85,7 @@ interface CurrentBill {
   customer_name?: string
   customer_phone?: string
   customer_loyalty_points?: number
+  customer_reserved_points?: number
   customer_code?: string
   customer_tax_id?: string
   customer_address?: string
@@ -616,11 +617,11 @@ export default function Cashier() {
         const earned = res.data?.points_earned || 0
         const redeemed = res.data?.points_redeemed || 0
         if (earned > 0 && redeemed > 0) {
-          toast.success(`ชำระเงินสำเร็จ! แลก ${redeemed.toLocaleString()} แต้ม + สะสม +${earned.toLocaleString()} แต้ม`, { icon: '<Star className="w-4 h-4" />' })
+          toast.success(`ชำระเงินสำเร็จ! แลก ${redeemed.toLocaleString()} แต้ม + สะสม +${earned.toLocaleString()} แต้ม`, { icon: <Star className="w-4 h-4" /> })
         } else if (earned > 0) {
-          toast.success(`ชำระเงินสำเร็จ! สะสมแต้ม +${earned.toLocaleString()} แต้ม`, { icon: '<Star className="w-4 h-4" />' })
+          toast.success(`ชำระเงินสำเร็จ! สะสมแต้ม +${earned.toLocaleString()} แต้ม`, { icon: <Star className="w-4 h-4" /> })
         } else {
-          toast.success(`ชำระเงินสำเร็จ!`, { icon: '<Banknote className="w-4 h-4" />' })
+          toast.success(`ชำระเงินสำเร็จ!`, { icon: <Banknote className="w-4 h-4" /> })
         }
         // Auto-print thermal receipt after payment
         // ส่วนลดจากแต้ม backend คิดเป็นส่วนลดท้ายบิลแล้ว — ใบเสร็จต้องเห็นยอดเดียวกัน
@@ -663,7 +664,7 @@ export default function Cashier() {
     setSendingToKitchen(true)
     try {
       const result = await kdsService.sendToKitchen(currentBill.id)
-      toast.success(`ส่งครัวแล้ว ${result.item_count} รายการ (รอบที่ ${result.round})`, { icon: '<ChefHat className="w-4 h-4" />' })
+      toast.success(`ส่งครัวแล้ว ${result.item_count} รายการ (รอบที่ ${result.round})`, { icon: <ChefHat className="w-4 h-4" /> })
       const billRes = await posBillService.getBill(currentBill.id)
       if (billRes.success) setCurrentBill(billRes.data)
     } catch {
@@ -1048,7 +1049,7 @@ export default function Cashier() {
                       <Star className="w-4 h-4 text-warning shrink-0" />
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-[var(--fg-1)] truncate">{currentBill.customer_name}</p>
-                        <p className="text-xs text-[var(--fg-3)]">{currentBill.customer_phone} · แต้ม <span className="text-[var(--primary)] font-medium">{(currentBill.customer_loyalty_points ?? 0).toLocaleString()}</span></p>
+                        <p className="text-xs text-[var(--fg-3)]">{currentBill.customer_phone} · แต้ม <span className="text-[var(--primary)] font-medium">{(currentBill.customer_loyalty_points ?? 0).toLocaleString()}</span>{(currentBill.customer_reserved_points ?? 0) > 0 && <span className="text-[var(--fg-4)]"> (จอง {currentBill.customer_reserved_points} แต้ม)</span>}</p>
                       </div>
                     </div>
                     <button
@@ -1495,7 +1496,10 @@ export default function Cashier() {
           { discount: billDiscountAmount(currentBill) + redeemBaht, extraCharge: extraCharge.amount }).totalAmount}
         onPay={processPayment}
         loyalty={loyalty}
-        customerPoints={currentBill?.customer_id ? (currentBill.customer_loyalty_points ?? null) : null}
+        customerPoints={currentBill?.customer_id
+          ? Math.max(0, (currentBill.customer_loyalty_points ?? 0) - (currentBill.customer_reserved_points ?? 0))
+          : null}
+        reservedPoints={currentBill?.customer_id ? (currentBill.customer_reserved_points ?? 0) : 0}
       />
 
       {/* Pay Action Issues Modal */}
@@ -2670,7 +2674,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   )
 }
 
-function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty, customerPoints }: {
+function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty, customerPoints, reservedPoints = 0 }: {
   isOpen: boolean
   onClose: () => void
   total: number
@@ -2679,6 +2683,7 @@ function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty,
   onPay: (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => void
   loyalty: LoyaltyConfig
   customerPoints: number | null
+  reservedPoints?: number
 }) {
   useModalClose(onClose)
   const [redeemInput, setRedeemInput] = useState(0)
@@ -2749,12 +2754,17 @@ function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty,
         ) : (
         <>
         {/* Redeem Points UI */}
-        {canRedeem && (
+        {canRedeem ? (
           <div className="mb-4 p-4 bg-[var(--warning-soft)] border border-warning/30 rounded-xl space-y-3">
             <div className="flex items-center gap-2">
               <Star className="w-4 h-4 text-warning" />
               <p className="text-sm font-medium text-warning">แลกแต้มสมาชิก</p>
-              <span className="text-xs text-[var(--fg-3)] ml-auto">มี {customerPoints!.toLocaleString()} แต้ม</span>
+              <div className="ml-auto text-right">
+                <span className="text-xs text-[var(--fg-3)]">มี {customerPoints!.toLocaleString()} แต้ม</span>
+                {reservedPoints > 0 && (
+                  <span className="text-xs text-[var(--fg-4)] block">จองไว้กับของแถม {reservedPoints.toLocaleString()} แต้ม</span>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -2785,6 +2795,16 @@ function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty,
               แลกทั้งหมด ({maxRedeemable.toLocaleString()} แต้ม = ลด ฿{Math.floor(maxRedeemable / loyalty.redeemRate).toLocaleString()})
             </button>
           </div>
+        ) : (
+          reservedPoints > 0 && customerPoints !== null && loyalty.enabled && (
+            <div className="mb-4 p-3 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl flex items-center justify-between text-xs text-[var(--fg-3)]">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-warning" />
+                <span>แต้มสมาชิก (ใช้ได้ {customerPoints.toLocaleString()} แต้ม)</span>
+              </div>
+              <span className="text-[var(--fg-4)]">จองไว้กับของแถม {reservedPoints.toLocaleString()} แต้ม</span>
+            </div>
+          )
         )}
 
         <div className="text-center py-6 bg-[var(--bg)] rounded-xl mb-6">

@@ -45,13 +45,16 @@ export async function cancelPosBill(
         WHERE id = ? AND tenant_id = ?
       `).run(voidNote, billId, tenantId)
     } else {
+      const cancelReason = reason || 'No reason'
       db.prepare(`
         UPDATE pos_running_bills
         SET status = 'CANCELLED', closed_at = ?, closed_by = ?,
-            notes = COALESCE(?, notes) || ' [CANCELLED: ' || ? || ']'
+            notes = TRIM(COALESCE(notes, '') || ' [CANCELLED: ' || ? || ']')
         WHERE id = ? AND tenant_id = ?
-      `).run(now, userId, bill.notes, reason || 'No reason', billId, tenantId)
+      `).run(now, userId, cancelReason, billId, tenantId)
     }
+    // ponytail: ของแถมจากการแลกแต้มที่ยัง RESERVED อยู่ ให้คืนสิทธิ์ (RETURNED) ลูกค้าจะได้แต้มคืน
+    db.prepare(`UPDATE pos_redemptions SET status = 'RETURNED' WHERE bill_id = ? AND tenant_id = ? AND status = 'RESERVED'`).run(billId, tenantId)
     // ตั๋วที่ครัวยังไม่เสร็จ → การ์ดแดงบน KDS จนเชฟกด "รับทราบ" (เดิมหายเงียบ ครัวทำต่อโดยไม่รู้)
     db.prepare(`UPDATE pos_kds_tickets SET status = 'CANCELLED', updated_at = ?
       WHERE bill_id = ? AND tenant_id = ? AND status IN ('PENDING', 'IN_PROGRESS')`).run(now, billId, tenantId)
@@ -92,8 +95,17 @@ function reverseLoyaltyPoints(bill: any, tenantId: string, userId: string) {
 
     // points เก็บแบบมีเครื่องหมายอยู่แล้ว (สะสม +, แลก −) กลับรายการคือใส่เครื่องหมายตรงข้าม
     const delta = -original.reduce((sum, tx) => sum + Number(tx.points || 0), 0)
-    const balanceAfter = Math.max(0, (customer.loyalty_points || 0) + delta)
+    const currentPoints = customer.loyalty_points || 0
+    const balanceAfter = Math.max(0, currentPoints + delta)
+    const actualDelta = balanceAfter - currentPoints
     const spentAfter = Math.max(0, (customer.total_spent || 0) - (bill.total_amount || 0))
+
+    // ponytail: ถ้าลูกค้าใช้แต้มไปแล้วจนแต้มไม่พอหักคืนเต็มจำนวน ให้บันทึก delta ตามที่หักได้จริง
+    // และระบุส่วนต่างไว้ในหมายเหตุ เพื่อให้ ledger (loyalty_transactions) ตรงกับ balance_after
+    let note = `ยกเลิกบิล ${bill.bill_number} — คืนแต้มสะสมที่เคยปรับไว้`
+    if (Math.abs(actualDelta) < Math.abs(delta)) {
+      note = `ยกเลิกบิล ${bill.bill_number} — หักคืนได้ ${Math.abs(actualDelta)} จาก ${Math.abs(delta)} แต้ม (แต้มไม่พอ)`
+    }
 
     // ถ้าแถว guard เขียนไม่ติดหลังแต้มถูกปรับไปแล้ว รอบหน้าจะคืนซ้ำ — มัดไว้ด้วยกัน
     db.transaction(() => {
@@ -104,12 +116,12 @@ function reverseLoyaltyPoints(bill: any, tenantId: string, userId: string) {
         INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
         VALUES (?, ?, ?, 'ADJUST', ?, ?, 'POS_CANCEL', ?, ?, ?, ?)
       `).run(
-        generateId(), tenantId, customerId, delta, balanceAfter, bill.id,
-        `ยกเลิกบิล ${bill.bill_number} — คืนแต้มสะสมที่เคยปรับไว้`,
+        generateId(), tenantId, customerId, actualDelta, balanceAfter, bill.id,
+        note,
         userId, new Date().toISOString()
       )
     })()
-    return { success: true, delta }
+    return { success: true, delta: actualDelta }
   } catch (e: any) {
     console.warn(`[pos-cancel] loyalty points reversal failed for bill ${bill.id}:`, e.message)
     return { success: false, error: e.message }

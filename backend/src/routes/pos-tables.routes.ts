@@ -3,6 +3,7 @@ import db from '../db/sqlite'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { generateId } from '../utils/id'
 import { getQrSettings, mintQrToken, qrImage, qrUrl } from '../services/posQr.service'
+import { recalculateBillTotals } from './pos-bill.routes'
 
 // ผังโต๊ะหน้าแคชเชียร์ + จัดการโต๊ะ/QR — เปิดโต๊ะใช้ POST /api/pos/bills { table_id } (pos-bill.routes.ts)
 const router = Router()
@@ -17,7 +18,7 @@ router.get('/tables', (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const rows = db.prepare(`
       SELECT t.id, t.name, t.sort_order,
-             b.id AS bill_id, b.bill_number, b.total_amount, b.opened_at, b.customer_name,
+             b.id AS bill_id, b.bill_number, b.total_amount, b.opened_at,
              b.bill_requested_at,
              (SELECT COUNT(*) FROM pos_bill_items bi WHERE bi.bill_id = b.id) AS item_count,
              (SELECT COUNT(*) FROM pos_bill_items bi WHERE bi.bill_id = b.id AND bi.created_by = 'QR') AS qr_item_count
@@ -120,7 +121,7 @@ router.get('/tables/qr', async (req, res) => {
   }
 })
 
-// GET /api/pos/tables/:id/slip — ใบเปิดโต๊ะ: QR ที่ลูกค้าต้องสแกนตอนนี้ (rotate = QR ของรอบ, static = QR ถาวร) + PIN
+// GET /api/pos/tables/:id/slip — ใบเปิดโต๊ะ: QR ที่ลูกค้าต้องสแกนตอนนี้ (rotate = QR ของรอบ, static = QR ถาวร)
 router.get('/tables/:id/slip', async (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
@@ -138,6 +139,238 @@ router.get('/tables/:id/slip', async (req, res) => {
   } catch (error) {
     console.error('Error building table slip:', error)
     res.status(500).json({ success: false, message: 'สร้างใบเปิดโต๊ะไม่สำเร็จ' })
+  }
+})
+
+// POST /api/pos/bills/:id/move { table_id } — ย้ายบิลไปโต๊ะว่างอื่น (คง qr_token เดิม ลูกค้าสั่งต่อได้)
+router.post('/bills/:id/move', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const billId = req.params.id
+    const targetTableId = req.body?.table_id
+
+    if (!targetTableId || typeof targetTableId !== 'string') {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุโต๊ะปลายทาง' })
+    }
+
+    const bill = db.prepare(`
+      SELECT id, tenant_id, table_id, display_name, status, qr_token
+      FROM pos_running_bills
+      WHERE id = ? AND tenant_id = ?
+    `).get(billId, tenantId) as any
+
+    if (!bill) {
+      return res.status(404).json({ success: false, message: 'ไม่พบบิลนี้' })
+    }
+    if (bill.status !== 'OPEN') {
+      return res.status(400).json({ success: false, message: 'ย้ายได้เฉพาะบิลที่เปิดอยู่' })
+    }
+    if (bill.table_id === targetTableId) {
+      return res.status(400).json({ success: false, message: 'ไม่สามารถย้ายไปโต๊ะเดิมได้' })
+    }
+
+    const targetTable = db.prepare(`
+      SELECT id, name FROM pos_tables
+      WHERE id = ? AND tenant_id = ? AND is_active = 1
+    `).get(targetTableId, tenantId) as any
+
+    if (!targetTable) {
+      return res.status(404).json({ success: false, message: 'ไม่พบโต๊ะปลายทาง' })
+    }
+
+    // ตรวจว่าโต๊ะปลายทางมีบิลเปิดอยู่หรือไม่
+    const openBill = db.prepare(`
+      SELECT id FROM pos_running_bills
+      WHERE tenant_id = ? AND table_id = ? AND status = 'OPEN'
+    `).get(tenantId, targetTable.id) as any
+
+    if (openBill) {
+      return res.status(409).json({
+        success: false,
+        code: 'TABLE_ALREADY_OPEN',
+        message: 'โต๊ะปลายทางมีบิลเปิดอยู่แล้ว',
+        data: { bill_id: openBill.id }
+      })
+    }
+
+    // ถ้า display_name ตรงกับชื่อโต๊ะเดิม ให้เปลี่ยนเป็นชื่อโต๊ะใหม่
+    let newDisplayName = bill.display_name
+    if (bill.table_id) {
+      const oldTable = db.prepare(`SELECT name FROM pos_tables WHERE id = ? AND tenant_id = ?`).get(bill.table_id, tenantId) as any
+      if (oldTable && bill.display_name === oldTable.name) {
+        newDisplayName = targetTable.name
+      }
+    }
+
+    const nowIso = new Date().toISOString()
+    // ponytail: db.transaction ครอบการย้ายโต๊ะ เพื่อป้องกัน race condition และอัปเดตตั๋วครัวพร้อมกัน
+    db.transaction(() => {
+      // ponytail: คง qr_token เดิมไว้ ลูกค้าที่สแกนแล้วสั่งต่อได้ไม่ต้องสแกนใหม่
+      db.prepare(`
+        UPDATE pos_running_bills
+        SET table_id = ?, display_name = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(targetTable.id, newDisplayName, bill.id, tenantId)
+
+      // อัปเดตชื่อโต๊ะบนตั๋วครัวที่ยังทำไม่เสร็จ (PENDING / IN_PROGRESS)
+      db.prepare(`
+        UPDATE pos_kds_tickets
+        SET table_name = ?, updated_at = ?
+        WHERE bill_id = ? AND tenant_id = ? AND status IN ('PENDING', 'IN_PROGRESS')
+      `).run(targetTable.name, nowIso, bill.id, tenantId)
+    })()
+
+    res.json({
+      success: true,
+      message: 'ย้ายโต๊ะสำเร็จ',
+      data: {
+        bill_id: bill.id,
+        table_id: targetTable.id,
+        table_name: targetTable.name,
+        display_name: newDisplayName
+      }
+    })
+  } catch (error: any) {
+    // ดักจับ race condition จาก unique index idx_pos_bills_open_table
+    if (String(error?.code).startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({ success: false, code: 'TABLE_ALREADY_OPEN', message: 'โต๊ะปลายทางมีบิลเปิดอยู่แล้ว' })
+    }
+    console.error('Error moving table:', error)
+    res.status(500).json({ success: false, message: 'ย้ายโต๊ะไม่สำเร็จ' })
+  }
+})
+
+// POST /api/pos/bills/:id/merge { target_bill_id } — รวมบิลต้นทางเข้าบิลปลายทาง
+router.post('/bills/:id/merge', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const sourceBillId = req.params.id
+    const targetBillId = req.body?.target_bill_id
+
+    if (!targetBillId || typeof targetBillId !== 'string') {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุบิลปลายทาง' })
+    }
+    if (sourceBillId === targetBillId) {
+      return res.status(400).json({ success: false, message: 'ไม่สามารถรวมเข้าบิลเดียวกันได้' })
+    }
+
+    const source = db.prepare(`SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?`).get(sourceBillId, tenantId) as any
+    if (!source) {
+      return res.status(404).json({ success: false, message: 'ไม่พบบิลต้นทาง' })
+    }
+    const target = db.prepare(`SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?`).get(targetBillId, tenantId) as any
+    if (!target) {
+      return res.status(404).json({ success: false, message: 'ไม่พบบิลปลายทาง' })
+    }
+
+    if (source.status !== 'OPEN' || target.status !== 'OPEN') {
+      return res.status(400).json({ success: false, message: 'รวมได้เฉพาะบิลที่เปิดอยู่ทั้งคู่' })
+    }
+
+    // หากทั้งสองบิลมีสมาชิกคนละคนกัน ให้แจ้งเตือนเอาสมาชิกออกก่อน
+    if (source.customer_id && target.customer_id && source.customer_id !== target.customer_id) {
+      return res.status(409).json({
+        success: false,
+        code: 'MEMBER_CONFLICT',
+        message: 'ทั้งสองบิลมีสมาชิกคนละคนกัน กรุณายกเลิกสมาชิกจากบิลใดบิลหนึ่งก่อนรวมโต๊ะ'
+      })
+    }
+
+    // หากบิลต้นทางมีส่วนลดหรือค่าบริการ ให้ล้างออกก่อน
+    const sourceDiscount = Number(source.discount_amount || 0)
+    const sourceExtraCharge = Number(source.extra_charge_amount || 0)
+    if (sourceDiscount > 0 || sourceExtraCharge > 0) {
+      return res.status(409).json({
+        success: false,
+        code: 'SOURCE_HAS_DISCOUNT_OR_CHARGE',
+        message: 'บิลต้นทางมีส่วนลดหรือค่าบริการเพิ่มเติม กรุณาล้างส่วนลด/ค่าบริการก่อนรวมบิล'
+      })
+    }
+
+    const nowIso = new Date().toISOString()
+    const mergeNote = `[รวมเข้าบิล ${target.bill_number}]`
+    const sourceNotes = source.notes ? `${source.notes} ${mergeNote}` : mergeNote
+
+    // ถ้าปลายทางไม่มีสมาชิก ให้คัดลอกจากต้นทาง
+    let targetCustomerId = target.customer_id
+    let targetCustomerName = target.customer_name
+    let targetCustomerPhone = target.customer_phone
+    let targetMemberDeviceId = target.member_device_id
+    if (!target.customer_id && source.customer_id) {
+      targetCustomerId = source.customer_id
+      targetCustomerName = source.customer_name
+      targetCustomerPhone = source.customer_phone
+      targetMemberDeviceId = source.member_device_id
+    }
+
+    // เก็บเวลาเรียกเช็คบิลที่เร็วที่สุด
+    let earliestRequestedAt: string | null = null
+    if (source.bill_requested_at && target.bill_requested_at) {
+      earliestRequestedAt = source.bill_requested_at < target.bill_requested_at
+        ? source.bill_requested_at
+        : target.bill_requested_at
+    } else {
+      earliestRequestedAt = source.bill_requested_at || target.bill_requested_at || null
+    }
+
+    // ponytail: db.transaction รวมทุกรายการเข้าบิลปลายทาง ย้ายตั๋วครัว/ของแถม แล้วปิดบิลเดิมพร้อมบันทึก merged_into_bill_id
+    db.transaction(() => {
+      // 1. ย้ายรายการอาหาร
+      db.prepare('UPDATE pos_bill_items SET bill_id = ? WHERE bill_id = ? AND tenant_id = ?')
+        .run(target.id, source.id, tenantId)
+
+      // 2. ย้ายรายการแลกของรางวัล
+      db.prepare('UPDATE pos_redemptions SET bill_id = ? WHERE bill_id = ? AND tenant_id = ?')
+        .run(target.id, source.id, tenantId)
+
+      // 3. ย้ายตั๋วครัว พร้อมเปลี่ยนชื่อโต๊ะเป็นชื่อของบิลปลายทาง (รอบอาจซ้ำกันได้ตามสเปก)
+      db.prepare(`
+        UPDATE pos_kds_tickets
+        SET bill_id = ?, bill_number = ?, table_name = ?, updated_at = ?
+        WHERE bill_id = ? AND tenant_id = ?
+      `).run(target.id, target.bill_number, target.display_name, nowIso, source.id, tenantId)
+
+      // 4. ย้ายประวัติสั่งของลูกค้าทั่วไป (guest)
+      db.prepare('UPDATE pos_guest_bill_items SET bill_id = ? WHERE bill_id = ? AND tenant_id = ?')
+        .run(target.id, source.id, tenantId)
+
+      // 5. ปรับปรุงข้อมูลสมาชิก/เวลาเรียกเช็คบิลของบิลปลายทาง
+      db.prepare(`
+        UPDATE pos_running_bills
+        SET customer_id = ?, customer_name = ?, customer_phone = ?, member_device_id = ?, bill_requested_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(
+        targetCustomerId ?? null,
+        targetCustomerName ?? null,
+        targetCustomerPhone ?? null,
+        targetMemberDeviceId ?? null,
+        earliestRequestedAt,
+        target.id,
+        tenantId
+      )
+
+      // 6. ยกเลิกบิลต้นทาง ปลดโต๊ะ (table_id NULL) และบันทึก merged_into_bill_id ให้มือถือตามไปถูก
+      db.prepare(`
+        UPDATE pos_running_bills
+        SET status = 'CANCELLED', closed_at = ?, table_id = NULL, merged_into_bill_id = ?, notes = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(nowIso, target.id, sourceNotes, source.id, tenantId)
+
+      // 7. คำนวณยอดรวมของบิลปลายทางใหม่
+      recalculateBillTotals(target.id)
+    })()
+
+    res.json({
+      success: true,
+      message: 'รวมบิลสำเร็จ',
+      data: {
+        id: target.id,
+        bill_number: target.bill_number
+      }
+    })
+  } catch (error) {
+    console.error('Error merging bills:', error)
+    res.status(500).json({ success: false, message: 'รวมบิลไม่สำเร็จ' })
   }
 })
 

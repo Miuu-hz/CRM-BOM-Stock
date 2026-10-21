@@ -4,6 +4,7 @@ import { BellRing, Clock, QrCode, Settings2, Smartphone } from 'lucide-react'
 import api from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 import TableManager from './TableManager'
+import MoveTableDialog from './MoveTableDialog'
 import { printTableSlip } from './qrPrint'
 
 export interface PosTable {
@@ -13,7 +14,6 @@ export interface PosTable {
   bill_number: string | null
   total_amount: number | null
   opened_at: string | null
-  customer_name: string | null
   bill_requested_at: string | null
   item_count: number
   qr_item_count: number
@@ -40,6 +40,7 @@ export default function TableBoard({ activeBillId, canOpenNew, onOpenBill, creat
   const [settings, setSettings] = useState<QrSettings>({ mode: 'static' })
   const [managing, setManaging] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const [moveSource, setMoveSource] = useState<PosTable | null>(null)
   const prev = useRef<Map<string, PosTable> | null>(null)
 
   const load = useCallback(async () => {
@@ -52,7 +53,7 @@ export default function TableBoard({ activeBillId, canOpenNew, onOpenBill, creat
           const p = prev.current.get(t.id)
           if (!p || !t.bill_id || p.bill_id !== t.bill_id) continue
           if (!p.bill_requested_at && t.bill_requested_at) toast(`โต๊ะ ${t.name} เรียกเช็คบิล`, { icon: '🔔', duration: 6000 })
-          else if (t.qr_item_count > p.qr_item_count) toast(`โต๊ะ ${t.name} สั่งเพิ่มผ่าน QR`, { icon: '📱', duration: 5000 })
+          if (t.qr_item_count > p.qr_item_count) toast(`โต๊ะ ${t.name} สั่งเพิ่มผ่าน QR`, { icon: '📱', duration: 5000 })
         }
       }
       prev.current = new Map(next.map(t => [t.id, t]))
@@ -76,6 +77,9 @@ export default function TableBoard({ activeBillId, canOpenNew, onOpenBill, creat
     if (!canOpenNew) { toast.error('กะค้างจากวันก่อน ปิดกะเดิมก่อนแล้วค่อยเปิดโต๊ะใหม่'); return }
     // QR เปลี่ยนทุกรอบ = ต้องพิมพ์ใบให้ลูกค้า → เปิดหน้าต่างพิมพ์ก่อน await (ไม่งั้นเบราว์เซอร์บล็อก pop-up)
     const w = settings.mode === 'rotate' ? window.open('', '_blank', 'width=360,height=640') : null
+    if (settings.mode === 'rotate' && !w) {
+      toast.error('เบราว์เซอร์บล็อก pop-up กรุณาอนุญาต pop-up หรือกดปุ่มพิมพ์ใบ QR ที่การ์ดโต๊ะเพื่อพิมพ์ซ้ำ')
+    }
     setBusy(t.id)
     try {
       const bill = await createTableBill(t.id)
@@ -133,7 +137,7 @@ export default function TableBoard({ activeBillId, canOpenNew, onOpenBill, creat
               <div key={t.id} className={`relative rounded-xl border-2 transition-all ${tone} ${activeBillId && t.bill_id === activeBillId ? 'ring-2 ring-phopy-indigo' : ''}`}>
                 <button onClick={() => openTable(t)} disabled={busy === t.id}
                   className="w-full p-4 text-left disabled:opacity-60" aria-label={`โต๊ะ ${t.name} ${isOpen ? 'เปิดอยู่' : 'ว่าง'}`}>
-                  <div className="flex items-center justify-between gap-2">
+                  <div className={`flex items-center justify-between gap-2 ${isOpen ? 'pr-16' : ''}`}>
                     <span className="text-xl font-bold text-[var(--fg-1)] truncate">{t.name}</span>
                     {t.qr_item_count > 0 && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--surface)] text-[var(--primary)] border border-phopy-indigo/30">QR</span>
@@ -154,6 +158,20 @@ export default function TableBoard({ activeBillId, canOpenNew, onOpenBill, creat
                     <p className="text-sm text-[var(--fg-4)] mt-1">{busy === t.id ? 'กำลังเปิด…' : 'ว่าง · กดเพื่อเปิดโต๊ะ'}</p>
                   )}
                 </button>
+                {isOpen && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setMoveSource(t)
+                    }}
+                    title={`ย้ายหรือรวมโต๊ะ ${t.name}`}
+                    aria-label={`ย้ายหรือรวมโต๊ะ ${t.name}`}
+                    className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded text-xs font-semibold border border-[var(--border)] bg-[var(--surface)] text-[var(--fg-2)] hover:border-phopy-indigo hover:text-[var(--primary)] transition-colors shadow-sm z-10"
+                  >
+                    ย้าย/รวม
+                  </button>
+                )}
                 {(isOpen || settings.mode === 'static') && (
                   <button onClick={() => reprint(t)} title="พิมพ์ใบ QR ของโต๊ะนี้" aria-label={`พิมพ์ใบ QR โต๊ะ ${t.name}`}
                     className="absolute bottom-2 right-2 p-1.5 rounded-lg text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface)]">
@@ -168,6 +186,15 @@ export default function TableBoard({ activeBillId, canOpenNew, onOpenBill, creat
 
       {managing && (
         <TableManager tables={tables} settings={settings} onClose={() => setManaging(false)} onChanged={load} />
+      )}
+
+      {moveSource && (
+        <MoveTableDialog
+          sourceTable={moveSource}
+          tables={tables}
+          onClose={() => setMoveSource(null)}
+          onSuccess={load}
+        />
       )}
     </div>
   )

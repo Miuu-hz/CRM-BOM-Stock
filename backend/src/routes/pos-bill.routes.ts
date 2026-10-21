@@ -7,8 +7,11 @@ import { cancelPosBill } from '../services/posBillCancel.service'
 import { getLoyaltySettings } from '../services/loyaltySettings'
 import { mintQrToken } from '../services/posQr.service'
 import { verifyBillMember } from '../services/posMember.service'
-import { billRewardConflict, useBillRewards } from '../services/qrRewards.service'
+import { recordPaidBill } from '../services/posGuest.service'
+import { billRewardConflict, useBillRewards, reservedPoints, availablePoints, InsufficientPointsError } from '../services/qrRewards.service'
 import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass } from '../services/approvalGate.service'
+
+export { InsufficientPointsError }
 
 // ลด/ลบรายการที่ส่งครัวแล้ว = ของอาจเสิร์ฟไปแล้วแต่ไม่อยู่ในบิล → ต้องมีเหตุผล + ลงบันทึกความเคลื่อนไหว
 // คืน false = ตอบ 400 ไปแล้ว ผู้เรียกหยุด · ถ้ารายการยังไม่ส่งครัว แก้ได้อิสระไม่ต้องบันทึก
@@ -199,7 +202,11 @@ router.get('/bills/:id', async (req, res) => {
       ? { id: activeInvoice.id, invoice_number: activeInvoice.invoice_number, status: activeInvoice.status }
       : null
 
-    res.json({ success: true, data: { ...bill, items, receipt_url, receipt_qr, invoice } })
+    const customer_reserved_points = (bill as any)?.customer_id
+      ? reservedPoints(tenantId, (bill as any).customer_id)
+      : 0
+
+    res.json({ success: true, data: { ...bill, customer_reserved_points, items, receipt_url, receipt_qr, invoice } })
   } catch (error) {
     console.error('Error fetching bill:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch bill' })
@@ -310,7 +317,7 @@ router.patch('/bills/:id/member', (req, res) => {
 
     // เดิมแก้ผู้ซื้อได้เฉพาะบิล OPEN เท่านั้น — บิลจ่ายเงินแล้ว (PAID) แก้ชื่อลูกค้าไม่ได้เลย
     // ซึ่งเป็นปัญหาต้นเรื่องทั้งหมด ตอนนี้ยอมทั้ง OPEN และ PAID แต่กันเพิ่ม 2 ชั้นข้างล่าง
-    const bill = db.prepare('SELECT status FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+    const bill = db.prepare('SELECT id, status, bill_number, total_amount, customer_id FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
     // ชั้นที่ 1: บิลไม่พบ หรือถูกยกเลิกไปแล้ว (สถานะที่เหลือมีแค่ OPEN/PAID/CANCELLED) — แก้ผู้ซื้อไม่ได้
     if (!bill || (bill.status !== 'OPEN' && bill.status !== 'PAID')) {
       return res.status(400).json({
@@ -328,34 +335,87 @@ router.patch('/bills/:id/member', (req, res) => {
       })
     }
 
+    const targetCustomerId = customer_id || null
+
+    // กฎ (a): ถ้ามีประวัติแต้ม POS_BILL ผูกกับบิลนี้แล้ว และสมาชิกที่ส่งมาใหม่ไม่ตรงกับคนเดิม (รวมถึงการถอดสมาชิก)
+    // ห้ามเปลี่ยน เพราะแต้มสะสมถูกโอนเข้าบัญชีสมาชิกคนแรกไปแล้ว
+    const existingLoyaltyTx = db.prepare(`
+      SELECT customer_id FROM loyalty_transactions
+      WHERE tenant_id = ? AND reference_type = 'POS_BILL' AND reference_id = ?
+      LIMIT 1
+    `).get(tenantId, id) as any
+
+    if (existingLoyaltyTx && existingLoyaltyTx.customer_id !== targetCustomerId) {
+      return res.status(409).json({
+        success: false,
+        code: 'MEMBER_LOCKED_POINTS',
+        message: 'แต้มสะสมจากบิลนี้ถูกบันทึกให้สมาชิกเดิมไปแล้ว ไม่สามารถเปลี่ยนสมาชิกได้ — หากต้องการแก้ไข ให้ยกเลิกบิลหรือปรับปรุงแต้มในระบบ CRM',
+      })
+    }
+
     let customerName = null
     let customerPhone = null
 
-    if (customer_id) {
-      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(customer_id, tenantId) as any
+    if (targetCustomerId) {
+      const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ? AND tenant_id = ?').get(targetCustomerId, tenantId) as any
       if (!cust) return res.status(404).json({ success: false, message: 'ไม่พบสมาชิก' })
       customerName = cust.name
       customerPhone = cust.phone
     }
 
-    // แคชเชียร์เลือก/เปลี่ยนสมาชิกเอง = ไม่ใช่สมาชิกที่ผูกจากมือถือลูกค้าแล้ว (ไม่ต้องรอยืนยัน)
-    const result = db.prepare(`
-      UPDATE pos_running_bills
-      SET customer_id = ?, customer_name = ?, customer_phone = ?, member_device_id = NULL
-      WHERE id = ? AND tenant_id = ? AND status IN ('OPEN', 'PAID')
-    `).run(customer_id || null, customerName, customerPhone, id, tenantId)
+    // กฎ (b): ถ้าบิลจ่ายแล้ว (PAID) + ยังไม่มีแถว POS_BILL ใน loyalty_transactions + เปิดระบบแต้มอยู่ + กำลังผูกสมาชิก
+    // คำนวณแต้มและบันทึกประวัติให้สมาชิกย้อนหลังใน transaction เดียวกัน (idempotent: เรียกซ้ำจะไม่แจกซ้ำเพราะเช็ค existingLoyaltyTx)
+    const loyalty = getLoyaltySettings(tenantId)
+    // เฉพาะบิลที่จ่ายตอนยังไม่มีสมาชิก — ถ้าเคยมีสมาชิกตอนจ่าย total_spent ถูกบวกให้คนนั้นไปแล้ว (แม้แต้มเป็น 0 จนไม่มีแถว POS_BILL)
+    const shouldAwardPoints = bill.status === 'PAID' && !bill.customer_id && !existingLoyaltyTx && loyalty.enabled && Boolean(targetCustomerId)
 
-    if (result.changes === 0) {
-      return res.status(400).json({ success: false, message: 'บิลไม่พบหรือปิดแล้ว' })
-    }
+    db.transaction(() => {
+      // แคชเชียร์เลือก/เปลี่ยนสมาชิกเอง = ไม่ใช่สมาชิกที่ผูกจากมือถือลูกค้าแล้ว (ไม่ต้องรอยืนยัน)
+      const result = db.prepare(`
+        UPDATE pos_running_bills
+        SET customer_id = ?, customer_name = ?, customer_phone = ?, member_device_id = NULL
+        WHERE id = ? AND tenant_id = ? AND status IN ('OPEN', 'PAID')
+      `).run(targetCustomerId, customerName, customerPhone, id, tenantId)
+
+      if (result.changes === 0) {
+        throw new Error('BILL_UPDATE_FAILED')
+      }
+
+      if (shouldAwardPoints && targetCustomerId) {
+        const cust = db.prepare('SELECT loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(targetCustomerId, tenantId) as any
+        const totalAmount = bill.total_amount || 0
+        const pointsEarned = loyalty.earnRate > 0 ? Math.floor(totalAmount / loyalty.earnRate) : 0
+        const balanceBefore = cust?.loyalty_points || 0
+        const balanceAfter = balanceBefore + pointsEarned
+        const totalSpentAfter = (cust?.total_spent || 0) + totalAmount
+
+        db.prepare(`
+          UPDATE customers SET loyalty_points = ?, total_spent = ? WHERE id = ? AND tenant_id = ?
+        `).run(balanceAfter, totalSpentAfter, targetCustomerId, tenantId)
+
+        const pointsBy = (req.user as any)?.email || (req as any).user?.userId || 'SYSTEM'
+        db.prepare(`
+          INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, note, created_by, created_at)
+          VALUES (?, ?, ?, 'EARN', ?, ?, 'POS_BILL', ?, ?, ?, ?)
+        `).run(
+          generateId(), tenantId, targetCustomerId,
+          pointsEarned, balanceAfter, id,
+          `สะสมแต้มจากบิล ${bill.bill_number}`,
+          pointsBy, new Date().toISOString()
+        )
+      }
+    })()
 
     // Return updated customer info
-    const customer = customer_id
-      ? db.prepare('SELECT id, name, phone, loyalty_points, total_spent FROM customers WHERE id = ?').get(customer_id) as any
+    const customer = targetCustomerId
+      ? db.prepare('SELECT id, name, phone, loyalty_points, total_spent FROM customers WHERE id = ? AND tenant_id = ?').get(targetCustomerId, tenantId) as any
       : null
 
-    res.json({ success: true, message: customer_id ? 'เพิ่มสมาชิกสำเร็จ' : 'ยกเลิกสมาชิกสำเร็จ', data: { customer } })
-  } catch (error) {
+    res.json({ success: true, message: targetCustomerId ? 'เพิ่มสมาชิกสำเร็จ' : 'ยกเลิกสมาชิกสำเร็จ', data: { customer } })
+  } catch (error: any) {
+    if (error?.message === 'BILL_UPDATE_FAILED') {
+      return res.status(400).json({ success: false, message: 'บิลไม่พบหรือปิดแล้ว' })
+    }
     console.error('Assign member error:', error)
     res.status(500).json({ success: false, message: 'ไม่สามารถกำหนดสมาชิกได้' })
   }
@@ -457,13 +517,18 @@ router.post('/bills/:id/items', (req, res) => {
     const noteVal = rawNote || null
 
     // ponytail: ถ้ามีรายการเมนูเดียวกันที่ยังไม่ส่งครัว (sent_to_kds = 0) และมีหมายเหตุตรงกัน ให้บวกจำนวนแทนการสร้างแถวใหม่
+    // ยกเว้นรายการที่เป็นของแถมจากการแลกแต้ม (pos_redemptions) ห้ามนำรายการใหม่มา merge เข้าเด็ดขาด
     const existing = db.prepare(`
       SELECT id, quantity, unit_price FROM pos_bill_items
       WHERE bill_id = ? AND tenant_id = ? AND pos_menu_id = ?
         AND (sent_to_kds = 0 OR sent_to_kds IS NULL)
         AND COALESCE(TRIM(special_instructions), '') = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM pos_redemptions r
+          WHERE r.bill_item_id = pos_bill_items.id AND r.tenant_id = ?
+        )
       ORDER BY added_at ASC LIMIT 1
-    `).get(id, tenantId, pos_menu_id, rawNote) as any
+    `).get(id, tenantId, pos_menu_id, rawNote, tenantId) as any
 
     if (existing) {
       const mergedQty = existing.quantity + numQty
@@ -538,9 +603,30 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     if (!item) {
       return res.status(404).json({ success: false, message: 'Item not found' })
     }
+
+    // ponytail: รายการของแถมจากการแลกแต้ม QR ถูกผูกกับ pos_redemptions ล็อกจำนวนไว้ ห้ามเพิ่ม/ลด (แต้มคิดแค่ครั้งเดียว)
+    if (quantity !== undefined && Number(quantity) !== (item as any).quantity) {
+      const isReward = db.prepare(`
+        SELECT 1 FROM pos_redemptions
+        WHERE tenant_id = ? AND bill_id = ? AND bill_item_id = ? AND status = 'RESERVED'
+      `).get(tenantId, billId, itemId)
+
+      if (isReward) {
+        return res.status(409).json({
+          success: false,
+          code: 'REWARD_ITEM_LOCKED',
+          message: 'รายการของแถมจากการแลกแต้มไม่สามารถแก้ไขจำนวนได้ หากต้องการเปลี่ยนให้ลบรายการออกแล้วสั่งใหม่',
+        })
+      }
+    }
     
     const newQty = quantity || (item as any).quantity
     if (!guardKitchenItemChange(req, res, billId, item, Number(newQty))) return
+
+    const hasInstructionsUpdate = req.body.special_instructions !== undefined || req.body.notes !== undefined
+    const finalInstructions = hasInstructionsUpdate
+      ? (String(req.body.special_instructions ?? req.body.notes ?? '').trim() || null)
+      : (item as any).special_instructions
 
     // เพิ่มจำนวนของที่ส่งครัวไปแล้ว: ส่วนที่เพิ่มต้องเป็นรายการใหม่ที่ยังไม่ส่ง ไม่งั้นครัวไม่มีวันรู้
     // (ส่งครัวหยิบเฉพาะ sent_to_kds = 0 — เดิมกด + บนรายการเก่าแล้วยอดบิลขึ้น แต่ครัวทำจำนวนเดิม)
@@ -548,18 +634,13 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
       const extra = Number(newQty) - (item as any).quantity
       db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name,
           quantity, unit_price, total_price, special_instructions, created_by)
-        SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, special_instructions, ?
-        FROM pos_bill_items WHERE id = ?`).run(generateId(), extra, extra, (req as any).user!.userId, itemId)
+        SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, ?, ?
+        FROM pos_bill_items WHERE id = ?`).run(generateId(), extra, extra, finalInstructions, (req as any).user!.userId, itemId)
       recalculateBillTotals(billId)
       return res.json({ success: true, message: 'Item updated successfully' })
     }
     const unitPrice = (item as any).unit_price
     const newTotal = newQty * unitPrice
-    
-    const hasInstructionsUpdate = req.body.special_instructions !== undefined || req.body.notes !== undefined
-    const finalInstructions = hasInstructionsUpdate
-      ? (String(req.body.special_instructions ?? req.body.notes ?? '').trim() || null)
-      : (item as any).special_instructions
 
     const stmt = db.prepare(`
       UPDATE pos_bill_items 
@@ -633,7 +714,7 @@ router.post('/bills/:id/pay', async (req, res) => {
     const tenantId = (req as any).user!.tenantId
     const userId = (req as any).user!.userId
     const { id } = req.params
-    const { payment_method, received_amount, reference, earn_rate, redeem_points, bank_account_id,
+    const { payment_method, received_amount, reference, redeem_points, bank_account_id,
       discount_amount, extra_charge_amount, extra_charge_label } = req.body
 
     if (!payment_method) {
@@ -684,11 +765,19 @@ router.post('/bills/:id/pay', async (req, res) => {
       // สมาชิกที่ลูกค้าผูกเองจากมือถือ (ไม่มี OTP) ต้องให้แคชเชียร์ยืนยันตัวตนก่อนจึงแลกแต้มได้
       const unverified = (bill as any).member_device_id
         && !(db.prepare('SELECT verified_at FROM pos_member_devices WHERE id = ?').get((bill as any).member_device_id) as any)?.verified_at
+
+      const ptsInfo = (bill as any).customer_id ? availablePoints(tenantId, (bill as any).customer_id) : null
+      const available = ptsInfo?.available ?? 0
+      const reserved = ptsInfo?.reserved ?? 0
+
       const redeemError = !loyalty.enabled ? 'ร้านปิดระบบแต้มสะสมอยู่'
         : !member ? 'บิลนี้ยังไม่ได้ผูกสมาชิก แลกแต้มไม่ได้'
         : unverified ? 'สมาชิกสมัครผ่าน QR ยังไม่ได้ยืนยันตัวตน — กด "ยืนยันสมาชิก" ที่บิลก่อนแลกแต้ม'
         : redeemPts < loyalty.minRedeem ? `ต้องแลกขั้นต่ำ ${loyalty.minRedeem} แต้ม`
-        : redeemPts > (member.loyalty_points || 0) ? 'คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก'
+        : redeemPts > available
+          ? (reserved > 0
+              ? `คะแนนสะสมไม่พอสำหรับการแลก (ใช้ได้ ${available.toLocaleString()} แต้ม, จองไว้กับของแถม ${reserved.toLocaleString()} แต้ม)`
+              : 'คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก')
         : null
       if (redeemError) return res.status(400).json({ success: false, code: 'REDEEM_INVALID', message: redeemError })
       redeemBaht = Math.floor(redeemPts / loyalty.redeemRate)
@@ -788,7 +877,8 @@ router.post('/bills/:id/pay', async (req, res) => {
           pointsRedeemed = redeemPts + useBillRewards(tenantId, id)
 
           if (pointsRedeemed > balanceBefore) {
-            throw new Error('คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก')
+            const diff = pointsRedeemed - balanceBefore
+            throw new InsufficientPointsError(`คะแนนสะสมของลูกค้าไม่เพียงพอสำหรับการแลก (ขาดอีก ${diff} แต้ม)`)
           }
 
           const balanceAfter = Math.max(0, balanceBefore - pointsRedeemed) + pointsEarned
@@ -826,6 +916,7 @@ router.post('/bills/:id/pay', async (req, res) => {
           }
         }
       }
+      recordPaidBill(tenantId, id, Boolean((refreshedBill as any).customer_id))
       return { accountingResult, pointsEarned, pointsRedeemed }
     })
     const { accountingResult, pointsEarned, pointsRedeemed } = payTx()
@@ -857,9 +948,12 @@ router.post('/bills/:id/pay', async (req, res) => {
         redeem_discount: redeemBaht,
       }
     })
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof BillAlreadyPaidError) {
       return res.status(409).json({ success: false, message: 'บิลนี้ถูกชำระ/ปิดไปแล้ว' })
+    }
+    if (error instanceof InsufficientPointsError) {
+      return res.status(400).json({ success: false, code: error.code || 'REDEEM_INVALID', message: error.message })
     }
     console.error('Error processing payment:', error)
     res.status(500).json({ success: false, message: 'Failed to process payment' })

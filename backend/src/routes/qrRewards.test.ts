@@ -50,7 +50,8 @@ async function shop() {
   await request(app).post('/api/pos/tables').set(auth(u.token)).send({ names: ['T-01'] })
   const table = db.prepare('SELECT id, qr_token FROM pos_tables WHERE tenant_id = ?').get(u.tenantId) as any
   const billId = (await request(app).post('/api/pos/bills').set(auth(u.token)).send({ table_id: table.id })).body.data.id as string
-  return { ...u, rice, coconut, qr: table.qr_token as string, billId }
+  const bill = db.prepare('SELECT qr_token FROM pos_running_bills WHERE id = ?').get(billId) as any
+  return { ...u, rice, coconut, qr: bill.qr_token as string, tableQr: table.qr_token as string, billId }
 }
 
 async function verifiedMember(s: Awaited<ReturnType<typeof shop>>, points: number) {
@@ -165,6 +166,9 @@ describe('เฟส 4: Pop-up โฆษณา', () => {
     expect((await request(app).put('/api/pos/qr-marketing/ad').set(auth(s.token)).send({ daily_start: '10:00' })).status).toBe(400)
 
     await request(app).put('/api/pos/qr-marketing/ad').set(auth(s.token)).send({ link_type: 'none' })
+    const stickerAd = await request(app).post('/qr/api/ad-event').send({ t: s.tableQr, type: 'shown' })
+    expect(stickerAd.status).toBe(409)
+    expect(stickerAd.body).toMatchObject({ success: false, code: 'SESSION_REQUIRED', data: { sessionToken: s.qr } })
     expect((await request(app).post('/qr/api/ad-event').send({ t: s.qr, type: 'shown' })).status).toBe(200)
     expect((await request(app).post('/qr/api/ad-event').send({ t: s.qr, type: 'tap' })).status).toBe(200)
     expect((await request(app).post('/qr/api/ad-event').send({ t: s.qr, type: 'hack' })).status).toBe(400)

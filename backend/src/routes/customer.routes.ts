@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { phoneDigits } from '../utils/phone'
+import { availablePoints } from '../services/qrRewards.service'
 
 const router = Router()
 
@@ -749,6 +750,12 @@ router.post('/:id/loyalty/redeem', (req: Request, res: Response) => {
         .get(id, tenantId) as any
       if (!customer) return { error: 'NOT_FOUND' as const }
 
+      // ponytail: เช็คแต้มที่ว่างจริง ไม่ให้แลกเกินแต้มที่เหลือหลังหักแต้มที่จองไว้กับของแถมในบิล OPEN
+      const ptsInfo = availablePoints(tenantId, id)
+      if (pts > ptsInfo.available) {
+        return { error: 'INSUFFICIENT_POINTS' as const, available: ptsInfo.available, reserved: ptsInfo.reserved }
+      }
+
       // Atomic SQL decrement with point check
       const updateResult = db.prepare(`
         UPDATE customers
@@ -757,7 +764,7 @@ router.post('/:id/loyalty/redeem', (req: Request, res: Response) => {
       `).run(pts, id, tenantId, pts)
 
       if (updateResult.changes === 0) {
-        return { error: 'INSUFFICIENT_POINTS' as const }
+        return { error: 'INSUFFICIENT_POINTS' as const, available: ptsInfo.available, reserved: ptsInfo.reserved }
       }
 
       const updatedCustomer = db.prepare('SELECT loyalty_points FROM customers WHERE id = ? AND tenant_id = ?')
@@ -778,7 +785,10 @@ router.post('/:id/loyalty/redeem', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'ไม่พบลูกค้า' })
     }
     if (result.error === 'INSUFFICIENT_POINTS') {
-      return res.status(400).json({ success: false, message: 'แต้มสะสมไม่เพียงพอ' })
+      const msg = result.reserved && result.reserved > 0
+        ? `แต้มสะสมไม่เพียงพอ (ใช้ได้ ${result.available.toLocaleString()} แต้ม, จองไว้กับของแถม ${result.reserved.toLocaleString()} แต้ม)`
+        : 'แต้มสะสมไม่เพียงพอ'
+      return res.status(400).json({ success: false, code: 'INSUFFICIENT_POINTS', message: msg })
     }
 
     res.json({ success: true, data: { points: result.balanceAfter } })

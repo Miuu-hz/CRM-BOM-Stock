@@ -1,6 +1,5 @@
 import { Router } from 'express'
 import db from '../db/sqlite'
-import { generateId } from '../utils/id'
 import { authenticate } from '../middleware/auth.middleware'
 import { createKdsTicket } from '../services/kdsTicket.service'
 
