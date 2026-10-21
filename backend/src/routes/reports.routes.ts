@@ -6,6 +6,10 @@ const router = Router()
 
 router.use(authenticate)
 
+// ── Ledger helpers ────────────────────────────────────────────────────────
+// กรองเฉพาะรายการที่ผ่านการโพสต์แล้ว (is_posted = 1) และไม่รวมรายการปิดบัญชีสิ้นปี (is_closing_entry = 1)
+const NON_CLOSING = 'AND (je.is_closing_entry IS NULL OR je.is_closing_entry = 0)'
+
 // ============================================
 // FINANCIAL REPORTS - รายงานทางการเงิน
 // ============================================
@@ -109,9 +113,9 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { asOfDate } = req.query
-    const date = asOfDate || new Date().toISOString().split('T')[0]
+    const date = (asOfDate as string) || new Date().toISOString().split('T')[0]
     
-    // Get account balances
+    // Get account balances (posted & non-closing)
     const accounts = db.prepare(`
       SELECT a.*,
              COALESCE((
@@ -121,7 +125,7 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
                END)
                FROM journal_lines jl
                JOIN journal_entries je ON jl.journal_entry_id = je.id
-               WHERE jl.account_id = a.id AND je.is_posted = 1 AND je.date <= ?
+               WHERE jl.account_id = a.id AND je.is_posted = 1 ${NON_CLOSING} AND je.date <= ?
              ), 0) as balance
       FROM accounts a
       WHERE a.tenant_id = ? AND a.is_active = 1 AND a.level >= 1
@@ -136,7 +140,24 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
     // Calculate totals
     const totalAssets = assets.reduce((sum, a) => sum + Number(a.balance), 0)
     const totalLiabilities = liabilities.reduce((sum, a) => sum + Number(a.balance), 0)
-    const totalEquity = equity.reduce((sum, a) => sum + Number(a.balance), 0)
+    const equityAccountsTotal = equity.reduce((sum, a) => sum + Number(a.balance), 0)
+    
+    // คำนวณกำไรสะสมงวดปัจจุบันที่ยังไม่ปิดบัญชี (Revenue − Expense จนถึง asOfDate)
+    const netIncomeRow = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as total_revenue,
+        COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' THEN jl.debit - jl.credit ELSE 0 END), 0) as total_expense
+      FROM journal_lines jl
+      JOIN journal_entries je ON jl.journal_entry_id = je.id
+      JOIN accounts a ON jl.account_id = a.id
+      WHERE je.tenant_id = ? AND je.is_posted = 1 ${NON_CLOSING} AND je.date <= ?
+    `).get(tenantId, date) as { total_revenue: number; total_expense: number }
+
+    const unclosedProfit = Number(netIncomeRow.total_revenue) - Number(netIncomeRow.total_expense)
+    const totalEquity = equityAccountsTotal + unclosedProfit
+    const totalLiabilitiesAndEquity = totalLiabilities + totalEquity
+    const difference = Math.round((totalAssets - totalLiabilitiesAndEquity) * 100) / 100
+    const balanced = Math.abs(difference) < 0.01
     
     // Group by category for better display
     const groupByCategory = (items: any[]) => {
@@ -165,10 +186,13 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
         equity: {
           items: equity,
           grouped: groupByCategory(equity),
-          total: totalEquity
+          total: totalEquity,
+          unclosedProfit,
+          equityAccountsTotal,
         },
-        totalLiabilitiesAndEquity: totalLiabilities + totalEquity,
-        balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01
+        totalLiabilitiesAndEquity,
+        balanced,
+        difference,
       }
     })
   } catch (error) {
@@ -178,10 +202,94 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
 })
 
 // Profit & Loss - งบกำไรขาดทุน
+export function buildProfitLoss(
+  tenantId: string,
+  startDate: string,
+  endDate: string,
+  businessUnit?: string | null
+) {
+  // เครื่องหมายต้องคิดตาม type ไม่ใช่ normal_balance: บัญชีหักรายได้ (4301 ส่วนลดขาย / 4302 รับคืน)
+  // เป็น REVENUE ที่ normal_balance=DEBIT ถ้าคิดตาม normal_balance ยอดจะออกบวกแล้วถูก "บวก" เข้ารายได้
+  // แทนที่จะหักออก · ไม่นับรายการปิดงวด ไม่งั้นงบทั้งปีที่ปิดแล้วจะเหลือ 0 (ตรงกับ phopy-board/dashboard)
+  const accounts = db.prepare(`
+    SELECT a.*,
+           COALESCE((
+             SELECT SUM(CASE 
+               WHEN a.type = 'EXPENSE' THEN jl.debit - jl.credit
+               ELSE jl.credit - jl.debit
+             END)
+             FROM journal_lines jl
+             JOIN journal_entries je ON jl.journal_entry_id = je.id
+             WHERE jl.account_id = a.id AND je.is_posted = 1 
+             ${NON_CLOSING}
+             AND je.date >= ? AND je.date <= ?
+             AND (? IS NULL OR je.business_unit = ?)
+           ), 0) as balance
+    FROM accounts a
+    WHERE a.tenant_id = ? AND a.is_active = 1 
+      AND a.type IN ('REVENUE', 'EXPENSE') AND a.level >= 1
+    ORDER BY a.code
+  `).all(startDate, endDate, businessUnit || null, businessUnit || null, tenantId) as any[]
+  
+  const revenues = accounts.filter(a => a.type === 'REVENUE')
+  const expenses = accounts.filter(a => a.type === 'EXPENSE')
+  
+  // Calculate totals
+  const totalRevenue = revenues.reduce((sum, a) => sum + Number(a.balance), 0)
+  const totalExpenses = expenses.reduce((sum, a) => sum + Number(a.balance), 0)
+  const netProfit = totalRevenue - totalExpenses
+  
+  // Group by category
+  const groupByCategory = (items: any[]) => {
+    const grouped: Record<string, any[]> = {}
+    items.forEach(item => {
+      if (!grouped[item.category]) grouped[item.category] = []
+      grouped[item.category].push(item)
+    })
+    return grouped
+  }
+  
+  // Calculate gross profit (if we have COGS)
+  const cogsItems = expenses.filter(e => e.category === 'COGS')
+  const cogs = cogsItems.reduce((sum, e) => sum + Number(e.balance), 0)
+  const grossProfit = totalRevenue - cogs
+  const grossMarginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
+  
+  // Calculate operating profit
+  const opExpItems = expenses.filter(e => e.category !== 'COGS')
+  const operatingExpenses = opExpItems.reduce((sum, e) => sum + Number(e.balance), 0)
+  const operatingProfit = grossProfit - operatingExpenses
+  const netMarginPct = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
+
+  return {
+    period: { startDate, endDate },
+    revenue: {
+      items: revenues,
+      grouped: groupByCategory(revenues),
+      total: totalRevenue
+    },
+    cogs: {
+      items: cogsItems,
+      total: cogs
+    },
+    grossProfit,
+    grossMarginPct: Number(grossMarginPct.toFixed(2)),
+    operatingExpenses: {
+      items: opExpItems,
+      grouped: groupByCategory(opExpItems),
+      total: operatingExpenses
+    },
+    operatingProfit,
+    netProfit,
+    netMarginPct: Number(netMarginPct.toFixed(2)),
+    margin: totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(2) : '0'
+  }
+}
+
 router.get('/profit-loss', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { startDate, endDate } = req.query
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string }
 
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'Start date and end date are required' })
@@ -191,78 +299,49 @@ router.get('/profit-loss', async (req: Request, res: Response) => {
     // ไม่ส่งมา = รวมทุกหน่วย (พฤติกรรมเดิม) · entry เก่าที่ยังไม่มีค่าจะถูกกรองออกเมื่อเลือกหน่วยใดหน่วยหนึ่ง
     const businessUnit = (req.query.businessUnit as string) || null
 
-    // Get revenue and expense accounts with balances
-    // เครื่องหมายต้องคิดตาม type ไม่ใช่ normal_balance: บัญชีหักรายได้ (4301 ส่วนลดขาย / 4302 รับคืน)
-    // เป็น REVENUE ที่ normal_balance=DEBIT ถ้าคิดตาม normal_balance ยอดจะออกบวกแล้วถูก "บวก" เข้ารายได้
-    // แทนที่จะหักออก · ไม่นับรายการปิดงวด ไม่งั้นงบทั้งปีที่ปิดแล้วจะเหลือ 0 (ตรงกับ phopy-board/dashboard)
-    const accounts = db.prepare(`
-      SELECT a.*,
-             COALESCE((
-               SELECT SUM(CASE 
-                 WHEN a.type = 'EXPENSE' THEN jl.debit - jl.credit
-                 ELSE jl.credit - jl.debit
-               END)
-               FROM journal_lines jl
-               JOIN journal_entries je ON jl.journal_entry_id = je.id
-               WHERE jl.account_id = a.id AND je.is_posted = 1 
-               AND (je.is_closing_entry = 0 OR je.is_closing_entry IS NULL)
-               AND je.date >= ? AND je.date <= ?
-               AND (? IS NULL OR je.business_unit = ?)
-             ), 0) as balance
-      FROM accounts a
-      WHERE a.tenant_id = ? AND a.is_active = 1 
-        AND a.type IN ('REVENUE', 'EXPENSE') AND a.level >= 1
-      ORDER BY a.code
-    `).all(startDate, endDate, businessUnit, businessUnit, tenantId) as any[]
-    
-    const revenues = accounts.filter(a => a.type === 'REVENUE')
-    const expenses = accounts.filter(a => a.type === 'EXPENSE')
-    
-    // Calculate totals
-    const totalRevenue = revenues.reduce((sum, a) => sum + Number(a.balance), 0)
-    const totalExpenses = expenses.reduce((sum, a) => sum + Number(a.balance), 0)
-    const netProfit = totalRevenue - totalExpenses
-    
-    // Group by category
-    const groupByCategory = (items: any[]) => {
-      const grouped: Record<string, any[]> = {}
-      items.forEach(item => {
-        if (!grouped[item.category]) grouped[item.category] = []
-        grouped[item.category].push(item)
-      })
-      return grouped
-    }
-    
-    // Calculate gross profit (if we have COGS)
-    const cogs = expenses.filter(e => e.category === 'COGS').reduce((sum, e) => sum + Number(e.balance), 0)
-    const grossProfit = totalRevenue - cogs
-    
-    // Calculate operating profit
-    const operatingExpenses = expenses.filter(e => e.category !== 'COGS').reduce((sum, e) => sum + Number(e.balance), 0)
-    const operatingProfit = grossProfit - operatingExpenses
-    
+    const current = buildProfitLoss(tenantId, startDate, endDate, businessUnit)
+
+    // คำนวณงวดก่อนหน้า (ความยาวเท่ากับงวดปัจจุบัน) เพื่อเปรียบเทียบผลต่าง
+    const startMs = new Date(startDate).getTime()
+    const endMs = new Date(endDate).getTime()
+    const durationMs = endMs - startMs
+    const prevEndMs = startMs - 86400000
+    const prevStartMs = prevEndMs - durationMs
+    const prevEnd = new Date(prevEndMs).toISOString().substring(0, 10)
+    const prevStart = new Date(prevStartMs).toISOString().substring(0, 10)
+
+    const previous = buildProfitLoss(tenantId, prevStart, prevEnd, businessUnit)
+
+    const revenueChange = current.revenue.total - previous.revenue.total
+    const grossProfitChange = current.grossProfit - previous.grossProfit
+    const operatingExpensesChange = current.operatingExpenses.total - previous.operatingExpenses.total
+    const netProfitChange = current.netProfit - previous.netProfit
+
     res.json({
       success: true,
       data: {
-        period: { startDate, endDate },
-        revenue: {
-          items: revenues,
-          grouped: groupByCategory(revenues),
-          total: totalRevenue
-        },
-        cogs: {
-          items: expenses.filter(e => e.category === 'COGS'),
-          total: cogs
-        },
-        grossProfit,
-        operatingExpenses: {
-          items: expenses.filter(e => e.category !== 'COGS'),
-          grouped: groupByCategory(expenses.filter(e => e.category !== 'COGS')),
-          total: operatingExpenses
-        },
-        operatingProfit,
-        netProfit,
-        margin: totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(2) : 0
+        ...current,
+        previousPeriod: previous,
+        comparison: {
+          previousPeriod: { startDate: prevStart, endDate: prevEnd },
+          revenueChange,
+          revenueChangePct: previous.revenue.total !== 0
+            ? Number(((revenueChange / Math.abs(previous.revenue.total)) * 100).toFixed(2))
+            : null,
+          cogsChange: current.cogs.total - previous.cogs.total,
+          grossProfitChange,
+          grossProfitChangePct: previous.grossProfit !== 0
+            ? Number(((grossProfitChange / Math.abs(previous.grossProfit)) * 100).toFixed(2))
+            : null,
+          operatingExpensesChange,
+          operatingExpensesChangePct: previous.operatingExpenses.total !== 0
+            ? Number(((operatingExpensesChange / Math.abs(previous.operatingExpenses.total)) * 100).toFixed(2))
+            : null,
+          netProfitChange,
+          netProfitChangePct: previous.netProfit !== 0
+            ? Number(((netProfitChange / Math.abs(previous.netProfit)) * 100).toFixed(2))
+            : null,
+        }
       }
     })
   } catch (error) {
@@ -275,16 +354,16 @@ router.get('/profit-loss', async (req: Request, res: Response) => {
 router.get('/cash-flow', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { startDate, endDate } = req.query
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string }
     
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: 'Start date and end date are required' })
     }
     
-    // Get cash accounts
+    // Get cash accounts (1101, 1102 หรือ หมวด CASH)
     const cashAccounts = db.prepare(`
       SELECT id FROM accounts 
-      WHERE tenant_id = ? AND code IN ('1101', '1102') AND is_active = 1
+      WHERE tenant_id = ? AND (code IN ('1101', '1102') OR category = 'CASH') AND is_active = 1
     `).all(tenantId) as any[]
     
     const cashAccountIds = cashAccounts.map(a => a.id)
@@ -293,7 +372,7 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Cash accounts not found' })
     }
     
-    // Get cash transactions
+    // Get cash transactions (posted & non-closing)
     const placeholders = cashAccountIds.map(() => '?').join(',')
     
     const transactions = db.prepare(`
@@ -310,6 +389,7 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
       JOIN accounts a ON jl.account_id = a.id
       WHERE jl.account_id IN (${placeholders})
         AND je.is_posted = 1
+        ${NON_CLOSING}
         AND je.date >= ? AND je.date <= ?
       ORDER BY je.date, je.created_at
     `).all(...cashAccountIds, startDate, endDate) as any[]
@@ -321,19 +401,18 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
       JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE jl.account_id IN (${placeholders})
         AND je.is_posted = 1
+        ${NON_CLOSING}
         AND je.date < ?
     `).get(...cashAccountIds, startDate) as any
     
-    // Categorize transactions
-    const operating = transactions.filter(t => 
-      ['SALES_ORDER', 'PURCHASE_ORDER', 'EXPENSE'].includes(t.reference_type)
-    )
-    const investing = transactions.filter(t => 
-      ['ASSET_PURCHASE', 'ASSET_SALE'].includes(t.reference_type)
-    )
-    const financing = transactions.filter(t => 
-      ['LOAN', 'EQUITY'].includes(t.reference_type)
-    )
+    // Categorize transactions:
+    // แยกเป็น ลงทุน (Investing), จัดหาเงิน (Financing) และ ดำเนินงาน (Operating - ครอบคลุมธุรกรรมอื่นทั้งหมดที่กระทบเงินสด)
+    const INVESTING_REFS = ['ASSET_PURCHASE', 'ASSET_SALE', 'INVESTMENT', 'FIXED_ASSET']
+    const FINANCING_REFS = ['LOAN', 'EQUITY', 'DIVIDEND', 'CAPITAL']
+
+    const investing = transactions.filter(t => INVESTING_REFS.includes(t.reference_type))
+    const financing = transactions.filter(t => FINANCING_REFS.includes(t.reference_type))
+    const operating = transactions.filter(t => !INVESTING_REFS.includes(t.reference_type) && !FINANCING_REFS.includes(t.reference_type))
     
     const calcFlow = (items: any[]) => items.reduce((sum, t) => sum + (t.debit - t.credit), 0)
     

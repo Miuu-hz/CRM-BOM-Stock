@@ -111,9 +111,12 @@ export interface BalanceSheetReport {
     items: BalanceSheetItem[]
     grouped: Record<string, BalanceSheetItem[]>
     total: number
+    unclosedProfit?: number
+    equityAccountsTotal?: number
   }
   totalLiabilitiesAndEquity: number
   balanced: boolean
+  difference?: number
 }
 
 export interface ProfitLossItem {
@@ -139,6 +142,7 @@ export interface ProfitLossReport {
     total: number
   }
   grossProfit: number
+  grossMarginPct?: number
   operatingExpenses: {
     items: ProfitLossItem[]
     grouped: Record<string, ProfitLossItem[]>
@@ -146,7 +150,43 @@ export interface ProfitLossReport {
   }
   operatingProfit: number
   netProfit: number
+  netMarginPct?: number
   margin: string
+  previousPeriod?: {
+    period: { startDate: string; endDate: string }
+    revenue: {
+      items: ProfitLossItem[]
+      grouped: Record<string, ProfitLossItem[]>
+      total: number
+    }
+    cogs: {
+      items: ProfitLossItem[]
+      total: number
+    }
+    grossProfit: number
+    grossMarginPct?: number
+    operatingExpenses: {
+      items: ProfitLossItem[]
+      grouped: Record<string, ProfitLossItem[]>
+      total: number
+    }
+    operatingProfit: number
+    netProfit: number
+    netMarginPct?: number
+    margin: string
+  }
+  comparison?: {
+    previousPeriod: { startDate: string; endDate: string }
+    revenueChange: number
+    revenueChangePct: number | null
+    cogsChange: number
+    grossProfitChange: number
+    grossProfitChangePct: number | null
+    operatingExpensesChange: number
+    operatingExpensesChangePct: number | null
+    netProfitChange: number
+    netProfitChangePct: number | null
+  }
 }
 
 // ==================== ACCOUNTS API ====================
