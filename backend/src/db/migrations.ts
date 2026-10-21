@@ -2796,6 +2796,30 @@ export function runMigrations(db: any): void {
     })
     console.log('✅ Migration: platform_months.orders_json + platform_month_products.qty_net/sales_net created')
   } catch (e) { console.error('⚠️ platform_months phase5 (orders) migration error:', e) }
+
+  // ==================== เงินเดือนรายคน (2026-10-21) ====================
+  // ฟอร์มบันทึกเงินเดือนในสมุดรายวันลง JE PAYROLL ก้อนเดียว — ตารางนี้เก็บยอดรายคนแบบมีโครงสร้าง
+  // ไว้ทำ autocomplete ชื่อ + เตือน "งวดนี้จ่ายคนนี้ไปแล้ว" · ลบ JE (วิธียกเลิกของระบบ) แล้วแถวหายตาม CASCADE
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS payroll_lines (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        journal_entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+        period TEXT NOT NULL,
+        pay_date TEXT NOT NULL,
+        employee_name TEXT NOT NULL,
+        gross REAL NOT NULL DEFAULT 0,
+        sso_employee REAL NOT NULL DEFAULT 0,
+        wht REAL NOT NULL DEFAULT 0,
+        other_deduction REAL NOT NULL DEFAULT 0,
+        net REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_payroll_lines_employee ON payroll_lines(tenant_id, employee_name);
+      CREATE INDEX IF NOT EXISTS idx_payroll_lines_je ON payroll_lines(journal_entry_id);
+    `)
+  } catch (e) { console.error('⚠️ payroll_lines migration error:', e) }
 }
 
 /**

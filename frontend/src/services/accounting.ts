@@ -174,6 +174,15 @@ export const accountsApi = {
 
 // ==================== JOURNAL API ====================
 
+export interface PayrollHistory {
+  employee: string
+  period: string | null
+  samePeriod: { count: number; gross: number; net: number }
+  year: string
+  yearToDate: { count: number; gross: number; net: number }
+  recent: Array<{ payDate: string; period: string; gross: number; net: number; entryNumber: string; isPosted: number }>
+}
+
 export const journalApi = {
   // Get all entries
   getAll: (params?: { 
@@ -202,6 +211,13 @@ export const journalApi = {
     businessUnit?: string
     notes?: string
   }) => api.post('/journal/payroll', data),
+
+  // ชื่อพนักงานที่เคยบันทึกเงินเดือน (autocomplete)
+  payrollEmployees: (q?: string) => api.get('/journal/payroll/employees', { params: { q } }),
+
+  // คนนี้เคยรับไปแล้วเท่าไร — งวดเดียวกัน / ทั้งปี / 3 รายการล่าสุด
+  payrollHistory: (employee: string, period: string) =>
+    api.get<{ success: boolean; data: PayrollHistory }>('/journal/payroll/history', { params: { employee, period } }),
   
   // Get entry by ID
   getById: (id: string) => api.get(`/journal/${id}`),

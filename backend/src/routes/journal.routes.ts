@@ -3,7 +3,7 @@ import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import type { JournalEntry, JournalLineWithAccount } from '../types'
-import { getOrCreateAccount } from '../services/accounting.service'
+import { getAccountIdByCode, getOrCreateAccount } from '../services/accounting.service'
 import { ACC } from '../config/accountCodes'
 
 const router = Router()
@@ -127,6 +127,7 @@ export interface PayrollInput {
 
 export interface PayrollAccounts {
   salary: string     // 5301
+  ssEmployerExpense: string // 5314 (ไม่มีในผัง → 5301)
   ssPayable: string  // 2106
   whtPayable: string // 2105
   pay: string
@@ -153,7 +154,7 @@ export function validatePayroll(raw: Record<string, unknown>): PayrollInput {
 
   const employees = raw.employees.map((item: unknown, i: number): PayrollEmployee => {
     const e = (item ?? {}) as Record<string, unknown>
-    const name = String(e.name ?? '').trim()
+    const name = normEmployeeName(e.name)
     if (!name) throw new PayrollError(`แถวที่ ${i + 1}: กรุณากรอกชื่อ`)
     const emp = {
       name,
@@ -211,7 +212,7 @@ export function buildPayrollLines(input: PayrollInput, acc: PayrollAccounts) {
 
   const lines: JournalLineInput[] = [
     { accountId: acc.salary, debit: gross, description: `เงินเดือน ${label}: ${perPerson(e => e.gross)}` },
-    { accountId: acc.salary, debit: ssEr, description: `เงินสมทบประกันสังคมส่วนนายจ้าง ${label}` },
+    { accountId: acc.ssEmployerExpense, debit: ssEr, description: `เงินสมทบประกันสังคมส่วนนายจ้าง ${label}` },
     { accountId: acc.pay, credit: net, description: `จ่ายสุทธิ ${label}: ${perPerson(netOf)}` },
     { accountId: acc.ssPayable, credit: round2(ssEe + ssEr), description: `ประกันสังคมค้างจ่าย ${label}: ลูกจ้าง ${fmtBaht(ssEe)} + นายจ้าง ${fmtBaht(ssEr)}` },
     { accountId: acc.whtPayable, credit: wht, description: `ภาษีหัก ณ ที่จ่าย ${label}: ${perPerson(e => e.wht ?? 0)}` },
@@ -250,26 +251,100 @@ export function createPayrollEntry(tenantId: string, userName: string, input: Pa
     throw new PayrollError('ไม่พบบัญชีรับยอดหักอื่นๆ')
   }
 
+  const warnings: string[] = []
+  const salary = getOrCreateAccount(tenantId, '5301', 'เงินเดือนและค่าจ้าง', 'EXPENSE', 'SALARY', 'DEBIT')
+  // 5314 ถูกเติมให้ทุก tenant ตอน server start (backfillChartOfAccounts) — ถ้ายังไม่มี (เช่นผู้ใช้ลบทิ้ง) ไม่ปั้นเอง ลง 5301 แล้วเตือน
+  let ssEmployerExpense = getAccountIdByCode(tenantId, SSO_EMPLOYER_CODE)
+  if (!ssEmployerExpense) {
+    ssEmployerExpense = salary
+    if ((input.ssEmployer ?? 0) > 0) {
+      warnings.push(`ไม่พบบัญชี ${SSO_EMPLOYER_CODE} เงินสมทบประกันสังคม (ส่วนนายจ้าง) — ลงเงินสมทบนายจ้างที่ 5301 แทน`)
+    }
+  }
+
   const built = buildPayrollLines(input, {
-    salary: getOrCreateAccount(tenantId, '5301', 'เงินเดือนและค่าจ้าง', 'EXPENSE', 'SALARY', 'DEBIT'),
+    salary,
+    ssEmployerExpense,
     ssPayable: getOrCreateAccount(tenantId, '2106', 'ประกันสังคม', 'LIABILITY', 'PAYABLE', 'CREDIT'),
     whtPayable: getOrCreateAccount(tenantId, ACC.WHT_PAYABLE),
     pay: pay.id,
     otherDeduction: input.otherDeductionAccountId,
   })
 
-  const { id, entryNumber } = insertJournalEntry(tenantId, userName, {
-    date: input.payDate,
-    description: built.description,
-    referenceType: PAYROLL_REF,
-    referenceId: input.period,
-    notes: built.notes,
-    businessUnit: input.businessUnit,
-    lines: built.lines,
-    totalDebit: built.totalDebit,
-    totalCredit: built.totalCredit,
-  })
-  return { id, entryNumber, summary: built.summary }
+  const insertPayrollLine = db.prepare(`
+    INSERT INTO payroll_lines (id, tenant_id, journal_entry_id, period, pay_date, employee_name,
+      gross, sso_employee, wht, other_deduction, net, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const { id, entryNumber } = db.transaction(() => {
+    const je = insertJournalEntry(tenantId, userName, {
+      date: input.payDate,
+      description: built.description,
+      referenceType: PAYROLL_REF,
+      referenceId: input.period,
+      notes: built.notes,
+      businessUnit: input.businessUnit,
+      lines: built.lines,
+      totalDebit: built.totalDebit,
+      totalCredit: built.totalCredit,
+    })
+    const now = new Date().toISOString()
+    for (const e of input.employees) {
+      const ss = e.ssEmployee ?? 0, wht = e.wht ?? 0, other = e.otherDeduction ?? 0
+      insertPayrollLine.run(generateId(), tenantId, je.id, input.period, input.payDate, e.name,
+        e.gross, ss, wht, other, round2(e.gross - ss - wht - other), now)
+    }
+    return je
+  })()
+  return { id, entryNumber, summary: built.summary, warnings }
+}
+
+// ---------- ประวัติเงินเดือนรายคน (autocomplete + เตือนจ่ายซ้ำงวด) ----------
+// ระบบไม่มีธง void บน JE — การยกเลิกคือลบ JE (ร่างลบได้เลย, ยืนยันแล้วต้อง unpost ก่อน)
+// payroll_lines หายตาม ON DELETE CASCADE และทุก query ยัง JOIN journal_entries กันแถวกำพร้าซ้ำอีกชั้น
+export const SSO_EMPLOYER_CODE = '5314'
+
+export function normEmployeeName(v: unknown): string {
+  return String(v ?? '').trim().replace(/\s+/g, ' ')
+}
+
+export function listPayrollEmployees(tenantId: string, q?: string) {
+  const term = normEmployeeName(q)
+  return db.prepare(`
+    SELECT pl.employee_name as name, COUNT(*) as count, MAX(pl.pay_date) as lastPayDate
+    FROM payroll_lines pl
+    JOIN journal_entries je ON je.id = pl.journal_entry_id AND je.tenant_id = pl.tenant_id
+    WHERE pl.tenant_id = ? AND (? = '' OR instr(lower(pl.employee_name), lower(?)) > 0)
+    GROUP BY lower(pl.employee_name)
+    ORDER BY lastPayDate DESC
+    LIMIT 50
+  `).all(tenantId, term, term) as Array<{ name: string; count: number; lastPayDate: string }>
+}
+
+export function payrollHistory(tenantId: string, employee: string, period?: string) {
+  const name = normEmployeeName(employee)
+  const year = period && PERIOD_RE.test(period) ? period.slice(0, 4) : String(new Date().getFullYear())
+  const base = `
+    FROM payroll_lines pl
+    JOIN journal_entries je ON je.id = pl.journal_entry_id AND je.tenant_id = pl.tenant_id
+    WHERE pl.tenant_id = ? AND lower(pl.employee_name) = lower(?)`
+  const sumRow = (extra: string, ...p: string[]) => db.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(pl.gross), 0) as gross, COALESCE(SUM(pl.net), 0) as net ${base} ${extra}
+  `).get(tenantId, name, ...p) as { count: number; gross: number; net: number }
+
+  return {
+    employee: name,
+    period: period ?? null,
+    samePeriod: period ? sumRow('AND pl.period = ?', period) : { count: 0, gross: 0, net: 0 },
+    year,
+    yearToDate: sumRow(`AND substr(pl.period, 1, 4) = ?`, year),
+    recent: db.prepare(`
+      SELECT pl.pay_date as payDate, pl.period, pl.gross, pl.net, je.entry_number as entryNumber, je.is_posted as isPosted
+      ${base}
+      ORDER BY pl.pay_date DESC, pl.created_at DESC
+      LIMIT 3
+    `).all(tenantId, name) as Array<{ payDate: string; period: string; gross: number; net: number; entryNumber: string; isPosted: number }>,
+  }
 }
 
 // ============================================
@@ -440,6 +515,30 @@ router.get('/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get journal entry error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch journal entry' })
+  }
+})
+
+// ชื่อพนักงานที่เคยบันทึกเงินเดือน (autocomplete)
+router.get('/payroll/employees', async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: listPayrollEmployees(req.user!.tenantId, req.query.q as string | undefined) })
+  } catch (error) {
+    console.error('List payroll employees error:', error)
+    res.status(500).json({ success: false, message: 'โหลดรายชื่อพนักงานไม่สำเร็จ' })
+  }
+})
+
+// คนนี้เคยรับไปแล้วเท่าไร: งวดเดียวกัน / ทั้งปี / 3 รายการล่าสุด
+router.get('/payroll/history', async (req: Request, res: Response) => {
+  try {
+    const employee = normEmployeeName(req.query.employee)
+    const period = typeof req.query.period === 'string' ? req.query.period : undefined
+    if (!employee) return res.status(400).json({ success: false, message: 'ต้องระบุชื่อพนักงาน' })
+    if (period && !PERIOD_RE.test(period)) return res.status(400).json({ success: false, message: 'งวดเดือนต้องเป็นรูปแบบ YYYY-MM' })
+    res.json({ success: true, data: payrollHistory(req.user!.tenantId, employee, period) })
+  } catch (error) {
+    console.error('Payroll history error:', error)
+    res.status(500).json({ success: false, message: 'โหลดประวัติเงินเดือนไม่สำเร็จ' })
   }
 })
 

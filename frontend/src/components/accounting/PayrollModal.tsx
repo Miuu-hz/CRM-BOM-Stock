@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Banknote, Calculator, Check, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Banknote, Calculator, Check, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { journalApi, type Account } from '../../services/accounting'
 import { useModalClose } from '../../hooks/useModalClose'
+import { PayrollHistoryNote, normName, periodLabel, useEmployeeNames, usePayrollHistory } from './PayrollHistoryNote'
 
-// บันทึกจ่ายเงินเดือนเป็น JE (reference_type PAYROLL) — ไม่มีโมดูล HR แยก รายละเอียดรายคนเก็บใน memo ของรายการ
-// บัญชีฝั่งค่าใช้จ่าย/หนี้สินถูกกำหนดที่ backend: Dr 5301 · Cr 2106 ประกันสังคม · Cr 2105 ภาษีหัก ณ ที่จ่าย
+// บันทึกจ่ายเงินเดือนเป็น JE (reference_type PAYROLL) — ไม่มีโมดูล HR แยก ยอดรายคนเก็บที่ payroll_lines + memo ของรายการ
+// บัญชีฝั่งค่าใช้จ่าย/หนี้สินถูกกำหนดที่ backend: Dr 5301 · Dr 5314 สมทบนายจ้าง · Cr 2106 ประกันสังคม · Cr 2105 ภาษีหัก ณ ที่จ่าย
 
 interface Row { name: string; gross: string; ssEmployee: string; wht: string; otherDeduction: string }
 
@@ -43,12 +44,16 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
   const [ssEmployerSame, setSsEmployerSame] = useState(true)
   const [ssEmployerInput, setSsEmployerInput] = useState('')
   const [payAccountId, setPayAccountId] = useState(() => (payChoices.find(a => a.code?.startsWith('1102')) ?? payChoices[0])?.id ?? '')
-  const [otherAccountId, setOtherAccountId] = useState(() => accounts.find(a => a.code === '1105')?.id ?? '')
+  const [otherAccountId, setOtherAccountId] = useState(() => accounts.find(a => a.code === '2102')?.id ?? '')
   const [businessUnit, setBusinessUnit] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
   const activeRows = lump ? [lumpRow] : rows
+  const employeeNames = useEmployeeNames()
+  const historyOf = usePayrollHistory(activeRows.map(r => r.name), period)
+  // เตือนเฉย ๆ ไม่บล็อก — บางร้านจ่ายเดือนละ 2 รอบ
+  const paidThisPeriod = activeRows.map(r => historyOf(r.name)).filter(h => h && h.samePeriod.count > 0)
   const total = (k: keyof Omit<Row, 'name'>) => round2(activeRows.reduce((s, r) => s + num(r[k]), 0))
   const gross = total('gross')
   const ssEe = total('ssEmployee')
@@ -82,7 +87,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
       const res = await journalApi.createPayroll({
         period, payDate,
         employees: activeRows.map(r => ({
-          name: r.name.trim(), gross: num(r.gross), ssEmployee: num(r.ssEmployee), wht: num(r.wht), otherDeduction: num(r.otherDeduction),
+          name: normName(r.name), gross: num(r.gross), ssEmployee: num(r.ssEmployee), wht: num(r.wht), otherDeduction: num(r.otherDeduction),
         })),
         ssEmployer: ssEr,
         payAccountId,
@@ -92,6 +97,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
       })
       if (res.data.success) {
         toast.success(`บันทึกเงินเดือนแล้ว (${res.data.data.entryNumber}) — รอกดยืนยันรายการ`)
+        for (const w of res.data.data.warnings ?? []) toast(w)
         onSuccess()
       }
     } catch (err: any) { toast.error(err.response?.data?.message || 'บันทึกเงินเดือนไม่สำเร็จ') }
@@ -100,9 +106,10 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
 
   const payAccount = accounts.find(a => a.id === payAccountId)
   const otherAccount = accounts.find(a => a.id === otherAccountId)
+  const ssoExpense = accounts.find(a => a.code === '5314')
   const preview: Array<{ side: 'Dr' | 'Cr'; label: string; amount: number }> = [
     { side: 'Dr' as const, label: '5301 เงินเดือนและค่าจ้าง', amount: gross },
-    { side: 'Dr' as const, label: '5301 เงินสมทบประกันสังคมนายจ้าง', amount: ssEr },
+    { side: 'Dr' as const, label: ssoExpense ? `5314 ${ssoExpense.name}` : '5301 เงินสมทบนายจ้าง (ไม่พบบัญชี 5314)', amount: ssEr },
     { side: 'Cr' as const, label: `${payAccount?.code ?? ''} ${payAccount?.name ?? 'บัญชีจ่าย'} (สุทธิ)`, amount: net },
     { side: 'Cr' as const, label: '2106 ประกันสังคม (ลูกจ้าง+นายจ้าง)', amount: round2(ssEe + ssEr) },
     { side: 'Cr' as const, label: '2105 ภาษีหัก ณ ที่จ่าย', amount: wht },
@@ -175,16 +182,17 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
                 <span />
               </div>
               {lump ? (
-                <div className={gridCols}>
-                  <input value={lumpRow.name} onChange={e => setLumpRow(r => ({ ...r, name: e.target.value }))}
+                <div className="space-y-1"><div className={gridCols}>
+                  <input value={lumpRow.name} onChange={e => setLumpRow(r => ({ ...r, name: e.target.value }))} list="payroll-employee-names"
                     placeholder="เช่น พนักงาน 5 คน" className={`${cellCls} font-sans text-left`} />
                   {amountInputs(lumpRow, p => setLumpRow(r => ({ ...r, ...p })))}
                   <span className={`text-right font-mono text-sm ${netOf(lumpRow) < 0 ? 'text-danger' : 'text-[var(--fg-1)]'}`}>{fmt(netOf(lumpRow))}</span>
                   <span />
                 </div>
+                <PayrollHistoryNote history={historyOf(lumpRow.name)} /></div>
               ) : rows.map((r, i) => (
-                <div key={i} className={gridCols}>
-                  <input value={r.name} onChange={e => updateRow(i, { name: e.target.value })}
+                <div key={i} className="space-y-1"><div className={gridCols}>
+                  <input value={r.name} onChange={e => updateRow(i, { name: e.target.value })} list="payroll-employee-names"
                     placeholder={`พนักงาน ${i + 1}`} className={`${cellCls} font-sans text-left`} />
                   {amountInputs(r, p => updateRow(i, p))}
                   <span className={`text-right font-mono text-sm ${netOf(r) < 0 ? 'text-danger' : 'text-[var(--fg-1)]'}`}>{fmt(netOf(r))}</span>
@@ -194,7 +202,11 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+                <PayrollHistoryNote history={historyOf(r.name)} /></div>
               ))}
+              <datalist id="payroll-employee-names">
+                {employeeNames.map(n => <option key={n} value={n} />)}
+              </datalist>
               <div className={`${gridCols} pt-2 border-t border-[var(--border)] text-sm font-mono font-semibold text-[var(--fg-1)]`}>
                 <span className="font-sans text-xs text-[var(--fg-3)]">รวม</span>
                 <span className="text-right">{fmt(gross)}</span>
@@ -228,7 +240,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
             </div>
             {other > 0 && (
               <label className="block rounded-lg border border-[var(--border)] p-3 text-xs text-[var(--fg-3)]">
-                ยอดหักอื่นๆ ลงบัญชี * <span className="text-[var(--fg-4)]">(เช่น เงินเบิกล่วงหน้า → ลูกหนี้อื่น)</span>
+                ยอดหักอื่นๆ ลงบัญชี * <span className="text-[var(--fg-4)]">(ค่าเริ่มต้น 2102 เจ้าหนี้อื่น · เงินเบิกล่วงหน้าใช้ 1105 ลูกหนี้อื่น)</span>
                 <select value={otherAccountId} onChange={e => setOtherAccountId(e.target.value)} className={`${inputCls} mt-1.5`}>
                   <option value="">— เลือกบัญชี —</option>
                   {otherChoices.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
@@ -236,6 +248,16 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
               </label>
             )}
           </div>
+
+          {paidThisPeriod.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-[var(--warning-soft)] px-3 py-2 text-xs text-warning">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                งวด {periodLabel(period)} มีรายการเงินเดือนของ {paidThisPeriod.map(h => `${h!.employee} (${h!.samePeriod.count} ครั้ง ฿${fmt(h!.samePeriod.net)})`).join(', ')} อยู่แล้ว
+                — ถ้าเป็นการจ่ายรอบที่สองของเดือนบันทึกต่อได้ ถ้าไม่ใช่ตรวจก่อนว่าไม่ได้บันทึกซ้ำ
+              </span>
+            </div>
+          )}
 
           {/* Preview รายการบัญชี */}
           <div className="rounded-lg border border-[var(--border)] overflow-hidden text-sm">

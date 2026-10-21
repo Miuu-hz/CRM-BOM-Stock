@@ -4,6 +4,7 @@ import request from 'supertest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { getOrCreateAccount } from '../services/accounting.service'
+import { DEFAULT_CHART_OF_ACCOUNTS, seedChartOfAccounts } from '../config/chartOfAccounts'
 import journalRouter, {
   buildPayrollLines, validatePayroll, PayrollError, listJournalEntries, parseJournalFilter, FilterError,
 } from './journal.routes'
@@ -17,6 +18,7 @@ app.use('/api/journal', journalRouter)
 const tenants: string[] = []
 afterEach(() => {
   for (const t of tenants.splice(0)) {
+    db.prepare('DELETE FROM payroll_lines WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM journal_lines WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM journal_entries WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM accounts WHERE tenant_id = ?').run(t)
@@ -29,7 +31,7 @@ const newUser = () => {
   return u
 }
 
-const ACC_IDS = { salary: 'S', ssPayable: 'SS', whtPayable: 'W', pay: 'BANK', otherDeduction: 'OTH' }
+const ACC_IDS = { salary: 'S', ssEmployerExpense: 'SSE', ssPayable: 'SS', whtPayable: 'W', pay: 'BANK', otherDeduction: 'OTH' }
 
 describe('buildPayrollLines', () => {
   const input = validatePayroll({
@@ -46,7 +48,8 @@ describe('buildPayrollLines', () => {
     const by = (id: string, side: 'debit' | 'credit') =>
       r.lines.filter(l => l.accountId === id).reduce((s, l) => s + (l[side] ?? 0), 0)
 
-    expect(by('S', 'debit')).toBe(27000.5 + 1500)
+    expect(by('S', 'debit')).toBe(27000.5)
+    expect(by('SSE', 'debit')).toBe(1500)
     expect(by('BANK', 'credit')).toBe(27000.5 - 1350 - 200 - 1000) // 24,450.50
     expect(by('SS', 'credit')).toBe(1350 + 1500)
     expect(by('W', 'credit')).toBe(200)
@@ -88,14 +91,16 @@ describe('validatePayroll', () => {
 })
 
 describe('POST /api/journal/payroll', () => {
-  it('สร้าง JE แบบร่าง PAYROLL ถูกบัญชี สมดุล และติด business_unit', async () => {
+  it('สร้าง JE แบบร่าง PAYROLL ถูกบัญชี สมดุล ติด business_unit และสมทบนายจ้างลง 5314', async () => {
     const u = newUser()
+    seedChartOfAccounts(u.tenantId) // tenant จริงได้ 5314 จาก backfillChartOfAccounts ตอน server start
     const bank = getOrCreateAccount(u.tenantId, '1102')
     const res = await request(app).post('/api/journal/payroll').set('Authorization', `Bearer ${u.token}`).send({
       period: '2026-10', payDate: '2026-10-31', payAccountId: bank, businessUnit: 'RETAIL',
       ssEmployer: 750, employees: [{ name: 'สมชาย', gross: 15000, ssEmployee: 750, wht: 100 }],
     })
     expect(res.status).toBe(200)
+    expect(res.body.data.warnings).toEqual([])
     const je = db.prepare('SELECT * FROM journal_entries WHERE id = ?').get(res.body.data.id) as any
     expect(je.reference_type).toBe('PAYROLL')
     expect(je.reference_id).toBe('2026-10')
@@ -112,8 +117,32 @@ describe('POST /api/journal/payroll', () => {
       { code: '1102', d: 0, c: 14150 },
       { code: '2105', d: 0, c: 100 },
       { code: '2106', d: 0, c: 1500 },
-      { code: '5301', d: 15750, c: 0 },
+      { code: '5301', d: 15000, c: 0 },
+      { code: '5314', d: 750, c: 0 },
     ])
+    // รายคนเก็บแบบมีโครงสร้าง
+    expect(db.prepare('SELECT employee_name, period, gross, sso_employee, wht, net FROM payroll_lines WHERE journal_entry_id = ?').all(je.id))
+      .toEqual([{ employee_name: 'สมชาย', period: '2026-10', gross: 15000, sso_employee: 750, wht: 100, net: 14150 }])
+  })
+
+  it('ไม่มีบัญชี 5314 → ลงสมทบนายจ้างที่ 5301 พร้อมคำเตือน (ไม่ปั้นบัญชีเอง)', async () => {
+    const u = newUser()
+    const bank = getOrCreateAccount(u.tenantId, '1102')
+    const res = await request(app).post('/api/journal/payroll').set('Authorization', `Bearer ${u.token}`).send({
+      period: '2026-10', payDate: '2026-10-31', payAccountId: bank,
+      ssEmployer: 750, employees: [{ name: 'สมชาย', gross: 15000, ssEmployee: 750 }],
+    })
+    expect(res.status).toBe(200)
+    expect(res.body.data.warnings[0]).toContain('5314')
+    const debit5301 = db.prepare(`SELECT SUM(jl.debit) d FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+      WHERE jl.journal_entry_id = ? AND a.code = '5301'`).get(res.body.data.id) as { d: number }
+    expect(debit5301.d).toBe(15750)
+    expect(db.prepare(`SELECT COUNT(*) n FROM accounts WHERE tenant_id = ? AND code = '5314'`).get(u.tenantId)).toEqual({ n: 0 })
+  })
+
+  it('ผังบัญชีมาตรฐานมี 5314 เงินสมทบประกันสังคม (ส่วนนายจ้าง) ใต้ 53', () => {
+    const row = DEFAULT_CHART_OF_ACCOUNTS.find(a => a.code === '5314')
+    expect(row).toMatchObject({ type: 'EXPENSE', category: 'SALARY', parent_code: '53', name: 'เงินสมทบประกันสังคม (ส่วนนายจ้าง)' })
   })
 
   it('บัญชีจ่ายต้องเป็นสินทรัพย์ของบริษัทตัวเอง', async () => {
@@ -124,6 +153,52 @@ describe('POST /api/journal/payroll', () => {
     })
     expect(res.status).toBe(400)
     expect(db.prepare('SELECT COUNT(*) n FROM journal_entries WHERE tenant_id = ?').get(u.tenantId)).toEqual({ n: 0 })
+  })
+})
+
+describe('ประวัติเงินเดือนรายคน + เตือนจ่ายซ้ำงวด', () => {
+  const pay = (token: string, bank: string, period: string, payDate: string, employees: unknown[]) =>
+    request(app).post('/api/journal/payroll').set('Authorization', `Bearer ${token}`)
+      .send({ period, payDate, payAccountId: bank, employees })
+
+  it('นับงวดเดียวกัน/ทั้งปี/3 รายการล่าสุด, autocomplete ชื่อ, และ JE ที่ลบ (ยกเลิก) ไม่ถูกนับ', async () => {
+    const u = newUser()
+    const bank = getOrCreateAccount(u.tenantId, '1102')
+    const auth = { Authorization: `Bearer ${u.token}` }
+    await pay(u.token, bank, '2026-09', '2026-09-30', [{ name: 'สมชาย', gross: 10000 }])
+    const r1 = await pay(u.token, bank, '2026-10', '2026-10-15', [{ name: 'สมชาย', gross: 5000, wht: 50 }, { name: 'สมหญิง', gross: 8000 }])
+    const r2 = await pay(u.token, bank, '2026-10', '2026-10-31', [{ name: '  สมชาย ', gross: 5000 }])
+    await pay(u.token, bank, '2025-12', '2025-12-31', [{ name: 'สมชาย', gross: 9000 }])
+
+    const h = (await request(app).get('/api/journal/payroll/history').query({ employee: 'สมชาย', period: '2026-10' }).set(auth)).body.data
+    expect(h.samePeriod).toEqual({ count: 2, gross: 10000, net: 9950 })
+    expect(h.yearToDate).toEqual({ count: 3, gross: 20000, net: 19950 })
+    expect(h.recent.map((x: any) => x.payDate)).toEqual(['2026-10-31', '2026-10-15', '2026-09-30'])
+    expect(h.recent[0].entryNumber).toBe(r2.body.data.entryNumber)
+
+    const names = (await request(app).get('/api/journal/payroll/employees').query({ q: 'สม' }).set(auth)).body.data
+    expect(names.map((n: any) => n.name).sort()).toEqual(['สมชาย', 'สมหญิง'])
+
+    // ยกเลิก = ลบ JE ร่าง → แถวรายคนต้องหายไปด้วยและไม่ถูกนับ
+    expect((await request(app).delete(`/api/journal/${r2.body.data.id}`).set(auth)).status).toBe(200)
+    const after = (await request(app).get('/api/journal/payroll/history').query({ employee: 'สมชาย', period: '2026-10' }).set(auth)).body.data
+    expect(after.samePeriod).toEqual({ count: 1, gross: 5000, net: 4950 })
+    expect(db.prepare('SELECT COUNT(*) n FROM payroll_lines WHERE journal_entry_id = ?').get(r2.body.data.id)).toEqual({ n: 0 })
+
+    // งวดอื่น/คนอื่นไม่ปน และไม่รั่วข้าม tenant
+    const other = newUser()
+    const leak = (await request(app).get('/api/journal/payroll/history').query({ employee: 'สมชาย', period: '2026-10' })
+      .set('Authorization', `Bearer ${other.token}`)).body.data
+    expect(leak.samePeriod.count).toBe(0)
+    expect(leak.recent).toEqual([])
+    expect(r1.status).toBe(200)
+  })
+
+  it('ไม่ระบุชื่อหรืองวดผิดรูป → 400', async () => {
+    const u = newUser()
+    const auth = { Authorization: `Bearer ${u.token}` }
+    expect((await request(app).get('/api/journal/payroll/history').query({ employee: ' ' }).set(auth)).status).toBe(400)
+    expect((await request(app).get('/api/journal/payroll/history').query({ employee: 'ก', period: '2026-13' }).set(auth)).status).toBe(400)
   })
 })
 
