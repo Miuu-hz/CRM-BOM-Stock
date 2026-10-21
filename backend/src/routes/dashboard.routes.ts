@@ -85,6 +85,104 @@ function getLedgerTotals(tenantId: string, startDate: string, endDate: string): 
   return { revenue: row?.revenue || 0, cogs: row?.cogs || 0 }
 }
 
+const OPEX_TOP_N = 8
+const ym = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+
+// รายจ่ายประจำ (ค่าใช้จ่ายดำเนินงาน) = EXPENSE ที่ category ≠ COGS — ตัวกรองเดียวกับ
+// operatingExpenses ใน /reports/profit-loss (category ว่างก็นับ) · เดือนปฏิทินไทย:
+// เดือนนี้ (ถึงวันนี้) เทียบเดือนก่อนทั้งเดือน
+// "ประจำ" = บัญชีที่มียอดอย่างน้อย 2 ใน 3 เดือนล่าสุด (รวมเดือนนี้) — ถ้าในช่วงนั้นมีข้อมูล
+// บัญชีไม่ถึง 2 เดือน (เพิ่งเริ่มใช้ระบบ) แยกไม่ได้ ให้ isRecurring = null ทุกบัญชี
+export function getOpexSummary(tenantId: string, now: Date = thaiNow()) {
+  const y = now.getFullYear(), m = now.getMonth()
+  const months = [ym(new Date(y, m, 1)), ym(new Date(y, m - 1, 1)), ym(new Date(y, m - 2, 1))] // [เดือนนี้, เดือนก่อน, 2 เดือนก่อน]
+  const start = `${months[2]}-01`
+  const today = ymd(now)
+
+  const rows = db.prepare(`
+    SELECT a.code, a.name, substr(je.date, 1, 7) as month,
+      COALESCE(SUM(jl.debit - jl.credit), 0) as amount
+    FROM journal_lines jl
+    JOIN journal_entries je ON jl.journal_entry_id = je.id
+    JOIN accounts a ON jl.account_id = a.id
+    WHERE a.tenant_id = ? AND jl.tenant_id = ? AND je.tenant_id = ?
+      AND a.is_active = 1 AND a.level >= 1
+      AND a.type = 'EXPENSE' AND IFNULL(a.category, '') <> 'COGS'
+      AND je.is_posted = 1
+      AND (je.is_closing_entry = 0 OR je.is_closing_entry IS NULL)
+      AND je.date >= ? AND je.date <= ?
+    GROUP BY a.code, a.name, month
+  `).all(tenantId, tenantId, tenantId, start, today) as { code: string; name: string; month: string; amount: number }[]
+
+  // เดือนที่มีข้อมูลบัญชีจริง (entry ใดก็ได้) — ใช้ตัดสินว่าประวัติพอจะแยกประจำ/ครั้งคราวไหม
+  const dataMonths = new Set((db.prepare(`
+    SELECT DISTINCT substr(date, 1, 7) as month FROM journal_entries
+    WHERE tenant_id = ? AND is_posted = 1
+      AND (is_closing_entry = 0 OR is_closing_entry IS NULL)
+      AND date >= ? AND date <= ?
+  `).all(tenantId, start, today) as { month: string }[]).map(r => r.month))
+  const hasEnoughHistory = dataMonths.size >= 2
+
+  const byAcc = new Map<string, { code: string; name: string; amounts: Record<string, number> }>()
+  for (const r of rows) {
+    const acc = byAcc.get(r.code) ?? { code: r.code, name: r.name, amounts: {} }
+    byAcc.set(r.code, { ...acc, amounts: { ...acc.amounts, [r.month]: r.amount } })
+  }
+  const nonZero = (n: number | undefined) => Math.abs(n || 0) >= 0.005
+
+  const all = [...byAcc.values()]
+    .map(a => ({
+      code: a.code,
+      name: a.name,
+      current: a.amounts[months[0]] || 0,
+      previous: a.amounts[months[1]] || 0,
+      amounts: a.amounts,
+      isRecurring: hasEnoughHistory ? months.filter(mo => nonZero(a.amounts[mo])).length >= 2 : null,
+    }))
+    .filter(a => nonZero(a.current) || nonZero(a.previous))
+    .sort((a, b) => (b.current - a.current) || (b.previous - a.previous) || a.code.localeCompare(b.code))
+
+  const sum = (list: typeof all, key: 'current' | 'previous') => list.reduce((s, a) => s + a[key], 0)
+  const recurringList = all.filter(a => a.isRecurring)
+  const top = all.slice(0, OPEX_TOP_N)
+  const rest = all.slice(OPEX_TOP_N)
+
+  // ค่าเฉลี่ยต่อเดือนสำหรับพยากรณ์เงินออก: บัญชีประจำ เฉลี่ยจากเดือนที่จบแล้วและมีข้อมูล
+  // (เดือนนี้ยังไม่จบ ใส่ไปจะดึงค่าเฉลี่ยต่ำ) · ประวัติไม่พอ → ใช้ยอดเดือนนี้ทั้งหมดเป็นค่าประมาณ
+  const closedMonths = months.slice(1).filter(mo => dataMonths.has(mo))
+  const monthlyRecurringAvg = hasEnoughHistory && closedMonths.length > 0
+    ? recurringList.reduce((s, a) => s + closedMonths.reduce((t, mo) => t + (a.amounts[mo] || 0), 0), 0) / closedMonths.length
+    : sum(all, 'current')
+
+  const curTotals = getLedgerTotals(tenantId, `${months[0]}-01`, today)
+  const prevEnd = ymd(new Date(y, m, 0)) // วันสุดท้ายของเดือนก่อน
+  const prevTotals = getLedgerTotals(tenantId, `${months[1]}-01`, prevEnd)
+  const curTotal = sum(all, 'current'), prevTotal = sum(all, 'previous')
+
+  return {
+    month: months[0],
+    prevMonth: months[1],
+    hasEnoughHistory,
+    current: {
+      total: curTotal,
+      recurring: sum(recurringList, 'current'),
+      revenue: curTotals.revenue,
+      cogs: curTotals.cogs,
+      netProfit: curTotals.revenue - curTotals.cogs - curTotal,
+    },
+    previous: {
+      total: prevTotal,
+      recurring: sum(recurringList, 'previous'),
+      revenue: prevTotals.revenue,
+      cogs: prevTotals.cogs,
+      netProfit: prevTotals.revenue - prevTotals.cogs - prevTotal,
+    },
+    accounts: top.map(({ amounts, ...a }) => a),
+    others: { count: rest.length, current: sum(rest, 'current'), previous: sum(rest, 'previous') },
+    monthlyRecurringAvg,
+  }
+}
+
 // Get low stock items
 router.get('/low-stock', async (req: Request, res: Response) => {
   try {
@@ -181,6 +279,19 @@ router.get('/revenue', async (req: Request, res: Response) => {
   }
 })
 
+// รายจ่ายประจำ เดือนนี้ vs เดือนก่อน + กำไรหลังหักรายจ่าย
+router.get('/opex', async (req: Request, res: Response) => {
+  try {
+    if (!isFinancialAllowed(req.user)) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลการเงินของระบบ' })
+    }
+    res.json({ success: true, data: getOpexSummary(req.user!.tenantId) })
+  } catch (error) {
+    console.error('Dashboard opex error:', error)
+    res.status(500).json({ success: false, message: 'Failed to fetch operating expenses' })
+  }
+})
+
 // Cash flow forecast — AR and AP grouped by due date
 router.get('/cashflow-forecast', async (req: Request, res: Response) => {
   try {
@@ -259,14 +370,25 @@ router.get('/cashflow-forecast', async (req: Request, res: Response) => {
     const ar = classify(arRows)
     const ap = classify(apRows)
 
+    // AP นับแค่หนี้ที่ลงบิลแล้ว ไม่มีค่าเช่า/น้ำไฟ/เงินเดือนงวดหน้าที่ยังไม่เกิด —
+    // ใส่ค่าเฉลี่ยรายจ่ายประจำต่อเดือนเป็นเงินออกที่คาดการณ์ (7 วัน = สัดส่วน 7/30)
+    const opex = getOpexSummary(tenantId, now)
+    const recurringOpex = {
+      monthlyAvg: opex.monthlyRecurringAvg,
+      week: opex.monthlyRecurringAvg * 7 / 30,
+      month: opex.monthlyRecurringAvg,
+      estimated: !opex.hasEnoughHistory,
+    }
+
     res.json({
       success: true,
       data: {
         ar,
         ap,
+        recurringOpex,
         netCashflow: {
-          week: ar.weekTotal - ap.weekTotal,
-          month: ar.monthTotal - ap.monthTotal,
+          week: ar.weekTotal - ap.weekTotal - recurringOpex.week,
+          month: ar.monthTotal - ap.monthTotal - recurringOpex.month,
         }
       }
     })

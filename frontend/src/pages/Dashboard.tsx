@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, TrendingDown, RefreshCw, DollarSign, BarChart2,
   ArrowDownCircle, ArrowUpCircle, Package, Truck, Users, AlertTriangle,
-  FileText, ChevronRight, Wallet,
+  FileText, ChevronRight, Wallet, Receipt,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -26,7 +26,15 @@ interface RevenueData {
 }
 interface CFItem { id: string; party_name: string; doc_number: string; amount: number; due_date: string; dueUnspecified?: boolean }
 interface CFGroup { overdue: CFItem[]; today: CFItem[]; week: CFItem[]; month: CFItem[]; later: CFItem[]; total: number; weekTotal: number; monthTotal: number; laterTotal: number }
-interface Cashflow { ar: CFGroup; ap: CFGroup; netCashflow: { week: number; month: number } }
+interface Cashflow { ar: CFGroup; ap: CFGroup; recurringOpex?: { monthlyAvg: number; week: number; month: number; estimated: boolean }; netCashflow: { week: number; month: number } }
+interface OpexMonth { total: number; recurring: number; revenue: number; cogs: number; netProfit: number }
+interface OpexAccount { code: string; name: string; current: number; previous: number; isRecurring: boolean | null }
+interface OpexData {
+  month: string; prevMonth: string; hasEnoughHistory: boolean
+  current: OpexMonth; previous: OpexMonth
+  accounts: OpexAccount[]; others: { count: number; current: number; previous: number }
+  monthlyRecurringAvg: number
+}
 interface Funnel { quotations: { count: number; value: number }; salesOrders: { count: number; value: number }; invoices: { count: number; value: number }; pendingDelivery: { count: number; value: number } }
 interface Stage { count: number; value: number }
 interface Pipeline {
@@ -167,6 +175,90 @@ function DueDateBadge({ dateStr, dueUnspecified, t }: { dateStr: string; dueUnsp
   return <span className="text-xs text-[var(--fg-3)]">{t('dashboard.inDays', { days: d })}</span>
 }
 
+// รายจ่ายประจำ (ค่าใช้จ่ายดำเนินงาน) เดือนนี้ vs เดือนก่อน — ไม่ขึ้นกับแท็บช่วงเวลา เพราะเป็นรอบรายเดือน
+function OpexSection({ data, loading, error, t }: {
+  data: OpexData | null; loading: boolean; error: boolean; t: (key: string, options?: any) => string
+}) {
+  const maxAmt = Math.max(1, ...(data?.accounts ?? []).map(a => Math.max(a.current, a.previous)))
+  const net = data?.current.netProfit ?? 0
+  return (
+    <div className="phopy-card p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Receipt className="w-4 h-4 text-[var(--danger)]" />
+        <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.opex.title')}</h3>
+        <span className="text-xs text-[var(--fg-4)] ml-auto">{t('dashboard.opex.monthLabel')}{data ? ` · ${data.month}` : ''}</span>
+      </div>
+      {error && !data ? (
+        <p className="text-[var(--fg-4)] text-sm text-center py-6">{t('dashboard.opex.loadError')}</p>
+      ) : loading || !data ? (
+        <div className="space-y-3"><Skeleton className="h-16" />{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-[var(--fg-4)]">{t('dashboard.opex.total')}</p>
+              <p className="text-2xl font-bold text-danger tabular-nums mt-0.5">{fmt(data.current.total)}</p>
+              <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('dashboard.opex.prevMonth', { amount: fmt(data.previous.total) })}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-4)]">{t('dashboard.opex.recurring')}</p>
+              <p className="text-2xl font-bold text-[var(--fg-1)] tabular-nums mt-0.5">{data.hasEnoughHistory ? fmt(data.current.recurring) : '—'}</p>
+              {data.hasEnoughHistory && <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('dashboard.opex.recurringPrev', { amount: fmt(data.previous.recurring) })}</p>}
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-4)]">{t('dashboard.opex.netProfit')}</p>
+              <p className={`text-2xl font-bold tabular-nums mt-0.5 ${net >= 0 ? 'text-success' : 'text-danger'}`}>{fmt(net)}</p>
+              <p className="text-[11px] text-[var(--fg-4)] mt-0.5">{t('dashboard.opex.formula', { revenue: fmt(data.current.revenue), cogs: fmt(data.current.cogs), opex: fmt(data.current.total) })}</p>
+            </div>
+          </div>
+
+          {!data.hasEnoughHistory && (
+            <div className="flex items-start gap-2 mb-3 p-2.5 rounded-lg bg-[var(--warning-soft)] border border-warning/20">
+              <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-warning leading-relaxed">{t('dashboard.opex.notEnoughHistory')}</p>
+            </div>
+          )}
+
+          {data.accounts.length === 0 ? (
+            <p className="text-[var(--fg-4)] text-sm text-center py-4">{t('dashboard.opex.empty')}</p>
+          ) : (
+            <div className="space-y-2">
+              {data.accounts.map(a => (
+                <div key={a.code} className="flex items-center gap-3">
+                  <div className="w-36 sm:w-44 flex-shrink-0 min-w-0">
+                    <p className="text-xs text-[var(--fg-2)] truncate" title={`${a.code} ${a.name}`}>{a.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-[var(--fg-4)] font-mono">{a.code}</span>
+                      {a.isRecurring !== null && (
+                        <span className={`text-[10px] px-1.5 rounded-full ${a.isRecurring ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'}`}>
+                          {t(a.isRecurring ? 'dashboard.opex.badgeRecurring' : 'dashboard.opex.badgeOneOff')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
+                    <div className="h-full rounded-full bg-[var(--danger)]" style={{ width: `${Math.max(0, Math.min(100, (a.current / maxAmt) * 100))}%` }} />
+                  </div>
+                  <div className="w-24 text-right flex-shrink-0">
+                    <p className="text-sm font-bold tabular-nums text-[var(--fg-1)]">{fmt(a.current)}</p>
+                    <p className="text-[10px] text-[var(--fg-4)] tabular-nums">{t('dashboard.opex.colPrev')} {fmt(a.previous)}</p>
+                  </div>
+                </div>
+              ))}
+              {data.others.count > 0 && (
+                <div className="flex items-center justify-between text-xs text-[var(--fg-4)] pt-1">
+                  <span>{t('dashboard.opex.others', { count: data.others.count })}</span>
+                  <span className="tabular-nums">{fmt(data.others.current)} · {t('dashboard.opex.colPrev')} {fmt(data.others.previous)}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ---- Main Dashboard ----
 export default function Dashboard() {
   const { t } = useTranslation()
@@ -177,6 +269,8 @@ export default function Dashboard() {
 
   const [revenue, setRevenue] = useState<RevenueData | null>(null)
   const [cashflow, setCashflow] = useState<Cashflow | null>(null)
+  const [opex, setOpex] = useState<OpexData | null>(null)
+  const [opexError, setOpexError] = useState(false)
   const [funnel, setFunnel] = useState<Funnel | null>(null)
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([])
@@ -218,13 +312,17 @@ export default function Dashboard() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [cfRes, fnRes, plRes, lsRes] = await Promise.allSettled([
+      const [cfRes, fnRes, plRes, lsRes, opRes] = await Promise.allSettled([
         api.get('/dashboard/cashflow-forecast'),
         api.get('/dashboard/funnel'),
         api.get('/dashboard/pipeline'),
         api.get('/dashboard/low-stock'),
+        api.get('/dashboard/opex'),
       ])
       if (cfRes.status === 'fulfilled') setCashflow(cfRes.value.data.data)
+      const opexOk = opRes.status === 'fulfilled' && opRes.value.data?.success
+      if (opexOk) setOpex(opRes.value.data.data)
+      setOpexError(!opexOk)
       if (fnRes.status === 'fulfilled') setFunnel(fnRes.value.data.data)
       if (plRes.status === 'fulfilled') setPipeline(plRes.value.data.data)
       if (lsRes.status === 'fulfilled') {
@@ -367,13 +465,25 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
+      {/* Section 1b: รายจ่ายประจำ */}
+      <motion.div variants={item}>
+        <OpexSection data={opex} loading={loading} error={opexError} t={t} />
+      </motion.div>
+
       {/* Section 2: Cash Flow Forecast */}
       <motion.div variants={item}>
         <div className="flex items-center gap-2 mb-3">
           <BarChart2 className="w-4 h-4 text-[var(--primary)]" />
           <h2 className="text-sm font-bold text-[var(--fg-2)] uppercase tracking-wider">{t('dashboard.cashflowForecast')}</h2>
           {cf?.netCashflow && (
-            <div className="ml-auto flex items-center gap-3 text-xs">
+            <div className="ml-auto flex items-center gap-3 text-xs flex-wrap justify-end">
+              {/* ยอดสุทธิด้านขวาหักรายจ่ายประจำคาดการณ์แล้ว (คิดฝั่ง backend) */}
+              {cf.recurringOpex && cf.recurringOpex.monthlyAvg !== 0 && (
+                <span className="text-[var(--fg-3)]">{t('dashboard.opex.forecast')}:
+                  <span className="ml-1 font-bold text-[var(--danger)]">-{fmt(cf.recurringOpex.monthlyAvg)}{t('dashboard.opex.perMonth')}</span>
+                  {cf.recurringOpex.estimated && <span className="ml-1 text-[var(--fg-4)]">{t('dashboard.opex.forecastEstimated')}</span>}
+                </span>
+              )}
               <span className="text-[var(--fg-3)]">{t('dashboard.net7Days')}:
                 <span className={`ml-1 font-bold ${(cf.netCashflow.week ?? 0) >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                   {(cf.netCashflow.week ?? 0) >= 0 ? '+' : ''}{fmt(cf.netCashflow.week ?? 0)}
