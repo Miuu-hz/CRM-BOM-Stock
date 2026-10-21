@@ -214,6 +214,15 @@ export const accountsApi = {
 
 // ==================== JOURNAL API ====================
 
+export interface PayrollHistory {
+  employee: string
+  period: string | null
+  samePeriod: { count: number; gross: number; net: number }
+  year: string
+  yearToDate: { count: number; gross: number; net: number }
+  recent: Array<{ payDate: string; period: string; gross: number; net: number; entryNumber: string; isPosted: number }>
+}
+
 export const journalApi = {
   // Get all entries
   getAll: (params?: { 
@@ -221,8 +230,34 @@ export const journalApi = {
     endDate?: string; 
     isPosted?: boolean;
     referenceType?: string;
+    referenceTypes?: string; // คั่นด้วย , — MANUAL = บันทึกเอง
     accountId?: string;
+    entryNumber?: string;
+    q?: string;
+    minDebit?: string;
+    maxDebit?: string;
+    minCredit?: string;
+    maxCredit?: string;
   }) => api.get('/journal', { params }),
+
+  // บันทึกเงินเดือน → JE แบบร่าง reference_type PAYROLL
+  createPayroll: (data: {
+    period: string
+    payDate: string
+    employees: Array<{ name: string; gross: number; ssEmployee?: number; wht?: number; otherDeduction?: number }>
+    ssEmployer?: number
+    payAccountId: string
+    otherDeductionAccountId?: string
+    businessUnit?: string
+    notes?: string
+  }) => api.post('/journal/payroll', data),
+
+  // ชื่อพนักงานที่เคยบันทึกเงินเดือน (autocomplete)
+  payrollEmployees: (q?: string) => api.get('/journal/payroll/employees', { params: { q } }),
+
+  // คนนี้เคยรับไปแล้วเท่าไร — งวดเดียวกัน / ทั้งปี / 3 รายการล่าสุด
+  payrollHistory: (employee: string, period: string) =>
+    api.get<{ success: boolean; data: PayrollHistory }>('/journal/payroll/history', { params: { employee, period } }),
   
   // Get entry by ID
   getById: (id: string) => api.get(`/journal/${id}`),
