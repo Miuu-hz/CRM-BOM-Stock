@@ -32,6 +32,13 @@ describe('เลขเอกสารตามค่าใน Settings', () => {
     expect(formatDocumentNumber('XX', tenant, docType, 2026, 5, '2026-10-21')).toBe(expected)
   })
 
+  it('JV แบบที่ผู้ใช้เลือก: JV-ลำดับ-DDMMYY รีเซ็ตรายวัน', () => {
+    setFormat('JOURNAL', 'JV', { reset: 'DAY' })
+    expect(formatDocumentNumber('JV', tenant, 'JOURNAL', 2026, 5, '2026-10-21')).toBe('JV-001-211026')
+    expect(formatDocumentNumber('JV', tenant, 'JOURNAL', 2026, 5, '2026-10-21')).toBe('JV-002-211026')
+    expect(formatDocumentNumber('JV', tenant, 'JOURNAL', 2026, 5, '2026-10-22')).toBe('JV-001-221026')
+  })
+
   it('JV ใช้ความกว้างจาก Settings ไม่ว่าโค้ดส่ง pad เท่าไร', () => {
     setFormat('JOURNAL', 'JV', { padding: 5, date: 'NONE' })
     db.prepare('UPDATE document_number_formats SET date_format = ? WHERE tenant_id = ?').run('', tenant)
