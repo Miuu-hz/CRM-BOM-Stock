@@ -1,7 +1,7 @@
 # 🏭 Carbon ERP - System Architecture & Development Guide
 
 > เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
-> อัปเดตล่าสุด: 20 ตุลาคม 2026
+> อัปเดตล่าสุด: 21 ตุลาคม 2026
 
 ---
 
@@ -67,7 +67,7 @@
 |--------|-----------|---------|
 | **RBAC** | 🚧 บางส่วน | มีแล้ว: `services/rbac.service.ts`, `PermissionSettings.tsx`, `user_approval_permissions`, role gate ใน MCP tools — ยังไม่ครบทุกหน้า |
 | ~~**Credit Note**~~ | ✅ | มีแล้ว `routes/sales/creditNotes.ts` mount ที่ `/api/sales/credit-notes` |
-| **Financial Statements** | 🚧 บางส่วน | มี route งบดุลแล้ว + P&L แยกหน่วยธุรกิจบน Phopy Board — ยังไม่ auto-generate เต็มรูปแบบ |
+| **Financial Statements** | ✅ | งบกำไรขาดทุนขั้นบันได + เทียบงวดก่อน, งบดุลรวมกำไรยังไม่ปิดงวด (เตือนถ้าไม่สมดุล), งบกระแสเงินสด 3 หมวด (21 ต.ค. 2026) |
 | **QMS** | 🟡 ต่ำ | Quality Management System |
 | **Capacity Planning** | 🟡 ต่ำ | Production capacity planning |
 
@@ -1590,3 +1590,38 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - ponytail: ผูกสมาชิกให้บิลหลังจ่าย (กติกา A5) ยอดบิลนั้นยังถูกนับเข้า guest spent ด้วย — แต้มย้อนหลังอาจเกินจริงไม่เกินเพดาน
 
 **ก่อน deploy**: build backend + frontend แล้ว `pm2 restart crm-backend` — migration ใหม่อยู่ท้าย `db/posQrMigrations.ts` (รันซ้ำได้)
+
+---
+
+## 📅 Session Log — 21 ต.ค. 2026 (Phopy Board ตรงบัญชี, Reports, Dashboard รายจ่ายประจำ, Journal ตัวกรอง + เงินเดือน, เลขเอกสารรายวัน) — ✅ deploy แล้ว `7078cb3`
+
+> แบ่งงาน 5 branch: Board/Dashboard/Journal = Claude Opus agent · เลขรัน = Sonnet agent + agy (Gemini 3.8 Flash) · Reports = agy — Claude ตรวจ diff + รันเทสต์เองทุก branch แล้วรวมเป็น `feat/accounting-board-2026-10` · backend 1008/1010 (ล้ม 2 + vatGolden โหลดไม่ขึ้น = ของเดิมบน `ui`) · frontend 205/205 · tsc ผ่าน · deploy ด้วยสคริปต์ที่ทดลองรวม WIP ของ session อื่นใน worktree ชั่วคราวก่อน แล้ว stash → ff → apply กลับ (สำรอง stash `499853e3`, DB `/root/dev.db.bak-20261021-162522`)
+
+**Phopy Board** (`services/phopyBoard.service.ts` ใหม่, `PhopyBoardAccuracy.tsx` ใหม่)
+| เรื่อง | ก่อน | หลัง |
+|---|---|---|
+| ต้นทุนขาย | ตามสูตรตอนขายอย่างเดียว กำไรบาน | การ์ด "ต้นทุนขาย 2 มุม": (ก) ตามสูตร/บัญชี (ข) ตามสต็อก = ต้นงวด + ซื้อเข้า − ปลายงวด (บัญชีสินค้าคงเหลือ 1106/1107) + ส่วนต่าง + กระทบยอดกับ COGS ในบัญชี + เทียบ `totalStockValue()` |
+| "อื่นๆ" ต้นทุน 4,294 / ค้าปลีกค่าใช้จ่าย −150 | งง | = ปรับสต็อกหมูสับ 3,949 + ซื้อใช้ตรง 344 · −150 = เงินเกินปิดกะ (5901) → แยกคอลัมน์ "ขาด/เกิน·ปรับสต็อก" (59xx), POS_* หัว JV ที่ไม่มีหน่วย = หน้าร้าน, "อื่นๆ" → "ส่วนกลาง" + กดดูที่มาได้ |
+| AP/AR aging | PO ที่ยังไม่ RECEIVED (฿310 = PO DRAFT ปี 2024) / ตาราง orders ที่ไม่มีใครเขียนแล้ว | ใบแจ้งหนี้ซื้อค้าง `balance_amount` / `invoices` + ยอดบัญชีคุม (1104/1180/1182, 2101/2102/2109) · สีแท่งผูกกับช่อง |
+| Early Warning | ไม่มีคำอธิบาย · supplier concentration ใช้ PO ตลอดกาล | ปุ่ม ⓘ พลิกดู: คืออะไร/สูตร/เกณฑ์สี/ถ้าแดงทำอะไร · ใช้ใบแจ้งหนี้ซื้อในงวด |
+| ยอดขาย POS | ไม่มี | บิล, เฉลี่ยต่อบิล, ช่องทางชำระ, กระทบกับรายได้ในบัญชี, บิลยกเลิก |
+| เงินออกลิ้นชัก | ไม่เคลียร์ | แยก ค่าใช้จ่าย/ซื้อของ (1182)/เจ้าของถอน/อื่นๆ, รายการยังไม่ post, เงินหายระหว่างกะ, ขาด/เกิน เทียบ 5901 |
+| เงินเดือน | ไม่มี | P&L รายเดือนมีคอลัมน์ เงินเดือน/ค่าแรง, ค่าใช้จ่ายอื่น, กำไรสุทธิ |
+| อื่นๆ | expenseRatio หาร orders (=0), costTrend ใช้ PO, expByCat ไม่กรอง closing, wcTrend ใช้ endDate เดียวทุกเดือน, setMonth พังวันที่ 31 | ใช้ ledger ทั้งหมด, ยอด ณ สิ้นแต่ละเดือน, เดือนไม่ขึ้นกับ timezone, วันที่ผิดรูป = 400 |
+
+**Reports** (`reports.routes.ts`, `FinancialReports.tsx`): P&L ขั้นบันได (รายได้→COGS→กำไรขั้นต้น→OpEx→กำไรสุทธิ) ป้ายกำไร/ขาดทุน, ติดลบเป็น `(1,234.00)` แดง, % ต่อรายได้, เทียบงวดก่อน (`comparison`) · งบดุลบวก `unclosedProfit` เข้าส่วนของเจ้าของ + `difference` · งบกระแสเงินสด: เงินสด = 1101/1102/category CASH, ลงทุน/จัดหาเงินตาม reference_type ที่เหลือ = ดำเนินงาน (เดิม POS/จ่ายผู้ขายหายจากงบ) · ปุ่ม เดือนนี้/เดือนก่อน/ไตรมาสนี้/ปีนี้ · งบทดลองและบัญชีแยกประเภท **ยังนับ** closing entry โดยตั้งใจ (ต้องเห็นการโอนเข้ากำไรสะสม) — กรองเฉพาะ P&L/งบดุล/กระแสเงินสด
+
+**Dashboard**: การ์ด "รายจ่ายประจำ" (`GET /dashboard/opex`) = EXPENSE ≠ COGS เดือนนี้ vs เดือนก่อน top 8 + "อื่นๆ", ติดป้ายประจำ (มียอด ≥ 2 ใน 3 เดือน)/ครั้งคราว, กำไรหลังหักรายจ่าย · `cashflow-forecast` หักรายจ่ายประจำเฉลี่ย (`recurringOpex`)
+
+**Journal entries**: ตัวกรองต่อคอลัมน์ฝั่ง DB ก่อนแบ่งหน้า (`entryNumber`, `startDate/endDate`, `referenceTypes` หลายค่า + `MANUAL`, `q`, `accountId`, `min/maxDebit`, `min/maxCredit`) + `meta.typeCounts` · จำใน URL · `components/accounting/JournalColumnFilters.tsx`
+
+**เงินเดือน** (`POST /api/journal/payroll`, `PayrollModal.tsx`): JE ร่าง `reference_type='PAYROLL'` Dr 5301 (ก่อนหัก) + Dr 5314 สมทบนายจ้าง (บัญชีใหม่ — ไม่เจอ = 5301 + warning) / Cr บัญชีจ่าย (ค่าเริ่ม 1102) + 2106 ประกันสังคม + 2105 WHT + หักอื่นๆ (ค่าเริ่ม 2102) · รายคนเก็บใน `payroll_lines` (FK CASCADE กับ JE) · `GET /payroll/employees`, `/payroll/history` → autocomplete + "คนนี้รับไปแล้วเท่าไร" (งวดนี้/ทั้งปี/3 รายการล่าสุด) + เตือนเหลืองถ้างวดนี้จ่ายแล้ว (ไม่บล็อก — บางร้านจ่ายเดือนละ 2 รอบ) · ponytail: จับคู่พนักงานด้วยชื่อ (trim + ไม่สนตัวพิมพ์) ยังไม่มีตารางพนักงาน
+
+**เลขเอกสาร**: JOURNAL/STOCK_ADJUSTMENT ตั้งได้ใน Settings, JV pad 5 ทุกจุด (เดิม 5/6 ปน), ส่ง `docDate` ของเอกสารตอนออกเลข (timestamp → เวลาไทย — ห้ามส่ง `toISOString().substring(0,10)` เพราะ 00:00–07:00 น. ได้วันที่เมื่อวาน), กันเลขซ้ำเมื่อเปลี่ยนรูปแบบ/รอบรีเซ็ต (`docNumberExists` + `DOC_NUMBER_TABLES` ใน `utils/docSeq.ts`) · ปุ่ม "ใช้ ลำดับ-ววดดปป รีเซ็ตทุกวัน กับทุกเอกสาร" · bb_pillow ตั้งทั้ง 16 ประเภทเป็น `PREFIX-ลำดับ-DDMMYY` รีเซ็ต **DAY** แล้ว (`scripts/2026-10-21-daily-doc-numbers.ts --tenant <id> [--apply]` รันด้วย `npx --prefix backend ts-node --transpile-only`)
+
+**ข้อมูลร้านที่ต้องเคลียร์ (bb_pillow, พบตอนตรวจ)**
+- นับสต็อกจริง: บัญชี 52,244 vs จำนวน×ทุนในระบบ ≥ 58,629
+- ปรับลดหมูสับ 3,949 ลงต้นทุน ต.ค. ทั้งก้อน (น่าจะใช้ไปตั้งแต่ ก.ค.–ก.ย.)
+- เงินออกลิ้นชัก 316 ยัง draft (แก๊ส 300, โค้ก 16) · เงินหายระหว่างกะ 1,027.65 (0001→0002) และ 80 (0007→0008)
+- ยังไม่มีทุน/ยอดยกมา → เงินสดในบัญชี −54,276 · 2102 = 2,804 จากปรับเพิ่มสต็อก
+- บรรทัดซื้อ skip_stock ไม่เลือกบัญชีตกไป 5403 (เช่นค่าน้ำ 326 ควรเป็น 5304) · แม็คโคร 4 ชื่อ · บิล POS-083-191026 ยอด 318 แต่รายการรวม 189
