@@ -159,7 +159,27 @@
     "wfOrdered": "Ordered",
     "wfInvoiced": "Invoiced",
     "wfCollected": "Collected",
-    "wfOutstanding": "Outstanding"
+    "wfOutstanding": "Outstanding",
+    "opex": {
+      "title": "Recurring Expenses",
+      "monthLabel": "Month to date",
+      "total": "Operating expenses this month",
+      "prevMonth": "Last month (full): {{amount}}",
+      "recurring": "Of which recurring",
+      "recurringPrev": "Last month: {{amount}}",
+      "netProfit": "Profit after expenses",
+      "formula": "Revenue {{revenue}} − COGS {{cogs}} − Expenses {{opex}}",
+      "badgeRecurring": "Recurring",
+      "badgeOneOff": "One-off",
+      "others": "{{count}} other accounts",
+      "colPrev": "Last month",
+      "empty": "No operating expenses posted this month or last month",
+      "notEnoughHistory": "Less than 2 months of ledger data, so recurring vs one-off can't be told apart yet — showing all operating expenses",
+      "loadError": "Could not load expenses",
+      "forecast": "Expected recurring expenses",
+      "perMonth": "/mo",
+      "forecastEstimated": "(estimated from this month)"
+    }
   },
   "header": {
     "searchPlaceholder": "Search orders, customers, products... (Ctrl+K)",
