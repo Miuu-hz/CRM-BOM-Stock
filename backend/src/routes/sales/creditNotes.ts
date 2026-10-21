@@ -371,9 +371,9 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const id = generateId()
-    const cnNumber = formatDocumentNumber('CN', tenantId, 'CREDIT_NOTE', new Date().getFullYear(), 5)
     const now = new Date().toISOString()
     const creditDateValue = typeof creditDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(creditDate) ? creditDate : now
+    const cnNumber = formatDocumentNumber('CN', tenantId, 'CREDIT_NOTE', new Date().getFullYear(), 5, creditDateValue)
 
     const transaction = db.transaction(() => {
       db.prepare(`

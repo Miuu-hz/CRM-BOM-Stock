@@ -120,7 +120,7 @@ function generateNumber(prefix: string, tenantId: string, table: string) {
 
 function generateEntryNumber(tenantId: string, date: string): string {
   const year = new Date(date).getFullYear()
-  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
+  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5, date)
 }
 
 

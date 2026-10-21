@@ -28,6 +28,8 @@ const DOC_TYPES: { value: string; label: string; defaultPrefix: string }[] = [
   { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS' },
   { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT' },
   { value: 'WORK_ORDER',       label: 'ใบสั่งผลิต (WO)',      defaultPrefix: 'WO' },
+  { value: 'JOURNAL',          label: 'สมุดรายวัน (JV)',      defaultPrefix: 'JV' },
+  { value: 'STOCK_ADJUSTMENT', label: 'ใบปรับสต็อก (ADJ)',    defaultPrefix: 'ADJ' },
 ]
 
 // เลือกได้ละเอียดแค่ที่วันที่ในเลขแยกได้ — backend ถอยเป็นช่วงใหญ่ขึ้นเองด้วย (utils/docSeq.ts seqBucket)

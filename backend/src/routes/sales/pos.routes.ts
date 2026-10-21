@@ -21,7 +21,7 @@ function postSimpleJournal(
   referenceType: string, referenceId: string, description: string,
   debitAccountId: string, creditAccountId: string, amount: number
 ): string {
-  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date).getFullYear(), 6)
+  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date).getFullYear(), 5, date)
   const entryId = generateId()
   const nowStr = new Date().toISOString()
 

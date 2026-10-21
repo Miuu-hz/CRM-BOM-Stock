@@ -86,7 +86,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const transaction = db.transaction(() => {
       // ออกเลขในทรานแซกชันเดียวกับการ insert — กันเลขหายถ้า insert ล้มเหลว
-      doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5)
+      doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5, deliveryDate || now)
       db.prepare(`
         INSERT INTO delivery_orders (id, tenant_id, do_number, sales_order_id, customer_id, delivery_date, delivery_address,
           driver_name, vehicle_plate, status, notes, created_at, updated_at)

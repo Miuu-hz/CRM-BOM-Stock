@@ -238,7 +238,7 @@ export function createInvoiceFromPosBill(tenantId: string, payload: CreateInvoic
 
   db.transaction(() => {
     // ออกเลขในทรานแซกชันเดียวกับการ insert — เหตุผลเดียวกับ createInvoiceFromSO ข้างบน
-    invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5)
+    invoiceNumber = formatDocumentNumber('INV', tenantId, 'INVOICE', new Date().getFullYear(), 5, invoiceDate)
     // ⚠️ invoices ไม่มีคอลัมน์เก็บค่าบริการแยก ต้องบวก service_charge_amount เข้า subtotal
     // ไม่งั้น subtotal + tax_amount จะไม่เท่ากับ total_amount แล้วใบพิมพ์ออกมายอดไม่บาลานซ์
     const subtotal = (bill.subtotal || 0) + (bill.service_charge_amount || 0) + (bill.extra_charge_amount || 0)
@@ -356,7 +356,7 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
 
   db.transaction(() => {
     // ออกเลขในทรานแซกชันเดียวกับการ insert — กันเลขหายถ้า insert ล้มเหลว
-    receiptNumber = formatDocumentNumber('RC', tenantId, 'RECEIPT', new Date().getFullYear(), 5)
+    receiptNumber = formatDocumentNumber('RC', tenantId, 'RECEIPT', new Date().getFullYear(), 5, receiptDate || now)
     db.prepare(`
       INSERT INTO receipts (id, tenant_id, receipt_number, invoice_id, customer_id, receipt_date, payment_method,
         payment_reference, amount, notes, bank_account_id, created_at, updated_at)
