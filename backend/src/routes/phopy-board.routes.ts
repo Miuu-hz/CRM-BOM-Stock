@@ -2,189 +2,118 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { totalStockValue } from '../services/stockValue.service'
+import {
+  NON_CLOSING, THAI_DATE, r2, thaiToday, monthRange,
+  ledgerRevenue, ledgerCogs, ledgerOpex, ledgerLabour, accountBalances,
+  businessUnitPL, cogsAnalysis, apAging, arAging, posSales, cashDrawer, AgingResult,
+} from '../services/phopyBoard.service'
 
 const router = Router()
 router.use(authenticate)
 
-function toISO(d: string) {
-  return d.substring(0, 10)
-}
-
 function daysBetween(dateStr: string): number {
-  const d = new Date(dateStr)
-  const now = new Date()
-  return Math.floor((now.getTime() - d.getTime()) / 86400000)
+  return Math.floor((Date.parse(thaiToday()) - Date.parse(String(dateStr).substring(0, 10))) / 86400000)
 }
 
-// ── Ledger-based P&L helpers ──────────────────────────────────────────────
-// Accounting-accurate revenue/COGS: REVENUE/EXPENSE accounts from posted, non-closing
-// journal entries. is_closing_entry rows (year-end zero-out) are always excluded —
-// otherwise a closed fiscal year would double-count or cancel out P&L totals.
-const NON_CLOSING = "AND (je.is_closing_entry IS NULL OR je.is_closing_entry = 0)"
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-function ledgerRevenue(tenantId: string, start: string, end: string): number {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(jl.credit - jl.debit), 0) as v
-    FROM journal_lines jl
-    JOIN journal_entries je ON jl.journal_entry_id = je.id
-    JOIN accounts a ON jl.account_id = a.id
-    WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
-      AND a.type = 'REVENUE' ${NON_CLOSING}
-  `).get(tenantId, start, end) as { v: number }
-  return Number(row.v)
+/** ช่วงวันที่จาก query — ไม่ส่งมา = ต้นปีถึงวันนี้ (เวลาไทย) ; รูปแบบผิด = null */
+function parsePeriod(req: Request): { startDate: string; endDate: string } | null {
+  const today = thaiToday()
+  const startDate = (req.query.startDate as string) || `${today.substring(0, 4)}-01-01`
+  const endDate = (req.query.endDate as string) || today
+  if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate) || startDate > endDate) return null
+  return { startDate, endDate }
 }
 
-// Real COGS (accounts.category = 'COGS'), not purchases-in-period.
-function ledgerCogs(tenantId: string, start: string, end: string): number {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as v
-    FROM journal_lines jl
-    JOIN journal_entries je ON jl.journal_entry_id = je.id
-    JOIN accounts a ON jl.account_id = a.id
-    WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
-      AND a.type = 'EXPENSE' AND a.category = 'COGS' ${NON_CLOSING}
-  `).get(tenantId, start, end) as { v: number }
-  return Number(row.v)
+/** 12 เดือนล่าสุดถึงเดือนปัจจุบัน (เวลาไทย) */
+function last12Months(): Array<{ start: string; end: string; label: string }> {
+  const t = thaiToday()
+  const y = Number(t.substring(0, 4)), m = Number(t.substring(5, 7)) - 1
+  return Array.from({ length: 12 }, (_, i) => monthRange(y, m - 11 + i))
 }
+
+/** เดือนที่อยู่ในช่วงที่เลือก (ตัดหัวท้ายให้อยู่ในช่วง) */
+function monthsInPeriod(start: string, end: string): Array<{ start: string; end: string; label: string }> {
+  const out: Array<{ start: string; end: string; label: string }> = []
+  let y = Number(start.substring(0, 4)), m = Number(start.substring(5, 7)) - 1
+  for (;;) {
+    const mr = monthRange(y, m)
+    if (mr.start > end) break
+    out.push({ ...mr, start: mr.start < start ? start : mr.start, end: mr.end > end ? end : mr.end })
+    m++
+  }
+  return out
+}
+
+function agingTotal(a: AgingResult['buckets']) { return a.current + a.days30 + a.days60 + a.days90 + a.over90 }
 
 router.get('/summary', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const now = new Date()
-    const startDate = (req.query.startDate as string) || new Date(now.getFullYear(), 0, 1).toISOString().substring(0, 10)
-    const endDate = (req.query.endDate as string) || now.toISOString().substring(0, 10)
+    const period = parsePeriod(req)
+    if (!period) return res.status(400).json({ success: false, message: 'startDate/endDate ต้องเป็น YYYY-MM-DD และ startDate ≤ endDate' })
+    const { startDate, endDate } = period
+    const today = thaiToday()
 
     // Previous period (same duration)
-    const durationMs = new Date(endDate).getTime() - new Date(startDate).getTime()
-    const prevEnd = new Date(new Date(startDate).getTime() - 86400000).toISOString().substring(0, 10)
-    const prevStart = new Date(new Date(startDate).getTime() - durationMs - 86400000).toISOString().substring(0, 10)
+    const durationMs = Date.parse(endDate) - Date.parse(startDate)
+    const prevEnd = new Date(Date.parse(startDate) - 86400000).toISOString().substring(0, 10)
+    const prevStart = new Date(Date.parse(startDate) - durationMs - 86400000).toISOString().substring(0, 10)
 
     // ── KPIs (ledger-based: revenue = REVENUE accounts, cost = real COGS) ──────
     const revenue = ledgerRevenue(tenantId, startDate, endDate)
     const cost = ledgerCogs(tenantId, startDate, endDate)
+    const opex = ledgerOpex(tenantId, startDate, endDate)
     const prevRevenue = ledgerRevenue(tenantId, prevStart, prevEnd)
     const prevCost = ledgerCogs(tenantId, prevStart, prevEnd)
-
-    // Net profit via journal (revenue - all expense accounts, posted, non-closing)
-    const netRow = db.prepare(`
-      SELECT
-        COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as revenue_net,
-        COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' THEN jl.debit - jl.credit ELSE 0 END), 0) as expense_net
-      FROM journal_lines jl
-      JOIN journal_entries je ON jl.journal_entry_id = je.id
-      JOIN accounts a ON jl.account_id = a.id
-      WHERE je.tenant_id = ? AND je.is_posted = 1
-        AND date(je.date) BETWEEN ? AND ? ${NON_CLOSING}
-    `).get(tenantId, startDate, endDate) as { revenue_net: number; expense_net: number }
+    const labour = ledgerLabour(tenantId, startDate, endDate)
 
     const grossProfit = revenue - cost
     const prevGrossProfit = prevRevenue - prevCost
     const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
-    const netProfit = Number(netRow.revenue_net) - Number(netRow.expense_net)
+    const netProfit = revenue - cost - opex
 
-    // ── Business-unit P&L split (RETAIL / WHOLESALE / ONLINE / OTHER) ─────────
-    const buRows = db.prepare(`
-      SELECT
-        COALESCE(je.business_unit, 'OTHER') as unit,
-        COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as revenue,
-        COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category = 'COGS' THEN jl.debit - jl.credit ELSE 0 END), 0) as cogs,
-        COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' AND a.category != 'COGS' THEN jl.debit - jl.credit ELSE 0 END), 0) as expense
-      FROM journal_lines jl
-      JOIN journal_entries je ON jl.journal_entry_id = je.id
-      JOIN accounts a ON jl.account_id = a.id
-      WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
-        AND a.type IN ('REVENUE', 'EXPENSE') ${NON_CLOSING}
-      GROUP BY COALESCE(je.business_unit, 'OTHER')
-    `).all(tenantId, startDate, endDate) as Array<{ unit: string; revenue: number; cogs: number; expense: number }>
-
-    const buMap = new Map(buRows.map(r => [r.unit, r]))
-    const businessUnits = (['RETAIL', 'WHOLESALE', 'ONLINE', 'OTHER'] as const).map(unit => {
-      const r = buMap.get(unit)
-      const uRevenue = Number(r?.revenue || 0)
-      const uCogs = Number(r?.cogs || 0)
-      const uExpense = Number(r?.expense || 0)
-      return { unit, revenue: uRevenue, cogs: uCogs, expense: uExpense, netProfit: uRevenue - uCogs - uExpense }
-    })
+    const businessUnits = businessUnitPL(tenantId, startDate, endDate)
 
     // ── 12-month revenue chart ────────────────────────────────────────────────
-    const revenueChart: Array<{ month: string; revenue: number; cost: number; grossProfit: number }> = []
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const mStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-      const mEnd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-      const label = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`
+    const revenueChart = last12Months().map(mr => {
+      const r = ledgerRevenue(tenantId, mr.start, mr.end)
+      const c = ledgerCogs(tenantId, mr.start, mr.end)
+      return { month: mr.label, revenue: r, cost: c, grossProfit: r - c }
+    })
 
-      const r = ledgerRevenue(tenantId, mStart, mEnd)
-      const c = ledgerCogs(tenantId, mStart, mEnd)
-      revenueChart.push({ month: label, revenue: r, cost: c, grossProfit: r - c })
-    }
-
-    // ── P&L table (by month in selected period) ───────────────────────────────
-    const plTable: Array<{ month: string; revenue: number; cogs: number; grossProfit: number; netProfit: number; margin: number }> = []
-    const pStart = new Date(startDate)
-    const pEnd = new Date(endDate)
-    let cur = new Date(pStart.getFullYear(), pStart.getMonth(), 1)
-    while (cur <= pEnd) {
-      const mLabel = `${cur.getFullYear()}/${String(cur.getMonth() + 1).padStart(2, '0')}`
-      const mS = cur.toISOString().substring(0, 10)
-      const lastD = new Date(cur.getFullYear(), cur.getMonth() + 1, 0)
-      const mE = lastD.toISOString().substring(0, 10)
-
-      const rev = ledgerRevenue(tenantId, mS, mE)
-      const cogs = ledgerCogs(tenantId, mS, mE)
-      const n2 = db.prepare(`SELECT COALESCE(SUM(CASE WHEN a.type='REVENUE' THEN jl.credit-jl.debit ELSE 0 END),0)-COALESCE(SUM(CASE WHEN a.type='EXPENSE' THEN jl.debit-jl.credit ELSE 0 END),0) as v FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id=je.id JOIN accounts a ON jl.account_id=a.id WHERE je.tenant_id=? AND je.is_posted=1 AND date(je.date) BETWEEN ? AND ? ${NON_CLOSING}`).get(tenantId, mS, mE) as { v: number }
-
+    // ── P&L table (by month in selected period) — เงินเดือน/ค่าแรงแยกบรรทัด ────
+    const plTable = monthsInPeriod(startDate, endDate).map(mr => {
+      const rev = ledgerRevenue(tenantId, mr.start, mr.end)
+      const cogs = ledgerCogs(tenantId, mr.start, mr.end)
+      const ox = ledgerOpex(tenantId, mr.start, mr.end)
+      const lab = ledgerLabour(tenantId, mr.start, mr.end)
       const gp = rev - cogs
-      const np = Number(n2.v)
-      plTable.push({ month: mLabel, revenue: rev, cogs, grossProfit: gp, netProfit: np, margin: rev > 0 ? (gp / rev) * 100 : 0 })
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
-    }
+      return {
+        month: mr.label, revenue: rev, cogs, grossProfit: gp,
+        labour: lab.total, otherOpex: r2(ox - lab.total), netProfit: r2(gp - ox),
+        margin: rev > 0 ? (gp / rev) * 100 : 0,
+      }
+    })
 
-    // ── AR Aging (outstanding orders) ─────────────────────────────────────────
-    const arOrders = db.prepare(`
-      SELECT order_date, total_amount FROM orders
-      WHERE status NOT IN ('COMPLETED','CANCELLED','DELIVERED')
-        AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)
-    `).all(tenantId) as Array<{ order_date: string; total_amount: number }>
+    // ── AR / AP Aging — จากเอกสารค้างชำระจริง + ยอดบัญชีคุมไว้เทียบ ───────────
+    const ar = arAging(tenantId, today)
+    const ap = apAging(tenantId, today)
+    const bal = accountBalances(tenantId, today, ['1104', '1105', '1180', '1182', '2101', '2102', '2109'])
+    const arDetail = { ...ar, ledger: { tradeAR: bal['1104'], otherAR: bal['1105'], posClearing: bal['1180'], posPayoutPending: bal['1182'] } }
+    const apDetail = { ...ap, ledger: { tradeAP: bal['2101'], otherAP: bal['2102'], grni: bal['2109'] } }
 
-    const arAging = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 }
-    for (const o of arOrders) {
-      const days = daysBetween(o.order_date)
-      const amt = Number(o.total_amount)
-      if (days <= 30) arAging.current += amt
-      else if (days <= 60) arAging.days30 += amt
-      else if (days <= 90) arAging.days60 += amt
-      else if (days <= 120) arAging.days90 += amt
-      else arAging.over90 += amt
-    }
-
-    // ── AP Aging (outstanding purchase orders) ────────────────────────────────
-    const apOrders = db.prepare(`
-      SELECT order_date, total_amount FROM purchase_orders
-      WHERE status NOT IN ('RECEIVED','CANCELLED')
-        AND tenant_id = ?
-    `).all(tenantId) as Array<{ order_date: string; total_amount: number }>
-
-    const apAging = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 }
-    for (const o of apOrders) {
-      const days = daysBetween(o.order_date)
-      const amt = Number(o.total_amount)
-      if (days <= 30) apAging.current += amt
-      else if (days <= 60) apAging.days30 += amt
-      else if (days <= 90) apAging.days60 += amt
-      else if (days <= 120) apAging.days90 += amt
-      else apAging.over90 += amt
-    }
-
-    // ── Customer Intelligence ─────────────────────────────────────────────────
+    // ── Customer Intelligence (ใบสั่งขาย sales_orders — ตาราง orders เป็นของเก่าไม่มีใครเขียนแล้ว) ──
     const custRows = db.prepare(`
       SELECT c.id, c.name, c.credit_limit,
-        COALESCE(SUM(CASE WHEN date(o.order_date) BETWEEN ? AND ? THEN o.total_amount ELSE 0 END), 0) as curr_rev,
-        COALESCE(SUM(CASE WHEN date(o.order_date) BETWEEN ? AND ? THEN o.total_amount ELSE 0 END), 0) as prev_rev,
-        MAX(o.order_date) as last_order
+        COALESCE(SUM(CASE WHEN date(so.order_date) BETWEEN ? AND ? THEN so.total_amount ELSE 0 END), 0) as curr_rev,
+        COALESCE(SUM(CASE WHEN date(so.order_date) BETWEEN ? AND ? THEN so.total_amount ELSE 0 END), 0) as prev_rev,
+        MAX(so.order_date) as last_order,
+        (SELECT COALESCE(SUM(i.balance_amount), 0) FROM invoices i
+          WHERE i.tenant_id = c.tenant_id AND i.customer_id = c.id AND i.status NOT IN ('CANCELLED', 'DRAFT')) as credit_used
       FROM customers c
-      LEFT JOIN orders o ON o.customer_id = c.id AND o.status != 'CANCELLED'
+      LEFT JOIN sales_orders so ON so.customer_id = c.id AND so.tenant_id = c.tenant_id AND so.status NOT IN ('CANCELLED', 'DRAFT')
       WHERE c.status = 'ACTIVE' AND c.tenant_id = ?
       GROUP BY c.id, c.name, c.credit_limit
       HAVING curr_rev > 0 OR prev_rev > 0
@@ -192,7 +121,7 @@ router.get('/summary', (req: Request, res: Response) => {
       LIMIT 20
     `).all(startDate, endDate, prevStart, prevEnd, tenantId) as Array<{
       id: string; name: string; credit_limit: number
-      curr_rev: number; prev_rev: number; last_order: string | null
+      curr_rev: number; prev_rev: number; last_order: string | null; credit_used: number
     }>
 
     const customers = custRows.map(c => {
@@ -208,14 +137,7 @@ router.get('/summary', (req: Request, res: Response) => {
       else if (lastOrderDays <= 90) tier = 'At-Risk'
       else tier = 'Lost'
 
-      // Credit used = total outstanding AR for this customer
-      const usedRow = db.prepare(`
-        SELECT COALESCE(SUM(total_amount), 0) as used
-        FROM orders WHERE customer_id = ? AND status NOT IN ('COMPLETED','CANCELLED','DELIVERED')
-      `).get(c.id) as { used: number }
-      const creditUsed = Number(usedRow.used)
-
-      return { id: c.id, name: c.name, currentRevenue: curr, prevRevenue: prev, trend, tier, lastOrderDays, creditLimit: Number(c.credit_limit), creditUsed }
+      return { id: c.id, name: c.name, currentRevenue: curr, prevRevenue: prev, trend, tier, lastOrderDays, creditLimit: Number(c.credit_limit), creditUsed: r2(c.credit_used) }
     })
 
     // ── Stock Alerts ──────────────────────────────────────────────────────────
@@ -256,18 +178,21 @@ router.get('/summary', (req: Request, res: Response) => {
 
     // ── Early Warning Signals ─────────────────────────────────────────────────
     const revGrowth = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : 0
-    const marginDiff = grossMarginPct - (prevRevenue > 0 ? ((prevGrossProfit / prevRevenue) * 100) : 0)
-    const arOver90Pct = (arAging.current + arAging.days30 + arAging.days60 + arAging.days90 + arAging.over90) > 0
-      ? (arAging.over90 / (arAging.current + arAging.days30 + arAging.days60 + arAging.days90 + arAging.over90)) * 100 : 0
+    const prevMarginPct = prevRevenue > 0 ? (prevGrossProfit / prevRevenue) * 100 : 0
+    const marginDiff = grossMarginPct - prevMarginPct
+    const arTotal = agingTotal(ar.buckets)
+    const arOver90Pct = arTotal > 0 ? (ar.buckets.over90 / arTotal) * 100 : 0
 
-    // Supplier concentration
-    const supplierConc = db.prepare(`
-      SELECT supplier_id, SUM(total_amount) as total
-      FROM purchase_orders WHERE status != 'CANCELLED' AND tenant_id = ?
-      GROUP BY supplier_id ORDER BY total DESC LIMIT 1
-    `).get(tenantId) as { supplier_id: string; total: number } | undefined
-    const totalPO = db.prepare(`SELECT COALESCE(SUM(total_amount),0) as t FROM purchase_orders WHERE status!='CANCELLED' AND tenant_id=?`).get(tenantId) as { t: number }
-    const supplierConcPct = totalPO.t > 0 && supplierConc ? (Number(supplierConc.total) / Number(totalPO.t)) * 100 : 0
+    // Supplier concentration — ใบแจ้งหนี้ซื้อในงวดที่เลือก (ช่วงเดียวกับรายได้) ไม่ใช่ PO ทั้งหมดตลอดกาล
+    const supplierRows = db.prepare(`
+      SELECT pi.supplier_id, COALESCE(s.name, '-') as name, COALESCE(SUM(pi.total_amount), 0) as total
+      FROM purchase_invoices pi LEFT JOIN suppliers s ON s.id = pi.supplier_id
+      WHERE pi.tenant_id = ? AND pi.status NOT IN ('CANCELLED', 'DRAFT') AND date(pi.invoice_date) BETWEEN ? AND ?
+      GROUP BY pi.supplier_id ORDER BY total DESC
+    `).all(tenantId, startDate, endDate) as Array<{ supplier_id: string; name: string; total: number }>
+    const totalPurchases = supplierRows.reduce((s, r) => s + Number(r.total), 0)
+    const topSupplier = supplierRows[0]
+    const supplierConcPct = totalPurchases > 0 && topSupplier ? (Number(topSupplier.total) / totalPurchases) * 100 : 0
 
     // Top 3 customer churn risk
     const top3Days = customers.slice(0, 3).map(c => c.lastOrderDays)
@@ -279,59 +204,101 @@ router.get('/summary', (req: Request, res: Response) => {
         label: 'Revenue Growth',
         status: revGrowth >= 5 ? 'ok' : revGrowth >= -5 ? 'warn' : 'danger',
         value: revGrowth.toFixed(1) + '%',
-        detail: `vs previous period`
+        detail: prevRevenue > 0 ? `vs ${prevStart} – ${prevEnd}` : 'งวดก่อนไม่มีรายได้ในบัญชี',
+        hint: {
+          what: 'รายได้งวดนี้โตขึ้นหรือลดลงเท่าไรเทียบงวดก่อนที่ยาวเท่ากัน',
+          calc: `(รายได้งวดนี้ − รายได้งวดก่อน) ÷ รายได้งวดก่อน · รายได้ = บัญชีหมวดรายได้ (4xxx) ที่ post แล้ว · งวดก่อน = ${prevStart} ถึง ${prevEnd}`,
+          thresholds: 'เขียว ≥ +5% · เหลือง −5% ถึง +5% · แดง < −5% (งวดก่อนไม่มีรายได้ = แสดง 0%)',
+          action: 'ดูว่าลดที่ช่องทางไหน (หน้าร้าน/ขายส่ง/ออนไลน์) จำนวนบิลลดหรือค่าเฉลี่ยต่อบิลลด แล้วแก้ตรงจุด เช่น โปรโมชัน เมนูขายดีหมด วันเปิดร้านน้อยลง',
+        },
       },
       {
         id: 'margin',
         label: 'Gross Margin Trend',
         status: marginDiff >= -2 ? 'ok' : marginDiff >= -5 ? 'warn' : 'danger',
         value: grossMarginPct.toFixed(1) + '%',
-        detail: `${marginDiff >= 0 ? '+' : ''}${marginDiff.toFixed(1)}% vs prev`
+        detail: `${marginDiff >= 0 ? '+' : ''}${marginDiff.toFixed(1)}% vs prev`,
+        hint: {
+          what: 'สัดส่วนกำไรขั้นต้นต่อรายได้ และเปลี่ยนไปเท่าไรจากงวดก่อน',
+          calc: '(รายได้ − ต้นทุนขายในบัญชี) ÷ รายได้ · ต้นทุนขาย = บัญชีหมวด COGS (5101/5102) ซึ่งรวมต้นทุนตามสูตร + ปรับยอดนับสต็อก + ของซื้อใช้ตรง',
+          thresholds: 'เทียบกับงวดก่อน: เขียว ลดไม่เกิน 2 จุด · เหลือง ลด 2–5 จุด · แดง ลดเกิน 5 จุด',
+          action: 'ดูกล่อง "ต้นทุนขาย 2 มุม" ว่าต้นทุนเพิ่มจากสูตร (ราคาวัตถุดิบขึ้น → ปรับราคาขาย/สูตร) หรือจากของเสีย/สูญหาย (นับสต็อกบ่อยขึ้น คุมการเบิก)',
+        },
       },
       {
         id: 'ar_aging',
-        label: 'AR Risk (90+ days)',
+        label: 'AR Risk (120+ days)',
         status: arOver90Pct < 10 ? 'ok' : arOver90Pct < 20 ? 'warn' : 'danger',
         value: arOver90Pct.toFixed(1) + '%',
-        detail: 'of total AR outstanding'
+        detail: `of ฿${Math.round(arTotal).toLocaleString('th-TH')} AR outstanding`,
+        hint: {
+          what: 'ลูกหนี้ที่ค้างนานเกิน 120 วัน คิดเป็นกี่ % ของลูกหนี้ค้างทั้งหมด',
+          calc: 'ยอดค้าง (balance_amount) ของใบแจ้งหนี้ขายที่ยังไม่ยกเลิก แบ่งตามอายุนับจากวันที่ใบแจ้งหนี้ถึงวันนี้',
+          thresholds: 'เขียว < 10% · เหลือง 10–20% · แดง ≥ 20%',
+          action: 'โทรตาม/ส่งใบทวงถามลูกหนี้ที่ค้างนาน หยุดให้เครดิตเพิ่มจนกว่าจะชำระ และพิจารณาตั้งค่าเผื่อหนี้สูญ',
+        },
       },
       {
         id: 'supplier_conc',
         label: 'Supplier Concentration',
         status: supplierConcPct < 30 ? 'ok' : supplierConcPct < 40 ? 'warn' : 'danger',
         value: supplierConcPct.toFixed(1) + '%',
-        detail: 'top supplier share of PO'
+        detail: topSupplier ? `${topSupplier.name} · ใบแจ้งหนี้ซื้อในงวด` : 'ไม่มีใบแจ้งหนี้ซื้อในงวด',
+        hint: {
+          what: 'ซื้อจากผู้ขายรายใหญ่สุดกี่ % ของยอดซื้อทั้งหมดในงวด — พึ่งเจ้าเดียวมากเสี่ยงของขาด/ถูกขึ้นราคา',
+          calc: 'ยอดใบแจ้งหนี้ซื้อ (ไม่นับที่ยกเลิก) ของผู้ขายรายใหญ่สุด ÷ ยอดใบแจ้งหนี้ซื้อทั้งหมด ในช่วงวันที่ที่เลือก · ผู้ขายชื่อซ้ำกัน (เช่น แม็คโครหลายชื่อ) นับแยกกัน',
+          thresholds: 'เขียว < 30% · เหลือง 30–40% · แดง ≥ 40%',
+          action: 'หาแหล่งซื้อสำรองสำหรับวัตถุดิบหลัก เทียบราคาอย่างน้อย 2 เจ้า และรวมชื่อผู้ขายที่ซ้ำกันในทะเบียนผู้ขายให้เป็นรายเดียว',
+        },
       },
       {
         id: 'churn_risk',
         label: 'Top Customer Churn',
         status: !churnRisk ? 'ok' : top3Days.some(d => d > 60) ? 'danger' : 'warn',
         value: churnRisk ? `${Math.max(...top3Days)}d` : 'OK',
-        detail: 'days since top 3 last ordered'
+        detail: customers.length > 0 ? 'days since top 3 last ordered' : 'ไม่มีลูกค้าใบสั่งขายในงวด',
+        hint: {
+          what: 'ลูกค้าขายส่ง 3 อันดับแรกหายไปนานแค่ไหนแล้ว (ไม่รวมลูกค้าหน้าร้าน POS)',
+          calc: 'จำนวนวันจากใบสั่งขาย (sales order) ล่าสุดของลูกค้า 3 รายที่ซื้อมากที่สุดในงวด ถึงวันนี้',
+          thresholds: 'เขียว ทุกรายสั่งภายใน 30 วัน · เหลือง มีรายที่เกิน 30 วัน · แดง มีรายที่เกิน 60 วัน',
+          action: 'ติดต่อลูกค้าที่หายไป ถามเหตุผล (ราคา/คุณภาพ/คู่แข่ง) และเสนอโปรหรือเงื่อนไขพิเศษ',
+        },
       },
       {
         id: 'stock_out',
         label: 'Stock-Out Risk',
         status: stockAlerts.length === 0 ? 'ok' : stockAlerts.length <= 3 ? 'warn' : 'danger',
         value: stockAlerts.length.toString(),
-        detail: 'items at or below min stock'
-      }
+        detail: 'items at or below min stock',
+        hint: {
+          what: 'จำนวนวัตถุดิบ/สินค้าที่คงเหลือต่ำกว่าหรือเท่ากับจุดสั่งซื้อขั้นต่ำ (min stock)',
+          calc: 'นับรายการ stock_items ที่ใช้งานอยู่และ quantity ≤ min_stock (ตามจำนวนในระบบ ณ ตอนนี้)',
+          thresholds: 'เขียว 0 รายการ · เหลือง 1–3 รายการ · แดง มากกว่า 3 รายการ',
+          action: 'เปิดใบขอซื้อ/ใบสั่งซื้อสำหรับรายการที่ใกล้หมด และตรวจว่าจำนวนในระบบตรงกับของจริง (นับสต็อก)',
+        },
+      },
     ]
 
     res.json({
       success: true,
       data: {
         period: { start: startDate, end: endDate },
-        kpis: { revenue, cost, grossProfit, netProfit, grossMarginPct, prevRevenue, prevGrossProfit },
+        kpis: { revenue, cost, grossProfit, netProfit, grossMarginPct, prevRevenue, prevGrossProfit, opex, labour: labour.total },
         businessUnits,
         revenueChart,
         plTable,
-        arAging,
-        apAging,
+        arAging: ar.buckets,
+        apAging: ap.buckets,
+        arDetail,
+        apDetail,
         customers,
         stockAlerts,
         workOrders,
-        earlyWarnings
+        earlyWarnings,
+        cogsAnalysis: cogsAnalysis(tenantId, startDate, endDate),
+        posSales: posSales(tenantId, startDate, endDate),
+        cashDrawer: cashDrawer(tenantId, startDate, endDate),
+        labour,
       }
     })
   } catch (err: any) {
@@ -344,9 +311,10 @@ router.get('/summary', (req: Request, res: Response) => {
 router.get('/extended', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const now = new Date()
-    const startDate = (req.query.startDate as string) || new Date(now.getFullYear(), 0, 1).toISOString().substring(0, 10)
-    const endDate = (req.query.endDate as string) || now.toISOString().substring(0, 10)
+    const period = parsePeriod(req)
+    if (!period) return res.status(400).json({ success: false, message: 'startDate/endDate ต้องเป็น YYYY-MM-DD และ startDate ≤ endDate' })
+    const { startDate, endDate } = period
+    const months = last12Months()
 
     // ── Zone 1: Channel Performance ─────────────────────────────────────────
     const channelByPlatform = db.prepare(`
@@ -359,25 +327,19 @@ router.get('/extended', (req: Request, res: Response) => {
     const onlineTotal = channelByPlatform.reduce((s, r) => s + Number(r.revenue), 0)
     const onlineOrders = channelByPlatform.reduce((s, r) => s + Number(r.orders), 0)
 
-    const offlineRow = db.prepare(
-      "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)"
-    ).get(startDate, endDate, tenantId) as { revenue: number; orders: number }
+    // ขายส่ง = ใบสั่งขาย sales_orders (ตาราง orders เดิมไม่มีระบบไหนเขียนแล้ว)
+    const wholesaleSql = "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as orders FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED', 'DRAFT') AND date(order_date) BETWEEN ? AND ?"
+    const retailSql = `SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as bills FROM pos_running_bills WHERE tenant_id = ? AND status = 'PAID' AND ${THAI_DATE('COALESCE(closed_at, opened_at)')} BETWEEN ? AND ?`
+    const offlineRow = db.prepare(wholesaleSql).get(tenantId, startDate, endDate) as { revenue: number; orders: number }
+    const retailRow = db.prepare(retailSql).get(tenantId, startDate, endDate) as { revenue: number; bills: number }
 
-    // Retail (POS หน้าร้าน) — previously missing from the board entirely.
-    const retailRow = db.prepare(
-      "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as bills FROM pos_running_bills WHERE tenant_id = ? AND status = 'PAID' AND date(COALESCE(closed_at, opened_at)) BETWEEN ? AND ?"
-    ).get(tenantId, startDate, endDate) as { revenue: number; bills: number }
-
-    const orderTrend: Array<{ month: string; online: number; offline: number }> = []
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth() - i)
-      const mS = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().substring(0, 10)
-      const mE = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().substring(0, 10)
-      const mn = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const onR = db.prepare("SELECT COALESCE(SUM(orders), 0) as orders FROM marketing_metrics WHERE tenant_id = ? AND date(date) BETWEEN ? AND ?").get(tenantId, mS, mE) as { orders: number }
-      const ofR = db.prepare("SELECT COUNT(*) as orders FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)").get(mS, mE, tenantId) as { orders: number }
-      orderTrend.push({ month: mn, online: Number(onR.orders), offline: Number(ofR.orders) })
-    }
+    const orderTrend = months.map(mr => {
+      const onR = db.prepare("SELECT COALESCE(SUM(orders), 0) as orders FROM marketing_metrics WHERE tenant_id = ? AND date(date) BETWEEN ? AND ?").get(tenantId, mr.start, mr.end) as { orders: number }
+      const wsR = db.prepare(wholesaleSql).get(tenantId, mr.start, mr.end) as { orders: number }
+      const rtR = db.prepare(retailSql).get(tenantId, mr.start, mr.end) as { bills: number }
+      // offline = ขายส่ง + บิลหน้าร้าน (คงชื่อเดิมไว้ให้หน้าจอเก่า)
+      return { month: mr.label.replace('/', '-'), online: Number(onR.orders), wholesale: Number(wsR.orders), retail: Number(rtR.bills), offline: Number(wsR.orders) + Number(rtR.bills) }
+    })
 
     // ── Zone 2: Ads ROI ──────────────────────────────────────────────────────
     const adTot = db.prepare(`
@@ -398,8 +360,12 @@ router.get('/extended', (req: Request, res: Response) => {
     `).all(tenantId, startDate, endDate) as Array<{ platform: string; impressions: number; clicks: number; orders: number; revenue: number; adCost: number }>
 
     // ── Zone 3: Cost Structure ────────────────────────────────────────────────
-    // skip_stock บรรทัด (ของไม่นับสต็อก เช่นน้ำมัน/บรรจุภัณฑ์) ไม่ใช่ COGS วัตถุดิบ — ตั้งแต่ 2026-10-12
-    // ลง journal เป็นค่าใช้จ่ายต่อบัญชี (5xxx) อยู่แล้ว นับซ้ำที่นี่จะเบิ้ลยอดกับ expByCat/opex ด้านล่าง
+    // ยอดซื้อตามหมวดวัตถุดิบ (PO ที่รับของแล้ว) — เป็น "ยอดซื้อ" ไม่ใช่ต้นทุนขาย ติดป้ายชัดที่หน้าจอ
+    // skip_stock บรรทัด (ของไม่นับสต็อก) ลง journal เป็นค่าใช้จ่ายต่อบัญชีอยู่แล้ว ไม่นับซ้ำที่นี่
+    const purchaseSql = `
+      FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id
+      WHERE po.tenant_id = ? AND po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ?
+        AND COALESCE(poi.skip_stock, 0) = 0`
     const cogsByCat = db.prepare(`
       SELECT COALESCE(mc.name, 'ไม่ระบุหมวด') as category, COALESCE(SUM(poi.total_price), 0) as amount
       FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id
@@ -410,18 +376,21 @@ router.get('/extended', (req: Request, res: Response) => {
       GROUP BY mc.name ORDER BY amount DESC
     `).all(tenantId, startDate, endDate) as Array<{ category: string; amount: number }>
 
-    const expByCat = db.prepare(`
-      SELECT COALESCE(a.category, 'ค่าใช้จ่ายอื่น') as category, COALESCE(SUM(jl.debit - jl.credit), 0) as amount
+    // ค่าใช้จ่ายตามบัญชี (ไม่รวมต้นทุนขาย ซึ่งแสดงแยก) — แยกต่อบัญชี ไม่รวมตาม category
+    // เพราะ category เดียวกันปนบัญชีที่ติดลบได้ (5901 เงินเกิน กับ 5902 ปรับเพิ่มสต็อก หักกันเอง)
+    const expByCat = (db.prepare(`
+      SELECT a.code, a.name, COALESCE(SUM(jl.debit - jl.credit), 0) as amount
       FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id JOIN accounts a ON jl.account_id = a.id
-      WHERE je.tenant_id = ? AND a.type = 'EXPENSE' AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?
-      GROUP BY a.category HAVING amount > 0 ORDER BY amount DESC
-    `).all(tenantId, startDate, endDate) as Array<{ category: string; amount: number }>
+      WHERE je.tenant_id = ? AND a.type = 'EXPENSE' AND COALESCE(a.category, '') != 'COGS' AND je.is_posted = 1
+        AND date(je.date) BETWEEN ? AND ? ${NON_CLOSING}
+      GROUP BY a.code, a.name HAVING ABS(amount) >= 0.01 ORDER BY amount DESC
+    `).all(tenantId, startDate, endDate) as Array<{ code: string; name: string; amount: number }>)
+      .map(r => ({ category: `${r.code} ${r.name}`, code: r.code, amount: r2(r.amount) }))
 
-    const revRow2 = db.prepare("SELECT COALESCE(SUM(total_amount), 0) as rev FROM orders WHERE status != 'CANCELLED' AND date(order_date) BETWEEN ? AND ? AND customer_id IN (SELECT id FROM customers WHERE tenant_id = ?)").get(startDate, endDate, tenantId) as { rev: number }
-    const totalExp = expByCat.reduce((s, r) => s + Number(r.amount), 0)
-    const expenseRatio = Number(revRow2.rev) > 0 ? (totalExp / Number(revRow2.rev)) * 100 : 0
-    // Real ledger COGS (accounts.category = 'COGS') — cogsByCategory above is a PO-purchases
-    // breakdown by material category, not actual cost-of-goods-sold. Keep both, don't conflate.
+    const ledgerRev = ledgerRevenue(tenantId, startDate, endDate)
+    const totalExp = expByCat.reduce((s, r) => s + r.amount, 0)
+    // Expense ratio = OpEx ÷ รายได้ในบัญชี (เดิมหารด้วยยอด orders เก่าที่ไม่มีใครเขียนแล้ว)
+    const expenseRatio = ledgerRev > 0 ? (totalExp / ledgerRev) * 100 : 0
     const ledgerCogsTotal = ledgerCogs(tenantId, startDate, endDate)
 
     const woVar = db.prepare(`
@@ -429,83 +398,81 @@ router.get('/extended', (req: Request, res: Response) => {
       FROM work_orders WHERE tenant_id = ? AND status = 'COMPLETED' AND date(COALESCE(completed_date, updated_at)) BETWEEN ? AND ?
     `).get(tenantId, startDate, endDate) as { estimated: number; actual: number; count: number }
 
-    const costTrend: Array<{ month: string; cogs: number; opex: number }> = []
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth() - i)
-      const mS = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().substring(0, 10)
-      const mE = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().substring(0, 10)
-      const mn = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const cogsR = db.prepare("SELECT COALESCE(SUM(poi.total_price), 0) as cogs FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id WHERE po.tenant_id = ? AND po.status = 'RECEIVED' AND date(po.order_date) BETWEEN ? AND ? AND COALESCE(poi.skip_stock, 0) = 0").get(tenantId, mS, mE) as { cogs: number }
-      const expR = db.prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as exp FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id JOIN accounts a ON jl.account_id = a.id WHERE je.tenant_id = ? AND a.type = 'EXPENSE' AND je.is_posted = 1 AND date(je.date) BETWEEN ? AND ?").get(tenantId, mS, mE) as { exp: number }
-      costTrend.push({ month: mn, cogs: Number(cogsR.cogs), opex: Math.max(0, Number(expR.exp)) })
-    }
-
-    // ── Zone 4: Product Profitability ────────────────────────────────────────
-    const prodRevList = db.prepare(`
-      SELECT p.id, p.name, p.code,
-        COALESCE(SUM(oi.total_price), 0) as revenue, COALESCE(SUM(oi.quantity), 0) as unitsSold,
-        COUNT(DISTINCT oi.order_id) as orderCount
-      FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN orders o ON oi.order_id = o.id
-      WHERE p.tenant_id = ? AND o.status != 'CANCELLED' AND date(o.order_date) BETWEEN ? AND ?
-      GROUP BY p.id ORDER BY revenue DESC
-    `).all(tenantId, startDate, endDate) as Array<{ id: string; name: string; code: string; revenue: number; unitsSold: number; orderCount: number }>
-
-    const productsWithMargin = prodRevList.map(p => {
-      const bom = db.prepare("SELECT id FROM boms WHERE tenant_id = ? AND product_id = ? AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1").get(tenantId, p.id) as { id: string } | undefined
-      let bomCost = 0
-      if (bom) {
-        // bom_items.material_id เก็บ id ของ stock_items — join ตาราง materials เดิมจึงไม่เคยแมตช์ ต้นทุนเลยเป็น 0 ทุกใบ
-        const bc = db.prepare("SELECT COALESCE(SUM(bi.quantity * m.unit_cost), 0) as cost FROM bom_items bi JOIN stock_items m ON bi.material_id = m.id WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'").get(bom.id) as { cost: number }
-        bomCost = Number(bc.cost) * Number(p.unitsSold)
+    // cogs = ต้นทุนขายในบัญชี, opex = ค่าใช้จ่ายอื่น (ไม่ทับกัน), purchases = ยอดซื้อ PO (เส้นอ้างอิง)
+    const costTrend = months.map(mr => {
+      const purchasesR = db.prepare(`SELECT COALESCE(SUM(poi.total_price), 0) as v ${purchaseSql}`).get(tenantId, mr.start, mr.end) as { v: number }
+      return {
+        month: mr.label.replace('/', '-'),
+        cogs: r2(ledgerCogs(tenantId, mr.start, mr.end)),
+        opex: r2(ledgerOpex(tenantId, mr.start, mr.end)),
+        purchases: r2(purchasesR.v),
       }
-      const rev = Number(p.revenue)
-      const margin = rev > 0 ? ((rev - bomCost) / rev) * 100 : 0
-      return { id: p.id, name: p.name, code: p.code, revenue: rev, unitsSold: Number(p.unitsSold), orderCount: Number(p.orderCount), bomCost, margin: Math.round(margin * 10) / 10 }
     })
+
+    // ── Zone 4: Product Profitability — เมนู POS + ใบสั่งขาย (ตาราง products/orders เดิมเป็นแคตตาล็อกตาย) ──
+    // ponytail: ต้นทุน POS = ของที่ตัดตามสูตรจริง × ราคาทุนปัจจุบัน (ไม่ใช่ราคาทุน ณ วันขาย) ; ต้นทุน SO = issued_unit_cost × จำนวน
+    // ถ้าต้องตรงบัญชีเป๊ะต้องเก็บต้นทุนต่อบรรทัดบิลตอนตัดสต็อก
+    const posProducts = db.prepare(`
+      SELECT 'POS:' || bi.pos_menu_id as id, MAX(bi.product_name) as name, '' as code,
+        COALESCE(SUM(bi.total_price), 0) as revenue, COALESCE(SUM(bi.quantity), 0) as unitsSold,
+        COUNT(DISTINCT bi.bill_id) as orderCount,
+        COALESCE(SUM((SELECT SUM(d.quantity_deducted * COALESCE(si.unit_cost, 0)) FROM pos_stock_deductions d
+          JOIN stock_items si ON si.id = d.stock_item_id WHERE d.bill_item_id = bi.id AND COALESCE(d.returned, 0) = 0)), 0) as cost
+      FROM pos_bill_items bi JOIN pos_running_bills b ON b.id = bi.bill_id
+      WHERE b.tenant_id = ? AND b.status = 'PAID' AND ${THAI_DATE('COALESCE(b.closed_at, b.opened_at)')} BETWEEN ? AND ?
+      GROUP BY bi.pos_menu_id
+    `).all(tenantId, startDate, endDate) as Array<{ id: string; name: string; code: string; revenue: number; unitsSold: number; orderCount: number; cost: number }>
+    const soProducts = db.prepare(`
+      SELECT 'SO:' || soi.product_id as id, COALESCE(MAX(si.name), soi.product_id) as name, COALESCE(MAX(si.sku), '') as code,
+        COALESCE(SUM(soi.total_price), 0) as revenue, COALESCE(SUM(soi.quantity), 0) as unitsSold,
+        COUNT(DISTINCT so.id) as orderCount,
+        COALESCE(SUM(soi.quantity * COALESCE(soi.issued_unit_cost, si.unit_cost, 0)), 0) as cost
+      FROM sales_order_items soi JOIN sales_orders so ON so.id = soi.sales_order_id
+      LEFT JOIN stock_items si ON si.id = soi.product_id AND si.tenant_id = so.tenant_id
+      WHERE so.tenant_id = ? AND so.status NOT IN ('CANCELLED', 'DRAFT') AND date(so.order_date) BETWEEN ? AND ?
+      GROUP BY soi.product_id
+    `).all(tenantId, startDate, endDate) as typeof posProducts
+
+    const productsWithMargin = [...posProducts, ...soProducts].map(p => {
+      const rev = Number(p.revenue), bomCost = r2(p.cost)
+      const margin = rev > 0 ? ((rev - bomCost) / rev) * 100 : 0
+      return { id: p.id, name: p.name, code: p.code, revenue: r2(rev), unitsSold: Number(p.unitsSold), orderCount: Number(p.orderCount), bomCost, margin: Math.round(margin * 10) / 10 }
+    }).sort((a, b) => b.revenue - a.revenue)
 
     const totalProdRev = productsWithMargin.reduce((s, p) => s + p.revenue, 0)
     const top5Rev = productsWithMargin.slice(0, 5).reduce((s, p) => s + p.revenue, 0)
     const concentrationRisk = totalProdRev > 0 ? Math.round((top5Rev / totalProdRev) * 1000) / 10 : 0
 
     // ── Zone 5: Working Capital ──────────────────────────────────────────────
-    const getBalance = (types: string[], codePfx?: string): number => {
-      let q = `SELECT COALESCE(SUM(CASE WHEN a.normal_balance='DEBIT' THEN jl.debit-jl.credit ELSE jl.credit-jl.debit END),0) as bal FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id=je.id JOIN accounts a ON jl.account_id=a.id WHERE je.tenant_id=? AND je.is_posted=1 AND date(je.date)<=? AND a.type IN (${types.map(() => '?').join(',')})`
-      const params: (string | number)[] = [tenantId, endDate, ...types]
-      if (codePfx) { q += ' AND a.code LIKE ?'; params.push(codePfx + '%') }
-      return Number((db.prepare(q).get(...params) as { bal: number }).bal) || 0
+    // หมุนเวียน = 11xx / 21xx เท่านั้น (เดิมใช้ 1%/2% ปนสินทรัพย์ถาวร/หนี้ระยะยาว และ "เงินสด" ใช้ 11% ซึ่งรวมสต็อก/ลูกหนี้)
+    const wcAt = (asOf: string) => {
+      const row = db.prepare(`
+        SELECT
+          COALESCE(SUM(CASE WHEN a.type = 'ASSET' AND a.code LIKE '11%' THEN jl.debit - jl.credit ELSE 0 END), 0) as ca,
+          COALESCE(SUM(CASE WHEN a.type = 'LIABILITY' AND a.code LIKE '21%' THEN jl.credit - jl.debit ELSE 0 END), 0) as cl,
+          COALESCE(SUM(CASE WHEN a.type = 'ASSET' AND a.category = 'CASH' THEN jl.debit - jl.credit ELSE 0 END), 0) as cash,
+          COALESCE(SUM(CASE WHEN a.type = 'ASSET' AND a.category = 'RECEIVABLE' THEN jl.debit - jl.credit ELSE 0 END), 0) as ar
+        FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id JOIN accounts a ON jl.account_id = a.id
+        WHERE je.tenant_id = ? AND je.is_posted = 1 AND date(je.date) <= ? ${NON_CLOSING}
+      `).get(tenantId, asOf) as { ca: number; cl: number; cash: number; ar: number }
+      const ca = r2(row.ca), cl = r2(row.cl), cash = r2(row.cash), ar = r2(row.ar)
+      return {
+        ca, cl, cash, ar,
+        currentRatio: cl > 0 ? Math.round((ca / cl) * 100) / 100 : 0,
+        quickRatio: cl > 0 ? Math.round(((cash + ar) / cl) * 100) / 100 : 0,
+      }
     }
+    const wcNow = wcAt(endDate)
 
-    const currentAssets = getBalance(['ASSET'], '1')
-    const currentLiab = getBalance(['LIABILITY'], '2')
-    const cashBal = getBalance(['ASSET'], '11')
-    const arBal = getBalance(['ASSET'], '13')
-    const currentRatio = currentLiab > 0 ? Math.round((currentAssets / currentLiab) * 100) / 100 : 0
-    const quickRatio = currentLiab > 0 ? Math.round(((cashBal + arBal) / currentLiab) * 100) / 100 : 0
+    // ค่าใช้จ่ายรวมตามบัญชี (ต้นทุนขาย + OpEx) เฉลี่ย 3 เดือนล่าสุด — ตามเกณฑ์คงค้าง ไม่ใช่เงินสดจ่ายจริง
+    const cashBurnRate = r2(months.slice(-3).reduce((s, mr) => s + Math.max(0, ledgerCogs(tenantId, mr.start, mr.end) + ledgerOpex(tenantId, mr.start, mr.end)), 0) / 3)
 
-    const burnArr: number[] = []
-    for (let i = 0; i < 3; i++) {
-      const d = new Date(); d.setMonth(d.getMonth() - i)
-      const mS = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().substring(0, 10)
-      const mE = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().substring(0, 10)
-      const r = db.prepare("SELECT COALESCE(SUM(jl.debit-jl.credit),0) as exp FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id=je.id JOIN accounts a ON jl.account_id=a.id WHERE je.tenant_id=? AND a.type='EXPENSE' AND je.is_posted=1 AND date(je.date) BETWEEN ? AND ?").get(tenantId, mS, mE) as { exp: number }
-      burnArr.push(Math.max(0, Number(r.exp)))
-    }
-    const cashBurnRate = burnArr.reduce((s, v) => s + v, 0) / 3
-
-    const wcTrend: Array<{ month: string; currentRatio: number; quickRatio: number }> = []
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth() - i)
-      const mn = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const mA = getBalance(['ASSET'], '1')
-      const mL = getBalance(['LIABILITY'], '2')
-      const mC = getBalance(['ASSET'], '11')
-      const mAR = getBalance(['ASSET'], '13')
-      wcTrend.push({
-        month: mn,
-        currentRatio: mL > 0 ? Math.round((mA / mL) * 100) / 100 : 0,
-        quickRatio: mL > 0 ? Math.round(((mC + mAR) / mL) * 100) / 100 : 0
-      })
-    }
+    // แต่ละเดือนใช้ยอด ณ สิ้นเดือนนั้น (เดิมทุกเดือนใช้ endDate เดียวกัน เส้นเลยแบนราบ)
+    const today = thaiToday()
+    const wcTrend = months.map(mr => {
+      const w = wcAt(mr.end < today ? mr.end : today)
+      return { month: mr.label.replace('/', '-'), currentRatio: w.currentRatio, quickRatio: w.quickRatio }
+    })
 
     // ── Zone 6: Outsource Production (Phase 3 — ส่งวัตถุดิบออกไปผลิตข้างนอก) ─────────────────
     // totalStockValue() นับของที่ยังปิดห่อ (sealed_qty) ด้วย — สูตรเดียวกับ /stock/stats
@@ -577,7 +544,6 @@ router.get('/extended', (req: Request, res: Response) => {
           byPlatform: channelByPlatform, onlineTotal, onlineOrders,
           offlineRevenue: Number(offlineRow.revenue), offlineOrders: Number(offlineRow.orders),
           orderTrend,
-          // Retail (POS หน้าร้าน) — new. offline* above is actually wholesale (sales orders); kept as-is for back-compat.
           retailRevenue: Number(retailRow.revenue), retailBills: Number(retailRow.bills),
           channels: [
             { unit: 'RETAIL', label: 'หน้าร้าน', revenue: Number(retailRow.revenue), orders: Number(retailRow.bills) },
@@ -589,9 +555,9 @@ router.get('/extended', (req: Request, res: Response) => {
           totals: { impressions: adImpr, clicks: adClicks, orders: adOrders, revenue: adRev, adCost, roas: adCost > 0 ? Math.round((adRev / adCost) * 100) / 100 : 0, cpc: adClicks > 0 ? Math.round((adCost / adClicks) * 100) / 100 : 0, cpo: adOrders > 0 ? Math.round((adCost / adOrders) * 100) / 100 : 0, ctr: adImpr > 0 ? Math.round((adClicks / adImpr) * 10000) / 100 : 0, orderRate: adClicks > 0 ? Math.round((adOrders / adClicks) * 10000) / 100 : 0, revenuePerAdBaht: adCost > 0 ? Math.round((adRev / adCost) * 100) / 100 : 0 },
           byPlatform: adByPlatform.map(p => ({ platform: p.platform, impressions: Number(p.impressions), clicks: Number(p.clicks), orders: Number(p.orders), revenue: Number(p.revenue), adCost: Number(p.adCost), roas: Number(p.adCost) > 0 ? Math.round((Number(p.revenue) / Number(p.adCost)) * 100) / 100 : 0, cpc: Number(p.clicks) > 0 ? Math.round((Number(p.adCost) / Number(p.clicks)) * 100) / 100 : 0, cpo: Number(p.orders) > 0 ? Math.round((Number(p.adCost) / Number(p.orders)) * 100) / 100 : 0 }))
         },
-        costStructure: { cogsByCategory: cogsByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseByCategory: expByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseRatio: Math.round(expenseRatio * 10) / 10, productionVariance: { estimated: Number(woVar.estimated), actual: Number(woVar.actual), variancePct: Number(woVar.estimated) > 0 ? Math.round(((Number(woVar.actual) - Number(woVar.estimated)) / Number(woVar.estimated)) * 1000) / 10 : 0, count: Number(woVar.count) }, costTrend, ledgerCogsTotal },
+        costStructure: { cogsByCategory: cogsByCat.map(r => ({ ...r, amount: Number(r.amount) })), expenseByCategory: expByCat, expenseRatio: Math.round(expenseRatio * 10) / 10, productionVariance: { estimated: Number(woVar.estimated), actual: Number(woVar.actual), variancePct: Number(woVar.estimated) > 0 ? Math.round(((Number(woVar.actual) - Number(woVar.estimated)) / Number(woVar.estimated)) * 1000) / 10 : 0, count: Number(woVar.count) }, costTrend, ledgerCogsTotal, ledgerRevenue: ledgerRev },
         products: { top10: productsWithMargin.slice(0, 10), bottom10: [...productsWithMargin].sort((a, b) => a.margin - b.margin).slice(0, 10), concentrationRisk, totalRevenue: totalProdRev },
-        workingCapital: { currentAssets, currentLiabilities: currentLiab, cash: cashBal, ar: arBal, currentRatio, quickRatio, cashBurnRate, wcTrend },
+        workingCapital: { currentAssets: wcNow.ca, currentLiabilities: wcNow.cl, cash: wcNow.cash, ar: wcNow.ar, currentRatio: wcNow.currentRatio, quickRatio: wcNow.quickRatio, cashBurnRate, wcTrend },
         outsourceProduction
       }
     })

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  BarChart, Bar, LineChart, Line, AreaChart, Area, ComposedChart,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
@@ -10,7 +10,7 @@ import {
   TrendingDown, Package, Activity, AlertCircle, Factory
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { phopyBoardApi } from '../../services/phopyBoard'
+import { phopyBoardApi, PhopyBoardExtendedData } from '../../services/phopyBoard'
 
 const COLORS = ['#6366f1', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316']
 
@@ -28,48 +28,7 @@ function fmtDec(n: number) {
 }
 function fmtPct(n: number) { return n.toFixed(1) + '%' }
 
-interface ExtendedData {
-  channel: {
-    byPlatform: Array<{ platform: string; revenue: number; orders: number }>
-    onlineTotal: number; onlineOrders: number
-    offlineRevenue: number; offlineOrders: number
-    orderTrend: Array<{ month: string; online: number; offline: number }>
-    retailRevenue: number; retailBills: number
-    channels: Array<{ unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE'; label: string; revenue: number; orders: number }>
-  }
-  adsROI: {
-    totals: { impressions: number; clicks: number; orders: number; revenue: number; adCost: number; roas: number; cpc: number; cpo: number; ctr: number; orderRate: number; revenuePerAdBaht: number }
-    byPlatform: Array<{ platform: string; impressions: number; clicks: number; orders: number; revenue: number; adCost: number; roas: number; cpc: number; cpo: number }>
-  }
-  costStructure: {
-    cogsByCategory: Array<{ category: string; amount: number }>
-    expenseByCategory: Array<{ category: string; amount: number }>
-    expenseRatio: number
-    productionVariance: { estimated: number; actual: number; variancePct: number; count: number }
-    costTrend: Array<{ month: string; cogs: number; opex: number }>
-    ledgerCogsTotal: number
-  }
-  products: {
-    top10: Array<{ id: string; name: string; code: string; revenue: number; unitsSold: number; orderCount: number; bomCost: number; margin: number }>
-    bottom10: Array<{ id: string; name: string; code: string; revenue: number; unitsSold: number; orderCount: number; bomCost: number; margin: number }>
-    concentrationRisk: number; totalRevenue: number
-  }
-  workingCapital: {
-    currentAssets: number; currentLiabilities: number; cash: number; ar: number
-    currentRatio: number; quickRatio: number; cashBurnRate: number
-    wcTrend: Array<{ month: string; currentRatio: number; quickRatio: number }>
-  }
-  outsourceProduction: {
-    stockValue: { inHouse: number; offsite: number }
-    suppliersWithStock: Array<{ supplier_id: string; supplier_name: string; value: number; items: number }>
-    overdueContracts: Array<{ id: string; contract_number: string; supplier_id: string; supplier_name: string; due_date: string; status: string; outstanding_amount: number }>
-    yield: {
-      good: number; scrap: number; shortage: number
-      goodPct: number; scrapPct: number; shortagePct: number
-      byContract: Array<{ contract_id: string; contract_number: string; supplier_name: string; good: number; scrap: number; shortage: number; goodPct: number }>
-    }
-  }
-}
+type ExtendedData = PhopyBoardExtendedData
 
 interface Props {
   startDate: string
@@ -172,8 +131,9 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
                 <YAxis tick={{ fontSize: 10, fill: 'var(--fg-3)' }} />
                 <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="online" stackId="1" stroke={COLORS[0]} fill={COLORS[0] + '40'} name="Online" />
-                <Area type="monotone" dataKey="offline" stackId="1" stroke={COLORS[1]} fill={COLORS[1] + '40'} name="Offline" />
+                <Area type="monotone" dataKey="retail" stackId="1" stroke={COLORS[0]} fill={COLORS[0] + '40'} name="หน้าร้าน (บิล)" />
+                <Area type="monotone" dataKey="wholesale" stackId="1" stroke={COLORS[1]} fill={COLORS[1] + '40'} name="ขายส่ง (SO)" />
+                <Area type="monotone" dataKey="online" stackId="1" stroke={COLORS[2]} fill={COLORS[2] + '40'} name="ออนไลน์" />
               </AreaChart>
             </ResponsiveContainer>
           </motion.div>
@@ -265,14 +225,14 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
         <div className="flex items-center gap-2 mb-4">
           <DollarSign className="w-5 h-5 text-[var(--primary)]" />
           <h2 className="text-lg font-bold text-[var(--fg-1)]">Cost Structure</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">ยอดซื้อตามหมวดวัตถุดิบ (PO) · ต้นทุนขายจริง (Ledger) · Expense Ratio · Production Variance</span>
+          <span className="text-xs text-[var(--fg-3)] ml-1">ต้นทุนขาย/ค่าใช้จ่ายจากบัญชี · ยอดซื้อ (PO) แยกไว้อ้างอิง ไม่ใช่ต้นทุนขาย</span>
         </div>
         {/* KPI cards */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
           <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
             <p className="text-xs text-[var(--fg-3)]">Expense Ratio</p>
             <p className="text-2xl font-bold mt-1" style={{ color: costStructure.expenseRatio > 80 ? 'var(--danger)' : costStructure.expenseRatio > 60 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{fmtPct(costStructure.expenseRatio)}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">ค่าใช้จ่ายต่อรายได้</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">ค่าใช้จ่าย (ไม่รวมต้นทุนขาย) ÷ รายได้ในบัญชี ฿{fmt(costStructure.ledgerRevenue)}</p>
           </motion.div>
           <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
             <p className="text-xs text-[var(--fg-3)]">Production Cost Variance</p>
@@ -321,14 +281,14 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
           </motion.div>
           {/* Expense by Category */}
           <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ค่าใช้จ่ายตามหมวด</p>
+            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ค่าใช้จ่ายตามบัญชี <span className="text-xs font-normal text-[var(--fg-4)]">(ไม่รวมต้นทุนขาย · ค่าติดลบ = เงินเกิน/ปรับเพิ่มสต็อก)</span></p>
             {costStructure.expenseByCategory.length === 0 ? (
               <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
             ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={costStructure.expenseByCategory.slice(0, 8)} layout="vertical" margin={{ left: 4 }}>
                   <XAxis type="number" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
-                  <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill: 'var(--fg-2)' }} width={80} />
+                  <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill: 'var(--fg-2)' }} width={130} />
                   <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
                   <Bar dataKey="amount" fill={COLORS[4]} radius={[0, 4, 4, 0]} />
                 </BarChart>
@@ -337,17 +297,18 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
           </motion.div>
           {/* Cost Trend 12mo */}
           <motion.div {...fade(0.15)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Cost Trend (12 เดือน)</p>
+            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Cost Trend (12 เดือน) <span className="text-xs font-normal text-[var(--fg-4)]">ต้นทุนขาย + ค่าใช้จ่ายจากบัญชี · เส้นประ = ยอดซื้อ</span></p>
             <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={costStructure.costTrend} margin={{ left: -10 }}>
+              <ComposedChart data={costStructure.costTrend} margin={{ left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} />
                 <YAxis tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
                 <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="cogs" stackId="1" stroke={COLORS[3]} fill={COLORS[3] + '50'} name="ยอดซื้อ (PO)" />
-                <Area type="monotone" dataKey="opex" stackId="1" stroke={COLORS[4]} fill={COLORS[4] + '50'} name="OpEx" />
-              </AreaChart>
+                <Area type="monotone" dataKey="cogs" stackId="1" stroke={COLORS[3]} fill={COLORS[3] + '50'} name="ต้นทุนขาย (บัญชี)" />
+                <Area type="monotone" dataKey="opex" stackId="1" stroke={COLORS[4]} fill={COLORS[4] + '50'} name="ค่าใช้จ่ายอื่น" />
+                <Line type="monotone" dataKey="purchases" stroke={COLORS[1]} strokeDasharray="4 2" dot={false} name="ยอดซื้อ (PO)" />
+              </ComposedChart>
             </ResponsiveContainer>
           </motion.div>
         </div>
@@ -358,7 +319,7 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
         <div className="flex items-center gap-2 mb-4">
           <Package className="w-5 h-5 text-[var(--primary)]" />
           <h2 className="text-lg font-bold text-[var(--fg-1)]">Product Profitability</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">Revenue · Margin · Top 10 / Bottom 10 · Concentration</span>
+          <span className="text-xs text-[var(--fg-3)] ml-1">เมนู POS + ใบสั่งขาย · ต้นทุน = วัตถุดิบที่ตัดตามสูตร × ราคาทุนปัจจุบัน (ประมาณการ)</span>
         </div>
         {/* Concentration KPI */}
         <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 mb-4 flex items-center gap-6">
@@ -437,9 +398,9 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           {[
-            { label: 'Current Ratio', value: fmtDec(workingCapital.currentRatio), sub: `สินทรัพย์ ÷ หนี้สิน`, ratio: workingCapital.currentRatio },
-            { label: 'Quick Ratio', value: fmtDec(workingCapital.quickRatio), sub: `(เงินสด + ลูกหนี้) ÷ หนี้สิน`, ratio: workingCapital.quickRatio },
-            { label: 'Cash Burn Rate', value: `฿${fmt(workingCapital.cashBurnRate)}/เดือน`, sub: 'เฉลี่ย 3 เดือนล่าสุด', ratio: -1 },
+            { label: 'Current Ratio', value: fmtDec(workingCapital.currentRatio), sub: `สินทรัพย์หมุนเวียน (11xx) ฿${fmt(workingCapital.currentAssets)} ÷ หนี้สินหมุนเวียน (21xx) ฿${fmt(workingCapital.currentLiabilities)}`, ratio: workingCapital.currentRatio },
+            { label: 'Quick Ratio', value: fmtDec(workingCapital.quickRatio), sub: `(เงินสด/ธนาคาร ฿${fmt(workingCapital.cash)} + ลูกหนี้ ฿${fmt(workingCapital.ar)}) ÷ หนี้สินหมุนเวียน`, ratio: workingCapital.quickRatio },
+            { label: 'ค่าใช้จ่ายเฉลี่ย/เดือน', value: `฿${fmt(workingCapital.cashBurnRate)}/เดือน`, sub: 'ต้นทุนขาย + ค่าใช้จ่ายในบัญชี เฉลี่ย 3 เดือนล่าสุด (ไม่ใช่เงินสดจ่ายจริง)', ratio: -1 },
           ].map((k, i) => (
             <motion.div key={k.label} {...fade(i * 0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
               <p className="text-xs text-[var(--fg-3)]">{k.label}</p>
@@ -453,8 +414,13 @@ export default function PhopyBoardExtended({ startDate, endDate }: Props) {
             </motion.div>
           ))}
         </div>
+        {workingCapital.cash < 0 && (
+          <p className="mb-4 text-xs text-[color:var(--danger)]">
+            เงินสด/ธนาคารในบัญชีติดลบ ฿{fmt(-workingCapital.cash)} — มักเกิดจากยังไม่ได้ลงยอดยกมา/เงินทุนเจ้าของ (บัญชี 3xxx) ทำให้อัตราส่วนสภาพคล่องติดลบ ไม่ได้แปลว่าเงินหายจริง
+          </p>
+        )}
         <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Working Capital Trend (12 เดือน)</p>
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Working Capital Trend (12 เดือน · ยอด ณ สิ้นแต่ละเดือน)</p>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={workingCapital.wcTrend} margin={{ left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />

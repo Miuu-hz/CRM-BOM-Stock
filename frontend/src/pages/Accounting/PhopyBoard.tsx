@@ -1,17 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { motion } from 'framer-motion'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  BarChart, PieChart, Pie, Cell, ResponsiveContainer
+  PieChart, Pie, Cell, ResponsiveContainer
 } from 'recharts'
 import {
   TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle,
-  Users, Package, Wrench, BarChart3, Calendar, RefreshCw
+  Users, Package, Wrench, BarChart3, RefreshCw, ChevronRight
 } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths } from 'date-fns'
 import toast from 'react-hot-toast'
 import { phopyBoardApi, PhopyBoardData } from '../../services/phopyBoard'
 import PhopyBoardExtended from './PhopyBoardExtended'
+import { CogsAnalysisCard, PosSalesCard, CashDrawerCard, AgingCard, WarningCard } from './PhopyBoardAccuracy'
 import { unitLabel } from '../../hooks/useUnits'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
@@ -24,7 +25,7 @@ const BU_LABELS: Record<string, string> = {
   RETAIL: 'ค้าปลีก (หน้าร้าน)',
   WHOLESALE: 'ขายส่ง',
   ONLINE: 'ออนไลน์',
-  OTHER: 'อื่นๆ',
+  OTHER: 'ส่วนกลาง (ไม่ระบุหน่วย)',
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -72,11 +73,6 @@ function KPICard({ label, value, prefix = '฿', prev, delay = 0 }: { label: str
   )
 }
 
-function SignalDot({ status }: { status: 'ok' | 'warn' | 'danger' }) {
-  const cls = status === 'ok' ? 'bg-[color:var(--success,#22c55e)]' : status === 'warn' ? 'bg-[color:var(--warning,#f59e0b)]' : 'bg-[color:var(--danger)]'
-  return <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${cls}`} />
-}
-
 const WO_COLORS = ['#6366f1', '#3b82f6', '#f59e0b', '#22c55e', '#ef4444']
 
 export default function PhopyBoard() {
@@ -114,14 +110,7 @@ export default function PhopyBoard() {
 
   useEffect(() => { load() }, [load])
 
-  const agingLabels = ['0-30 วัน', '31-60 วัน', '61-90 วัน', '91-120 วัน', '120+ วัน']
-
-  const arData = data ? [
-    { name: 'AR', ...buildAging(data.arAging) }
-  ] : []
-  const apData = data ? [
-    { name: 'AP', ...buildAging(data.apAging) }
-  ] : []
+  const [openUnit, setOpenUnit] = useState<string | null>(null)
 
   const woData = data ? [
     { name: 'Draft', value: data.workOrders.draft },
@@ -188,7 +177,7 @@ export default function PhopyBoard() {
           {/* Zone 1 — KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <KPICard label="รายได้รวม" value={data.kpis.revenue} prev={data.kpis.prevRevenue} delay={0} />
-            <KPICard label="ต้นทุนวัตถุดิบ" value={data.kpis.cost} delay={0.05} />
+            <KPICard label="ต้นทุนขาย (บัญชี)" value={data.kpis.cost} delay={0.05} />
             <KPICard label="กำไรขั้นต้น" value={data.kpis.grossProfit} prev={data.kpis.prevGrossProfit} delay={0.1} />
             <KPICard label="กำไรสุทธิ" value={data.kpis.netProfit} delay={0.15} />
             <KPICard label="Gross Margin" value={data.kpis.grossMarginPct} prefix="" delay={0.2}
@@ -204,25 +193,56 @@ export default function PhopyBoard() {
               <table className="w-full text-sm min-w-[560px]">
                 <thead>
                   <tr className="border-b border-[var(--border)]">
-                    {['หน่วยธุรกิจ', 'รายได้', 'ต้นทุนขาย', 'ค่าใช้จ่าย', 'กำไรสุทธิ'].map(h => (
+                    {['หน่วยธุรกิจ', 'รายได้', 'ต้นทุนขาย', 'ค่าใช้จ่าย', 'ขาด/เกิน·ปรับสต็อก', 'กำไรสุทธิ'].map(h => (
                       <th key={h} className="pb-2 text-right first:text-left font-semibold text-[var(--fg-3)]">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.businessUnits.map(bu => (
-                    <tr key={bu.unit} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-2 font-medium text-[var(--fg-1)]">{BU_LABELS[bu.unit] || bu.unit}</td>
-                      <td className="py-2 text-right text-[var(--fg-1)]">฿{fmt(bu.revenue)}</td>
-                      <td className="py-2 text-right text-[color:var(--danger)]">฿{fmt(bu.cogs)}</td>
-                      <td className="py-2 text-right text-[var(--fg-3)]">฿{fmt(bu.expense)}</td>
-                      <td className={`py-2 text-right font-semibold ${bu.netProfit >= 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[color:var(--danger)]'}`}>฿{fmt(bu.netProfit)}</td>
-                    </tr>
+                  {data.businessUnits.filter(bu => bu.breakdown.length > 0 || bu.unit === 'RETAIL').map(bu => (
+                    <Fragment key={bu.unit}>
+                      <tr className="border-b border-[var(--border)] last:border-0">
+                        <td className="py-2 font-medium text-[var(--fg-1)]">
+                          <button type="button" onClick={() => setOpenUnit(openUnit === bu.unit ? null : bu.unit)} aria-expanded={openUnit === bu.unit}
+                            className="inline-flex items-center gap-1 hover:text-[var(--primary)]" disabled={bu.breakdown.length === 0}>
+                            {bu.breakdown.length > 0 && <ChevronRight className={`w-3.5 h-3.5 transition-transform ${openUnit === bu.unit ? 'rotate-90' : ''}`} />}
+                            {BU_LABELS[bu.unit] || bu.unit}
+                          </button>
+                        </td>
+                        <td className="py-2 text-right text-[var(--fg-1)]">฿{fmt(bu.revenue)}</td>
+                        <td className="py-2 text-right text-[color:var(--danger)]">฿{fmt(bu.cogs)}</td>
+                        <td className="py-2 text-right text-[var(--fg-3)]">฿{fmt(bu.expense)}</td>
+                        <td className={`py-2 text-right ${bu.adjust < 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[var(--fg-3)]'}`}>{bu.adjust < 0 ? `+฿${fmt(-bu.adjust)}` : `฿${fmt(bu.adjust)}`}</td>
+                        <td className={`py-2 text-right font-semibold ${bu.netProfit >= 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[color:var(--danger)]'}`}>฿{fmt(bu.netProfit)}</td>
+                      </tr>
+                      {openUnit === bu.unit && bu.breakdown.map(b => (
+                        <tr key={b.referenceType} className="text-xs text-[var(--fg-3)] bg-[var(--surface-2)]">
+                          <td className="py-1.5 pl-6">{b.label} <span className="text-[var(--fg-4)]">({b.referenceType})</span></td>
+                          <td className="py-1.5 text-right">{b.revenue ? `฿${fmt(b.revenue)}` : '–'}</td>
+                          <td className="py-1.5 text-right">{b.cogs ? `฿${fmt(b.cogs)}` : '–'}</td>
+                          <td className="py-1.5 text-right">{b.expense ? `฿${fmt(b.expense)}` : '–'}</td>
+                          <td className="py-1.5 text-right">{b.adjust ? (b.adjust < 0 ? `+฿${fmt(-b.adjust)}` : `฿${fmt(b.adjust)}`) : '–'}</td>
+                          <td />
+                        </tr>
+                      ))}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
+            <p className="mt-3 text-xs text-[var(--fg-4)] leading-relaxed">
+              กดชื่อหน่วยเพื่อดูว่ามาจากเอกสารอะไร · รายการ POS (รวมเงินออกจากลิ้นชัก) นับเป็นหน้าร้านเสมอ ·
+              "ส่วนกลาง" = รายการที่ไม่ผูกหน่วยธุรกิจ เช่น ปรับยอดนับสต็อก (ต้นทุนวัตถุดิบที่นับแล้วหาย) และของซื้อที่ลงค่าใช้จ่ายตรง ·
+              ช่อง "ขาด/เกิน·ปรับสต็อก" = บัญชี 59xx ค่าสีเขียว (+) คือเงินเกิน/ปรับเพิ่มสต็อก ซึ่งเป็นกำไร ไม่ใช่ค่าใช้จ่ายติดลบ
+            </p>
           </motion.div>
+
+          {/* Zone 1c — ต้นทุนขาย 2 มุม + ยอดขาย POS + เงินสดลิ้นชัก */}
+          <CogsAnalysisCard a={data.cogsAnalysis} revenue={data.kpis.revenue} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <PosSalesCard p={data.posSales} />
+            <CashDrawerCard d={data.cashDrawer} />
+          </div>
 
           {/* Zone 2 — Revenue Chart + P&L Table */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -251,7 +271,7 @@ export default function PhopyBoard() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-[var(--border)]">
-                    {['เดือน', 'รายได้', 'ต้นทุน', 'กำไรขั้นต้น', '%'].map(h => (
+                    {['เดือน', 'รายได้', 'ต้นทุนขาย', 'กำไรขั้นต้น', '%', 'เงินเดือน/ค่าแรง', 'ค่าใช้จ่ายอื่น', 'กำไรสุทธิ'].map(h => (
                       <th key={h} className="pb-2 text-right first:text-left font-semibold text-[var(--fg-3)]">{h}</th>
                     ))}
                   </tr>
@@ -264,17 +284,25 @@ export default function PhopyBoard() {
                       <td className="py-1.5 text-right text-[color:var(--danger)]">{fmt(row.cogs)}</td>
                       <td className={`py-1.5 text-right font-medium ${row.grossProfit >= 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[color:var(--danger)]'}`}>{fmt(row.grossProfit)}</td>
                       <td className="py-1.5 text-right text-[var(--fg-3)]">{fmtPct(row.margin)}</td>
+                      <td className="py-1.5 text-right text-[var(--fg-2)]">{fmt(row.labour)}</td>
+                      <td className="py-1.5 text-right text-[var(--fg-2)]">{fmt(row.otherOpex)}</td>
+                      <td className={`py-1.5 text-right font-medium ${row.netProfit >= 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[color:var(--danger)]'}`}>{fmt(row.netProfit)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {data.labour.total === 0 && (
+                <p className="mt-2 text-xs text-[var(--fg-4)]">ยังไม่มีเงินเดือน/ค่าแรงในบัญชี (5301 / 5103) ในช่วงนี้</p>
+              )}
             </motion.div>
           </div>
 
-          {/* Zone 3 — AR / AP Aging */}
+          {/* Zone 3 — AR / AP Aging (เอกสารค้างชำระจริง + ยอดบัญชีคุม) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <AgingCard title="ลูกหนี้ (AR) — อายุหนี้" aging={data.arAging} />
-            <AgingCard title="เจ้าหนี้ (AP) — อายุหนี้" aging={data.apAging} />
+            <AgingCard title="ลูกหนี้ (AR) — อายุหนี้" source="ใบแจ้งหนี้ขายที่ค้างรับ ณ วันนี้" detail={data.arDetail}
+              ledgerLabels={{ tradeAR: 'บัญชี 1104 ลูกหนี้การค้า', posClearing: 'บัญชี 1180 ลูกหนี้-POS (รอเงินเข้า)', posPayoutPending: 'บัญชี 1182 เงินจ่ายจาก POS รอจับคู่บิล' }} />
+            <AgingCard title="เจ้าหนี้ (AP) — อายุหนี้" source="ใบแจ้งหนี้ซื้อที่ค้างจ่าย ณ วันนี้" detail={data.apDetail}
+              ledgerLabels={{ tradeAP: 'บัญชี 2101 เจ้าหนี้การค้า', otherAP: 'บัญชี 2102 เจ้าหนี้อื่น', grni: 'บัญชี 2109 รับของแล้วยังไม่ได้รับใบแจ้งหนี้' }} />
           </div>
 
           {/* Zone 4 — Customer Intelligence */}
@@ -400,66 +428,15 @@ export default function PhopyBoard() {
             <h2 className="text-sm font-semibold text-[var(--fg-2)] mb-4 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-[color:var(--warning,#f59e0b)]" /> Early Warning Signals
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {data.earlyWarnings.map(w => (
-                <div key={w.id} className={`rounded-xl p-4 border ${w.status === 'ok' ? 'border-[var(--border)] bg-[var(--surface-2)]' : w.status === 'warn' ? 'border-[var(--warning)]/30 bg-[var(--warning)]/5' : 'border-[var(--danger)]/30 bg-[var(--danger-soft)]'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <SignalDot status={w.status} />
-                    <p className="text-xs font-semibold text-[var(--fg-2)] leading-tight">{w.label}</p>
-                  </div>
-                  <p className={`text-lg font-bold ${w.status === 'ok' ? 'text-[color:var(--success,#22c55e)]' : w.status === 'warn' ? 'text-[color:var(--warning,#f59e0b)]' : 'text-[color:var(--danger)]'}`}>
-                    {w.value}
-                  </p>
-                  <p className="text-xs text-[var(--fg-4)] mt-1 leading-tight">{w.detail}</p>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {data.earlyWarnings.map(w => <WarningCard key={w.id} w={w} />)}
             </div>
+            <p className="mt-2 text-xs text-[var(--fg-4)]">กดไอคอน ⓘ ที่มุมการ์ดเพื่อดูว่าตัวชี้วัดคืออะไร คำนวณอย่างไร เกณฑ์สี และควรทำอะไรเมื่อเป็นสีแดง</p>
           </motion.div>
         </>
       )}
       <PhopyBoardExtended startDate={getRange().startDate} endDate={getRange().endDate} />
       </>)}
     </div>
-  )
-}
-
-function buildAging(aging: { current: number; days30: number; days60: number; days90: number; over90: number }) {
-  return {
-    '0-30วัน': aging.current,
-    '31-60วัน': aging.days30,
-    '61-90วัน': aging.days60,
-    '91-120วัน': aging.days90,
-    '120+วัน': aging.over90,
-  }
-}
-
-function AgingCard({ title, aging }: { title: string; aging: { current: number; days30: number; days60: number; days90: number; over90: number } }) {
-  const chartData = [buildAging(aging)]
-  const keys = ['0-30วัน', '31-60วัน', '61-90วัน', '91-120วัน', '120+วัน']
-  const COLORS = ['#22c55e', '#6366f1', '#f59e0b', '#f97316', '#ef4444']
-  const total = aging.current + aging.days30 + aging.days60 + aging.days90 + aging.over90
-
-  return (
-    <motion.div {...fade(0.35)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-      <h2 className="text-sm font-semibold text-[var(--fg-2)] mb-1 flex items-center gap-2">
-        <Calendar className="w-4 h-4 text-[var(--primary)]" /> {title}
-      </h2>
-      <p className="text-xs text-[var(--fg-3)] mb-4">รวม ฿{fmt(total)}</p>
-      <ResponsiveContainer width="100%" height={80}>
-        <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-          <XAxis type="number" hide />
-          <YAxis type="category" hide />
-          <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-          {keys.map((k, i) => <Bar key={k} dataKey={k} stackId="a" fill={COLORS[i]} radius={i === 0 ? [4, 0, 0, 4] : i === keys.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]} />)}
-        </BarChart>
-      </ResponsiveContainer>
-      <div className="flex flex-wrap gap-2 mt-3">
-        {keys.map((k, i) => (
-          <span key={k} className="flex items-center gap-1 text-xs text-[var(--fg-3)]">
-            <span className="w-2 h-2 rounded-full flex-none" style={{ background: COLORS[i] }} />{k}
-          </span>
-        ))}
-      </div>
-    </motion.div>
   )
 }
