@@ -36,6 +36,7 @@ export function getNextDocumentNumber(
 
 const MAX_COLLISION_SKIPS = 1000
 const numberColCache = new Map<string, string | null>()
+const NUMBER_COL_OVERRIDES: Record<string, string> = { journal_entries: 'entry_number', purchase_invoices: 'pi_number' }
 
 /** เลขนี้มีอยู่แล้วในตารางของ docType นั้นไหม (docType ที่ไม่มีตารางใน DOC_NUMBER_TABLES = ไม่เช็ค) */
 function docNumberExists(tenantId: string, docType: string, num: string): boolean {
@@ -44,7 +45,11 @@ function docNumberExists(tenantId: string, docType: string, num: string): boolea
   let col = numberColCache.get(table)
   if (col === undefined) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
-    col = cols.some(c => c.name === 'tenant_id') ? cols.find(c => c.name.endsWith('_number'))?.name ?? null : null
+    // ตารางที่มีหลายคอลัมน์ *_number (เลขอ้างอิงของคนอื่น) ต้องระบุตรงๆ ไม่งั้นอาจเช็คผิดคอลัมน์
+    const preferred = NUMBER_COL_OVERRIDES[table]
+    col = !cols.some(c => c.name === 'tenant_id') ? null
+      : preferred ? (cols.some(c => c.name === preferred) ? preferred : null)
+      : cols.find(c => c.name.endsWith('_number'))?.name ?? null
     numberColCache.set(table, col)
   }
   if (!col) return false
