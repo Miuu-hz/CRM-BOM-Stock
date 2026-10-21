@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   AlertTriangle,
   ArrowUpDown,
+  Banknote,
   Calculator,
   Check,
   CheckCircle,
@@ -13,7 +15,6 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
-  Search,
   ShoppingBag,
   ShoppingCart,
   Trash2,
@@ -25,6 +26,11 @@ import { journalApi, accountsApi, type Account } from '../../services/accounting
 import toast from 'react-hot-toast'
 import { useModalClose } from '../../hooks/useModalClose'
 import { SourceDocSection } from '../../components/accounting/SourceDocSection'
+import { PayrollModal } from '../../components/accounting/PayrollModal'
+import {
+  ActiveFilterBar, activeFilterChips, columnFilterCells, readFilters, toApiParams, writeFilters,
+  type JournalFilters, type TypeCount,
+} from '../../components/accounting/JournalColumnFilters'
 
 // ==================== Types ====================
 
@@ -158,11 +164,45 @@ const SOURCE_BADGE: Record<string, { label: string; color: string; icon: React.R
   PAYMENT:              { label: 'รับชำระ',         color: 'bg-[var(--success-soft)] text-success', icon: <Zap className="w-3 h-3" /> },
   PURCHASE_INVOICE:     { label: 'ใบแจ้งหนี้ซื้อ', color: 'bg-[var(--warning-soft)] text-warning', icon: <FileText className="w-3 h-3" /> },
   SUPPLIER_PAYMENT:     { label: 'จ่ายซัพพลายเออร์', color: 'bg-[var(--danger-soft)] text-danger',   icon: <ShoppingCart className="w-3 h-3" /> },
-  MANUAL:               { label: 'Manual',         color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)]',    icon: <FileText className="w-3 h-3" /> },
+  MANUAL:               { label: 'บันทึกเอง',      color: 'bg-[var(--surface-sunken)] text-[var(--fg-3)]',    icon: <FileText className="w-3 h-3" /> },
+  PAYROLL:              { label: 'เงินเดือน',      color: 'bg-[var(--equity-soft)] text-[var(--equity-strong)]', icon: <Banknote className="w-3 h-3" /> },
 }
+
+// ชื่อไทยของ reference_type ที่ไม่มี badge สีเฉพาะ — ใช้ทั้งตัวกรองประเภทรายการและป้ายในตาราง
+const REF_TYPE_LABEL: Record<string, string> = {
+  POS_COGS: 'ต้นทุนขาย POS',
+  POS_CASH_MOVEMENT: 'จ่าย/รับเงินลิ้นชัก',
+  POS_SHIFT_CLOSE: 'ปิดกะ POS',
+  POS_CANCEL: 'ยกเลิกบิล POS',
+  POS_BILL: 'บิล POS',
+  GOODS_RECEIPT: 'รับสินค้า',
+  PURCHASE_INVOICE_RECLASS: 'ปรับประเภทใบแจ้งหนี้ซื้อ',
+  PURCHASE_INVOICE_EDIT: 'แก้ไขใบแจ้งหนี้ซื้อ',
+  PURCHASE_INVOICE_SUPERSEDED: 'กลับรายการใบแจ้งหนี้ซื้อเดิม',
+  SUPPLIER_PAYMENT_CANCEL: 'ยกเลิกจ่ายซัพพลายเออร์',
+  SUBCONTRACT_PAYMENT: 'จ่ายผู้รับจ้างช่วง',
+  STOCK_ADJUST: 'ปรับปรุงสต็อก',
+  STOCK_OUT: 'เบิกสต็อก',
+  ADJUSTMENT: 'รายการปรับปรุง',
+  EXPENSE: 'ค่าใช้จ่าย',
+  SO_COGS: 'ต้นทุนขาย SO',
+  SO_COGS_CANCEL: 'ยกเลิกต้นทุนขาย SO',
+  INVOICE_CANCEL: 'ยกเลิกใบแจ้งหนี้',
+  CREDIT_NOTE: 'ใบลดหนี้',
+  CREDIT_NOTE_COGS: 'ต้นทุนใบลดหนี้',
+  WO_MATERIAL: 'เบิกวัตถุดิบผลิต',
+  AD_SPEND: 'ค่าโฆษณาแพลตฟอร์ม',
+  QR_GUEST_RETRO: 'ปรับแต้มลูกค้า QR',
+  PLATFORM_MONTH_OPENING: 'ยอดยกมาแพลตฟอร์ม',
+}
+
+const refTypeLabel = (t: string) => SOURCE_BADGE[t]?.label ?? REF_TYPE_LABEL[t] ?? t
 
 const getSourceBadge = (refType?: string, isAuto?: boolean) => {
   if (refType && SOURCE_BADGE[refType]) return SOURCE_BADGE[refType]
+  if (refType && REF_TYPE_LABEL[refType]) {
+    return { label: REF_TYPE_LABEL[refType], color: 'bg-[var(--info-soft)] text-[var(--primary)]', icon: <Zap className="w-3 h-3" /> }
+  }
   if (!isAuto) return SOURCE_BADGE.MANUAL
   return { label: 'ระบบ', color: 'bg-[var(--info-soft)] text-[var(--primary)]', icon: <Zap className="w-3 h-3" /> }
 }
@@ -226,31 +266,32 @@ export default function JournalEntries() {
   const [evidenceCounts, setEvidenceCounts] = useState<Record<string, number>>({})
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [dateRange, setDateRange] = useState({ start: '', end: '' })
-  const [filterPosted, setFilterPosted] = useState<'all' | 'draft' | 'posted'>('all')
-  const [filterRefType, setFilterRefType] = useState('')
-  const [filterAccountId, setFilterAccountId] = useState('')
+  // ตัวกรองทั้งหมดอยู่ใน URL — รีเฟรช/แชร์ลิงก์แล้วได้ผลกรองเดิม
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filterKey = searchParams.toString()
+  const filters = useMemo(() => readFilters(new URLSearchParams(filterKey)), [filterKey])
+  const updateFilters = (patch: Partial<JournalFilters>) =>
+    setSearchParams(writeFilters({ ...filters, ...patch }), { replace: true })
+  const [typeCounts, setTypeCounts] = useState<TypeCount[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showQuickModal, setShowQuickModal] = useState(false)
+  const [showPayrollModal, setShowPayrollModal] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
+  // กรองรัว ๆ แล้ว response กลับมาไม่ตรงลำดับ — ใช้เฉพาะผลของ request ล่าสุด
+  const latestReq = useRef(0)
   const fetchEntries = useCallback(async () => {
+    const reqId = ++latestReq.current
     setLoading(true)
     try {
-      const params: any = {}
-      if (dateRange.start) params.startDate = dateRange.start
-      if (dateRange.end) params.endDate = dateRange.end
-      if (filterPosted === 'draft') params.isPosted = false
-      if (filterPosted === 'posted') params.isPosted = true
-      if (filterRefType) params.referenceType = filterRefType
-      if (filterAccountId) params.accountId = filterAccountId
-      const res = await journalApi.getAll(params)
+      const res = await journalApi.getAll(toApiParams(filters))
+      if (reqId !== latestReq.current) return
       if (res.data.success) {
         const list = (res.data.data as RawEntry[]).map(normalizeEntry)
         setEntries(list)
+        setTypeCounts(res.data.meta?.typeCounts ?? [])
         // One bulk call for the whole list — never one attachments request per row.
         const refs = [...new Set(list.map(evidenceKeyFor).filter((k): k is string => !!k))]
         if (refs.length) {
@@ -261,14 +302,17 @@ export default function JournalEntries() {
           setEvidenceCounts({})
         }
       }
-    } catch { toast.error('ไม่สามารถโหลดข้อมูลสมุดรายวันได้') }
-    finally { setLoading(false) }
-  }, [dateRange, filterPosted, filterRefType, filterAccountId])
+    } catch (err: any) {
+      if (reqId === latestReq.current) toast.error(err.response?.data?.message || 'ไม่สามารถโหลดข้อมูลสมุดรายวันได้')
+    } finally {
+      if (reqId === latestReq.current) setLoading(false)
+    }
+  }, [filters])
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
 
   // ก4: เปลี่ยนตัวกรองหรือค้นหาแล้วต้องกลับไปหน้าแรกเสมอ ไม่งั้นค้างอยู่หน้าท้าย ๆ ที่อาจไม่เหลือข้อมูล
-  useEffect(() => { setCurrentPage(1) }, [dateRange, filterPosted, filterRefType, filterAccountId, searchTerm])
+  useEffect(() => { setCurrentPage(1) }, [filterKey])
 
   const getEvidenceCount = (entry: Entry): number | undefined => {
     const key = evidenceKeyFor(entry)
@@ -330,11 +374,14 @@ export default function JournalEntries() {
     } catch (err: any) { toast.error(err.response?.data?.message || 'ลบไม่สำเร็จ') }
   }
 
-  const filtered = entries.filter(e => {
-    const q = searchTerm.toLowerCase()
-    return (e.entryNumber ?? '').toLowerCase().includes(q) ||
-           (e.description ?? '').toLowerCase().includes(q)
-  })
+  // กรองมาจาก backend แล้ว — ยอดรวมด้านบนจึงเป็นยอดของผลที่กรองทั้งหมด (ไม่ใช่แค่หน้าที่เห็น)
+  const filtered = entries
+  const accountLabel = (id: string) => {
+    const a = accounts.find(x => x.id === id)
+    return a ? `${a.code} ${a.name}` : '…'
+  }
+  const chips = activeFilterChips(filters, refTypeLabel, accountLabel)
+  const headerCells = columnFilterCells({ f: filters, onChange: updateFilters, typeCounts, typeLabel: refTypeLabel, accounts })
 
   const totalDebit = filtered.reduce((s, e) => s + e.totalDebit, 0)
   const totalCredit = filtered.reduce((s, e) => s + e.totalCredit, 0)
@@ -364,6 +411,10 @@ export default function JournalEntries() {
             className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors">
             <Zap className="w-4 h-4" /> บันทึกด่วน
           </button>
+          <button onClick={() => setShowPayrollModal(true)} disabled={!accountsLoaded}
+            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors disabled:opacity-50">
+            <Banknote className="w-4 h-4" /> บันทึกเงินเดือน
+          </button>
           <button onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80">
             <Plus className="w-4 h-4" /> บันทึกรายการ
@@ -374,11 +425,11 @@ export default function JournalEntries() {
       {/* Summary Bar */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3">
-          <p className="text-xs text-[var(--fg-4)] mb-0.5">เดบิตรวม</p>
+          <p className="text-xs text-[var(--fg-4)] mb-0.5">เดบิตรวม{chips.length > 0 && ' (ตามตัวกรอง)'}</p>
           <p className="text-lg font-bold text-[var(--primary)]">฿{fmt(totalDebit)}</p>
         </div>
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3">
-          <p className="text-xs text-[var(--fg-4)] mb-0.5">เครดิตรวม</p>
+          <p className="text-xs text-[var(--fg-4)] mb-0.5">เครดิตรวม{chips.length > 0 && ' (ตามตัวกรอง)'}</p>
           <p className="text-lg font-bold text-[var(--primary)]">฿{fmt(totalCredit)}</p>
         </div>
         <div className={`rounded-xl px-4 py-3 border ${
@@ -393,57 +444,34 @@ export default function JournalEntries() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-3)]" />
-          <input type="text" placeholder="ค้นหาเลขที่ หรือคำอธิบาย..."
-            value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
-          />
+      {/* Filters — กรองต่อคอลัมน์ที่หัวตาราง (มือถือแสดงเป็นแถวปุ่ม) + สถานะแบบเดิม */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="sm:hidden flex flex-wrap gap-x-4 gap-y-2 px-1 text-xs text-[var(--fg-3)] font-medium">
+          {headerCells.number}{headerCells.date}{headerCells.description}{headerCells.debit}{headerCells.credit}
         </div>
-        <div className="flex gap-2">
-          <input type="date" value={dateRange.start}
-            onChange={e => setDateRange(p => ({ ...p, start: e.target.value }))}
-            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
-          />
-          <span className="self-center text-[var(--fg-4)]">–</span>
-          <input type="date" value={dateRange.end}
-            onChange={e => setDateRange(p => ({ ...p, end: e.target.value }))}
-            className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo"
-          />
+        <div className="flex-1 min-w-0">
+          <ActiveFilterBar chips={chips} onClear={updateFilters}
+            onClearAll={() => setSearchParams(filters.status === 'all' ? {} : { status: filters.status }, { replace: true })} />
         </div>
-        <select value={filterRefType} onChange={e => setFilterRefType(e.target.value)}
-          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
-          <option value="">ทุกที่มา</option>
-          {Object.keys(SOURCE_BADGE).filter(k => k !== 'MANUAL').map(k => (
-            <option key={k} value={k}>{SOURCE_BADGE[k].label}</option>
-          ))}
-        </select>
-        <select value={filterAccountId} onChange={e => setFilterAccountId(e.target.value)}
-          className="px-3 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
-          <option value="">ทุกบัญชี</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
-        </select>
-        <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm">
+        <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-sm self-start sm:self-auto">
           {(['all', 'draft', 'posted'] as const).map(f => (
-            <button key={f} onClick={() => setFilterPosted(f)}
-              className={`px-3 py-2 transition-colors ${filterPosted === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
+            <button key={f} onClick={() => updateFilters({ status: f })}
+              className={`px-3 py-2 transition-colors ${filters.status === f ? 'bg-phopy-indigo text-white font-medium' : 'bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
               {f === 'all' ? 'ทั้งหมด' : f === 'draft' ? 'รอดำเนินการ' : 'ยืนยันแล้ว'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Entries List */}
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+      {/* Entries List — ไม่ใส่ overflow-hidden เพราะกล่องตัวกรองที่หัวคอลัมน์ต้องล้นออกมาได้ */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl">
         {/* Table header */}
-        <div className="hidden sm:grid grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] text-xs text-[var(--fg-4)] font-medium uppercase tracking-wide">
-          <span>เลขที่</span>
-          <span>วันที่</span>
-          <span>รายการ</span>
-          <span className="text-right">เดบิต</span>
-          <span className="text-right">เครดิต</span>
+        <div className="hidden sm:grid grid-cols-[120px_90px_1fr_110px_110px_90px_80px] gap-3 px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] rounded-t-xl text-xs text-[var(--fg-4)] font-medium uppercase tracking-wide">
+          {headerCells.number}
+          {headerCells.date}
+          {headerCells.description}
+          {headerCells.debit}
+          {headerCells.credit}
           <span className="text-center">สถานะ</span>
           <span></span>
         </div>
@@ -560,6 +588,17 @@ export default function JournalEntries() {
             accountsLoaded={accountsLoaded}
             onClose={() => setShowQuickModal(false)}
             onSuccess={() => { fetchEntries(); setShowQuickModal(false) }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Payroll Modal */}
+      <AnimatePresence>
+        {showPayrollModal && (
+          <PayrollModal
+            accounts={accounts}
+            onClose={() => setShowPayrollModal(false)}
+            onSuccess={() => { fetchEntries(); setShowPayrollModal(false) }}
           />
         )}
       </AnimatePresence>

@@ -181,8 +181,27 @@ export const journalApi = {
     endDate?: string; 
     isPosted?: boolean;
     referenceType?: string;
+    referenceTypes?: string; // คั่นด้วย , — MANUAL = บันทึกเอง
     accountId?: string;
+    entryNumber?: string;
+    q?: string;
+    minDebit?: string;
+    maxDebit?: string;
+    minCredit?: string;
+    maxCredit?: string;
   }) => api.get('/journal', { params }),
+
+  // บันทึกเงินเดือน → JE แบบร่าง reference_type PAYROLL
+  createPayroll: (data: {
+    period: string
+    payDate: string
+    employees: Array<{ name: string; gross: number; ssEmployee?: number; wht?: number; otherDeduction?: number }>
+    ssEmployer?: number
+    payAccountId: string
+    otherDeductionAccountId?: string
+    businessUnit?: string
+    notes?: string
+  }) => api.post('/journal/payroll', data),
   
   // Get entry by ID
   getById: (id: string) => api.get(`/journal/${id}`),
