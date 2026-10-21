@@ -83,7 +83,7 @@ export function createSalesJournal(
     const now = new Date().toISOString()
     const dateStr = now.split('T')[0]
     const yr = new Date().getFullYear()
-    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5, dateStr)
 
     // Accounts — using standardized codes from ACC constants
     const arMeta = ACC_META[ACC.AR]!
@@ -517,7 +517,7 @@ export function reverseSalesJournal(tenantId: string, invoiceId: string, invoice
     const now = new Date().toISOString()
     const dateStr = now.split('T')[0]
     const yr = new Date().getFullYear()
-    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5, dateStr)
     const entryId = generateId()
 
     const tx = db.transaction(() => {
@@ -559,7 +559,7 @@ export function reverseSalesJournalByRef(tenantId: string, originalRefType: stri
     const now = new Date().toISOString()
     const dateStr = now.split('T')[0]
     const yr = new Date().getFullYear()
-    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+    const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5, dateStr)
     const entryId = generateId()
 
     db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, so_number, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at, business_unit)
@@ -670,7 +670,7 @@ export function createDeliveryOrderForSO(
   db.transaction(() => {
     // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้า insert ล้มเหลว ตัวนับต้องย้อนกลับไปด้วย
     // ไม่ใช่เสียเลขไปเปล่าๆ (ponytail ของเดิม: ออกเลขไว้ก่อนนอกทรานแซกชัน)
-    doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5)
+    doNumber = formatDocumentNumber('DO', tenantId, 'DELIVERY_ORDER', new Date().getFullYear(), 5, so.delivery_date || now)
     db.prepare(`
       INSERT INTO delivery_orders (id, tenant_id, do_number, sales_order_id, customer_id, delivery_date,
         delivery_address, driver_name, vehicle_plate, status, notes, created_by, created_at, updated_at)

@@ -374,7 +374,7 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
       }
 
       const totals = summariseZBills(tenantId, bills)
-      const summaryNumber = formatDocumentNumber('POS-SUM', tenantId, 'POS_DAILY_SALES', targetDate.replace(/-/g, ''), 3)
+      const summaryNumber = formatDocumentNumber('POS-SUM', tenantId, 'POS_DAILY_SALES', targetDate.replace(/-/g, ''), 3, targetDate)
       const summaryId = generateId()
 
       db.prepare(`
