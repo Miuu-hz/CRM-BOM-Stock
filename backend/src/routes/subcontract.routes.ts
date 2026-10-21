@@ -363,7 +363,7 @@ router.post('/:id/issue-materials', (req: Request, res: Response) => {
         )
 
         const journalId = generateId()
-        const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5)
+        const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5, now)
         const desc = `ส่งวัตถุดิบให้ผู้รับเหมา ${issueNumber} - ${contract.supplier_name} (${contract.contract_number})`
 
         db.prepare(`
@@ -545,7 +545,7 @@ router.post('/:id/receipts', (req: Request, res: Response) => {
         ) : null
 
         const journalId = generateId()
-        const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5)
+        const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5, now)
         const desc = `รับของ/เคลียร์วัตถุดิบผู้รับเหมา ${receiptNumber} - ${contract.supplier_name} (${contract.contract_number})`
 
         db.prepare(`
@@ -752,7 +752,7 @@ router.post('/:id/pay', (req: Request, res: Response) => {
     )
     const now = new Date().toISOString()
     const journalId = generateId()
-    const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5)
+    const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5, now)
     const desc = `จ่ายค่าจ้างเหมา ${contract.contract_number} - ${contract.supplier_name}`
 
     const tx = db.transaction(() => {

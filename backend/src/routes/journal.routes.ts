@@ -36,7 +36,7 @@ export function closedPeriodLabel(tenantId: string, dateStr: string): string | n
 // Generate entry number: JV-YYYY-XXXXX
 function generateEntryNumber(tenantId: string, date: string): string {
   const year = new Date(date).getFullYear()
-  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
+  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5, date)
 }
 
 interface NewJournalEntry {

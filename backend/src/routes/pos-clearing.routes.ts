@@ -279,7 +279,7 @@ function createTransferJournalEntries(
 
   // Get next entry number
   const year = new Date().getFullYear()
-  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 6)
+  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5, date)
 
   const entryId = generateId()
   db.prepare(`

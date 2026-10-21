@@ -215,7 +215,7 @@ export function applyStockMovement(
         const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL)
         const useAccId = getOrCreateAccount(tenantId, ACC.COGS_RAW_MATERIAL)
         const entryId = generateId()
-        const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5)
+        const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5, now)
         const desc = `เบิกใช้ ${currentItem.name}${reference ? ` (${reference})` : ''}`
         db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
           VALUES (?, ?, ?, ?, 'STOCK_OUT', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
@@ -244,7 +244,7 @@ export function applyStockMovement(
       try {
         // เลขทะเบียนต้องมาจาก document_sequences เหมือนเอกสารอื่นทั้งระบบ
         // เคยใช้ COUNT(*)+1 ซึ่งพังทันทีที่มีคนลบแถว — เลขจะวนกลับมาชนของเดิม
-        const adjNumber = formatDocumentNumber('ADJ', tenantId, 'STOCK_ADJUSTMENT', new Date(now).getFullYear(), 5)
+        const adjNumber = formatDocumentNumber('ADJ', tenantId, 'STOCK_ADJUSTMENT', new Date(now).getFullYear(), 5, now)
         adjustmentId = generateId()
         db.prepare(`
           INSERT INTO stock_adjustments (id, tenant_id, adjustment_number, stock_item_id, adjustment_type,
@@ -269,7 +269,7 @@ export function applyStockMovement(
         // เคย catch แล้ว log เฉย ๆ — จำนวนในคลังเปลี่ยนไปแล้วแต่บัญชีไม่มีรายการรองรับ ตามหาทีหลังไม่ได้
         const invAccId = getOrCreateAccount(tenantId, ACC.RAW_MATERIAL, ACC_META[ACC.RAW_MATERIAL]!.name, ACC_META[ACC.RAW_MATERIAL]!.type, ACC_META[ACC.RAW_MATERIAL]!.category, ACC_META[ACC.RAW_MATERIAL]!.normalBalance)
         const yr = new Date().getFullYear()
-        const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+        const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5, now)
         const entryId = generateId()
 
         // ปรับขึ้นด้วยเหตุผลที่ map ได้ = กลับรายการค่าใช้จ่ายตัวนั้น ไม่ใช่รายได้อื่น
@@ -532,7 +532,7 @@ export function settleWorkOrderCost(
 
   const now = new Date().toISOString()
   const entryId = generateId()
-  const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5)
+  const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5, now)
   const desc = `วัตถุดิบใช้ไปในการผลิต ${wo.wo_number} (ไม่มีสินค้าสำเร็จรูปเข้าคลัง)`
   db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'WO_MATERIAL', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)

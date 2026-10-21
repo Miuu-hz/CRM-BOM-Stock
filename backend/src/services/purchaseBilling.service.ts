@@ -540,7 +540,7 @@ function reverseCurrentPurchaseInvoiceJournal(tenantId: string, actorEmail: stri
   if (original) {
     const lines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ?').all(original.id) as any[]
     const journalId = generateId()
-    const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(dateStr).getFullYear(), 5)
+    const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(dateStr).getFullYear(), 5, dateStr)
 
     db.prepare(`
       INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
@@ -859,7 +859,7 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   )
   const whtAccId = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
   const journalId = generateId()
-  const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(paymentDate || now).getFullYear(), 5)
+  const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(paymentDate || now).getFullYear(), 5, paymentDate || now)
 
   const transaction = db.transaction(() => {
     db.prepare(`

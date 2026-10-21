@@ -21,7 +21,7 @@ function postSimpleJournal(
   referenceType: string, referenceId: string, description: string,
   debitAccountId: string, creditAccountId: string, amount: number
 ): string {
-  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date).getFullYear(), 6)
+  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date).getFullYear(), 5, date)
   const entryId = generateId()
   const nowStr = new Date().toISOString()
 
@@ -374,7 +374,7 @@ router.post('/pos-daily-sales', async (req: Request, res: Response) => {
       }
 
       const totals = summariseZBills(tenantId, bills)
-      const summaryNumber = formatDocumentNumber('POS-SUM', tenantId, 'POS_DAILY_SALES', targetDate.replace(/-/g, ''), 3)
+      const summaryNumber = formatDocumentNumber('POS-SUM', tenantId, 'POS_DAILY_SALES', targetDate.replace(/-/g, ''), 3, targetDate)
       const summaryId = generateId()
 
       db.prepare(`

@@ -1,5 +1,5 @@
 // docSeq.ts ไม่ import อะไรเลย จึงไม่โดนกับดัก require วงกลมของ db/sqlite ที่อธิบายไว้ด้านล่าง
-import { docSeqOf, MAX_DOC_SEQ } from '../utils/docSeq'
+import { docSeqOf, MAX_DOC_SEQ, DOC_NUMBER_TABLES } from '../utils/docSeq'
 // vat.ts เป็นฟังก์ชันล้วน ไม่ import db/sqlite เลย จึงไม่โดนกับดัก require วงกลมเหมือน docSeq.ts ข้างบน
 import { vatModeOf } from '../utils/vat'
 export function runMigrations(db: any): void {
@@ -1129,32 +1129,7 @@ export function runMigrations(db: any): void {
     // continues after the existing highest sequence, avoiding collisions on upgrade.
     // ponytail: seeded as total per tenant/year=0; this is safe because the new
     // atomic sequence will always exceed the prior COUNT(*)+1 generated numbers.
-    const seedMap: [string, string][] = [
-      ['QUOTATION', 'quotations'],
-      ['SALES_ORDER', 'sales_orders'],
-      ['DELIVERY_ORDER', 'delivery_orders'],
-      ['INVOICE', 'invoices'],
-      ['CREDIT_NOTE', 'credit_notes'],
-      ['RECEIPT', 'receipts'],
-      ['BACKORDER', 'backorders'],
-      ['PURCHASE_REQUEST', 'purchase_requests'],
-      ['PO', 'purchase_orders'],
-      ['GOODS_RECEIPT', 'goods_receipts'],
-      ['PURCHASE_INVOICE', 'purchase_invoices'],
-      ['SUPPLIER_PAYMENT', 'supplier_payments'],
-      ['PURCHASE_RETURN', 'purchase_returns'],
-      ['WORK_ORDER', 'work_orders'],
-      ['ORDER', 'orders'],
-      ['POS_BILL', 'pos_running_bills'],
-      ['POS_DAILY_SALES', 'pos_daily_sales'],
-      ['POS_SHIFT', 'pos_shifts'],
-      ['JOURNAL', 'journal_entries'],
-      ['APPROVAL_REQUEST', 'approval_requests'],
-      ['STOCK_ADJUSTMENT', 'stock_adjustments'],
-      ['SUBCONTRACT', 'wo_subcontracts'],
-      ['SUBCON_ISSUE', 'subcon_material_issues'],
-      ['SUBCON_RECEIPT', 'subcon_receipts'],
-    ]
+    const seedMap = DOC_NUMBER_TABLES
     for (const [docType, table] of seedMap) {
       try {
         const cols = db.prepare(`PRAGMA table_info(${table})`).all() as any[]

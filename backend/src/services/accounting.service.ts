@@ -160,7 +160,7 @@ export function postJournal(input: PostJournalInput): string {
 
   const now = new Date().toISOString()
   const entryId = generateId()
-  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date || now).getFullYear(), 5)
+  const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(date || now).getFullYear(), 5, date || now)
   const actor = createdBy || 'system'
 
   db.prepare(`

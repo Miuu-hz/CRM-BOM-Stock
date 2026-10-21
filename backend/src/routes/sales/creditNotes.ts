@@ -27,7 +27,7 @@ function postCreditNoteJournal(tenantId: string, cn: any) {
   const now = new Date().toISOString()
   const dateStr = now.split('T')[0]
   const yr = new Date().getFullYear()
-  const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5)
+  const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5, dateStr)
 
   const arMeta = ACC_META[ACC.AR]!
   const revMeta = ACC_META[ACC.REVENUE_PRODUCT]!
@@ -371,9 +371,9 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const id = generateId()
-    const cnNumber = formatDocumentNumber('CN', tenantId, 'CREDIT_NOTE', new Date().getFullYear(), 5)
     const now = new Date().toISOString()
     const creditDateValue = typeof creditDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(creditDate) ? creditDate : now
+    const cnNumber = formatDocumentNumber('CN', tenantId, 'CREDIT_NOTE', new Date().getFullYear(), 5, creditDateValue)
 
     const transaction = db.transaction(() => {
       db.prepare(`

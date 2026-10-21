@@ -28,6 +28,8 @@ const DOC_TYPES: { value: string; label: string; defaultPrefix: string }[] = [
   { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS' },
   { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT' },
   { value: 'WORK_ORDER',       label: 'ใบสั่งผลิต (WO)',      defaultPrefix: 'WO' },
+  { value: 'JOURNAL',          label: 'สมุดรายวัน (JV)',      defaultPrefix: 'JV' },
+  { value: 'STOCK_ADJUSTMENT', label: 'ใบปรับสต็อก (ADJ)',    defaultPrefix: 'ADJ' },
 ]
 
 // เลือกได้ละเอียดแค่ที่วันที่ในเลขแยกได้ — backend ถอยเป็นช่วงใหญ่ขึ้นเองด้วย (utils/docSeq.ts seqBucket)
@@ -88,7 +90,7 @@ export default function DocumentNumberSettings() {
               padding: 3,
               date_format: 'DDMMYY',
               separator: '-',
-              reset_period: 'YEAR',
+              reset_period: 'DAY',
             }
       }
       setFormats(map)
@@ -103,6 +105,26 @@ export default function DocumentNumberSettings() {
 
   const update = (docType: string, patch: Partial<DocFormat>) =>
     setFormats(prev => ({ ...prev, [docType]: { ...prev[docType], ...patch } }))
+
+  const applyDailyFormatToAll = () => {
+    setFormats(prev => {
+      const next: Record<string, DocFormat> = {}
+      for (const dt of DOC_TYPES) {
+        const cur = prev[dt.value]
+        next[dt.value] = {
+          doc_type: dt.value,
+          enabled: true,
+          prefix: cur?.prefix || dt.defaultPrefix,
+          padding: cur?.padding ?? 3,
+          date_format: 'DDMMYY',
+          separator: '-',
+          reset_period: 'DAY',
+        }
+      }
+      return next
+    })
+    toast.success('ตั้งค่าทุกเอกสารเป็น ลำดับ-ววดดปป รีเซ็ตทุกวัน แล้ว (กรุณากดบันทึกทั้งหมด)')
+  }
 
   const saveAll = async () => {
     setSaving(true)
@@ -137,9 +159,16 @@ export default function DocumentNumberSettings() {
           <h2 className="text-lg font-bold text-[var(--fg-1)]">รูปแบบเลขที่เอกสาร</h2>
           <p className="text-sm text-[var(--fg-3)]">กำหนด prefix, จำนวนหลัก และวันที่ต่อท้าย เช่น PO-001-090726</p>
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <button onClick={load} className="p-2 rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg-1)] transition-colors">
             <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={applyDailyFormatToAll}
+            className="px-3 py-2 text-sm rounded-xl border border-[var(--border)] hover:bg-[var(--surface-2)] text-[var(--fg-1)] transition-colors font-medium"
+          >
+            ใช้รูปแบบ ลำดับ-ววดดปป รีเซ็ตทุกวัน กับทุกเอกสาร
           </button>
           <button onClick={saveAll} disabled={saving}
             className="phopy-btn-primary flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50">

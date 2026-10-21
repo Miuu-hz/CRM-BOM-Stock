@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import db from '../db/sqlite'
-import { seqBucket } from './docSeq'
+import { seqBucket, DOC_NUMBER_TABLES } from './docSeq'
 
 export const generateId = (): string =>
   randomUUID().replace(/-/g, '').substring(0, 25)
@@ -34,6 +34,28 @@ export function getNextDocumentNumber(
   })()
 }
 
+const MAX_COLLISION_SKIPS = 1000
+const numberColCache = new Map<string, string | null>()
+const NUMBER_COL_OVERRIDES: Record<string, string> = { journal_entries: 'entry_number', purchase_invoices: 'pi_number' }
+
+/** เลขนี้มีอยู่แล้วในตารางของ docType นั้นไหม (docType ที่ไม่มีตารางใน DOC_NUMBER_TABLES = ไม่เช็ค) */
+function docNumberExists(tenantId: string, docType: string, num: string): boolean {
+  const table = DOC_NUMBER_TABLES.find(([t]) => t === docType)?.[1]
+  if (!table) return false
+  let col = numberColCache.get(table)
+  if (col === undefined) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    // ตารางที่มีหลายคอลัมน์ *_number (เลขอ้างอิงของคนอื่น) ต้องระบุตรงๆ ไม่งั้นอาจเช็คผิดคอลัมน์
+    const preferred = NUMBER_COL_OVERRIDES[table]
+    col = !cols.some(c => c.name === 'tenant_id') ? null
+      : preferred ? (cols.some(c => c.name === preferred) ? preferred : null)
+      : cols.find(c => c.name.endsWith('_number'))?.name ?? null
+    numberColCache.set(table, col)
+  }
+  if (!col) return false
+  return !!db.prepare(`SELECT 1 FROM ${table} WHERE tenant_id = ? AND ${col} = ? LIMIT 1`).get(tenantId, num)
+}
+
 /**
  * Format an atomically-reserved document number.
  * @param segment optional middle segment (e.g. year or YYYYMMDD). Omit for no segment.
@@ -59,15 +81,10 @@ export function formatDocumentNumber(
 
   const d = parseDocDate(docDate)
   const fmtHasYear = !!(fmt && fmt.date_format && fmt.date_format !== 'NONE')
-  const seq = getNextDocumentNumber(
-    tenantId,
-    docType,
-    fmt ? (fmtHasYear ? seqBucket(fmt.reset_period, fmt.date_format, d) : 0) : segment !== undefined ? Number(segment) : 0
-  )
+  const bucket = fmt ? (fmtHasYear ? seqBucket(fmt.reset_period, fmt.date_format, d) : 0) : segment !== undefined ? Number(segment) : 0
 
   if (fmt) {
     const p = fmt.prefix || prefix
-    const num = String(seq).padStart(fmt.padding || pad, '0')
     const sep = fmt.separator ?? '-'
     const dd = String(d.getDate()).padStart(2, '0')
     const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -77,9 +94,19 @@ export function formatDocumentNumber(
     else if (fmt.date_format === 'YYMMDD') dateStr = yy + mm + dd
     else if (fmt.date_format === 'MMYY') dateStr = mm + yy
     else if (fmt.date_format === 'YYYY') dateStr = String(d.getFullYear())
-    return dateStr ? `${p}${sep}${num}${sep}${dateStr}` : `${p}${sep}${num}`
+    const build = (seq: number) => {
+      const num = String(seq).padStart(fmt.padding || pad, '0')
+      return dateStr ? `${p}${sep}${num}${sep}${dateStr}` : `${p}${sep}${num}`
+    }
+    // ผู้ใช้เปลี่ยนรูปแบบ/รอบรีเซ็ตกลางทาง → ถังนับใหม่เริ่ม 1 อาจได้เลขเดียวกับเอกสารที่ออกไปแล้ว: ข้ามเลขที่มีอยู่
+    for (let i = 0; i < MAX_COLLISION_SKIPS; i++) {
+      const candidate = build(getNextDocumentNumber(tenantId, docType, bucket))
+      if (!docNumberExists(tenantId, docType, candidate)) return candidate
+    }
+    throw new Error(`ออกเลขเอกสาร ${docType} ไม่สำเร็จ: เลขซ้ำกับของเดิมต่อเนื่องเกิน ${MAX_COLLISION_SKIPS} ครั้ง`)
   }
 
+  const seq = getNextDocumentNumber(tenantId, docType, bucket)
   const middle = segment !== undefined ? `-${segment}-` : '-'
   return `${prefix}${middle}${String(seq).padStart(pad, '0')}`
 }

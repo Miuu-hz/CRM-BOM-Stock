@@ -251,8 +251,8 @@ router.post('/year-end/:year', requireAdminPassword, async (req: Request, res: R
     }
 
     const id = generateId()
-    const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
     const date = `${year}-12-31`
+    const entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5, date)
     const now = new Date().toISOString()
     const description = `ปิดบัญชีสิ้นปี ${year}`
 

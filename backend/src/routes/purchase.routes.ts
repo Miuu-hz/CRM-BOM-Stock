@@ -6,7 +6,7 @@ import { lineBotService } from '../services/line-bot.service'
 import { approvalDenyReason } from '../services/approvalGate.service'
 import { can, canHandleBilling } from '../services/rbac.service'
 import { randomUUID } from 'crypto'
-import { formatDocumentNumber } from '../utils/id'
+import { formatDocumentNumber, docYear } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain, autoUnpackIfNeeded } from '../services/unitConversion.service'
 import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
 
@@ -101,8 +101,8 @@ const PurchaseRequestItemsSchema = z.array(
   }).passthrough()
 ).min(1, 'ต้องมีอย่างน้อย 1 รายการ')
 
-function generateNumber(prefix: string, tenantId: string, table: string) {
-  const year = new Date().getFullYear()
+function generateNumber(prefix: string, tenantId: string, table: string, docDate?: string | Date | null) {
+  const year = docYear(docDate)
   const docTypeMap: Record<string, string> = {
     purchase_requests: 'PURCHASE_REQUEST',
     purchase_orders: 'PO',
@@ -115,12 +115,12 @@ function generateNumber(prefix: string, tenantId: string, table: string) {
   if (!docType) {
     throw new Error('Invalid table for number generation')
   }
-  return formatDocumentNumber(prefix, tenantId, docType, year, 5)
+  return formatDocumentNumber(prefix, tenantId, docType, year, 5, docDate)
 }
 
 function generateEntryNumber(tenantId: string, date: string): string {
   const year = new Date(date).getFullYear()
-  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5)
+  return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5, date)
 }
 
 

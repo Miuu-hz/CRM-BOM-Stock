@@ -122,7 +122,7 @@ export function accrueSubcontractLabor(
 
       const now = new Date().toISOString()
       const journalId = generateId()
-      const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5)
+      const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5, now)
       const desc = `ค่าจ้างเหมาช่วง ${contract.contract_number} - WO ${wo?.wo_number || workOrderId} (${newBillable} หน่วย)`
 
       db.prepare(`

@@ -95,7 +95,7 @@ router.post('/from-transaction/:taxTransactionId', async (req: Request, res: Res
 
     const issue = toYMD(issueDate) || toYMD(txn.document_date)
     const buddhistYear = Number(issue.split('-')[0]) + 543
-    const certNumber = formatDocumentNumber('WHT', tenantId, 'WHT_CERT', buddhistYear, 4)
+    const certNumber = formatDocumentNumber('WHT', tenantId, 'WHT_CERT', buddhistYear, 4, issue)
     const id = generateId()
     const now = new Date().toISOString()
 
