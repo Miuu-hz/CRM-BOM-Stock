@@ -78,6 +78,11 @@ export interface CreatePurchaseInvoicePayload {
   paymentMethod?: string
   paymentReference?: string
   bankAccountId?: string | null
+  /**
+   * ฝั่ง Cr = เงินจาก POS (1182) แทนเจ้าหนี้ — เงินออกจากลิ้นชักไปก่อนแล้ว บิลนี้มาจับคู่ฝั่ง Dr ให้
+   * ใบปิดเป็นจ่ายแล้วทันที ไม่มีเจ้าหนี้ ไม่ต้องทำใบจ่ายเงิน
+   */
+  posCashMovementId?: string | null
 }
 
 interface DerivedGrItem {
@@ -232,6 +237,8 @@ function postPurchaseInvoiceJournal(
     taxRate: number
     supplierName?: string | null
     supplierTaxId?: string | null
+    /** คำอธิบายบรรทัดฝั่ง Cr — ค่าเริ่มต้นเจ้าหนี้การค้า (เงินจาก POS ใช้ข้อความของตัวเอง) */
+    creditLabel?: string
   }
 ) {
   const { piId, piNumber, invoiceDate, notes, grIds, totals, taxRate, supplierName, supplierTaxId } = params
@@ -304,7 +311,7 @@ function postPurchaseInvoiceJournal(
       lines.push({ accountId: alloc.accountId, description: `ภาษีซื้อที่ขอคืนไม่ได้ (ไม่นับสต็อก) - ${piNumber}`, debit: alloc.amount })
     }
   }
-  lines.push({ accountId: payableAccId, description: `เจ้าหนี้การค้า - ${piNumber}`, credit: payableTotal })
+  lines.push({ accountId: payableAccId, description: `${params.creditLabel || 'เจ้าหนี้การค้า'} - ${piNumber}`, credit: payableTotal })
 
   // postJournal ปัดทุกบรรทัด, หัวรายการ = ผลรวมบรรทัด และ throw ถ้าเดบิต ≠ เครดิต (> 0.005)
   const journalId = postJournal({
@@ -324,6 +331,22 @@ function postPurchaseInvoiceJournal(
   }
 
   return { journalId, journalNumber }
+}
+
+/**
+ * ฝั่ง Cr ของใบแจ้งหนี้ = เงินจาก POS (1182) — ตรวจว่ารายการเงินออกนั้นมีจริงและยอดเหลือพอจับคู่
+ * แล้วสลับบัญชีเจ้าหนี้ใน totals เป็น 1182 · คืนข้อความบรรทัด Cr ไว้ใส่ journal
+ * (ต้องเรียกนอก transaction ก่อนเบิร์นเลขเอกสาร)
+ */
+function applyPosCashCredit(tenantId: string, movementId: string, totals: PurchaseInvoiceTotals, excludeInvoiceId?: string): string {
+  const mv = listPosCashUnmatched(tenantId, movementId, { excludeInvoiceId })[0]
+  if (!mv) throw new PurchaseBillingError('POS_CASH_NOT_FOUND', 'ไม่พบรายการเงินออกจาก POS ที่เลือก')
+  if (totals.totalAmount > mv.remaining + 0.005) {
+    throw new PurchaseBillingError('POS_CASH_OVER',
+      `ยอดบิล ฿${totals.totalAmount.toLocaleString()} มากกว่าเงินจาก POS ที่เหลือให้จับคู่ ฿${mv.remaining.toLocaleString()} (${mv.shift_number || '-'} · ${mv.reason || '-'})`)
+  }
+  totals.payableAccId = getOrCreateAccount(tenantId, ACC.POS_PAYOUT_PENDING)
+  return `เงินจาก POS ${mv.shift_number || ''}${mv.reason ? ` (${mv.reason})` : ''}`.trim()
 }
 
 /**
@@ -442,25 +465,29 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
     }
   }
 
+  // Resolve บัญชีปลายทาง + คำนวณยอด — ทำนอก transaction (auto-create บัญชีในผังบัญชีถ้ายังไม่มี)
+  const posCashMovementId = payload.posCashMovementId || null
+  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, posCashMovementId ? null : crAccountId, skipBuckets)
+  const posCashLabel = posCashMovementId ? applyPosCashCredit(tenantId, posCashMovementId, totals) : null
+
   // ── ตรวจครบทุกอย่างมาถึงตรงนี้แล้ว — เพิ่งเบิร์นเลขที่เอกสาร ไม่งั้น request ที่ถูกปฏิเสธจะกินเลขไปเปล่า ๆ ──
   const id = generateId()
   // เลขที่ตามวันที่ใบแจ้งหนี้ (บิลย้อนหลังได้เลขของวันบนบิล) ไม่ใช่วันที่กดสร้าง
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', docYear(finalInvoiceDate), 5, finalInvoiceDate)
   const now = new Date().toISOString()
 
-  // Resolve บัญชีปลายทาง + คำนวณยอด — ทำนอก transaction (auto-create บัญชีในผังบัญชีถ้ายังไม่มี)
-  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId, skipBuckets)
-
   const transaction = db.transaction(() => {
     db.prepare(`
       INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id,
         supplier_id, goods_receipt_id, goods_receipt_ids, purchase_order_ids, invoice_date, due_date, subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive,
-        balance_amount, status, payment_status, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', 'UNPAID', ?, ?, ?)
+        paid_amount, balance_amount, status, payment_status, pos_cash_movement_id, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?, ?, ?)
     `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, baseSupplierId,
       grIds[0], JSON.stringify(grIds), JSON.stringify(allPoIds), finalInvoiceDate, dueDate || null,
       totals.subtotal, totals.discount, taxRate, totals.taxAmount, totals.totalAmount, inclusive ? 1 : 0,
-      totals.totalAmount, notes || '', now, now)
+      // เงินจาก POS = จ่ายไปแล้วตั้งแต่เงินออกจากลิ้นชัก ใบปิดเป็นจ่ายแล้วทันที
+      posCashMovementId ? totals.totalAmount : 0, posCashMovementId ? 0 : totals.totalAmount,
+      posCashMovementId ? 'PAID' : 'UNPAID', posCashMovementId, notes || '', now, now)
 
     if (items.length > 0) {
       const insertItem = db.prepare(`
@@ -480,7 +507,7 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
 
     postPurchaseInvoiceJournal(tenantId, actorEmail, {
       piId: id, piNumber, invoiceDate: finalInvoiceDate, notes, grIds, totals, taxRate,
-      supplierName: supplier?.name, supplierTaxId: supplier?.tax_id,
+      supplierName: supplier?.name, supplierTaxId: supplier?.tax_id, creditLabel: posCashLabel || undefined,
     })
   })
 
@@ -497,6 +524,7 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const unpaidPoCount = (db.prepare(
     `SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ? AND id IN (${posPaidPh}) AND is_paid != 1`
   ).get(tenantId, ...allPoIds) as any).c
+  // เงินจาก POS ปิดเป็นจ่ายแล้วตั้งแต่ตอนสร้าง (balance 0) — เงื่อนไข balance_amount > 0 ด้านล่างกันจ่ายซ้ำอยู่แล้ว
   const shouldAutoPay = payload.autoPay !== undefined ? payload.autoPay : (unpaidPoCount === 0)
 
   let paymentResult: any = null
@@ -690,9 +718,12 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
   const drAccountId = payload.drAccountId !== undefined ? payload.drAccountId : undefined
   const crAccountId = payload.crAccountId !== undefined ? payload.crAccountId : undefined
 
-  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, crAccountId, skipBuckets)
+  // ใบที่จับคู่เงินจาก POS ไว้: ฝั่ง Cr คง 1182 ตลอด (เปลี่ยนบัญชีปลายทางไม่ได้) และยอดจ่ายเดินตามยอดใบ
+  const posCashMovementId: string | null = pi.pos_cash_movement_id || null
+  const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, posCashMovementId ? null : crAccountId, skipBuckets)
+  const posCashLabel = posCashMovementId ? applyPosCashCredit(tenantId, posCashMovementId, totals, pi.id) : null
 
-  if (totals.totalAmount < (pi.paid_amount || 0) - 0.005) {
+  if (!posCashMovementId && totals.totalAmount < (pi.paid_amount || 0) - 0.005) {
     throw new PurchaseBillingError(
       'OVER_PAID',
       `ยอดใหม่ (฿${totals.totalAmount.toLocaleString()}) น้อยกว่ายอดที่จ่ายไปแล้ว (฿${(pi.paid_amount || 0).toLocaleString()}) — กรุณายกเลิกการจ่ายเงินก่อนแล้วค่อยแก้ไขยอด`
@@ -716,22 +747,23 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
       insertItem.run(generateId(), tenantId, id, it.poItemId || null, it.materialId || null, it.quantity, it.unitPrice, it.quantity * it.unitPrice)
     }
 
-    const paidAmount = pi.paid_amount || 0
+    const paidAmount = posCashMovementId ? totals.totalAmount : (pi.paid_amount || 0)
     const newBalance = Math.round((totals.totalAmount - paidAmount) * 100) / 100
     const newPaymentStatus = newBalance <= 0.005 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'UNPAID')
     db.prepare(`
       UPDATE purchase_invoices SET supplier_invoice_number = COALESCE(?, supplier_invoice_number),
         due_date = COALESCE(?, due_date), notes = COALESCE(?, notes),
         invoice_date = ?, tax_rate = ?, discount_amount = ?, subtotal = ?, tax_amount = ?, total_amount = ?,
-        balance_amount = ?, payment_status = ?, updated_at = ?
+        paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(payload.supplierInvoiceNumber ?? null, payload.dueDate ?? null, payload.notes ?? null,
       newInvoiceDate, taxRate, totals.discount, totals.subtotal, totals.taxAmount, totals.totalAmount,
-      newBalance, newPaymentStatus, now, id, tenantId)
+      paidAmount, newBalance, newPaymentStatus, now, id, tenantId)
 
     postPurchaseInvoiceJournal(tenantId, actorEmail, {
       piId: id, piNumber: pi.pi_number, invoiceDate: newInvoiceDate, notes: payload.notes ?? pi.notes,
       grIds, totals, taxRate, supplierName: supplier?.name, supplierTaxId: supplier?.tax_id,
+      creditLabel: posCashLabel || undefined,
     })
   })
   transaction()
@@ -783,13 +815,19 @@ export interface PosCashUnmatched {
  * ยอดคงเหลือ = ยอดที่เอาออก − ผลรวมใบจ่ายเงินผู้ขายที่ผูกไว้และยังไม่ถูกยกเลิก
  * ส่ง movementId มาเพื่อดูรายการเดียว (รวมที่จับคู่ครบแล้วด้วย)
  */
-export function listPosCashUnmatched(tenantId: string, movementId?: string): PosCashUnmatched[] {
+export function listPosCashUnmatched(tenantId: string, movementId?: string, opts: { excludeInvoiceId?: string } = {}): PosCashUnmatched[] {
+  // จับคู่ได้สองทาง: ใบแจ้งหนี้ที่ฝั่ง Cr เลือกเงินจาก POS (ทางหลัก) หรือใบจ่ายเงินวิธี POS_CASH
+  // excludeInvoiceId = ใบที่กำลังแก้ไข ไม่นับยอดของตัวเองซ้ำตอนตรวจว่าพอจับคู่ไหม
   const rows = db.prepare(`
     SELECT m.id, m.type, m.amount, m.reason, m.created_at, s.shift_number, u.name AS created_by_name,
       ROUND(m.amount - COALESCE((
         SELECT SUM(sp.net_amount) FROM supplier_payments sp
         WHERE sp.tenant_id = m.tenant_id AND sp.pos_cash_movement_id = m.id
           AND (sp.status IS NULL OR sp.status != 'CANCELLED')
+      ), 0) - COALESCE((
+        SELECT SUM(pi.total_amount) FROM purchase_invoices pi
+        WHERE pi.tenant_id = m.tenant_id AND pi.pos_cash_movement_id = m.id
+          AND pi.status != 'CANCELLED' AND pi.id != ?
       ), 0), 2) AS remaining
     FROM pos_shift_cash_movements m
     JOIN accounts a ON a.id = m.account_id AND a.code = ?
@@ -797,7 +835,7 @@ export function listPosCashUnmatched(tenantId: string, movementId?: string): Pos
     LEFT JOIN users u ON u.id = m.created_by
     WHERE m.tenant_id = ? AND m.type IN ('PAID_OUT', 'OPENING_GAP') ${movementId ? 'AND m.id = ?' : ''}
     ORDER BY m.created_at
-  `).all(...[ACC.POS_PAYOUT_PENDING, tenantId, ...(movementId ? [movementId] : [])]) as PosCashUnmatched[]
+  `).all(...[opts.excludeInvoiceId || '', ACC.POS_PAYOUT_PENDING, tenantId, ...(movementId ? [movementId] : [])]) as PosCashUnmatched[]
   return movementId ? rows : rows.filter(r => r.remaining > 0.005)
 }
 

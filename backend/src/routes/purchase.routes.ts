@@ -1027,7 +1027,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
     if (!canHandleBilling(req.user!, 'purchase')) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
     }
-    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, crAccountId, taxRate: reqTaxRate, autoPay, paymentMethod, paymentReference, bankAccountId } = req.body
+    const { purchaseOrderId, goodsReceiptId, goodsReceiptIds, supplierInvoiceNumber, invoiceDate, dueDate, notes, items, drAccountId, crAccountId, taxRate: reqTaxRate, autoPay, paymentMethod, paymentReference, bankAccountId, posCashMovementId } = req.body
 
     const invoice = createPurchaseInvoice(tenantId, req.user!.email, {
       purchaseOrderId,
@@ -1045,6 +1045,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
       taxRate: reqTaxRate,
       discountAmount: req.body.discountAmount,  // เดิมหลุด: หน้าเว็บส่งส่วนลดมาแต่ไม่ถูกส่งต่อ
       autoPay,
+      posCashMovementId,
       paymentMethod,
       paymentReference,
       bankAccountId,
@@ -1376,7 +1377,12 @@ router.get('/payments', async (req: Request, res: Response) => {
 // (path ไม่อยู่ใต้ /payments/ เพราะจะชนกับ /payments/:id ด้านล่าง)
 router.get('/pos-cash-unmatched', (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: listPosCashUnmatched(req.user!.tenantId) })
+    const tenantId = req.user!.tenantId
+    const list = listPosCashUnmatched(tenantId)
+    // ?include=<id> — โหมดดู/แก้ใบที่จับคู่ครบแล้ว ยังต้องแสดงชื่อรายการนั้นได้
+    const include = typeof req.query.include === 'string' ? req.query.include : ''
+    if (include && !list.some(m => m.id === include)) list.push(...listPosCashUnmatched(tenantId, include))
+    res.json({ success: true, data: list })
   } catch (error) {
     console.error('Get unmatched POS cash error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch unmatched POS cash' })

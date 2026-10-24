@@ -433,7 +433,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         refId: req.params.id,
         amount: editAmount,
         description: `แก้ไขใบสั่งซื้อ ${existing.po_number} (ยอด ฿${editAmount.toLocaleString('th-TH', { maximumFractionDigits: 2 })})`,
-        payload: { before, update: { supplierId, expectedDate, notes, items, taxRate, discountAmount: req.body.discountAmount } },
+        payload: { before, update: { supplierId, expectedDate, notes, items, taxRate, discountAmount: req.body.discountAmount, vatInclusive: req.body.vatInclusive } },
       }
       const pending = gateOrCreate(gateArgs)
       if (pending) {
@@ -446,7 +446,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate, discountAmount: req.body.discountAmount, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount })
+    const result = applyPurchaseOrderUpdate(tenantId, req.params.id, { supplierId, expectedDate, notes, items, taxRate, discountAmount: req.body.discountAmount, vatInclusive: req.body.vatInclusive, paymentMethod, paymentReference, bankAccountId, isPaid, paidAmount })
     if (gateArgs) recordAutoAction(gateArgs)
     res.json({ success: true, data: result })
   } catch (error) {

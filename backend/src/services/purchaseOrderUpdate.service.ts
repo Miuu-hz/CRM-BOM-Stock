@@ -75,6 +75,8 @@ export interface PurchaseOrderUpdatePayload {
   taxRate?: number
   /** ส่วนลดท้ายบิลเป็นบาท — หักออกจากฐานก่อนคิดภาษี (ม.79) */
   discountAmount?: number
+  /** ราคาที่กรอกรวม VAT แล้วหรือยัง — ไม่ส่งมา (MCP/คำขออนุมัติรุ่นเก่า) = คงค่าเดิมของใบ */
+  vatInclusive?: boolean | number | null
   paymentMethod?: string | null
   paymentReference?: string | null
   bankAccountId?: string | null
@@ -230,7 +232,11 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
   const tax = taxRate || 0
   // ส่วนลดหักออกจากฐานก่อนคิดภาษี (ม.79) — เดิมฝั่งซื้อไม่มีที่เก็บส่วนลดเลย
   const poRow = db.prepare('SELECT vat_inclusive FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
-  const calc = calcVat(subtotal, { rate: tax, discountAmount, inclusive: poRow?.vat_inclusive === 1 })
+  // เดิมอ่านจากใบเดิมอย่างเดียว ฟอร์มเปลี่ยน "เพิ่ม VAT" → "รวม VAT" แล้วกดบันทึกก็เด้งกลับเป็นแบบเดิม
+  const inclusive = payload.vatInclusive !== undefined && payload.vatInclusive !== null
+    ? !!payload.vatInclusive
+    : poRow?.vat_inclusive === 1
+  const calc = calcVat(subtotal, { rate: tax, discountAmount, inclusive })
   const { taxAmount, totalAmount, discount } = calc
   subtotal = calc.subtotal
 
@@ -245,6 +251,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
         subtotal = ?,
         discount_amount = ?,
         tax_rate = ?,
+        vat_inclusive = ?,
         tax_amount = ?,
         total_amount = ?,
         notes = COALESCE(?, notes),
@@ -256,7 +263,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(
-      supplierId, expectedDate || null, subtotal, discount, tax, taxAmount, totalAmount, notes,
+      supplierId, expectedDate || null, subtotal, discount, tax, inclusive ? 1 : 0, taxAmount, totalAmount, notes,
       paymentMethod, paymentReference, bankAccountId, isPaidInt, paidAmt,
       now, poId, tenantId
     )

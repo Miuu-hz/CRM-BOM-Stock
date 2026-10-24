@@ -230,3 +230,24 @@ describe('applyPurchaseOrderUpdate — ใบที่มีใบรับข�
     expect(res.success).toBe(false)
   })
 })
+
+describe('applyPurchaseOrderUpdate — เปลี่ยนโหมด VAT', () => {
+  it('แก้จากเพิ่ม VAT เป็นรวม VAT แล้วต้องบันทึกจริง ไม่เด้งกลับ', () => {
+    const user = createTestUser({ role: 'ADMIN' })
+    const { poId, stockId } = seedPo(user.tenantId)
+    const items = [{ materialId: stockId, description: 'ของ', quantity: 1, unit: 'pcs', unitPrice: 107 }]
+
+    applyPurchaseOrderUpdate(user.tenantId, poId, { items, taxRate: 7, vatInclusive: false })
+    let po = db.prepare('SELECT vat_inclusive, subtotal, tax_amount, total_amount FROM purchase_orders WHERE id = ?').get(poId) as any
+    expect(po).toMatchObject({ vat_inclusive: 0, subtotal: 107, total_amount: 114.49 })
+
+    applyPurchaseOrderUpdate(user.tenantId, poId, { items, taxRate: 7, vatInclusive: true })
+    po = db.prepare('SELECT vat_inclusive, subtotal, tax_amount, total_amount FROM purchase_orders WHERE id = ?').get(poId) as any
+    expect(po).toMatchObject({ vat_inclusive: 1, subtotal: 100, tax_amount: 7, total_amount: 107 })
+
+    // ไม่ส่ง vatInclusive (MCP / คำขออนุมัติรุ่นเก่า) = คงค่าเดิมของใบ
+    applyPurchaseOrderUpdate(user.tenantId, poId, { items, taxRate: 7 })
+    po = db.prepare('SELECT vat_inclusive, total_amount FROM purchase_orders WHERE id = ?').get(poId) as any
+    expect(po).toMatchObject({ vat_inclusive: 1, total_amount: 107 })
+  })
+})

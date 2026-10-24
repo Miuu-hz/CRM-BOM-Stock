@@ -1430,8 +1430,8 @@ const Purchase = () => {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   // เงินออกจากลิ้นชัก POS ที่ยังไม่มีบิลมาจับคู่ (บัญชี 1182) — ตัวเลือกของวิธีจ่าย "เงินจาก POS"
   const [posCashItems, setPosCashItems] = useState<Array<{ id: string; amount: number; remaining: number; reason: string | null; created_at: string; shift_number: string | null; created_by_name: string | null }>>([])
-  const fetchPosCashUnmatched = () => {
-    api.get('/purchase/pos-cash-unmatched')
+  const fetchPosCashUnmatched = (include?: string) => {
+    api.get('/purchase/pos-cash-unmatched', { params: include ? { include } : undefined })
       .then(({ data }) => { if (data.success) setPosCashItems(data.data || []) })
       .catch(() => setPosCashItems([]))
   }
@@ -1530,6 +1530,8 @@ const Purchase = () => {
     notes: '',
     dr_account_id: '',   // '' = default 1107 สต็อกวัตถุดิบ
     cr_account_id: '',   // '' = default 2101 เจ้าหนี้การค้า
+    // ฝั่ง Cr = เงินจาก POS (1182) — บิลนี้จับคู่กับเงินที่ออกจากลิ้นชักไปก่อนแล้ว (แทนเจ้าหนี้)
+    pos_cash_movement_id: '',
     auto_pay: false,
     payment_method: '',
     payment_reference: '',
@@ -1589,7 +1591,8 @@ const Purchase = () => {
     accountsApi.getAll({ active: true }).then(res => {
       if (res.data.success) {
         const list: Account[] = res.data.data.list.filter((a: Account) => a.level >= 2)
-        setDrAccounts(list.filter(a => a.type === 'ASSET' || a.type === 'EXPENSE'))
+        // 1182 เงินจาก POS เป็นบัญชีพักรอจับคู่ — ใบแจ้งหนี้ใช้ได้เฉพาะฝั่ง Cr (เลือกจากรายการเงินออกจริง) ไม่ใช่ฝั่ง Dr
+        setDrAccounts(list.filter(a => (a.type === 'ASSET' || a.type === 'EXPENSE') && a.code !== '1182'))
         setCrAccounts(list.filter(a => a.type === 'LIABILITY'))
       }
     }).catch(() => {})
@@ -2250,6 +2253,8 @@ const Purchase = () => {
   }
 
   const handleCreateInvoice = async () => {
+    const posCash = invoiceForm.pos_cash_movement_id ? posCashItems.find(m => m.id === invoiceForm.pos_cash_movement_id) : undefined
+    if (invoiceForm.pos_cash_movement_id && !posCash) { toast.error(t('purchase.paymentModal.posCashPlaceholder')); return }
     setFormLoading(true)
     try {
       const grItemsByKey = new Map(billableReceipts.flatMap(r => r.items).map(it => [it.grItemId, it]))
@@ -2270,8 +2275,10 @@ const Purchase = () => {
         discountAmount: invoiceForm.discount_amount || undefined,
         notes: invoiceForm.notes,
         drAccountId: invoiceForm.dr_account_id || undefined,
-        crAccountId: invoiceForm.cr_account_id || undefined,
-        autoPay: invoiceForm.auto_pay,
+        crAccountId: invoiceForm.pos_cash_movement_id ? undefined : (invoiceForm.cr_account_id || undefined),
+        posCashMovementId: invoiceForm.pos_cash_movement_id || undefined,
+        // เงินจาก POS = จ่ายไปแล้ว ใบปิดเป็นจ่ายแล้วเอง ห้ามจ่ายซ้ำอัตโนมัติ
+        autoPay: invoiceForm.pos_cash_movement_id ? false : invoiceForm.auto_pay,
         paymentMethod: invoiceForm.payment_method || undefined,
         paymentReference: invoiceForm.payment_reference || undefined,
         bankAccountId: invoiceForm.bank_account_id || undefined,
@@ -2777,6 +2784,7 @@ const Purchase = () => {
     setModalMode(mode)
     setModalData(data)
     if (type === 'payment') fetchPosCashUnmatched()
+    if (type === 'invoice') fetchPosCashUnmatched(data?.pos_cash_movement_id || undefined)
     if (data) {
       if (type === 'request') {
         setRequestForm({
@@ -2839,6 +2847,7 @@ const Purchase = () => {
           notes: '',
           dr_account_id: '',
           cr_account_id: '',
+          pos_cash_movement_id: data.pos_cash_movement_id || '',
           auto_pay: Boolean(data.auto_pay),
           payment_method: data.payment_method || '',
           payment_reference: data.payment_reference || '',
@@ -2873,6 +2882,7 @@ const Purchase = () => {
           notes: data.notes || '',
           dr_account_id: '',
           cr_account_id: '',
+          pos_cash_movement_id: data.pos_cash_movement_id || '',
           auto_pay: Boolean(data.auto_pay),
           payment_method: data.payment_method || '',
           payment_reference: data.payment_reference || '',
@@ -2919,7 +2929,7 @@ const Purchase = () => {
       if (type === 'request') setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
       if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
       if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      if (type === 'invoice') setInvoiceForm({ invoice_id: '', supplier_id: '', goods_receipt_ids: [], items: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, discount_amount: 0, notes: '', dr_account_id: '', cr_account_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _preselect_po_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
+      if (type === 'invoice') setInvoiceForm({ invoice_id: '', supplier_id: '', goods_receipt_ids: [], items: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, discount_amount: 0, notes: '', dr_account_id: '', cr_account_id: '', pos_cash_movement_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _preselect_po_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
       if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId(), pos_cash_movement_id: '' })
       if (type === 'return') setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
@@ -5243,7 +5253,7 @@ const Purchase = () => {
         </div>
       )}
 
-      {isCreate && allTickedPosPaid && (
+      {isCreate && allTickedPosPaid && !invoiceForm.pos_cash_movement_id && (
         <div className="p-3 bg-[var(--surface)] border border-emerald-500/30 rounded-xl space-y-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -5259,7 +5269,7 @@ const Purchase = () => {
         </div>
       )}
 
-      {isEdit && invoiceForm._paid_amount > 0 && (
+      {isEdit && invoiceForm._paid_amount > 0 && !invoiceForm.pos_cash_movement_id && (
         <div className="p-3 bg-warning/10 border border-warning/30 rounded-xl text-xs text-warning">
           {t('purchase.invoiceModal.editPaidHint', { amount: formatCurrency(invoiceForm._paid_amount) })}
         </div>
@@ -5343,20 +5353,67 @@ const Purchase = () => {
           {/* หนี้ไปค้างที่บัญชีไหน */}
           <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--surface)]">
             <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">{t('purchase.invoiceModal.creditSide')}</span>
-            {isView || crAccounts.length === 0 ? (
-              <span className="flex-1 text-xs text-[var(--fg-2)] truncate">{t('purchase.journal.accountsPayable')}</span>
-            ) : (
-              <select value={invoiceForm.cr_account_id}
-                onChange={e => setInvoiceForm(p => ({ ...p, cr_account_id: e.target.value }))}
-                className="flex-1 min-w-0 px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
-                <option value="">{t('purchase.invoiceModal.defaultCrAccount')}</option>
-                {crAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.code} – {acc.name}</option>)}
-              </select>
-            )}
+            {(() => {
+              // ใบที่จับคู่เงินจาก POS แล้ว: ฝั่ง Cr ล็อกเป็น 1182 (แก้ไขยอดได้ แต่เปลี่ยนปลายทางไม่ได้)
+              const linkedPos = invoiceForm.pos_cash_movement_id ? posCashItems.find(m => m.id === invoiceForm.pos_cash_movement_id) : undefined
+              const posLabel = (m?: typeof linkedPos) => m
+                ? `${t('purchase.journal.posCashPending')} · ${m.shift_number || '-'} · ${m.reason || '-'}`
+                : t('purchase.journal.posCashPending')
+              if (!isCreate && invoiceForm.pos_cash_movement_id) {
+                return <span className="flex-1 min-w-0 text-xs text-[var(--fg-2)] truncate">{posLabel(linkedPos)}</span>
+              }
+              if (isView || (crAccounts.length === 0 && posCashItems.length === 0)) {
+                return <span className="flex-1 text-xs text-[var(--fg-2)] truncate">{t('purchase.journal.accountsPayable')}</span>
+              }
+              return (
+                <select value={invoiceForm.pos_cash_movement_id ? `pos:${invoiceForm.pos_cash_movement_id}` : invoiceForm.cr_account_id}
+                  onChange={e => {
+                    const v = e.target.value
+                    setInvoiceForm(p => v.startsWith('pos:')
+                      ? { ...p, pos_cash_movement_id: v.slice(4), cr_account_id: '', auto_pay: false }
+                      : { ...p, pos_cash_movement_id: '', cr_account_id: v })
+                  }}
+                  className="flex-1 min-w-0 px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
+                  <option value="">{t('purchase.invoiceModal.defaultCrAccount')}</option>
+                  {isEdit
+                    ? crAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.code} – {acc.name}</option>)
+                    : <>
+                        {crAccounts.length > 0 && (
+                          <optgroup label={t('purchase.invoiceModal.crPayableGroup')}>
+                            {crAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.code} – {acc.name}</option>)}
+                          </optgroup>
+                        )}
+                        {posCashItems.length > 0 && (
+                          <optgroup label={t('purchase.invoiceModal.crPosCashGroup')}>
+                            {posCashItems.map(m => (
+                              <option key={m.id} value={`pos:${m.id}`}>{t('purchase.paymentModal.posCashOption', {
+                                shift: m.shift_number || '-',
+                                date: new Date(m.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }),
+                                reason: m.reason || '-',
+                                amount: formatCurrency(m.remaining),
+                              })}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>}
+                </select>
+              )
+            })()}
             <span className="shrink-0 text-xs font-mono font-semibold text-warning tabular-nums">{formatCurrency(total)}</span>
           </div>
         </div>
         <p className="text-xs text-[var(--fg-4)]">{t('purchase.invoiceModal.balanceHint', { amount: formatCurrency(total) })}</p>
+        {invoiceForm.pos_cash_movement_id && (() => {
+          const m = posCashItems.find(x => x.id === invoiceForm.pos_cash_movement_id)
+          const over = isCreate && !!m && total > m.remaining + 0.005
+          return (
+            <p className={`text-xs ${over ? 'text-danger font-medium' : 'text-[var(--fg-3)]'}`}>
+              {over
+                ? t('purchase.paymentModal.posCashOver', { amount: formatCurrency(m!.remaining) })
+                : t('purchase.invoiceModal.crPosCashHint')}
+            </p>
+          )
+        })()}
       </div>
 
       <Field label={t('purchase.common.notes')}>
