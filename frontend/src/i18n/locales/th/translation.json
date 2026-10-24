@@ -2238,8 +2238,7 @@
     "tabs": {
       "bomList": "รายการ BOM",
       "materials": "วัตถุดิบ",
-      "productionCalculator": "คำนวณการผลิต & จำลองต้นทุน",
-      "costSimulation": "จำลองต้นทุน"
+      "productionCalculator": "คำนวณการผลิต & จำลองต้นทุน"
     },
     "filter": {
       "all": "BOM ทั้งหมด",
@@ -2402,7 +2401,6 @@
     },
     "simulation": {
       "perUnitImpact": "ผลกระทบต่อหน่วย",
-      "perBatchImpact": "ผลกระทบต่อชุดผลิต (ได้ {{qty}} {{unit}})",
       "for100Units": "สำหรับ 100 หน่วย"
     }
   },

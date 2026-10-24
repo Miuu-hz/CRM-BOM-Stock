@@ -96,6 +96,14 @@ export function isApprovalRequired(
   return true
 }
 
+/** ส่วนลด POS เกินกี่ % ของยอดก่อนลดต้องขออนุมัติเสมอ — ตั้งที่ Settings → การอนุมัติ (แถว USER/pos_discount) ไม่ตั้ง = 40 */
+export function posDiscountApprovalPct(tenantId: string): number {
+  const row = db.prepare(
+    "SELECT max_discount_pct FROM approval_settings WHERE tenant_id = ? AND role = 'USER' AND module_type = 'pos_discount'"
+  ).get(tenantId) as any
+  return row?.max_discount_pct ?? 40
+}
+
 /**
  * สิทธิ์ "ทำเลยไม่ต้องขออนุมัติ" — เป็นจริงถ้าเข้าเงื่อนไขข้อใดข้อหนึ่ง:
  *   (a) admin ให้สิทธิ์ can_bypass รายคน/รายหมวดไว้ตรงๆ (ตารางใหม่ที่ทำในงานนี้), หรือ

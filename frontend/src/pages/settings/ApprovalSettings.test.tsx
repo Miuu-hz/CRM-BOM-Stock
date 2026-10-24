@@ -114,4 +114,23 @@ describe('หน้าตั้งค่าการอนุมัติ — �
     await screen.findByRole('switch', { name: STOCK })
     expect(screen.queryByLabelText(STOCK + ' — วงเงินที่ทำเองได้')).toBeNull()
   })
+
+  it('ตั้ง % ส่วนลด POS ที่ต้องขออนุมัติได้ (ค่าเริ่ม 40) และส่งค่าสวิตช์เดิมไปด้วย', async () => {
+    seedApi(500)
+    render(<ApprovalSettings />)
+
+    const input = await screen.findByLabelText('settings.approval.modules.posDiscount — % ที่ต้องขออนุมัติ') as HTMLInputElement
+    expect(input.value).toBe('40')
+    fireEvent.change(input, { target: { value: '25' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => expect(mockApi.post).toHaveBeenCalled())
+    expect(mockApi.post).toHaveBeenCalledWith('/approval/settings', {
+      role: 'USER',
+      moduleType: 'pos_discount',
+      approvalRequired: false,
+      autoApproveThreshold: 0,
+      maxDiscountPct: 25,
+    })
+  })
 })

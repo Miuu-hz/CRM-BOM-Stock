@@ -8,7 +8,7 @@ import { SearchableDropdown } from '../common/SearchableDropdown'
 import { UnitPicker } from '../common/UnitPicker'
 import UnitChainModal from '../common/UnitChainModal'
 import api from '../../services/api'
-import { useUnits, unitLabel } from '../../hooks/useUnits'
+import { unitLabel } from '../../hooks/useUnits'
 import { normalizeUnit } from '../../utils/unitNormalize'
 import { EditModal } from '../../pages/Stock'
 import { StockItem } from '../../services/stock'
@@ -35,10 +35,6 @@ interface BOMItemRow {
 const SAFE_BOM_CATEGORIES = ['[สินค้า]', '[สินค้าสำเร็จรูป]', '[สินค้ากึ่งสำเร็จรูป]', 'finished', 'wip', 'FINISHED', 'WIP']
 const needsCategoryChange = (category: string): boolean => !SAFE_BOM_CATEGORIES.includes(category)
 
-const BOM_PRODUCT_CATEGORIES = [...SAFE_BOM_CATEGORIES, 'material', 'Material', 'Raw Material', 'raw']
-const getValidBOMProducts = (products: Product[]): Product[] => {
-  return products.filter((p) => BOM_PRODUCT_CATEGORIES.includes(p.category) || !SAFE_BOM_CATEGORIES.includes(p.category))
-}
 
 function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalProps) {
   const { t } = useTranslation()
@@ -341,14 +337,6 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
     } catch (err) {
       console.error('Failed to load compatible units:', err)
     }
-  }
-
-  // Get display label for a unit code
-  const getUnitLabel = (code: string): string => {
-    const found = Object.values(compatibleUnits)
-      .flat()
-      .find((u) => u.code === code)
-    return found?.label || code
   }
 
   // Handle material selection with unit loading
@@ -1068,7 +1056,6 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
     initialStock: 0,
   })
   const [saving, setSaving] = useState(false)
-  const { units: availableUnits } = useUnits()
 
   // Load categories
   useEffect(() => {

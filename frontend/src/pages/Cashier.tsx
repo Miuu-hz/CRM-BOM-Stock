@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link, useSearchParams } from 'react-router-dom'
-import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Save, Package, MoreVertical, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils, ArrowLeft, Wallet, ArrowDownToLine, ArrowUpFromLine, History} from 'lucide-react'
+import {Store, Plus, Receipt, CreditCard, Banknote, QrCode, Trash2, Minus, X, ChefHat, Clock, Search, Edit2, Package, RotateCcw, Check, Settings, Tag, ChevronDown, ChevronUp, UserPlus, Star, UserX, Printer, AlertTriangle, Scale, Utensils, ArrowLeft, Wallet, ArrowDownToLine, ArrowUpFromLine, History} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useApprovalGate } from '../components/common/ApprovalGate'
 import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
@@ -199,6 +199,14 @@ export default function Cashier() {
 
   // Prime the bank-account cache (used for the QR payment step + receipt printing)
   useEffect(() => { bankAccountsService.list().catch(() => {}) }, [])
+  // เกณฑ์ % ส่วนลดที่ต้องขออนุมัติ — ค่าเดียวกับที่ backend ใช้ตัดสิน (Settings → การอนุมัติ) ที่นี่แค่ไว้เตือนล่วงหน้า
+  const [approvalDiscountPct, setApprovalDiscountPct] = useState(40)
+  useEffect(() => {
+    api.get('/approval/settings').then(r => {
+      const v = (r.data?.data || []).find((s: any) => s.role === 'USER' && s.module_type === 'pos_discount')?.max_discount_pct
+      if (v != null) setApprovalDiscountPct(v)
+    }).catch(() => {})
+  }, [])
 
   const [sendingToKitchen, setSendingToKitchen] = useState(false)
 
@@ -549,8 +557,6 @@ export default function Cashier() {
     }
   }
 
-  // เกณฑ์ส่วนลดที่ต้องแจ้งเตือนขออนุมัติ (> 40%)
-  const APPROVAL_DISCOUNT_PCT = 40
   // ส่วนลดเป็น % คิดจากยอดที่เรียกเก็บก่อนภาษี (สินค้า + ค่าบริการ + ค่าขนส่ง)
   const billDiscountAmount = (bill: any) => {
     if (discount.value <= 0) return 0
@@ -1193,7 +1199,6 @@ export default function Cashier() {
                 const discountAmt = billDiscountAmount(currentBill)
                 const { subtotal, serviceChargeAmount: serviceAmt, taxAmount: vatAmt, totalAmount: finalTotal } =
                   billTotals(currentBill, billing, { discount: discountAmt, extraCharge: extraCharge.amount })
-                const beforeDiscount = finalTotal + discountAmt
                 return (
                   <>
                   <div className="p-4 border-t border-[var(--border)] space-y-3">
@@ -1271,10 +1276,10 @@ export default function Cashier() {
                             )}
                           </div>
                         )}
-                        {billDiscountPct(currentBill) > APPROVAL_DISCOUNT_PCT && (
+                        {billDiscountPct(currentBill) > approvalDiscountPct && (
                           <div className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--warning-soft)]/80 border border-warning/40 text-warning text-xs">
                             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span>ส่วนลดเกิน {APPROVAL_DISCOUNT_PCT}% ({billDiscountPct(currentBill)}%) — ต้องขออนุมัติก่อนชำระเงิน</span>
+                            <span>ส่วนลดเกิน {approvalDiscountPct}% ({billDiscountPct(currentBill)}%) — ต้องขออนุมัติก่อนชำระเงิน</span>
                           </div>
                         )}
                       </div>

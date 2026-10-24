@@ -97,6 +97,11 @@ router.patch('/tickets/:id/status', (req, res) => {
       return res.status(400).json({ success: false, message: 'ตั๋วนี้ถูกยกเลิกแล้ว กดได้แค่รับทราบ' })
     }
 
+    // กดรับงานซ้ำ (ดับเบิลแท็ป/อุปกรณ์สองเครื่อง) = ไม่ทำอะไร ไม่ error — กันรีเซ็ตรายการที่ติ๊กเสร็จแล้ว
+    if (status === 'IN_PROGRESS' && ticket.status === 'IN_PROGRESS') {
+      return res.json({ success: true, message: 'Ticket already IN_PROGRESS' })
+    }
+
     const updateTx = db.transaction(() => {
       db.prepare(`UPDATE pos_kds_tickets SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?`)
         .run(status, now(), id, tenantId)
@@ -105,13 +110,14 @@ router.patch('/tickets/:id/status', (req, res) => {
       if (status === 'IN_PROGRESS') {
         db.prepare(
           `UPDATE pos_bill_items SET status = 'PREPARING'
-           WHERE id IN (SELECT bill_item_id FROM pos_kds_ticket_items WHERE ticket_id = ?) AND tenant_id = ?`
+           WHERE id IN (SELECT bill_item_id FROM pos_kds_ticket_items WHERE ticket_id = ? AND status = 'PENDING') AND tenant_id = ?`
         ).run(id, tenantId)
       } else if (status === 'DONE') {
-        db.prepare(`UPDATE pos_kds_ticket_items SET status = 'DONE' WHERE ticket_id = ?`).run(id)
+        // pos_kds_ticket_items ไม่มีคอลัมน์ tenant_id — ตั๋ว (ticket_id) ถูกเช็ค tenant ไปแล้วด้านบน
+        db.prepare(`UPDATE pos_kds_ticket_items SET status = 'DONE' WHERE ticket_id = ? AND status != 'CANCELLED'`).run(id)
         db.prepare(
           `UPDATE pos_bill_items SET status = 'READY'
-           WHERE id IN (SELECT bill_item_id FROM pos_kds_ticket_items WHERE ticket_id = ?) AND tenant_id = ?`
+           WHERE id IN (SELECT bill_item_id FROM pos_kds_ticket_items WHERE ticket_id = ? AND status != 'CANCELLED') AND tenant_id = ?`
         ).run(id, tenantId)
       }
     })

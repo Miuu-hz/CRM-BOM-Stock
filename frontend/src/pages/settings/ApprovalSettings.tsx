@@ -14,6 +14,7 @@ interface ApprovalSetting {
   module_type: string
   approval_required: number
   auto_approve_threshold: number
+  max_discount_pct?: number | null
 }
 
 interface UserPermission {
@@ -109,6 +110,27 @@ export default function ApprovalSettings() {
         moduleType: category,
         approvalRequired: true,
         autoApproveThreshold: value,
+      })
+      await load()
+    } catch {
+      toast.error(t('settings.approval.quick.saveFailed'))
+    } finally {
+      setTogglingCategory(null)
+    }
+  }
+
+  // ส่วนลด POS เกินกี่ % ต้องขออนุมัติเสมอ (ไม่ขึ้นกับสวิตช์) — backend อ่านค่าเดียวกัน ไม่ตั้ง = 40
+  const discountPct = settings.find(s => s.module_type === 'pos_discount' && s.role === 'USER')?.max_discount_pct ?? 40
+  const saveDiscountPct = async (value: number) => {
+    if (!Number.isFinite(value) || value < 0 || value > 100 || value === discountPct) return
+    setTogglingCategory('pos_discount')
+    try {
+      await api.post('/approval/settings', {
+        role: 'USER',
+        moduleType: 'pos_discount',
+        approvalRequired: isCategoryOn('pos_discount'),
+        autoApproveThreshold: thresholdOf('pos_discount'),
+        maxDiscountPct: value,
       })
       await load()
     } catch {
@@ -293,6 +315,30 @@ export default function ApprovalSettings() {
                   <p className="font-medium text-sm text-[var(--fg-1)]">{cat.label}</p>
                   <p className="text-xs text-[var(--fg-3)] mt-0.5">{cat.hint}</p>
                 </div>
+                {cat.value === 'pos_discount' && (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <label className="text-xs text-[var(--fg-3)] text-right leading-tight">
+                      ลดเกิน<br />
+                      <span className="text-[10px] text-[var(--fg-4)]">ต้องขออนุมัติเสมอ</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        key={'pct:' + discountPct}
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        disabled={busy}
+                        defaultValue={discountPct}
+                        onBlur={e => saveDiscountPct(Number(e.target.value))}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        aria-label={cat.label + ' — % ที่ต้องขออนุมัติ'}
+                        className="w-20 pl-2 pr-6 py-1 text-sm text-right rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">%</span>
+                    </div>
+                  </div>
+                )}
                 {on && (
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <label className="text-xs text-[var(--fg-3)] text-right leading-tight">

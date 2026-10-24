@@ -21,10 +21,17 @@ describe("สรุปปิดกะส่ง LINE", () => {
       for (const [name, qty, price] of items)
         db.prepare("INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
           .run(generateId(), T, id, menuId, name, qty, price, qty * price)
+      return id
     }
-    bill("PAID", [["กะเพรา", 2, 89], ["โกโก้", 1, 95]])
+    const first = bill("PAID", [["กะเพรา", 2, 89], ["โกโก้", 1, 95]])
     bill("PAID", [["กะเพรา", 1, 89], ["กุ้งทอด", 3, 99]])
     bill("CANCELLED", [["สเต็ก", 9, 500]]) // บิลยกเลิกห้ามนับ
+
+    // ส่วนลดบิลแรก 70 = ลดเอง 50 + แลกแต้ม 20 บาท (อัตราเริ่มต้น 10 แต้ม = 1 บาท → 200 แต้ม)
+    // แต้มที่ตัดจริง 300 = 200 ที่เคาน์เตอร์ + 100 แลกของแถม (ของแถมไม่นับเป็นส่วนลดบาท)
+    db.prepare("UPDATE pos_running_bills SET discount_amount = 70 WHERE id = ?").run(first)
+    db.prepare("INSERT INTO loyalty_transactions (id, tenant_id, customer_id, type, points, balance_after, reference_type, reference_id, created_at) VALUES (?, ?, \x27c\x27, \x27REDEEM\x27, -300, 0, \x27POS_BILL\x27, ?, ?)").run(generateId(), T, first, closed)
+    db.prepare("INSERT INTO pos_redemptions (id, tenant_id, bill_id, customer_id, reward_id, bill_item_id, points, status, created_at) VALUES (?, ?, ?, \x27c\x27, \x27r\x27, \x27i\x27, 100, \x27USED\x27, ?)").run(generateId(), T, first, closed)
 
     const sup = generateId()
     db.prepare("INSERT INTO suppliers (id, tenant_id, code, name, contact_name) VALUES (?, ?, ?, \x27Makro\x27, \x27-\x27)").run(sup, T, sup)
@@ -46,8 +53,8 @@ describe("สรุปปิดกะส่ง LINE", () => {
       reference_type, reference_id, requester_id, requester_name, requester_role, amount, description, status, created_at)
       VALUES (?, ?, ?, ?, \x27x\x27, \x27x\x27, \x27u\x27, \x27u\x27, \x27USER\x27, ?, \x27d\x27, \x27AUTO\x27, ?)`).run(generateId(), T, generateId(), mod, amount, at)
     log("pos_void", 120, "2026-10-16T05:00:00.000Z")
-    log("pos_discount", 30, "2026-10-16T06:00:00.000Z")
-    log("pos_discount", 20, "2026-10-16T07:00:00.000Z")
+    log("pos_discount", 300, "2026-10-16T06:00:00.000Z")
+    log("pos_discount", 200, "2026-10-16T07:00:00.000Z")
     log("pos_void", 99, "2026-10-15T07:00:00.000Z") // นอกกะ
 
     const s = buildShiftSummary(T, shiftId)!
@@ -55,7 +62,7 @@ describe("สรุปปิดกะส่ง LINE", () => {
     expect(s.topSales[1]).toEqual({ name: "กะเพรา", qty: 3, amount: 267 })
     expect(s.buys.top.map(b => b.amount)).toEqual([400, 300, 60])
     expect(s.buys.total).toBe(760)
-    expect(s.alerts).toEqual({ voids: 1, itemVoids: 0, discountTotal: 50 })
+    expect(s.alerts).toEqual({ voids: 1, itemVoids: 0, discountTotal: 50 }) // จากบิล (70 − แต้ม 20 บาท) ไม่ใช่ log (500)
     expect(s.difference).toBe(-44)
 
     const card = flexTemplates.shiftCloseCard({ ...s, webUrl: "https://erp.phopy.net" })

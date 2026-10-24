@@ -8,7 +8,7 @@ import { can, canHandleBilling } from '../services/rbac.service'
 import { randomUUID } from 'crypto'
 import { formatDocumentNumber, docYear } from '../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, findConversionChain, autoUnpackIfNeeded } from '../services/unitConversion.service'
-import { roundQty, roundPackQty, isWholeQty } from '../utils/qty'
+import { roundQty, roundPackQty } from '../utils/qty'
 
 // กันเลขทศนิยมลอยตัว (2.9999999 ต้องนับเป็น 3 แพ็ค ไม่ใช่ 2)
 const PACK_EPS = 1e-9

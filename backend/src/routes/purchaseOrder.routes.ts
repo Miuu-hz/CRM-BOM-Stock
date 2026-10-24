@@ -330,7 +330,6 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString()
-    const updates: any = { status, updated_at: now }
 
     // รับของต้องผ่านใบรับสินค้าเท่านั้น — สาขา RECEIVED เดิมตรงนี้เพิ่มสต็อกเองด้วย
     // Math.floor(quantity) ดิบ ๆ ไม่แปลงหน่วย ไม่แยกแพ็คปิดผนึก ไม่เขียน snapshot ที่การยกเลิก

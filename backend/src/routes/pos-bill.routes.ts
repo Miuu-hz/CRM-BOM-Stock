@@ -9,7 +9,7 @@ import { mintQrToken } from '../services/posQr.service'
 import { verifyBillMember } from '../services/posMember.service'
 import { recordPaidBill } from '../services/posGuest.service'
 import { billRewardConflict, useBillRewards, reservedPoints, availablePoints, InsufficientPointsError } from '../services/qrRewards.service'
-import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass, findPendingRequest, createRequest } from '../services/approvalGate.service'
+import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass, findPendingRequest, createRequest, posDiscountApprovalPct } from '../services/approvalGate.service'
 
 export { InsufficientPointsError }
 
@@ -581,7 +581,7 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { billId, itemId } = req.params
-    const { quantity, special_instructions } = req.body
+    const { quantity } = req.body
     
     if (quantity !== undefined) {
       const numQty = Number(quantity)
@@ -777,47 +777,58 @@ router.post('/bills/:id/pay', async (req, res) => {
 
     // ส่วนลด/ค่าขนส่งที่แคชเชียร์ใส่หน้าจอต้องลงบิลก่อนคำนวณ ไม่งั้นลูกค้าจ่ายยอดหนึ่ง
     // แต่บัญชี/VAT/ใบกำกับบันทึกอีกยอดหนึ่ง (เดิมสองค่านี้ไม่เคยถูกส่งมาที่ backend เลย)
-    if (discount_amount !== undefined || extra_charge_amount !== undefined || redeemBaht > 0) {
+    // ส่วนลดจากแต้ม (redeemBaht) ยังไม่ลงบิลตรงนี้ — ลงใน payTx ตอนตัดจ่ายจริงเท่านั้น
+    // (เดิมลงก่อน แล้วติดด่าน/สต็อก → เปิดบิลใหม่หน้าจอดึงกลับเป็นส่วนลดมือ แลกแต้มซ้ำ = ลดสองต่อ)
+    const prevDiscount = Number((bill as any).discount_amount) || 0
+    if (discount_amount !== undefined || extra_charge_amount !== undefined) {
       db.prepare(`UPDATE pos_running_bills
         SET discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?
         WHERE id = ? AND tenant_id = ?`)
-        .run(manualDiscount + redeemBaht, Math.max(0, Number(extra_charge_amount) || 0),
+        .run(manualDiscount, Math.max(0, Number(extra_charge_amount) || 0),
           extra_charge_label || null, id, tenantId)
     }
 
     // Ensure bill totals are up-to-date with current POS billing settings
     recalculateBillTotals(id)
-    const refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+    let refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
 
     // เกณฑ์อนุมัติส่วนลด:
-    // 1) ส่วนลดเกิน 40% ของยอดก่อนลด ต้องแจ้งเตือนขออนุมัติเสมอ (ยกเว้น ADMIN/MASTER หรือผู้มีสิทธิ์ bypass)
+    // 1) ส่วนลดเกิน % ที่ตั้งไว้ (Settings → การอนุมัติ, ค่าเริ่ม 40%) ของยอดก่อนลด ต้องขออนุมัติเสมอ (ยกเว้น ADMIN/MASTER หรือผู้มีสิทธิ์ bypass)
     // 2) หรือตั้งเพดาน pos_discount ใน Settings → การอนุมัติ
-    // ส่วนลดจากการแลกแต้ม (redeemBaht) ไม่นับเป็นส่วนลดที่ต้องขออนุมัติ — เป็นสิทธิ์ของสมาชิกตามอัตราที่ร้านตั้ง
-    const discountBaht = Math.max(0, (Number((refreshedBill as any)?.discount_amount ?? discount_amount) || 0) - redeemBaht)
+    // ส่วนลดจากการแลกแต้มไม่นับ (ยังไม่อยู่ในบิลตอนนี้) — เป็นสิทธิ์ของสมาชิกตามอัตราที่ร้านตั้ง
+    const discountBaht = Math.max(0, Number((refreshedBill as any)?.discount_amount) || 0)
     const baseBeforeDiscount = ((refreshedBill as any)?.subtotal || 0)
       + ((refreshedBill as any)?.service_charge_amount || 0)
       + ((refreshedBill as any)?.extra_charge_amount || 0)
     const discountPct = baseBeforeDiscount > 0 ? Math.round((discountBaht / baseBeforeDiscount) * 1000) / 10 : 0
-    const over40Pct = discountBaht > 0 && discountPct > 40
+    const limitPct = posDiscountApprovalPct(tenantId)
+    const overLimitPct = discountBaht > 0 && discountPct > limitPct
     const gateUser = (req as any).user
 
-    // เช็คว่าบิลนี้เคยได้รับอนุมัติส่วนลดยอดนี้ไปแล้วหรือยัง
+    // เช็คว่าบิลนี้เคยได้รับอนุมัติส่วนลดยอดนี้ไปแล้วหรือยัง — ต้องครอบทั้งบาทและ % (ลบรายการหลังอนุมัติ = % สูงขึ้น ต้องขอใหม่)
     const approvedDiscountReq = discountBaht > 0 ? db.prepare(`
       SELECT id FROM approval_requests
       WHERE tenant_id = ? AND module_type = 'pos_discount'
         AND reference_type = 'pos_running_bills' AND reference_id = ?
         AND status IN ('APPROVED', 'EXECUTED') AND amount >= ?
+        AND COALESCE(json_extract(payload, '$.discountPct'), 0) >= ?
       ORDER BY created_at DESC LIMIT 1
-    `).get(tenantId, id, discountBaht) as any : null
+    `).get(tenantId, id, discountBaht, discountPct) as any : null
 
     const needsDiscountApproval = discountBaht > 0
       && !approvedDiscountReq
-      && (over40Pct || isApprovalRequired(tenantId, gateUser, 'pos_discount', discountBaht))
+      && (overLimitPct || isApprovalRequired(tenantId, gateUser, 'pos_discount', discountBaht))
       && !hasBypass(tenantId, gateUser, 'pos_discount')
 
     if (needsDiscountApproval) {
-      const pending = findPendingRequest(tenantId, 'pos_discount', 'pos_running_bills', id)
-        || createRequest({
+      // ยังไม่อนุมัติ → คืนส่วนลดบนบิลเป็นค่าเดิม หน้าบิล/QR จะได้ไม่เห็นยอดที่ลดแล้ว (อนุมัติแล้ว executor เขียนให้เอง)
+      db.prepare('UPDATE pos_running_bills SET discount_amount = ? WHERE id = ? AND tenant_id = ?').run(prevDiscount, id, tenantId)
+      recalculateBillTotals(id)
+      // ใช้คำขอที่ค้างอยู่ได้เฉพาะเมื่อครอบยอดและ % นี้ ไม่งั้นอนุมัติแล้วก็ยังจ่ายไม่ผ่าน
+      const open = findPendingRequest(tenantId, 'pos_discount', 'pos_running_bills', id)
+      const covers = open && open.amount >= discountBaht
+        && (Number(JSON.parse(open.payload || '{}').discountPct) || 0) >= discountPct
+      const pending = covers ? open : createRequest({
           tenantId,
           user: gateUser,
           category: 'pos_discount',
@@ -830,13 +841,14 @@ router.post('/bills/:id/pay', async (req, res) => {
             billId: id,
             discountAmount: discountBaht,
             discountPct,
+            baseBeforeDiscount,
           },
         })
       return res.status(202).json({
         success: true,
         pending_approval: true,
         request_number: pending.request_number,
-        message: `ส่วนลด ฿${discountBaht.toLocaleString()} (${discountPct}%) เกินเกณฑ์ 40% — ส่งคำขออนุมัติ (${pending.request_number}) และแจ้งเตือนผู้อนุมัติแล้ว กรุณารอการอนุมัติก่อนชำระเงิน`,
+        message: `ส่วนลด ฿${discountBaht.toLocaleString()} (${discountPct}%) เกินเกณฑ์ ${limitPct}% — ส่งคำขออนุมัติ (${pending.request_number}) และแจ้งเตือนผู้อนุมัติแล้ว กรุณารอการอนุมัติก่อนชำระเงิน`,
       })
     }
     
@@ -874,10 +886,16 @@ router.post('/bills/:id/pay', async (req, res) => {
     // 2–5. Payment + PAID + accounting + loyalty ต้องสำเร็จหรือล้มไปด้วยกัน
     // (recordSale เป็น sync และ throw เมื่อพัง → rollback ทั้งก้อน)
     const paymentId = generateId()
-    const totalAmount = (refreshedBill as any).total_amount
-    const changeAmount = received_amount ? received_amount - totalAmount : 0
-    
+
     const payTx = db.transaction(() => {
+      // ส่วนลดจากแต้มลงบิลตรงนี้ที่เดียว — ทรานแซกชันล้ม = ไม่ค้างบนบิล
+      if (redeemBaht > 0) {
+        db.prepare('UPDATE pos_running_bills SET discount_amount = discount_amount + ? WHERE id = ? AND tenant_id = ?').run(redeemBaht, id, tenantId)
+        recalculateBillTotals(id)
+        refreshedBill = db.prepare('SELECT * FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(id, tenantId)
+      }
+      const totalAmount = (refreshedBill as any).total_amount
+      const changeAmount = received_amount ? received_amount - totalAmount : 0
       const paymentStmt = db.prepare(`
         INSERT INTO pos_payments (id, tenant_id, bill_id, payment_method, amount, received_amount, change_amount, reference, received_by, bank_account_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -958,15 +976,15 @@ router.post('/bills/:id/pay', async (req, res) => {
         }
       }
       recordPaidBill(tenantId, id, Boolean((refreshedBill as any).customer_id))
-      return { accountingResult, pointsEarned, pointsRedeemed }
+      return { accountingResult, pointsEarned, pointsRedeemed, totalAmount, changeAmount }
     })
-    const { accountingResult, pointsEarned, pointsRedeemed } = payTx()
+    const { accountingResult, pointsEarned, pointsRedeemed, totalAmount, changeAmount } = payTx()
 
     if (discountBaht > 0 && !approvedDiscountReq) {
-      // ส่วนลดเกิน 40% หรือเกินเพดานของพนักงาน = แดง, ใต้เพดาน = เหลือง
+      // ส่วนลดเกิน % ที่ตั้งไว้ หรือเกินเพดานของพนักงาน = แดง, ใต้เพดาน = เหลือง
       const cap = db.prepare(`SELECT approval_required, auto_approve_threshold FROM approval_settings
         WHERE tenant_id = ? AND role = 'USER' AND module_type = 'pos_discount'`).get(tenantId) as any
-      const overCap = over40Pct || (cap?.approval_required === 1 && discountBaht > (cap.auto_approve_threshold || 0))
+      const overCap = overLimitPct || (cap?.approval_required === 1 && discountBaht > (cap.auto_approve_threshold || 0))
       recordAutoAction({
         tenantId, user: gateUser, category: 'pos_discount', refType: 'pos_running_bills', refId: id,
         amount: discountBaht,

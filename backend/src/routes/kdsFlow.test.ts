@@ -133,3 +133,50 @@ describe('KDS ติ๊กรายเมนู', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('KDS ติ๊กรายเมนู — ความปลอดภัย/สถานะ', () => {
+  async function inProgress() {
+    const s = seed()
+    const second = generateId()
+    db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name, quantity, unit_price, total_price)
+      VALUES (?, ?, ?, (SELECT pos_menu_id FROM pos_bill_items WHERE id = ?), 'ไข่ดาว', 1, 10, 10)`).run(second, s.T, s.billId, s.itemId)
+    await send(s)
+    const [t] = await tickets(s)
+    await request(app).patch(`/api/pos/kds/tickets/${t.id}/status`).set(s.auth).send({ status: 'IN_PROGRESS' })
+    return { s, t, status: (st: string) => request(app).patch(`/api/pos/kds/tickets/${t.id}/status`).set(s.auth).send({ status: st }) }
+  }
+
+  it('token ของ tenant อื่น → 404 · item ของตั๋วอื่น → 404', async () => {
+    const { s, t } = await inProgress()
+    const other = createTestUser({ role: 'USER' })
+    const res = await request(app).patch(`/api/pos/kds/tickets/${t.id}/items/${t.items[0].id}`)
+      .set({ Authorization: `Bearer ${other.token}` }).send({ done: true })
+    expect(res.status).toBe(404)
+
+    const s2 = seed()
+    await send(s2)
+    const [t2] = await tickets(s2)
+    await request(app).patch(`/api/pos/kds/tickets/${t2.id}/status`).set(s2.auth).send({ status: 'IN_PROGRESS' })
+    const cross = await request(app).patch(`/api/pos/kds/tickets/${t.id}/items/${t2.items[0].id}`).set(s.auth).send({ done: true })
+    expect(cross.status).toBe(404)
+  })
+
+  it('DONE ทั้งตั๋วไม่ทับรายการที่ยกเลิกแล้ว (ทั้งรายการครัวและรายการบิล)', async () => {
+    const { s, t, status } = await inProgress()
+    await request(app).delete(`/api/pos/bills/${s.billId}/items/${s.itemId}`).set(s.auth).send({ reason: 'ของหมด' })
+    expect((await status('DONE')).status).toBe(200)
+    const cancelled = t.items.find((i: any) => i.bill_item_id === s.itemId)
+    expect((db.prepare('SELECT status FROM pos_kds_ticket_items WHERE id = ?').get(cancelled.id) as any).status).toBe('CANCELLED')
+    const other = t.items.find((i: any) => i.bill_item_id !== s.itemId)
+    expect((db.prepare('SELECT status FROM pos_kds_ticket_items WHERE id = ?').get(other.id) as any).status).toBe('DONE')
+  })
+
+  it('กดรับงานซ้ำไม่รีเซ็ตรายการที่ติ๊กเสร็จแล้ว', async () => {
+    const { s, t, status } = await inProgress()
+    const item = t.items.find((i: any) => i.bill_item_id === s.itemId)
+    await request(app).patch(`/api/pos/kds/tickets/${t.id}/items/${item.id}`).set(s.auth).send({ done: true })
+    expect((await status('IN_PROGRESS')).status).toBe(200)
+    expect((db.prepare('SELECT status FROM pos_bill_items WHERE id = ?').get(s.itemId) as any).status).toBe('READY')
+    expect((db.prepare('SELECT status FROM pos_kds_ticket_items WHERE id = ?').get(item.id) as any).status).toBe('DONE')
+  })
+})

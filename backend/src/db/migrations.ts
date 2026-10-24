@@ -2152,6 +2152,8 @@ export function runMigrations(db: any): void {
     "ALTER TABLE approval_requests ADD COLUMN expires_at TEXT",
     // สิทธิ์ "ทำเลยไม่ต้องขออนุมัติ" ที่ admin มอบให้เป็นรายคน/รายหมวด (ดู approvalGate.service.ts hasBypass)
     "ALTER TABLE user_approval_permissions ADD COLUMN can_bypass INTEGER DEFAULT 0",
+    // ส่วนลด POS เกินกี่ % ต้องขออนุมัติ (เดิม hard-code 40) — ใช้แถว USER/pos_discount, NULL = 40
+    "ALTER TABLE approval_settings ADD COLUMN max_discount_pct REAL",
     // ใบกำกับภาษีเต็มรูปต้องระบุสาขาของผู้ขาย (ม.86/4) — ยังไม่มีระบบสาขา ทุกที่จึงเป็นสำนักงานใหญ่
     // แก้เป็นชื่อสาขาอื่นได้ในหน้าตั้งค่าบริษัท
     "ALTER TABLE company_settings ADD COLUMN tax_branch TEXT DEFAULT 'สำนักงานใหญ่'",

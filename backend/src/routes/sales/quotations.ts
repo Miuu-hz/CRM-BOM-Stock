@@ -4,7 +4,7 @@ import { isVatRegistered, rememberContactVatMode } from '../../services/accounti
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
-import { findNonSellableLine, notSellableMessage } from './shared'
+import { findNonSellableLine, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
 
 const router = Router()
 
@@ -70,8 +70,8 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
 
-    const customer = db.prepare('SELECT id, tenant_id, campaign FROM customers WHERE id = ?').get(customerId) as any
-    if (customer && customer.tenant_id !== tenantId) {
+    const customer = db.prepare('SELECT id, campaign FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
+    if (!customer) {
       return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
     }
 
@@ -107,6 +107,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     // ขายวัตถุดิบไม่ได้ทุกช่องทาง (เจ้าของยืนยัน 2026-10-04) — เช็คก่อนออกเลขเอกสารเสมอ
     // ไม่งั้นถูกปฏิเสธแล้วเลขที่จองไว้หาย (กับดักเดียวกับ VAT_NOT_REGISTERED ด้านบน)
+    if (findUnknownProductId(tenantId, (items || []).map((i: any) => i.productId))) {
+      return res.status(400).json({ success: false, code: 'PRODUCT_NOT_FOUND', message: UNKNOWN_PRODUCT_MESSAGE })
+    }
     const badLine = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLine) {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
@@ -238,6 +241,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     const { taxAmount, totalAmount } = calc
     subtotal = calc.subtotal
 
+    if (findUnknownProductId(tenantId, (items || []).map((i: any) => i.productId))) {
+      return res.status(400).json({ success: false, code: 'PRODUCT_NOT_FOUND', message: UNKNOWN_PRODUCT_MESSAGE })
+    }
     const badLineUpd = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLineUpd) {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })

@@ -2235,7 +2235,6 @@
     },
     "simulation": {
       "perUnitImpact": "Per Unit Impact",
-      "perBatchImpact": "Per batch impact (yields {{qty}} {{unit}})",
       "for100Units": "For 100 Units"
     },
     "stats": {
@@ -2247,8 +2246,7 @@
     "tabs": {
       "bomList": "BOM List",
       "materials": "Materials",
-      "productionCalculator": "Production & Cost Simulator",
-      "costSimulation": "Cost Simulation"
+      "productionCalculator": "Production & Cost Simulator"
     },
     "filter": {
       "all": "All BOMs",

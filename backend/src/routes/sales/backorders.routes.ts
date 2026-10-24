@@ -49,6 +49,19 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    if (originalDoId && !db.prepare('SELECT 1 FROM delivery_orders WHERE id = ? AND tenant_id = ? AND sales_order_id = ?').get(originalDoId, tenantId, salesOrderId)) {
+      return res.status(400).json({ success: false, message: 'ไม่พบใบส่งของนี้ในใบสั่งขายของกิจการนี้' })
+    }
+    for (const item of items) {
+      if (!db.prepare('SELECT 1 FROM sales_order_items WHERE id = ? AND tenant_id = ? AND sales_order_id = ?').get(item.salesOrderItemId, tenantId, salesOrderId)) {
+        return res.status(400).json({ success: false, message: 'รายการสินค้าไม่ได้อยู่ในใบสั่งขายนี้' })
+      }
+      const ordered = Number(item.orderedQty), delivered = Number(item.deliveredQty)
+      if (!Number.isFinite(ordered) || !Number.isFinite(delivered) || ordered - delivered < 0) {
+        return res.status(400).json({ success: false, message: 'จำนวนที่ส่งแล้วต้องไม่เกินจำนวนที่สั่ง (ยอดค้างส่งติดลบไม่ได้)' })
+      }
+    }
+
     const id = generateId()
     let boNumber = ''
     const now = new Date().toISOString()

@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { deductStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, findNonSellableLine, notSellableMessage } from './shared'
+import { deductStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, findNonSellableLine, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { gateSalesCancel, pendingCancelBody, assertSalesOrderCancellable, cancelSalesOrderNow, SalesCancelError } from '../../services/salesCancel.service'
 import { calcVat } from '../../utils/vat'
@@ -83,8 +83,8 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
 
-    const cust = db.prepare('SELECT id, tenant_id FROM customers WHERE id = ?').get(customerId) as any
-    if (cust && cust.tenant_id !== tenantId) {
+    const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+    if (!cust) {
       return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
     }
 
@@ -126,6 +126,9 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // ขายวัตถุดิบไม่ได้ทุกช่องทาง (เจ้าของยืนยัน 2026-10-04) — เช็คก่อนออกเลขเอกสารเสมอ
+    if (findUnknownProductId(tenantId, (items || []).map((i: any) => i.productId))) {
+      return res.status(400).json({ success: false, code: 'PRODUCT_NOT_FOUND', message: UNKNOWN_PRODUCT_MESSAGE })
+    }
     const badLine = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLine) {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
@@ -267,6 +270,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     const { taxAmount, totalAmount } = calc
     subtotal = calc.subtotal
 
+    if (findUnknownProductId(tenantId, (items || []).map((i: any) => i.productId))) {
+      return res.status(400).json({ success: false, code: 'PRODUCT_NOT_FOUND', message: UNKNOWN_PRODUCT_MESSAGE })
+    }
     const badLineUpd = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLineUpd) {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })

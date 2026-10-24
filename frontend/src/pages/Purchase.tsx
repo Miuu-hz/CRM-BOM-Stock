@@ -4282,7 +4282,6 @@ const Purchase = () => {
     const subtotal   = orderForm.items.reduce((s, i) => s + i.total_price, 0)
     const { taxAmount, totalAmount: grandTotal, discount } =
       calcVat(subtotal, { rate: orderForm.tax_rate, discountAmount: orderForm.discount || 0, inclusive: orderForm.vat_inclusive })
-    const afterDisc  = subtotal - discount
     const registered = vatRegisteredCo()
     const orderSupplier = suppliers.find(s => s.id === orderForm.supplier_id)
     const orderContactMode = orderSupplier?.vat_mode ?? null

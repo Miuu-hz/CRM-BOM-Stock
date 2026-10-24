@@ -22,27 +22,13 @@ import materialsService, { Material } from '../../services/materials'
 import api from '../../services/api'
 import { unitLabel } from '../../hooks/useUnits'
 import { SearchableDropdown } from '../common/SearchableDropdown'
-
-interface RequirementRow {
-  rowKey: string
-  itemType: 'MATERIAL' | 'CHILD_BOM'
-  materialId: string
-  materialName: string
-  materialCode: string
-  recipeQuantity: number
-  recipeUnit: string
-  requiredStockQty: number
-  stockUnit: string
-  availableStock: number
-  shortage: number
-  originalUnitCost: number
-  simulatedUnitCost: number
-  originalTotal: number
-  simulatedTotal: number
-  change: number
-  changePercent: number
-  status: 'OK' | 'LOW' | 'INSUFFICIENT' | 'OUT_OF_STOCK' | 'CHILD_BOM'
-}
+import {
+  type ProductionRequirementRow,
+  calculateBatches,
+  adjustPrice,
+  computeRequirementRows,
+  computeTotals,
+} from './productionCalc'
 
 const getBomProductName = (b: any): string =>
   b?.productName || b?.product_name || b?.product?.name || '-'
@@ -64,6 +50,7 @@ function ProductionCalculator() {
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
   const [bomLoading, setBomLoading] = useState(false)
+  const [bomError, setBomError] = useState<string | null>(null)
 
   const [selectedBomId, setSelectedBomId] = useState('')
   const [selectedBomFull, setSelectedBomFull] = useState<any | null>(null)
@@ -71,8 +58,12 @@ function ProductionCalculator() {
 
   // Unit conversion factors cache: `${materialId}:${fromUnit}->${toUnit}` => factor
   const [conversionFactors, setConversionFactors] = useState<Record<string, number>>({})
-  // Simulated unit prices keyed by rowKey (materialId or childBomId)
+  // Track rows with failed unit conversions
+  const [unconvertibleKeys, setUnconvertibleKeys] = useState<Record<string, boolean>>({})
+  // Simulated unit prices keyed by rowKey
   const [priceChanges, setPriceChanges] = useState<Record<string, number>>({})
+  // Track if any child BOM exploded raw material is short
+  const [childBomShort, setChildBomShort] = useState(false)
 
   useEffect(() => {
     loadInitialData()
@@ -94,16 +85,20 @@ function ProductionCalculator() {
     }
   }
 
-  // Fetch full BOM (with items) when selectedBomId changes
+  // Fetch full BOM (with items) and resolve conversions in parallel when selectedBomId changes
   useEffect(() => {
     if (!selectedBomId) {
       setSelectedBomFull(null)
+      setBomError(null)
       setPriceChanges({})
+      setUnconvertibleKeys({})
       return
     }
 
     let cancelled = false
     const loadBomDetail = async () => {
+      setSelectedBomFull(null)
+      setBomError(null)
       setBomLoading(true)
       try {
         const full = await bomService.getById(selectedBomId)
@@ -113,51 +108,71 @@ function ProductionCalculator() {
         const items: any[] = full.items || full.materials || []
         const initialPrices: Record<string, number> = {}
         const newFactors: Record<string, number> = {}
+        const unconvertibleMap: Record<string, boolean> = {}
 
-        for (const item of items) {
-          const isChild = (item.itemType || item.item_type) === 'CHILD_BOM'
-          if (isChild) {
-            const cId = item.childBomId || item.child_bom_id
-            const childBom =
-              boms.find((b) => b.id === cId) ||
-              (full as any).availableChildBOMs?.find((b: any) => b.id === cId)
-            initialPrices[`child:${cId}`] = Number(childBom?.totalCost) || 0
-          } else {
-            const mId = item.materialId || item.material_id
-            const mat = materials.find((m) => m.id === mId) || item.material
-            const unitCost = Number(mat?.unitCost ?? item.material?.unitCost) || 0
-            initialPrices[`mat:${mId}`] = unitCost
+        // Run conversion requests in parallel with Promise.all
+        await Promise.all(
+          items.map(async (item, index) => {
+            const isChild = (item.itemType || item.item_type) === 'CHILD_BOM'
+            const idSuffix = item.id || String(index)
 
-            const stockUnit = mat?.unit || item.material?.unit || ''
-            const recipeUnit = item.unit || stockUnit
-            if (mId && recipeUnit && stockUnit && recipeUnit !== stockUnit) {
-              const key = `${mId}:${recipeUnit}->${stockUnit}`
-              try {
-                const res = await api.post('/materials/unit-conversions/convert', {
-                  quantity: 1,
-                  from_unit: recipeUnit,
-                  to_unit: stockUnit,
-                  material_id: mId,
-                })
-                const converted = res.data?.data?.converted
-                if (typeof converted === 'number' && converted > 0) {
-                  newFactors[key] = converted
+            if (isChild) {
+              const cId = item.childBomId || item.child_bom_id || ''
+              const rowKey = `child:${cId}:${idSuffix}`
+              const childBom =
+                boms.find((b) => b.id === cId) ||
+                (full as any).availableChildBOMs?.find((b: any) => b.id === cId)
+              initialPrices[rowKey] = Number(childBom?.totalCost) || 0
+            } else {
+              const mId = item.materialId || item.material_id || ''
+              const rowKey = `mat:${mId}:${idSuffix}`
+              const mat = materials.find((m) => m.id === mId) || item.material
+              const unitCost = Number(mat?.unitCost ?? item.material?.unitCost) || 0
+              initialPrices[rowKey] = unitCost
+
+              const stockUnit = mat?.unit || item.material?.unit || ''
+              const recipeUnit = item.unit || stockUnit
+              if (mId && recipeUnit && stockUnit && recipeUnit !== stockUnit) {
+                const key = `${mId}:${recipeUnit}->${stockUnit}`
+                try {
+                  const res = await api.post('/materials/unit-conversions/convert', {
+                    quantity: 1,
+                    from_unit: recipeUnit,
+                    to_unit: stockUnit,
+                    material_id: mId,
+                  })
+                  const data = res.data?.data
+                  if (
+                    data?.canConvert === false ||
+                    data?.converted == null ||
+                    typeof data.converted !== 'number' ||
+                    data.converted <= 0
+                  ) {
+                    unconvertibleMap[rowKey] = true
+                  } else {
+                    newFactors[key] = data.converted
+                  }
+                } catch {
+                  unconvertibleMap[rowKey] = true
                 }
-              } catch {
-                // fallback factor 1
               }
             }
-          }
-        }
+          })
+        )
 
         if (!cancelled) {
           setPriceChanges(initialPrices)
+          setUnconvertibleKeys(unconvertibleMap)
           if (Object.keys(newFactors).length > 0) {
             setConversionFactors((prev) => ({ ...prev, ...newFactors }))
           }
         }
       } catch (err) {
-        console.error('Failed to fetch BOM detail:', err)
+        if (!cancelled) {
+          setSelectedBomFull(null)
+          setBomError('ไม่สามารถโหลดข้อมูลสูตรการผลิตได้ กรุณาลองใหม่อีกครั้ง')
+          console.error('Failed to fetch BOM detail:', err)
+        }
       } finally {
         if (!cancelled) setBomLoading(false)
       }
@@ -173,113 +188,83 @@ function ProductionCalculator() {
   const outputQtyPerBatch = getBomOutputQty(selectedBom)
   const outputUnit = getBomOutputUnit(selectedBom)
   const safeQuantity = Math.max(0, Number(quantity) || 0)
-  const batches = safeQuantity / outputQtyPerBatch
+  const batches = calculateBatches(safeQuantity, outputQtyPerBatch)
+
+  // Check child BOM exploded raw materials stock
+  useEffect(() => {
+    if (!selectedBomId || batches <= 0 || !selectedBomFull) {
+      setChildBomShort(false)
+      return
+    }
+
+    const items: any[] = selectedBomFull.items || selectedBomFull.materials || []
+    const hasChild = items.some((it) => (it.itemType || it.item_type) === 'CHILD_BOM')
+    if (!hasChild) {
+      setChildBomShort(false)
+      return
+    }
+
+    let cancelled = false
+    bomService
+      .explode(selectedBomId, batches)
+      .then((res: any) => {
+        if (cancelled) return
+        const rawList = res?.rawList || []
+        const childReqs: Record<string, number> = {}
+        for (const it of rawList) {
+          if (it.level > 0 && it.materialId) {
+            childReqs[it.materialId] =
+              (childReqs[it.materialId] || 0) + (Number(it.quantity) || 0)
+          }
+        }
+        const isShort = Object.entries(childReqs).some(([mId, reqQty]) => {
+          const mat = materials.find((m) => m.id === mId)
+          const stock = Number(mat?.currentStock) || 0
+          return stock + 1e-9 < reqQty
+        })
+        setChildBomShort(isShort)
+      })
+      .catch((err) => {
+        console.error('Failed to check child BOM explosion:', err)
+        if (!cancelled) setChildBomShort(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedBomId, batches, materials, selectedBomFull])
+
+  const bomItems = selectedBomFull?.items || selectedBomFull?.materials || []
+  const bomItemsCount = bomItems.length
 
   // Build unified requirements + cost simulation rows
-  const rows: RequirementRow[] = (() => {
-    if (!selectedBomFull || safeQuantity <= 0) return []
-    const items: any[] = selectedBomFull.items || selectedBomFull.materials || []
+  const rows = computeRequirementRows({
+    items: bomItems,
+    batches,
+    materials,
+    boms,
+    availableChildBOMs: (selectedBomFull as any)?.availableChildBOMs,
+    conversionFactors,
+    unconvertibleKeys,
+    priceChanges,
+  })
 
-    return items.map((item) => {
-      const isChild = (item.itemType || item.item_type) === 'CHILD_BOM'
-      if (isChild) {
-        const cId = item.childBomId || item.child_bom_id || ''
-        const rowKey = `child:${cId}`
-        const childBom =
-          boms.find((b) => b.id === cId) ||
-          (selectedBomFull as any).availableChildBOMs?.find((b: any) => b.id === cId)
-        const name =
-          item.childBomProductName ||
-          item.child_bom_product_name ||
-          getBomProductName(childBom)
-        const code =
-          item.childBomProductCode ||
-          item.child_bom_product_code ||
-          getBomProductCode(childBom)
-        const reqQty = Number(item.quantity) * batches
-        const childUnit = getBomOutputUnit(childBom) || item.unit || 'ชุด'
-        const origCost = Number(childBom?.totalCost) || 0
-        const simCost = priceChanges[rowKey] ?? origCost
-        const origTotal = reqQty * origCost
-        const simTotal = reqQty * simCost
-        const change = simTotal - origTotal
-        const changePercent = origTotal > 0 ? (change / origTotal) * 100 : 0
+  const {
+    originalTotal,
+    simulatedTotal,
+    totalChange,
+    totalChangePercent,
+    originalPerUnit,
+    simulatedPerUnit,
+    changePerUnit,
+    canProduce,
+    readyCount,
+    materialRowsCount,
+    hasZeroStock,
+    hasInsufficient,
+  } = computeTotals(rows, safeQuantity, childBomShort)
 
-        return {
-          rowKey,
-          itemType: 'CHILD_BOM',
-          materialId: cId,
-          materialName: name,
-          materialCode: code,
-          recipeQuantity: reqQty,
-          recipeUnit: childUnit,
-          requiredStockQty: reqQty,
-          stockUnit: childUnit,
-          availableStock: 0,
-          shortage: 0,
-          originalUnitCost: origCost,
-          simulatedUnitCost: simCost,
-          originalTotal: origTotal,
-          simulatedTotal: simTotal,
-          change,
-          changePercent,
-          status: 'CHILD_BOM',
-        }
-      }
-
-      const mId = item.materialId || item.material_id || ''
-      const rowKey = `mat:${mId}`
-      const mat = materials.find((m) => m.id === mId)
-      const name = mat?.name || item.material?.name || '-'
-      const code = mat?.code || item.material?.code || ''
-      const stockUnit = mat?.unit || item.material?.unit || item.unit || ''
-      const recipeUnit = item.unit || stockUnit
-      const factorKey = `${mId}:${recipeUnit}->${stockUnit}`
-      const factor = recipeUnit !== stockUnit ? (conversionFactors[factorKey] ?? 1) : 1
-
-      const recipeQty = Number(item.quantity) * batches
-      const requiredStockQty = recipeQty * factor
-      const availableStock = Number(mat?.currentStock) || 0
-      const shortage = Math.max(0, requiredStockQty - availableStock)
-
-      const origCost = Number(mat?.unitCost ?? item.material?.unitCost) || 0
-      const simCost = priceChanges[rowKey] ?? origCost
-      const origTotal = requiredStockQty * origCost
-      const simTotal = requiredStockQty * simCost
-      const change = simTotal - origTotal
-      const changePercent = origTotal > 0 ? (change / origTotal) * 100 : 0
-
-      let status: RequirementRow['status'] = 'OK'
-      if (availableStock <= 0) {
-        status = 'OUT_OF_STOCK'
-      } else if (availableStock < requiredStockQty) {
-        status = 'INSUFFICIENT'
-      } else if (availableStock < requiredStockQty * 1.2) {
-        status = 'LOW'
-      }
-
-      return {
-        rowKey,
-        itemType: 'MATERIAL',
-        materialId: mId,
-        materialName: name,
-        materialCode: code,
-        recipeQuantity: recipeQty,
-        recipeUnit,
-        requiredStockQty,
-        stockUnit,
-        availableStock,
-        shortage,
-        originalUnitCost: origCost,
-        simulatedUnitCost: simCost,
-        originalTotal: origTotal,
-        simulatedTotal: simTotal,
-        change,
-        changePercent,
-        status,
-      }
-    })
-  })()
+  const materialRows = rows.filter((r) => r.itemType === 'MATERIAL')
 
   const handlePriceChange = (rowKey: string, val: number) => {
     setPriceChanges((prev) => ({ ...prev, [rowKey]: Math.max(0, val) }))
@@ -288,7 +273,7 @@ function ProductionCalculator() {
   const applyPercentageChange = (percent: number) => {
     const updated: Record<string, number> = {}
     rows.forEach((r) => {
-      updated[r.rowKey] = Math.round(r.originalUnitCost * (1 + percent / 100) * 100) / 100
+      updated[r.rowKey] = adjustPrice(r.originalUnitCost, percent)
     })
     setPriceChanges((prev) => ({ ...prev, ...updated }))
   }
@@ -301,22 +286,7 @@ function ProductionCalculator() {
     setPriceChanges(initial)
   }
 
-  const materialRows = rows.filter((r) => r.itemType === 'MATERIAL')
-  const hasZeroStock = materialRows.some((r) => r.status === 'OUT_OF_STOCK')
-  const hasInsufficient = materialRows.some((r) => r.status === 'INSUFFICIENT')
-  const canProduce = rows.length > 0 && !hasZeroStock && !hasInsufficient
-  const readyCount = materialRows.filter((r) => r.status === 'OK' || r.status === 'LOW').length
-
-  const originalTotal = rows.reduce((sum, r) => sum + r.originalTotal, 0)
-  const simulatedTotal = rows.reduce((sum, r) => sum + r.simulatedTotal, 0)
-  const totalChange = simulatedTotal - originalTotal
-  const totalChangePercent = originalTotal > 0 ? (totalChange / originalTotal) * 100 : 0
-
-  const originalPerUnit = safeQuantity > 0 ? originalTotal / safeQuantity : 0
-  const simulatedPerUnit = safeQuantity > 0 ? simulatedTotal / safeQuantity : 0
-  const changePerUnit = simulatedPerUnit - originalPerUnit
-
-  const getStatusBadge = (status: RequirementRow['status']) => {
+  const getStatusBadge = (status: ProductionRequirementRow['status']) => {
     switch (status) {
       case 'OK':
         return (
@@ -351,6 +321,13 @@ function ProductionCalculator() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-500">
             <GitBranch className="w-3.5 h-3.5" />
             Child BOM
+          </span>
+        )
+      case 'UNCONVERTIBLE':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-500">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            แปลงหน่วยไม่ได้
           </span>
         )
     }
@@ -503,14 +480,28 @@ function ProductionCalculator() {
         )}
       </div>
 
+      {/* BOM Loading Spinner */}
       {bomLoading && (
         <div className="phopy-card p-12 flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
         </div>
       )}
 
+      {/* BOM Fetch Error Banner */}
+      {bomError && (
+        <div className="phopy-card p-6 border border-danger/40 bg-[var(--danger-soft)]/20 flex items-center gap-3 text-danger">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <div>
+            <h4 className="font-semibold">{bomError}</h4>
+            <p className="text-xs text-[var(--fg-3)] mt-0.5">
+              โปรดลองเลือกสูตรการผลิตใหม่อีกครั้ง หรือตรวจสอบการเชื่อมต่อ
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Results & Simulation */}
-      {!bomLoading && selectedBomId && rows.length > 0 && (
+      {!bomLoading && !bomError && selectedBomId && selectedBomFull && bomItemsCount > 0 && safeQuantity > 0 && rows.length > 0 && (
         <>
           {/* 4 KPI Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -546,7 +537,9 @@ function ProductionCalculator() {
                 )}
               </div>
               <p className="text-xs text-[var(--fg-4)] mt-1.5">
-                พร้อมใช้ {readyCount} / {materialRows.length} รายการวัตถุดิบ
+                {childBomShort && !hasZeroStock && !hasInsufficient
+                  ? 'วัตถุดิบของ Child BOM ไม่เพียงพอ'
+                  : `พร้อมใช้ ${readyCount} / ${materialRowsCount} รายการวัตถุดิบ`}
               </p>
             </motion.div>
 
@@ -669,7 +662,8 @@ function ProductionCalculator() {
                   {rows.map((row) => {
                     const isChild = row.itemType === 'CHILD_BOM'
                     const unitConverted = row.recipeUnit !== row.stockUnit
-                    const priceModified = Math.abs(row.simulatedUnitCost - row.originalUnitCost) > 0.0001
+                    const priceModified = Math.abs(row.simulatedUnitCost - row.originalUnitCost) > 1e-6
+                    const currentPrice = priceChanges[row.rowKey] ?? row.originalUnitCost
 
                     return (
                       <tr
@@ -695,6 +689,12 @@ function ProductionCalculator() {
                               {row.materialCode && (
                                 <div className="text-xs text-[var(--fg-4)] font-mono">{row.materialCode}</div>
                               )}
+                              {row.unconvertible && (
+                                <div className="text-xs text-amber-500 flex items-center gap-1 mt-1">
+                                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                  <span>แปลงหน่วย {row.recipeUnit} → {row.stockUnit} ไม่ได้ — ตั้งค่าการแปลงหน่วยของวัตถุดิบนี้ก่อน</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -703,7 +703,7 @@ function ProductionCalculator() {
                             {row.recipeQuantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
                             {unitLabel(row.recipeUnit)}
                           </div>
-                          {unitConverted && (
+                          {unitConverted && !row.unconvertible && (
                             <div className="text-xs text-[var(--fg-4)]">
                               ≈ {row.requiredStockQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
                               {unitLabel(row.stockUnit)}
@@ -731,7 +731,7 @@ function ProductionCalculator() {
                           )}
                         </td>
                         <td className="text-right tabular-nums">
-                          {!isChild && row.shortage > 0 ? (
+                          {!isChild && !row.unconvertible && row.shortage > 0 ? (
                             <span className="text-danger font-semibold">
                               -{row.shortage.toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
                               {unitLabel(row.stockUnit)}
@@ -741,7 +741,9 @@ function ProductionCalculator() {
                           )}
                         </td>
                         <td className="text-right tabular-nums text-[var(--fg-3)]">
-                          ฿{row.originalUnitCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          ฿{row.originalUnitCost.toLocaleString(undefined, {
+                            maximumFractionDigits: row.originalUnitCost < 1 ? 4 : 2,
+                          })}
                           {row.stockUnit && (
                             <span className="text-xs text-[var(--fg-4)]"> / {unitLabel(row.stockUnit)}</span>
                           )}
@@ -750,12 +752,18 @@ function ProductionCalculator() {
                           <div className="inline-flex items-center justify-end gap-1">
                             <input
                               type="number"
-                              value={priceChanges[row.rowKey] ?? row.originalUnitCost}
+                              value={
+                                priceChanges[row.rowKey] !== undefined
+                                  ? priceChanges[row.rowKey]
+                                  : currentPrice < 1
+                                  ? Number(currentPrice.toFixed(4))
+                                  : currentPrice
+                              }
                               onChange={(e) =>
                                 handlePriceChange(row.rowKey, parseFloat(e.target.value) || 0)
                               }
                               min="0"
-                              step="0.01"
+                              step={currentPrice < 1 ? '0.0001' : '0.01'}
                               className={`phopy-input w-28 h-8 px-2 py-1 text-sm text-right tabular-nums ${
                                 priceModified ? 'border-[var(--primary)] bg-[var(--primary-soft)]/30 font-semibold' : ''
                               }`}
@@ -763,37 +771,47 @@ function ProductionCalculator() {
                           </div>
                         </td>
                         <td className="text-right tabular-nums">
-                          <div className="font-semibold text-[var(--primary)]">
-                            ฿{row.simulatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </div>
-                          {priceModified && (
-                            <div className="text-xs text-[var(--fg-4)] line-through">
-                              ฿{row.originalTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </div>
+                          {row.unconvertible ? (
+                            <span className="text-warning font-semibold text-base">?</span>
+                          ) : (
+                            <>
+                              <div className="font-semibold text-[var(--primary)]">
+                                ฿{row.simulatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </div>
+                              {priceModified && (
+                                <div className="text-xs text-[var(--fg-4)] line-through">
+                                  ฿{row.originalTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </div>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="text-right tabular-nums">
-                          <div className="inline-flex items-center justify-end gap-1">
-                            {row.change > 0.001 ? (
-                              <TrendingUp className="w-3.5 h-3.5 text-danger" />
-                            ) : row.change < -0.001 ? (
-                              <TrendingDown className="w-3.5 h-3.5 text-success" />
-                            ) : (
-                              <Minus className="w-3.5 h-3.5 text-[var(--fg-4)]" />
-                            )}
-                            <span
-                              className={
-                                row.change > 0.001
-                                  ? 'text-danger font-medium'
-                                  : row.change < -0.001
-                                  ? 'text-success font-medium'
-                                  : 'text-[var(--fg-4)]'
-                              }
-                            >
-                              {row.change > 0.001 ? '+' : ''}
-                              {row.changePercent.toFixed(1)}%
-                            </span>
-                          </div>
+                          {row.unconvertible ? (
+                            <span className="text-[var(--fg-4)]">-</span>
+                          ) : (
+                            <div className="inline-flex items-center justify-end gap-1">
+                              {row.change > 0.001 ? (
+                                <TrendingUp className="w-3.5 h-3.5 text-danger" />
+                              ) : row.change < -0.001 ? (
+                                <TrendingDown className="w-3.5 h-3.5 text-success" />
+                              ) : (
+                                <Minus className="w-3.5 h-3.5 text-[var(--fg-4)]" />
+                              )}
+                              <span
+                                className={
+                                  row.change > 0.001
+                                    ? 'text-danger font-medium'
+                                    : row.change < -0.001
+                                    ? 'text-success font-medium'
+                                    : 'text-[var(--fg-4)]'
+                                }
+                              >
+                                {row.change > 0.001 ? '+' : ''}
+                                {row.changePercent.toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )
@@ -869,6 +887,16 @@ function ProductionCalculator() {
                             </span>
                           </li>
                         ))}
+                      {childBomShort && (
+                        <li className="flex items-center justify-between gap-2 py-1 px-2.5 rounded bg-[var(--surface)]/80 border border-[var(--border)]">
+                          <span className="font-medium text-[var(--fg-1)]">
+                            วัตถุดิบของ Child BOM
+                          </span>
+                          <span className="text-danger font-semibold tabular-nums">
+                            สต็อกไม่เพียงพอ
+                          </span>
+                        </li>
+                      )}
                     </ul>
                   </div>
                 </div>
@@ -944,7 +972,7 @@ function ProductionCalculator() {
       )}
 
       {/* Empty State when BOM has no items */}
-      {!bomLoading && selectedBomId && rows.length === 0 && (
+      {!bomLoading && !bomError && selectedBomId && selectedBomFull && bomItemsCount === 0 && (
         <div className="phopy-card p-12 text-center">
           <Package className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
           <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-1">
@@ -952,6 +980,19 @@ function ProductionCalculator() {
           </h3>
           <p className="text-sm text-[var(--fg-4)]">
             กรุณาเพิ่มวัตถุดิบในสูตรการผลิต (BOM) ก่อนคำนวณการผลิตและจำลองต้นทุน
+          </p>
+        </div>
+      )}
+
+      {/* Empty State when quantity is <= 0 */}
+      {!bomLoading && !bomError && selectedBomId && selectedBomFull && bomItemsCount > 0 && safeQuantity <= 0 && (
+        <div className="phopy-card p-12 text-center">
+          <Calculator className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-1">
+            ใส่จำนวนที่จะผลิต
+          </h3>
+          <p className="text-sm text-[var(--fg-4)]">
+            กรุณาระบุจำนวนผลผลิตที่ต้องการผลิต เพื่อคำนวณสต็อกวัตถุดิบและต้นทุน
           </p>
         </div>
       )}

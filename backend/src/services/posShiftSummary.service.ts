@@ -1,5 +1,6 @@
 import db from '../db/sqlite'
 import { thaiDateStr } from '../utils/id'
+import { getLoyaltySettings } from './loyaltySettings'
 
 /**
  * สรุปกะที่เพิ่งปิด สำหรับส่ง LINE ให้ Admin — อ่านอย่างเดียว เรียกหลังปิดกะสำเร็จ
@@ -76,13 +77,22 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
       AND module_type IN ('pos_void', 'pos_item_void', 'pos_discount') AND status IN ('AUTO', 'APPROVED', 'EXECUTED')
   `).all(tenantId, s.opened_at, s.closed_at) as any[]
 
-  const billDiscountRow = db.prepare(`
-    SELECT COALESCE(SUM(discount_amount), 0) AS total
-    FROM pos_running_bills
-    WHERE tenant_id = ? AND status = 'PAID'
-      AND (shift_id = ? OR (shift_id IS NULL AND closed_at BETWEEN ? AND ?))
-  `).get(tenantId, shiftId, s.opened_at, s.closed_at) as any
-  const logDiscountTotal = logs.filter(l => l.module_type === 'pos_discount').reduce((t, l) => t + (l.amount || 0), 0)
+  // ส่วนลดรวม = ส่วนลดบนบิล (คอลัมน์เดียวที่ครบทุกใบ) หักส่วนที่เป็นการแลกแต้มเป็นบาท (ไม่ใช่ส่วนลดที่แคชเชียร์ให้)
+  // แต้มที่แลกที่เคาน์เตอร์ = REDEEM ทั้งหมดของบิล − แต้มของแถมที่ใช้ (ของแถมไม่ได้ลดเป็นบาท) · บาท = floor(แต้ม/อัตรา) เหมือนตอนจ่าย
+  // log อนุมัติ (approval_requests) ไม่ใช้เป็นแหล่งยอด: บันทึกเฉพาะส่วนลดที่ผ่านเกณฑ์/อนุมัติ จึงขาดส่วนลดเล็กที่ไม่ต้องขออนุมัติ
+  const redeemRate = getLoyaltySettings(tenantId).redeemRate
+  const discountBills = db.prepare(`
+    SELECT b.discount_amount AS discount,
+      COALESCE(-(SELECT SUM(lt.points) FROM loyalty_transactions lt WHERE lt.tenant_id = b.tenant_id
+        AND lt.type = 'REDEEM' AND lt.reference_type = 'POS_BILL' AND lt.reference_id = b.id), 0)
+      - COALESCE((SELECT SUM(r.points) FROM pos_redemptions r WHERE r.tenant_id = b.tenant_id
+        AND r.bill_id = b.id AND r.status = 'USED'), 0) AS counter_points
+    FROM pos_running_bills b
+    WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.discount_amount > 0
+      AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at BETWEEN ? AND ?))
+  `).all(tenantId, shiftId, s.opened_at, s.closed_at) as any[]
+  const discountTotal = discountBills.reduce((t, b) =>
+    t + Math.max(0, b.discount - Math.floor(Math.max(0, b.counter_points) / redeemRate)), 0)
 
   return {
     shiftNumber: s.shift_number,
@@ -102,7 +112,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     alerts: {
       voids: logs.filter(l => l.module_type === 'pos_void').length,
       itemVoids: logs.filter(l => l.module_type === 'pos_item_void').length,
-      discountTotal: r2(Math.max(Number(billDiscountRow?.total) || 0, logDiscountTotal)),
+      discountTotal: r2(discountTotal),
     },
   }
 }

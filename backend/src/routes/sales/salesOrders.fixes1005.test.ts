@@ -264,7 +264,7 @@ describe('สถานะข้ามขั้นถูกบล็อก (PUT /
  * ไปแล้วไม่ย้อนกลับ
  */
 describe('เลขที่เอกสารไม่เสียถ้า insert ล้มเหลว (numbering rollback) — SO', () => {
-  it('customerId ไม่มีจริง → FK พังตอน insert, ตัวนับ document_sequences SALES_ORDER ไม่ขยับ', async () => {
+  it('customerId ไม่มีจริง → ถูกปฏิเสธ 400 ก่อนออกเลข, ตัวนับ document_sequences SALES_ORDER ไม่ขยับ', async () => {
     const u = createTestUser({ role: 'ADMIN' })
     const before = (db.prepare(
       "SELECT COALESCE(MAX(last_number),0) n FROM document_sequences WHERE tenant_id = ? AND doc_type = 'SALES_ORDER'"
@@ -274,7 +274,7 @@ describe('เลขที่เอกสารไม่เสียถ้า ins
       .set('Authorization', `Bearer ${u.token}`)
       .send({ customerId: 'ไม่มีจริง-' + generateId(), items: [{ productName: 'ของ', quantity: 1, unitPrice: 10 }] })
 
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(400)
 
     const after = (db.prepare(
       "SELECT COALESCE(MAX(last_number),0) n FROM document_sequences WHERE tenant_id = ? AND doc_type = 'SALES_ORDER'"

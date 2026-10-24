@@ -51,7 +51,7 @@ const ENFORCED_MODULE_TYPES = new Set([
 router.post('/settings', requireRole('MASTER', 'ADMIN'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { role, moduleType, approvalRequired, autoApproveThreshold } = req.body
+    const { role, moduleType, approvalRequired, autoApproveThreshold, maxDiscountPct } = req.body
 
     if (!role || !moduleType) {
       return res.status(400).json({ success: false, message: 'Role and module type are required' })
@@ -59,19 +59,25 @@ router.post('/settings', requireRole('MASTER', 'ADMIN'), async (req: Request, re
     if (!ENFORCED_MODULE_TYPES.has(moduleType)) {
       return res.status(400).json({ success: false, message: `Module type "${moduleType}" is not enforced by any gate` })
     }
+    // % ส่วนลด POS ที่ต้องขออนุมัติ — ไม่ส่งมา = คงค่าเดิม
+    const pct = maxDiscountPct === undefined || maxDiscountPct === null ? null : Number(maxDiscountPct)
+    if (pct !== null && !(pct >= 0 && pct <= 100)) {
+      return res.status(400).json({ success: false, message: 'เปอร์เซ็นต์ส่วนลดต้องอยู่ระหว่าง 0–100' })
+    }
 
     const id = generateId()
     const now = new Date().toISOString()
 
     // Upsert (insert or replace)
     db.prepare(`
-      INSERT INTO approval_settings (id, tenant_id, role, module_type, approval_required, auto_approve_threshold, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO approval_settings (id, tenant_id, role, module_type, approval_required, auto_approve_threshold, max_discount_pct, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, role, module_type) DO UPDATE SET
         approval_required = excluded.approval_required,
         auto_approve_threshold = excluded.auto_approve_threshold,
+        max_discount_pct = COALESCE(excluded.max_discount_pct, approval_settings.max_discount_pct),
         updated_at = excluded.updated_at
-    `).run(id, tenantId, role, moduleType, approvalRequired ? 1 : 0, autoApproveThreshold || 0, 
+    `).run(id, tenantId, role, moduleType, approvalRequired ? 1 : 0, autoApproveThreshold || 0, pct,
       req.user!.userId, now, now)
 
     const setting = db.prepare('SELECT * FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = ?')
@@ -450,6 +456,7 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     // ยกเลิกบิล POS ต้องเรียก service แบบ async จึงทำก่อนเปิดทรานแซกชัน
+    let claimedStatus = 'PENDING'
     if (decision === 'APPROVED' && request.reference_type === 'pos_running_bills' && request.module_type === 'pos_void') {
       const posPayload = request.payload ? JSON.parse(request.payload) : null
       if (posPayload) {
@@ -459,8 +466,20 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
         if (invoice) {
           return res.status(409).json({ success: false, message: `อนุมัติไม่สำเร็จ: บิลนี้ออกใบกำกับภาษีแล้ว (${invoice.invoice_number}) ต้องยกเลิกใบกำกับภาษีก่อน` })
         }
-        await cancelPosBill(tenantId, request.requester_id, posPayload.billId,
-          posPayload.reason, posPayload.finalStatus)
+        // จองคำขอก่อนยกเลิกบิล — ผู้อนุมัติสองคนกดพร้อมกัน ต้องยกเลิกได้ครั้งเดียว
+        const claim = db.prepare(`UPDATE approval_requests SET status = 'PROCESSING' WHERE id = ? AND tenant_id = ? AND status = 'PENDING'`)
+          .run(req.params.id, tenantId)
+        if (claim.changes === 0) {
+          return res.status(409).json({ success: false, message: 'คำขอนี้ได้รับการตัดสินไปแล้วหรือไม่อยู่ในสถานะ PENDING' })
+        }
+        claimedStatus = 'PROCESSING'
+        try {
+          await cancelPosBill(tenantId, request.requester_id, posPayload.billId,
+            posPayload.reason, posPayload.finalStatus)
+        } catch (e) {
+          db.prepare(`UPDATE approval_requests SET status = 'PENDING' WHERE id = ? AND status = 'PROCESSING'`).run(req.params.id)
+          throw e
+        }
       }
     }
 
@@ -471,8 +490,8 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
           approver_2_id = ?, approver_2_name = ?, approver_2_decision = ?, approver_2_comment = ?, approver_2_at = ?,
           status = ?,
           updated_at = ?
-        WHERE id = ? AND tenant_id = ? AND status = 'PENDING'
-      `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id, tenantId)
+        WHERE id = ? AND tenant_id = ? AND status = ?
+      `).run(req.user!.userId, req.user!.email, decision, comment || '', now, decision, now, req.params.id, tenantId, claimedStatus)
 
       if (updateResult.changes === 0) {
         throw new Error('คำขอนี้ได้รับการตัดสินไปแล้วหรือไม่อยู่ในสถานะ PENDING')
@@ -589,9 +608,10 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
   } else if (request.reference_type === 'pos_running_bills' && request.module_type === 'pos_discount') {
     // อนุมัติส่วนลด POS: บันทึกยอดส่วนลดที่อนุมัติลงบิลไว้ให้พร้อมรับชำระเงินทันที
     const discountAmt = Math.max(0, Number(request.amount) || 0)
-    db.prepare("UPDATE pos_running_bills SET discount_amount = ? WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
+    const upd = db.prepare("UPDATE pos_running_bills SET discount_amount = ? WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
       .run(discountAmt, request.reference_id, request.tenant_id)
-    recalculateBillTotals(request.reference_id)
+    // บิลปิดไปแล้ว/ไม่ใช่ของ tenant นี้ ห้ามคำนวณยอดใหม่ (recalculate กรองแค่ id)
+    if (upd.changes > 0) recalculateBillTotals(request.reference_id)
   }
 
   // Log execution
@@ -631,9 +651,9 @@ function revertReferenceStatus(request: any) {
     db.prepare("UPDATE sales_orders SET status = 'DRAFT', updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING_APPROVAL'")
       .run(new Date().toISOString(), request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'pos_running_bills' && request.module_type === 'pos_discount') {
-    db.prepare("UPDATE pos_running_bills SET discount_amount = 0 WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
+    const upd = db.prepare("UPDATE pos_running_bills SET discount_amount = 0 WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
       .run(request.reference_id, request.tenant_id)
-    recalculateBillTotals(request.reference_id)
+    if (upd.changes > 0) recalculateBillTotals(request.reference_id)
   }
 }
 

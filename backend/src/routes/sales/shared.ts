@@ -68,6 +68,16 @@ export function findNonSellableLine(
   return null
 }
 
+/** productId ของบรรทัดที่ไม่ใช่ stock_items ของ tenant นี้ (รวมของบริษัทอื่น/id มั่ว) — null = ผ่าน · ไม่ส่ง productId = บรรทัด free text ผ่านเหมือนเดิม */
+export function findUnknownProductId(tenantId: string, ids: Array<string | null | undefined>): string | null {
+  for (const id of ids) {
+    if (id && !db.prepare('SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ?').get(id, tenantId)) return id
+  }
+  return null
+}
+
+export const UNKNOWN_PRODUCT_MESSAGE = 'ไม่พบสินค้าในรายการนี้ในกิจการนี้ — เลือกสินค้าใหม่อีกครั้ง'
+
 export const notSellableMessage = (name: string, category: string): string =>
   `"${name}" เป็นสินค้าหมวด ${category} ขายไม่ได้ — ขายได้เฉพาะสินค้าสำเร็จรูป/กึ่งสำเร็จรูป/บริการ`
 

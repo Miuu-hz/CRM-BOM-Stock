@@ -13,13 +13,6 @@ interface UserJwtPayload {
   tenantId: string
 }
 
-interface AgentJwtPayload {
-  agentId?: string
-  email?: string
-  role: string
-  tenantId: string
-}
-
 const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set. Set it before starting the server.')
@@ -157,35 +150,6 @@ export const requireMaster = (req: Request, res: Response, next: NextFunction): 
   }
 
   next()
-}
-
-// ponytail: fallback to JWT_SECRET if AGENT_JWT_SECRET is not set, preventing startup crash
-const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET || JWT_SECRET
-
-export const authenticateAgent = (req: Request, res: Response, next: NextFunction): void => {
-  try {
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, message: 'Missing agent token' })
-      return
-    }
-    const token = authHeader.split(' ')[1]
-    const decoded = jwt.verify(token, AGENT_JWT_SECRET) as AgentJwtPayload
-    if (decoded.role !== 'AI_AGENT') {
-      res.status(403).json({ success: false, message: 'Not an agent token' })
-      return
-    }
-    req.user = {
-      userId: decoded.agentId || 'ai-agent',
-      email: decoded.email || 'ai@system',
-      role: 'AI_AGENT' as Role,
-      departments: [],
-      tenantId: decoded.tenantId,
-    }
-    next()
-  } catch (error) {
-    res.status(401).json({ success: false, message: 'Invalid agent token' })
-  }
 }
 
 export const requirePermission = (resource: string, action: string) => {

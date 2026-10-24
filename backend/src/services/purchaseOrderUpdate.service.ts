@@ -234,7 +234,7 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
   const poRow = db.prepare('SELECT vat_inclusive FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
   // เดิมอ่านจากใบเดิมอย่างเดียว ฟอร์มเปลี่ยน "เพิ่ม VAT" → "รวม VAT" แล้วกดบันทึกก็เด้งกลับเป็นแบบเดิม
   const inclusive = payload.vatInclusive !== undefined && payload.vatInclusive !== null
-    ? !!payload.vatInclusive
+    ? payload.vatInclusive === true || payload.vatInclusive === 1
     : poRow?.vat_inclusive === 1
   const calc = calcVat(subtotal, { rate: tax, discountAmount, inclusive })
   const { taxAmount, totalAmount, discount } = calc

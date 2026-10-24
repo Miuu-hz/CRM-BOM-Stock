@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText,
   Plus,
-  Search,
   Package,
   Layers,
   DollarSign,
@@ -20,7 +19,6 @@ import {
   ChevronUp,
   ChevronRight,
   Calculator,
-  TrendingUp,
   Boxes,
   FolderTree,
   GitBranch,
@@ -32,7 +30,6 @@ import bomService from '../services/bom'
 import BOMModal from '../components/bom/BOMModal'
 import MaterialsTab from '../components/bom/MaterialsTab'
 import ProductionCalculator from '../components/bom/ProductionCalculator'
-import CostSimulation from '../components/bom/CostSimulation'
 import { unitLabel } from '../hooks/useUnits'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusChips, SortLabel, sortRows, type SortState } from '../components/common/FilterBar'
@@ -114,7 +111,7 @@ interface BOMStats {
 }
 
 type ViewMode = 'card' | 'list' | 'tree'
-type TabType = 'bom' | 'materials' | 'calculator' | 'simulation'
+type TabType = 'bom' | 'materials' | 'calculator'
 type BOMFilterType = 'all' | 'finished' | 'semi-finished' | 'tree-view'
 
 // API Service extensions for Nested BOM
@@ -493,7 +490,6 @@ function BOMPage() {
         {/* Tab Content */}
         {activeTab === 'materials' && <MaterialsTab open={openMaterial} />}
         {activeTab === 'calculator' && <ProductionCalculator />}
-        {activeTab === 'simulation' && <CostSimulation />}
 
         {/* BOM Tab Content */}
         {activeTab === 'bom' && (

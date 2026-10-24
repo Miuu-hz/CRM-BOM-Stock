@@ -50,6 +50,7 @@ const KDS: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // ติ๊กรายเมนูที่ยังรอ server ตอบ — ทับผล polling ไว้ก่อน ไม่งั้นติ๊กแล้วเด้งกลับชั่วครู่
   const pendingItemDone = useRef<Map<string, 'DONE' | 'PENDING'>>(new Map())
+  const itemInFlight = useRef<Set<string>>(new Set())
   const applyPendingItems = (list: KDSTicket[]) => pendingItemDone.current.size === 0 ? list : list.map(t => ({
     ...t,
     items: t.items.map(i => pendingItemDone.current.has(i.id) ? { ...i, status: pendingItemDone.current.get(i.id)! } : i),
@@ -170,20 +171,28 @@ const KDS: React.FC = () => {
   // ติ๊ก/เอาติ๊กออกรายเมนู — สลับได้เสมอ รายการไม่หาย (กันกดพลาด)
   const toggleItemDone = async (ticketId: string, item: KDSTicketItem) => {
     stopNotificationSound()
+    if (itemInFlight.current.has(item.id)) return // คำขอยังไม่กลับ — กันแตะรัวแล้วผลสลับกัน (กลับมาแล้วแตะแก้ได้ทันที)
     const next: 'DONE' | 'PENDING' = item.status === 'DONE' ? 'PENDING' : 'DONE'
     const setItemStatus = (status: KDSTicketItem['status']) => setTickets(prev => prev.map(t => t.id !== ticketId ? t : {
       ...t, items: t.items.map(i => i.id === item.id ? { ...i, status } : i),
     }))
     pendingItemDone.current.set(item.id, next)
+    itemInFlight.current.add(item.id)
     setItemStatus(next)
     try {
       await kdsService.setItemDone(ticketId, item.id, next === 'DONE')
     } catch (e: any) {
+      itemInFlight.current.delete(item.id)
+      pendingItemDone.current.delete(item.id)
       setItemStatus(item.status)
       alert(e?.response?.data?.message || 'ไม่สามารถอัปเดตรายการได้')
-    } finally {
-      pendingItemDone.current.delete(item.id)
+      return
     }
+    itemInFlight.current.delete(item.id)
+    // ค้างไว้อีก ~4 วิ ให้ poll ที่ยิงก่อนเขียนเสร็จตอบกลับมาโดยไม่พลิกแถวกลับ · ลบเฉพาะถ้ายังเป็นค่าของคำขอนี้
+    setTimeout(() => {
+      if (pendingItemDone.current.get(item.id) === next) pendingItemDone.current.delete(item.id)
+    }, 4000)
   }
 
   const getElapsed = (iso: string) => {
