@@ -1,5 +1,6 @@
 import db from '../db/sqlite'
 import { Role, Department, Resource } from '../config/roles'
+import { isCashierOnly } from '../middleware/cashierScope'
 export type { Role, Department }
 
 const departmentResources: Record<Department, Resource[]> = {
@@ -90,10 +91,10 @@ export function canHandleBilling(
     || can(role, depts, 'accounting', 'write', user.customPermissions)
 }
 
-/** เวอร์ชันสำหรับ MCP ที่มีแค่ userId — โหลดแผนก/สิทธิ์รายคนจาก DB เหมือน auth middleware */
-export function canHandleBillingByUserId(
-  userId: string, role: string, side: 'sales' | 'purchase'
-): boolean {
+export interface PermUser { role: string; departments?: Department[]; customPermissions?: Record<string, boolean> }
+
+/** โหลดแผนก/สิทธิ์รายคนจาก DB เหมือน auth middleware — สำหรับ MCP ที่มีแค่ userId */
+export function loadPermUser(userId: string, role: string): PermUser {
   let departments: Department[] = []
   let customPermissions: Record<string, boolean> | undefined
   try {
@@ -101,7 +102,41 @@ export function canHandleBillingByUserId(
     if (row?.departments) departments = JSON.parse(row.departments)
     if (row?.custom_permissions) customPermissions = JSON.parse(row.custom_permissions)
   } catch { /* ไม่มีแถว (master api key) → ตกไปตัดสินด้วย role อย่างเดียว */ }
-  return canHandleBilling({ role, departments, customPermissions }, side)
+  return { role, departments, customPermissions }
+}
+
+/** เวอร์ชันสำหรับ MCP ที่มีแค่ userId */
+export function canHandleBillingByUserId(
+  userId: string, role: string, side: 'sales' | 'purchase'
+): boolean {
+  return canHandleBilling(loadPermUser(userId, role), side)
+}
+
+export function userCan(user: PermUser, resource: string, action: string): boolean {
+  return can(user.role as Role, user.departments || [], resource, action, user.customPermissions)
+}
+
+/** เจ้าของสั่ง 2026-10-24 (D2): role USER ที่ไม่มีแผนก = ผู้ใช้พื้นฐาน — ใช้ POS และร่าง PR/PO ได้เท่านั้น */
+export function isBasicUser(user: { role?: string; departments?: string[] }): boolean {
+  return user.role === 'USER' && !(user.departments && user.departments.length > 0)
+}
+
+/** ร่าง PR/PO เป็นสิทธิ์พื้นฐานของทุกคน ยกเว้นแคชเชียร์ — ขั้นถัดไป (ส่ง/อนุมัติ/รับของ/จ่าย) ค่อยใช้สิทธิ์แผนก */
+export function canDraftPurchase(user: PermUser): boolean {
+  return !isCashierOnly(user.role, user.departments)
+}
+
+/** รับของ/ยืนยันคืนของ (สต็อก+บัญชี): ฝ่ายจัดซื้อหรือฝ่ายคลัง */
+export function canReceivePurchase(user: PermUser): boolean {
+  return userCan(user, 'purchase', 'write') || userCan(user, 'stock', 'write')
+}
+
+/**
+ * (D3) ยกเลิก/void เอกสารซื้อได้ทันที = มีสิทธิ์ delete บน purchase หรือ accounting (MANAGER แผนกนั้น,
+ * ADMIN/MASTER, แผนก CEO/IT) — นอกนั้นต้องส่งคำขออนุมัติหมวด purchase_cancel
+ */
+export function canCancelPurchaseDirect(user: PermUser): boolean {
+  return userCan(user, 'purchase', 'delete') || userCan(user, 'accounting', 'delete')
 }
 
 export { departmentResources }

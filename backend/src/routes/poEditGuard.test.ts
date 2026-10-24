@@ -17,7 +17,7 @@ function seedSupplier(tenantId: string) {
   return id
 }
 
-function seedPO(tenantId: string, supplierId: string, status = 'APPROVED') {
+function seedPO(tenantId: string, supplierId: string, status = 'DRAFT') {  // SUBMITTED/APPROVED ล็อกด้วย D1 อยู่แล้ว (docEditApproval.test)
   const id = generateId()
   const now = new Date().toISOString()
   db.prepare(`

@@ -94,9 +94,9 @@ describe('journal ใบแจ้งหนี้ซื้อดุลถึง�
     const user = createTestUser({ role: 'ADMIN' })
     const g = seedPoWithGr(user.tenantId, user.email, seedSupplier(user.tenantId), [[10, 10]])
     const inv = createPurchaseInvoice(user.tenantId, user.email, { goodsReceiptIds: [g.grId], discountAmount: 10, autoPay: false }) as any
-    // ฐาน 90 ภาษี 6.30 รวม 96.30
+    // ฐาน 90 ภาษี 6.30 รวม 96.30 — ปิด 2109 เต็ม 100 แล้ว Cr สต็อกคืน 10 (ส่วนลด) → Dr = Cr = 106.30
     expect(inv.total_amount).toBe(96.3)
-    expectBalanced(journalOf('PURCHASE_INVOICE', inv.id), 96.3)
+    expectBalanced(journalOf('PURCHASE_INVOICE', inv.id), 106.3)
   })
 })
 

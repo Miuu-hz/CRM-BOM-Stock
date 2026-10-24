@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { isCashierOnly, cashierAllowed } from './cashierScope'
+import { isCashierOnly, cashierAllowed, basicUserDenied } from './cashierScope'
 import { getDb } from '../db/sqlite'
-import { can } from '../services/rbac.service'
+import { can, isBasicUser } from '../services/rbac.service'
 import { Role, Department } from '../config/roles'
 
 interface UserJwtPayload {
@@ -17,19 +17,6 @@ const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set. Set it before starting the server.')
 }
-const HOURS_LIMIT = 24
-
-// ponytail: starter allowlist for tables that can be time-box edited.
-// ตรวจกับ sqlite_master ของ dev.db จริงเมื่อ 2026-09-19: materials/marketing_imports/
-// tax_invoices/invoice_payments ไม่มีตารางเหล่านี้อยู่จริง, journal_entry_lines สะกดผิด
-// (ของจริงคือ journal_lines), products เป็นตารางตายที่เลิกใช้แล้ว — เอาออกทั้งหมด
-const EDITABLE_TABLES = new Set([
-  'orders', 'customers', 'stock_items', 'stock_movements',
-  'boms', 'bom_items', 'purchase_orders', 'purchase_requests', 'pos_running_bills',
-  'pos_bill_items', 'journal_entries', 'journal_lines', 'accounts', 'account_balances',
-  'work_orders', 'suppliers', 'shops',
-  'pos_clearing_transfers', 'pos_kds_tickets'
-])
 
 declare global {
   namespace Express {
@@ -109,6 +96,10 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
       res.status(403).json({ success: false, code: 'CASHIER_SCOPE', message: 'บัญชีแคชเชียร์ใช้ได้เฉพาะงานหน้าร้าน (POS)' })
       return
     }
+    if (isBasicUser(req.user) && basicUserDenied(req.method, req.originalUrl)) {
+      res.status(403).json({ success: false, code: 'BASIC_SCOPE', message: 'ผู้ใช้ทั่วไปเข้าถึงงานบัญชี/ภาษี/รายงานไม่ได้' })
+      return
+    }
 
     next()
   } catch (error) {
@@ -168,64 +159,3 @@ export const requirePermission = (resource: string, action: string) => {
   }
 }
 
-export const canEditRecord = (tableName: string) => {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!req.user) {
-      res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' })
-      return
-    }
-
-    if (req.user.role === 'ADMIN' || req.user.role === 'MASTER') {
-      next()
-      return
-    }
-
-    const { id } = req.params
-    if (!id) {
-      next()
-      return
-    }
-
-    if (!EDITABLE_TABLES.has(tableName)) {
-      res.status(400).json({ success: false, message: 'Invalid table name' })
-      return
-    }
-
-    try {
-      const db = getDb()
-      const record = db.prepare(`SELECT created_at FROM ${tableName} WHERE id = ?`).get(id)
-
-      if (!record) {
-        res.status(404).json({ success: false, message: 'ไม่พบข้อมูล' })
-        return
-      }
-
-      const createdAt = new Date(record.created_at).getTime()
-      const now = Date.now()
-      const diffHours = (now - createdAt) / (1000 * 60 * 60)
-
-      if (diffHours > HOURS_LIMIT) {
-        res.status(403).json({
-          success: false,
-          message: `เกิน ${HOURS_LIMIT} ชั่วโมงแล้ว ไม่สามารถแก้ไขได้`
-        })
-        return
-      }
-
-      next()
-    } catch (error) {
-      console.error('CanEditRecord error:', error)
-      res.status(500).json({ success: false, message: 'ตรวจสอบสิทธิ์ไม่สำเร็จ' })
-    }
-  }
-}
-
-export const checkEditPermission = (user: { role: Role }, createdAt: string): boolean => {
-  if (user.role === 'ADMIN' || user.role === 'MASTER') return true
-
-  const recordTime = new Date(createdAt).getTime()
-  const now = Date.now()
-  const diffHours = (now - recordTime) / (1000 * 60 * 60)
-
-  return diffHours <= HOURS_LIMIT
-}

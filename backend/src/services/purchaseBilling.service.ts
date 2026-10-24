@@ -2,7 +2,7 @@ import db from '../db/sqlite'
 import { generateId, formatDocumentNumber, docYear } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount, isVatRegistered, rememberContactVatMode, postJournal, type JournalLineInput } from './accounting.service'
-import { calcVat } from '../utils/vat'
+import { calcVat, vatModeOf } from '../utils/vat'
 import { closedPeriodLabel } from '../routes/journal.routes'
 
 /**
@@ -42,7 +42,10 @@ export class PurchaseBillingError extends Error {
       | 'DUPLICATE_SUPPLIER_INVOICE'
       | 'POS_CASH_REQUIRED'
       | 'POS_CASH_NOT_FOUND'
-      | 'POS_CASH_OVER',
+      | 'POS_CASH_OVER'
+      | 'VAT_MODE_MISMATCH'
+      | 'WHT_INVALID'
+      | 'SUPPLIER_MISMATCH',
     message: string
   ) {
     super(message)
@@ -99,14 +102,20 @@ interface DerivedGrItem {
 function deriveItemsFromGoodsReceipts(grIds: string[]): DerivedGrItem[] {
   if (grIds.length === 0) return []
   const placeholders = grIds.map(() => '?').join(',')
-  return db.prepare(`
+  // คืนของก่อนออกใบแจ้งหนี้ (grni_return) ตัดออกจาก 2109 ไปแล้ว — ใบแจ้งหนี้คิดเฉพาะของที่เหลือ
+  return (db.prepare(`
     SELECT gri.id as grItemId, gri.purchase_order_item_id as poItemId, gri.material_id as materialId,
-      gri.accepted_qty as quantity, poi.unit_price as unitPrice, COALESCE(poi.skip_stock, 0) as skipStock,
+      gri.accepted_qty - COALESCE((
+        SELECT SUM(pri.po_unit_qty) FROM purchase_return_items pri
+        JOIN purchase_returns pr ON pr.id = pri.purchase_return_id
+        WHERE pri.goods_receipt_item_id = gri.id AND pr.status = 'CONFIRMED' AND pr.grni_return = 1
+      ), 0) as quantity,
+      poi.unit_price as unitPrice, COALESCE(poi.skip_stock, 0) as skipStock,
       poi.expense_account_id as expenseAccountId
     FROM goods_receipt_items gri
     JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
     WHERE gri.goods_receipt_id IN (${placeholders}) AND gri.accepted_qty > 0
-  `).all(...grIds) as DerivedGrItem[]
+  `).all(...grIds) as DerivedGrItem[]).filter(d => d.quantity > 1e-9)
 }
 
 /**
@@ -242,7 +251,7 @@ function postPurchaseInvoiceJournal(
   }
 ) {
   const { piId, piNumber, invoiceDate, notes, grIds, totals, taxRate, supplierName, supplierTaxId } = params
-  const { subtotal, taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable, expenseBuckets, skipShare } = totals
+  const { taxAmount, totalAmount, resolvedDrAccId, inventoryAccId, payableAccId, vatAccId, vatClaimable, expenseBuckets, skipShare } = totals
   const now = new Date().toISOString()
   const r2 = (n: number) => Math.round(n * 100) / 100
   const drAccLabel = resolvedDrAccId
@@ -251,15 +260,19 @@ function postPurchaseInvoiceJournal(
   // ของที่ใบนี้อ้างอิงถูกตั้งค้างรับไว้แล้วตอนยืนยันใบรับสินค้า (Dr สต็อก / Cr 2109)
   // ใบแจ้งหนี้จึงมาปิด 2109 ไม่ใช่ Dr สต็อกซ้ำอีกรอบ — grIds ตรงนี้ต้องเป็น "ทุก GR" ที่ใบนี้อ้างอิง
   // (รวม PO หลายใบ) ไม่ใช่แค่ GR ของ PO หลัก ไม่งั้นยอดปิด 2109 จะขาดเป็นส่วนของ PO ที่เอามารวม
+  // หักส่วนที่คืนสินค้าก่อนออกใบแจ้งหนี้ (Dr 2109 ตอนยืนยันใบคืน) ออก — เหลือเท่าที่ยังค้างจริง
+  const grPh = grIds.map(() => '?').join(', ')
   const accruedForGRs = grIds.length > 0
     ? (db.prepare(`
-        SELECT COALESCE(SUM(l.credit), 0) AS total
+        SELECT COALESCE(SUM(l.credit - l.debit), 0) AS total
         FROM journal_lines l
         JOIN journal_entries je ON je.id = l.journal_entry_id
         JOIN accounts a ON a.id = l.account_id
-        WHERE je.tenant_id = ? AND je.reference_type = 'GOODS_RECEIPT' AND a.code = ?
-          AND je.reference_id IN (${grIds.map(() => '?').join(', ')})
-      `).get(tenantId, ACC.GRNI, ...grIds) as any).total as number
+        WHERE je.tenant_id = ? AND a.code = ? AND (
+          (je.reference_type = 'GOODS_RECEIPT' AND je.reference_id IN (${grPh}))
+          OR (je.reference_type = 'PURCHASE_RETURN' AND je.reference_id IN (
+            SELECT id FROM purchase_returns WHERE tenant_id = je.tenant_id AND grni_return = 1 AND goods_receipt_id IN (${grPh}))))
+      `).get(tenantId, ACC.GRNI, ...grIds, ...grIds) as any).total as number
     : 0
   // ลงบัญชีเป็นสตางค์เสมอ แล้วให้ฝั่งเดบิตของสินค้า = เจ้าหนี้ − ภาษี พอดี (ไม่ใช้ subtotal ตรง ๆ)
   // เพราะ calcVat โหมดแยก VAT คืน subtotal แบบไม่ปัด (เช่น 168.585) แต่ total ปัดแล้ว (180.39)
@@ -281,10 +294,14 @@ function postPurchaseInvoiceJournal(
   // รวมกัน ไม่ใช่จากยอดของอย่างเดียว เดิมปิดได้แค่ส่วนของ เศษภาษีค้าง 2109 ถาวร + Dr สต็อกซ้ำอีกเท่าภาษี
   // (ปิดเต็ม accruedForGRs แล้วยังลงบรรทัดภาษีอีก = นับภาษีสองรอบ เดบิตเกินเครดิต postJournal ปฏิเสธ)
   const goodsStockPortion = r2(goodsDebit - expensePortion)
-  const grniCap = vatClaimable ? goodsStockPortion : r2(goodsStockPortion + vatStockPortion)
-  const grniPortion = Math.max(0, Math.min(r2(accruedForGRs), grniCap))
-  const grniFromVat = Math.max(0, r2(grniPortion - goodsStockPortion))
-  const inventoryPortion = r2(goodsStockPortion - grniPortion + grniFromVat)
+  // ปิด 2109 เต็มยอดที่ GR ตั้งไว้เสมอ ส่วนต่างกับต้นทุนในบิลปรับเข้า/ออกสต็อก:
+  //   บิลแพงกว่า → Dr สต็อกเพิ่ม · บิลถูกกว่า (ส่วนลดท้ายบิล/ราคาลด) → Cr สต็อก (overAccrued)
+  // เดิม min(ยอดตั้ง, ยอดบิล) — บิลถูกกว่าเมื่อไร ส่วนต่างค้าง 2109 ถาวร และสต็อกในงบสูงเกินจริง
+  const grniPortion = Math.max(0, r2(accruedForGRs))
+  const grniFromGoods = Math.min(grniPortion, goodsStockPortion)
+  const grniFromVat = vatClaimable ? 0 : Math.max(0, Math.min(vatStockPortion, r2(grniPortion - grniFromGoods)))
+  const overAccrued = r2(grniPortion - grniFromGoods - grniFromVat)
+  const inventoryPortion = r2(goodsStockPortion - grniFromGoods)
   const vatInventoryPortion = r2(vatStockPortion - grniFromVat)
   // แบ่ง expensePortion/vatExpensePortion ลงแต่ละบัญชีตามสัดส่วน rawSubtotal ของ bucket นั้น ๆ
   // (บรรทัดสุดท้ายรับเศษปัดทั้งหมด กันดุลไม่ลง) — 1 Dr ต่อบัญชีค่าใช้จ่ายที่ต่างกัน
@@ -311,6 +328,10 @@ function postPurchaseInvoiceJournal(
       lines.push({ accountId: alloc.accountId, description: `ภาษีซื้อที่ขอคืนไม่ได้ (ไม่นับสต็อก) - ${piNumber}`, debit: alloc.amount })
     }
   }
+  if (overAccrued > 0.005) {
+    // GR ลง Dr 1107 เสมอ (ไม่ใช่บัญชีที่เลือกในบิล) จึงปรับลดที่ 1107
+    lines.push({ code: ACC.RAW_MATERIAL, description: `ปรับลดต้นทุนตามใบแจ้งหนี้ (ส่วนลด/ราคาต่ำกว่าใบรับ) - ${piNumber}`, credit: overAccrued })
+  }
   lines.push({ accountId: payableAccId, description: `${params.creditLabel || 'เจ้าหนี้การค้า'} - ${piNumber}`, credit: payableTotal })
 
   // postJournal ปัดทุกบรรทัด, หัวรายการ = ผลรวมบรรทัด และ throw ถ้าเดบิต ≠ เครดิต (> 0.005)
@@ -327,7 +348,7 @@ function postPurchaseInvoiceJournal(
       VALUES (?, ?, 'PURCHASE_INVOICE', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
     `).run(generateId(), tenantId, piId, piNumber, invoiceDate.substring(0, 10),
       supplierName || '', supplierTaxId || null,
-      subtotal, taxRate, taxAmount, totalAmount, journalId, now)
+      r2(totalAmount - taxAmount), taxRate, taxAmount, totalAmount, journalId, now)
   }
 
   return { journalId, journalNumber }
@@ -437,11 +458,28 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const skipBuckets = buildSkipBuckets(items)
 
   // ── 5) VAT/ส่วนลด สืบทอดจาก PO — อัตราภาษี/โหมดรวม VAT จาก PO ของ GR ใบแรก, ส่วนลดรวมทุก PO ที่เกี่ยวข้อง ──
+  // ทุก PO ในใบต้องโหมด VAT เดียวกัน — ใบเดียวคิดภาษีได้แบบเดียว (เดิมใช้ของใบแรกกับทุกบรรทัด)
+  const modeOf = (r: any) => vatModeOf(r.po_tax_rate ?? 7, r.po_vat_inclusive === 1)
+  const mixed = orderedGrRows.find(r => modeOf(r) !== modeOf(orderedGrRows[0]))
+  if (mixed) {
+    throw new PurchaseBillingError('VAT_MODE_MISMATCH',
+      `ใบรับสินค้า ${mixed.gr_number} (${mixed.po_number}) คิด VAT คนละแบบกับ ${orderedGrRows[0].po_number} รวมเป็นบิลเดียวไม่ได้ — แยกออกใบแจ้งหนี้`)
+  }
   const taxRate = reqTaxRate != null ? Number(reqTaxRate) : (orderedGrRows[0].po_tax_rate ?? 7)
   const inclusive = orderedGrRows[0].po_vat_inclusive === 1
+  // ส่วนลดท้ายบิลของ PO ใช้ได้ครั้งเดียว — ใบแรกรับไป ใบถัดไปได้เฉพาะที่เหลือ (เดิมทุกใบได้ส่วนลดเต็มซ้ำ)
+  // shortcut: ใบรวมหลาย PO นับส่วนลดของทั้งใบเป็นของทุก PO ในใบ — ถ้าภายหลังแยกบิล PO นั้นข้ามใบรวมอาจได้ส่วนลดน้อยกว่าจริง ให้ส่ง discountAmount เอง
+  const discountTaken = db.prepare(`
+    SELECT COALESCE(SUM(discount_amount), 0) AS s FROM purchase_invoices
+    WHERE tenant_id = ? AND status != 'CANCELLED' AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)`)
   const discountAmount = payload.discountAmount != null
     ? Number(payload.discountAmount)
-    : allPoIds.reduce((sum, poId) => sum + (Number(orderedGrRows.find(r => r.purchase_order_id === poId)!.po_discount_amount) || 0), 0)
+    : allPoIds.reduce((sum, poId) => {
+        const poDiscount = Number(orderedGrRows.find(r => r.purchase_order_id === poId)!.po_discount_amount) || 0
+        if (poDiscount <= 0) return sum
+        const taken = (discountTaken.get(tenantId, poId, `%"${poId}"%`) as any).s as number
+        return sum + Math.max(0, poDiscount - taken)
+      }, 0)
 
   // งวดปิดบัญชี — กติกาเดียวกับ updatePurchaseInvoice (ห้ามลง journal ย้อนเข้างวดที่ปิดแล้ว)
   const finalInvoiceDate = invoiceDate || new Date().toISOString()
@@ -470,24 +508,32 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, posCashMovementId ? null : crAccountId, skipBuckets)
   const posCashLabel = posCashMovementId ? applyPosCashCredit(tenantId, posCashMovementId, totals) : null
 
+  // Auto-settle: ผู้เรียกสั่ง (autoPay) หรือทุก PO ในใบติดธงจ่ายแล้ว — เงินจาก POS ปิดเป็นจ่ายแล้วตั้งแต่สร้าง ไม่ต้องจ่ายซ้ำ
+  const allPos = allPoIds.map(poId => db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any)
+  const primaryPo = allPos[0]
+  const allPosPaid = allPos.every(po => po?.is_paid === 1)
+  const shouldAutoPay = !posCashMovementId && (payload.autoPay !== undefined ? !!payload.autoPay : allPosPaid)
+
   // ── ตรวจครบทุกอย่างมาถึงตรงนี้แล้ว — เพิ่งเบิร์นเลขที่เอกสาร ไม่งั้น request ที่ถูกปฏิเสธจะกินเลขไปเปล่า ๆ ──
   const id = generateId()
   // เลขที่ตามวันที่ใบแจ้งหนี้ (บิลย้อนหลังได้เลขของวันบนบิล) ไม่ใช่วันที่กดสร้าง
   const piNumber = formatDocumentNumber('PI', tenantId, 'PURCHASE_INVOICE', docYear(finalInvoiceDate), 5, finalInvoiceDate)
   const now = new Date().toISOString()
+  let paymentResult: any = null
 
   const transaction = db.transaction(() => {
     db.prepare(`
       INSERT INTO purchase_invoices (id, tenant_id, pi_number, supplier_invoice_number, purchase_order_id,
         supplier_id, goods_receipt_id, goods_receipt_ids, purchase_order_ids, invoice_date, due_date, subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive,
-        paid_amount, balance_amount, status, payment_status, pos_cash_movement_id, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?, ?, ?)
+        paid_amount, balance_amount, status, payment_status, pos_cash_movement_id, notes, created_at, updated_at, dr_account_id, cr_account_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?, ?, ?, ?, ?)
     `).run(id, tenantId, piNumber, supplierInvoiceNumber || '', purchaseOrderId, baseSupplierId,
       grIds[0], JSON.stringify(grIds), JSON.stringify(allPoIds), finalInvoiceDate, dueDate || null,
       totals.subtotal, totals.discount, taxRate, totals.taxAmount, totals.totalAmount, inclusive ? 1 : 0,
       // เงินจาก POS = จ่ายไปแล้วตั้งแต่เงินออกจากลิ้นชัก ใบปิดเป็นจ่ายแล้วทันที
       posCashMovementId ? totals.totalAmount : 0, posCashMovementId ? 0 : totals.totalAmount,
-      posCashMovementId ? 'PAID' : 'UNPAID', posCashMovementId, notes || '', now, now)
+      posCashMovementId ? 'PAID' : 'UNPAID', posCashMovementId, notes || '', now, now,
+      totals.resolvedDrAccId, totals.payableAccId)
 
     if (items.length > 0) {
       const insertItem = db.prepare(`
@@ -509,6 +555,25 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
       piId: id, piNumber, invoiceDate: finalInvoiceDate, notes, grIds, totals, taxRate,
       supplierName: supplier?.name, supplierTaxId: supplier?.tax_id, creditLabel: posCashLabel || undefined,
     })
+
+    // จ่ายใน transaction เดียวกัน — จ่ายไม่ผ่านต้องแจ้ง error และไม่ออกใบค้างครึ่งทาง (เดิมกลืน error เงียบ)
+    // PO ติดธงจ่ายแล้ว: จ่ายเท่าที่ PO จ่ายจริง (poPaymentTarget รองรับจ่ายบางส่วน) ไม่ใช่เต็มใบเสมอ
+    if (shouldAutoPay) {
+      const cap = allPosPaid ? allPos.reduce((s, po) => s + poPaymentTarget(tenantId, po).remaining, 0) : Infinity
+      const amount = Math.round(Math.min(totals.totalAmount, cap) * 100) / 100
+      if (amount > 0.005) {
+        paymentResult = paySupplier(tenantId, actorEmail, {
+          supplierId: baseSupplierId,
+          purchaseInvoiceId: id,
+          paymentDate: finalInvoiceDate,
+          paymentMethod: payload.paymentMethod || primaryPo?.payment_method || 'TRANSFER',
+          paymentReference: payload.paymentReference || primaryPo?.payment_reference || '',
+          bankAccountId: payload.bankAccountId || primaryPo?.bank_account_id || null,
+          amount,
+          notes: `[Auto-Settle from ${primaryPo?.po_number || ''}] ${notes || ''}`.trim(),
+        })
+      }
+    }
   })
 
   transaction()
@@ -516,35 +581,7 @@ export function createPurchaseInvoice(tenantId: string, actorEmail: string, payl
   // จำโหมด VAT ของใบนี้ไว้กับผู้ขายรายนี้ — ใบแจ้งหนี้ซื้อถัดไปจะ default ให้ถูกโดยไม่ต้องเลือกใหม่
   rememberContactVatMode(tenantId, 'supplier', baseSupplierId, taxRate, inclusive)
 
-  let invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
-  const primaryPo = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(purchaseOrderId, tenantId) as any
-
-  // Auto-settle payment if autoPay is requested, or if every PO involved was already paid (is_paid === 1)
-  const posPaidPh = allPoIds.map(() => '?').join(',')
-  const unpaidPoCount = (db.prepare(
-    `SELECT COUNT(*) as c FROM purchase_orders WHERE tenant_id = ? AND id IN (${posPaidPh}) AND is_paid != 1`
-  ).get(tenantId, ...allPoIds) as any).c
-  // เงินจาก POS ปิดเป็นจ่ายแล้วตั้งแต่ตอนสร้าง (balance 0) — เงื่อนไข balance_amount > 0 ด้านล่างกันจ่ายซ้ำอยู่แล้ว
-  const shouldAutoPay = payload.autoPay !== undefined ? payload.autoPay : (unpaidPoCount === 0)
-
-  let paymentResult: any = null
-  if (shouldAutoPay && invoice && invoice.balance_amount > 0) {
-    try {
-      paymentResult = paySupplier(tenantId, actorEmail, {
-        supplierId: baseSupplierId,
-        purchaseInvoiceId: id,
-        paymentDate: finalInvoiceDate,
-        paymentMethod: payload.paymentMethod || primaryPo?.payment_method || 'TRANSFER',
-        paymentReference: payload.paymentReference || primaryPo?.payment_reference || '',
-        bankAccountId: payload.bankAccountId || primaryPo?.bank_account_id || null,
-        amount: invoice.total_amount,
-        notes: `[Auto-Settle from ${primaryPo?.po_number || ''}] ${notes || ''}`.trim(),
-      })
-      invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
-    } catch (payErr) {
-      console.error('Auto-settle payment failed for invoice', id, payErr)
-    }
-  }
+  const invoice = db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
 
   const invoiceItems = db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id)
   return { ...invoice, items: invoiceItems, payment: paymentResult }
@@ -626,6 +663,8 @@ export interface UpdatePurchaseInvoicePayload {
   discountAmount?: number
   drAccountId?: string | null
   crAccountId?: string | null
+  /** ต้องตรงกับโหมดของ PO — ไม่ตรงปฏิเสธ (ยอด GR/2109 ตั้งตามโหมดของ PO ไปแล้ว) */
+  vatInclusive?: boolean | number | null
 }
 
 /**
@@ -645,6 +684,7 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
   const hasFinancialChange = payload.items !== undefined || payload.invoiceDate !== undefined
     || payload.taxRate !== undefined || payload.discountAmount !== undefined
     || payload.drAccountId !== undefined || payload.crAccountId !== undefined
+    || (payload.vatInclusive !== undefined && payload.vatInclusive !== null)
 
   // งวดปิดบัญชี: เช็คทั้งวันที่เดิมของใบ (แก้ใบเก่าที่อยู่ในงวดปิดไม่ได้เลย) และวันที่ใหม่ถ้าเปลี่ยน
   const oldClosed = closedPeriodLabel(tenantId, pi.invoice_date)
@@ -714,14 +754,30 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
 
   const taxRate = payload.taxRate != null ? Number(payload.taxRate) : pi.tax_rate
   const discountAmount = payload.discountAmount != null ? Number(payload.discountAmount) : pi.discount_amount
-  const inclusive = pi.vat_inclusive === 1
-  const drAccountId = payload.drAccountId !== undefined ? payload.drAccountId : undefined
-  const crAccountId = payload.crAccountId !== undefined ? payload.crAccountId : undefined
+  let inclusive = pi.vat_inclusive === 1
+  if (payload.vatInclusive !== undefined && payload.vatInclusive !== null) {
+    const want = payload.vatInclusive === true || payload.vatInclusive === 1
+    const poInclusive = (db.prepare('SELECT vat_inclusive FROM purchase_orders WHERE id = ? AND tenant_id = ?')
+      .get(pi.purchase_order_id, tenantId) as any)?.vat_inclusive === 1
+    if (want !== poInclusive) {
+      throw new PurchaseBillingError('VAT_MODE_MISMATCH', `โหมด VAT ต้องตรงกับใบสั่งซื้อ (${poInclusive ? 'ราคารวม VAT' : 'VAT แยก'}) — แก้ที่ใบสั่งซื้อแล้วออกใบแจ้งหนี้ใหม่`)
+    }
+    inclusive = want
+  }
+  // ไม่ส่งมา = ใช้บัญชีที่ใบนี้ลงไว้ (เดิมเด้งกลับเป็น 1107/2101 ทุกครั้งที่แก้ยอด)
+  const drAccountId = payload.drAccountId !== undefined ? payload.drAccountId : pi.dr_account_id
+  const crAccountId = payload.crAccountId !== undefined ? payload.crAccountId : pi.cr_account_id
 
   // ใบที่จับคู่เงินจาก POS ไว้: ฝั่ง Cr คง 1182 ตลอด (เปลี่ยนบัญชีปลายทางไม่ได้) และยอดจ่ายเดินตามยอดใบ
   const posCashMovementId: string | null = pi.pos_cash_movement_id || null
   const totals = calcPurchaseInvoiceTotals(tenantId, subtotalRaw, taxRate, discountAmount, inclusive, drAccountId, posCashMovementId ? null : crAccountId, skipBuckets)
   const posCashLabel = posCashMovementId ? applyPosCashCredit(tenantId, posCashMovementId, totals, pi.id) : null
+
+  // จ่ายเงินไปแล้ว: ใบจ่ายเงิน Dr บัญชีหนี้เดิมไปแล้ว ย้ายบัญชีหนี้ตอนนี้ = บัญชีเดิมค้าง บัญชีใหม่ไม่มีวันปิด
+  const oldCrAccId = pi.cr_account_id || getOrCreateAccount(tenantId, ACC.AP)
+  if (!posCashMovementId && (pi.paid_amount || 0) > 0.005 && totals.payableAccId !== oldCrAccId) {
+    throw new PurchaseBillingError('CR_ACCOUNT_INVALID', 'ใบนี้จ่ายเงินไปแล้ว เปลี่ยนบัญชีปลายทางของหนี้ไม่ได้ — ยกเลิกการจ่ายเงินก่อน')
+  }
 
   if (!posCashMovementId && totals.totalAmount < (pi.paid_amount || 0) - 0.005) {
     throw new PurchaseBillingError(
@@ -754,11 +810,12 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
       UPDATE purchase_invoices SET supplier_invoice_number = COALESCE(?, supplier_invoice_number),
         due_date = COALESCE(?, due_date), notes = COALESCE(?, notes),
         invoice_date = ?, tax_rate = ?, discount_amount = ?, subtotal = ?, tax_amount = ?, total_amount = ?,
-        paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?
+        paid_amount = ?, balance_amount = ?, payment_status = ?, updated_at = ?,
+        vat_inclusive = ?, dr_account_id = ?, cr_account_id = ?
       WHERE id = ? AND tenant_id = ?
     `).run(payload.supplierInvoiceNumber ?? null, payload.dueDate ?? null, payload.notes ?? null,
       newInvoiceDate, taxRate, totals.discount, totals.subtotal, totals.taxAmount, totals.totalAmount,
-      paidAmount, newBalance, newPaymentStatus, now, id, tenantId)
+      paidAmount, newBalance, newPaymentStatus, now, inclusive ? 1 : 0, totals.resolvedDrAccId, totals.payableAccId, id, tenantId)
 
     postPurchaseInvoiceJournal(tenantId, actorEmail, {
       piId: id, piNumber: pi.pi_number, invoiceDate: newInvoiceDate, notes: payload.notes ?? pi.notes,
@@ -775,6 +832,24 @@ export function updatePurchaseInvoice(tenantId: string, actorEmail: string, id: 
     ...db.prepare('SELECT * FROM purchase_invoices WHERE id = ? AND tenant_id = ?').get(id, tenantId),
     items: db.prepare('SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?').all(id),
   }
+}
+
+/**
+ * ยอดที่ PO บอกว่าจ่ายไปแล้ว แต่ใบแจ้งหนี้ยังไม่ได้บันทึกจ่าย
+ * is_paid + paid_amount น้อยกว่ายอด PO = จ่ายบางส่วน → จ่ายแค่ paid_amount ส่วนที่เหลือค้างเป็นเจ้าหนี้
+ * is_paid + paid_amount ว่าง/0/ครบยอด = จ่ายเต็มยอดค้างของใบแจ้งหนี้
+ * หักยอดที่ใบแจ้งหนี้ของ PO นี้จ่ายไปแล้ว — เรียกซ้ำแล้วไม่จ่ายซ้ำ
+ */
+export function poPaymentTarget(tenantId: string, po: any): { partial: boolean; remaining: number } {
+  if (po.is_paid !== 1) return { partial: false, remaining: 0 }
+  const paid = Number(po.paid_amount) || 0
+  const partial = paid > 0.005 && paid < (Number(po.total_amount) || 0) - 0.005
+  if (!partial) return { partial: false, remaining: Infinity }
+  const already = (db.prepare(`
+    SELECT COALESCE(SUM(paid_amount), 0) AS s FROM purchase_invoices
+    WHERE tenant_id = ? AND status != 'CANCELLED' AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)
+  `).get(tenantId, po.id, `%"${po.id}"%`) as any).s as number
+  return { partial: true, remaining: Math.max(0, Math.round((paid - already) * 100) / 100) }
 }
 
 /** 'CASH' (REST) หรือข้อความที่มีคำว่า "เงินสด" (บิลที่ AI อ่านผ่าน MCP) */
@@ -844,13 +919,18 @@ export function listPosCashUnmatched(tenantId: string, movementId?: string, opts
  * Dr เจ้าหนี้การค้า = Cr เงินสด/ธนาคาร + Cr ภาษีหัก ณ ที่จ่าย (ถ้ามี)
  */
 export function paySupplier(tenantId: string, actorEmail: string, payload: PaySupplierPayload) {
-  const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, notes } = payload
+  const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, notes } = payload
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  // ยอดเงินมาจาก client — ปัดสตางค์ และต้องเป็นบวก (เดิม amount ติดลบผ่าน !amount ไปลดยอดจ่ายของใบได้)
+  const amount = r2(Number(payload.amount))
+  const wht = r2(Number(payload.withholdingTax) || 0)
   const isPosCash = paymentMethod === POS_CASH_METHOD
   // เงินจาก POS ไม่ได้ออกจากบัญชีธนาคาร — ไม่สนใจ bankAccountId ที่ติดมาจากฟอร์ม
   const bankAccountId = isPosCash ? null : payload.bankAccountId
   const posCashMovementId = isPosCash ? (payload.posCashMovementId || null) : null
   if (!supplierId) throw new PurchaseBillingError('SUPPLIER_REQUIRED', 'Supplier and amount are required')
-  if (!amount) throw new PurchaseBillingError('AMOUNT_REQUIRED', 'Supplier and amount are required')
+  if (!(amount > 0)) throw new PurchaseBillingError('AMOUNT_REQUIRED', 'ยอดจ่ายต้องมากกว่า 0')
+  if (!(wht >= 0 && wht < amount)) throw new PurchaseBillingError('WHT_INVALID', 'ภาษีหัก ณ ที่จ่ายต้องไม่ติดลบ และน้อยกว่ายอดจ่าย')
 
   let invoice: any = null
   if (purchaseInvoiceId) {
@@ -860,20 +940,22 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
     if (invoice.status === 'CANCELLED') throw new PurchaseBillingError('INVOICE_CANCELLED', 'ใบแจ้งหนี้นี้ถูกยกเลิกไปแล้ว จ่ายเงินไม่ได้')
     // เผื่อเศษ float ครึ่งสตางค์ (เช่นยอดคงค้าง 180.38999999 แต่จ่าย 180.39)
     if (amount > (invoice.balance_amount || 0) + 0.005) throw new PurchaseBillingError('OVER_BALANCE', 'Payment amount exceeds invoice balance')
+    if (invoice.supplier_id !== supplierId) throw new PurchaseBillingError('SUPPLIER_MISMATCH', 'ผู้ขายที่เลือกไม่ตรงกับผู้ขายของใบแจ้งหนี้นี้')
+  } else if (!db.prepare('SELECT 1 FROM suppliers WHERE id = ? AND tenant_id = ?').get(supplierId, tenantId)) {
+    throw new PurchaseBillingError('SUPPLIER_MISMATCH', 'ไม่พบผู้ขายนี้ในกิจการ')
   }
 
   // งวดปิดบัญชี — กติกาเดียวกับ updatePurchaseInvoice
   const closedLabel = closedPeriodLabel(tenantId, paymentDate || new Date().toISOString())
   if (closedLabel) throw new PurchaseBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกการจ่ายเงินวันที่นี้ไม่ได้`)
 
-  const wht0 = payload.withholdingTax || 0
   let posCashAccId: string | null = null
   if (isPosCash) {
     if (!posCashMovementId) throw new PurchaseBillingError('POS_CASH_REQUIRED', 'เลือกรายการเงินออกจาก POS ที่จะจับคู่กับบิลนี้ก่อน')
     const mv = listPosCashUnmatched(tenantId, posCashMovementId)[0]
     if (!mv) throw new PurchaseBillingError('POS_CASH_NOT_FOUND', 'ไม่พบรายการเงินออกจาก POS ที่เลือก')
-    if (amount - wht0 > mv.remaining + 0.005) {
-      throw new PurchaseBillingError('POS_CASH_OVER', `รายการเงินออกจาก POS นี้เหลือให้จับคู่ ฿${mv.remaining.toLocaleString()} แต่จะจ่าย ฿${(amount - wht0).toLocaleString()}`)
+    if (amount - wht > mv.remaining + 0.005) {
+      throw new PurchaseBillingError('POS_CASH_OVER', `รายการเงินออกจาก POS นี้เหลือให้จับคู่ ฿${mv.remaining.toLocaleString()} แต่จะจ่าย ฿${(amount - wht).toLocaleString()}`)
     }
     posCashAccId = getOrCreateAccount(tenantId, ACC.POS_PAYOUT_PENDING)
   }
@@ -882,11 +964,14 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   // prefix 'SP' ใช้เฉพาะตอนยังไม่เปิดรูปแบบใน Settings (ถ้าเปิด จะใช้ prefix ที่ตั้งไว้ เช่น PAY)
   const paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', docYear(paymentDate), 5, paymentDate)
   const now = new Date().toISOString()
-  const wht = payload.withholdingTax || 0
-  const netAmount = amount - wht
+  const netAmount = r2(amount - wht)
 
   // Resolve accounts before transaction
-  const payableAccId = getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
+  // Dr บัญชีหนี้ที่ใบแจ้งหนี้ลงไว้ (เลือกบัญชีหนี้สินอื่นได้ตอนออกใบ) — ไม่มี/ใบเก่า = เจ้าหนี้การค้า
+  const invoiceCrAccId = invoice?.cr_account_id
+    ? (db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(invoice.cr_account_id, tenantId) as any)?.id
+    : null
+  const payableAccId = invoiceCrAccId || getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
   // Dr/Cr บัญชีธนาคารที่เลือกโดยตรงถ้ามี ไม่งั้น fallback ตาม paymentMethod (CASH -> 1101, อื่นๆ -> 1102)
   const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
   // MCP เก็บวิธีจ่ายเป็นข้อความไทยจากบิล ("เงินสด") — เดิมเทียบแค่ === 'CASH' บิลเงินสดเลยไปลงธนาคาร
@@ -896,8 +981,6 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
     tenantId, cashCode, ACC_META[cashCode]!.name, ACC_META[cashCode]!.type, ACC_META[cashCode]!.category, ACC_META[cashCode]!.normalBalance
   )
   const whtAccId = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
-  const journalId = generateId()
-  const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(paymentDate || now).getFullYear(), 5, paymentDate || now)
 
   const transaction = db.transaction(() => {
     db.prepare(`
@@ -908,7 +991,6 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
       paymentMethod || 'TRANSFER', paymentReference || '', amount, wht, netAmount, notes || '', bankAccountId || null, posCashMovementId, now, now)
 
     if (invoice) {
-      const r2 = (n: number) => Math.round(n * 100) / 100
       const newPaid = r2((invoice.paid_amount || 0) + amount)
       const newBalance = Math.max(0, r2(invoice.total_amount - newPaid))
       const newPaymentStatus = newBalance <= 0.005 ? 'PAID' : 'PARTIAL'
@@ -919,30 +1001,16 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
       `).run(newPaid, newBalance, newPaymentStatus, now, purchaseInvoiceId, tenantId)
     }
 
-    // === POST JOURNAL ENTRY ===
-    // Dr เจ้าหนี้การค้า (2101)
-    // Cr เงินสด/ธนาคาร (1101/1102) + Cr ภาษีหัก ณ ที่จ่าย (2105) ถ้ามี WHT
-    // หัวรายการ = ผลรวมของบรรทัดจริง (ไม่ใช่ amount ตรง ๆ) — บรรทัดเครดิตคือ netAmount + wht
-    const headerDebit = Math.round(amount * 100) / 100
-    const headerCredit = Math.round((netAmount + (whtAccId && wht > 0 ? wht : 0)) * 100) / 100
-    db.prepare(`
-      INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id,
-        description, total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'SUPPLIER_PAYMENT', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?)
-    `).run(journalId, tenantId, journalNumber, (paymentDate || now).substring(0, 10),
-      id, `จ่ายชำระ ${paymentNumber}`, headerDebit, headerCredit, now, actorEmail, notes || null,
-      actorEmail, now, now)
-
-    const insertLine = db.prepare(`
-      INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    let lineNo = 1
-    insertLine.run(generateId(), tenantId, journalId, payableAccId, lineNo++, `เจ้าหนี้การค้า - ${paymentNumber}`, amount, 0)
-    insertLine.run(generateId(), tenantId, journalId, cashAccId, lineNo++, `จ่ายเงิน - ${paymentNumber}`, 0, netAmount)
-    if (whtAccId && wht > 0) {
-      insertLine.run(generateId(), tenantId, journalId, whtAccId, lineNo++, `ภาษีหัก ณ ที่จ่าย - ${paymentNumber}`, 0, wht)
-    }
+    // Dr บัญชีหนี้ = Cr เงินสด/ธนาคาร/1182 + Cr ภาษีหัก ณ ที่จ่าย (2105) — postJournal ตรวจดุลให้
+    postJournal({
+      tenantId, date: (paymentDate || now).substring(0, 10), referenceType: 'SUPPLIER_PAYMENT', referenceId: id,
+      description: `จ่ายชำระ ${paymentNumber}`, createdBy: actorEmail, notes: notes || null,
+      lines: [
+        { accountId: payableAccId, description: `เจ้าหนี้การค้า - ${paymentNumber}`, debit: amount },
+        { accountId: cashAccId, description: `จ่ายเงิน - ${paymentNumber}`, credit: netAmount },
+        ...(whtAccId && wht > 0 ? [{ accountId: whtAccId, description: `ภาษีหัก ณ ที่จ่าย - ${paymentNumber}`, credit: wht }] : []),
+      ],
+    })
   })
 
   transaction()

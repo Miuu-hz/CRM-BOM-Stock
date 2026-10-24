@@ -21,6 +21,8 @@ export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_ord
   | 'pos_shift_expense'
   // ยกเลิก/void เอกสารขาย (SO, ใบแจ้งหนี้, ใบเสร็จ, ใบลดหนี้) — ต้องขออนุมัติเสมอ ไม่ขึ้นกับ approval_settings
   | 'sales_cancel'
+  // ยกเลิก/void เอกสารซื้อ (PO, ใบรับสินค้า, ใบแจ้งหนี้ซื้อ, ใบจ่ายเงิน, ใบคืนสินค้า) โดยคนที่ไม่มีสิทธิ์แผนก — ต้องขออนุมัติเสมอ
+  | 'purchase_cancel'
 
 /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
 export type Severity = 'high' | 'medium' | 'low' | 'info'
@@ -41,7 +43,7 @@ const APPROVER_ROLES = new Set(['ADMIN', 'MASTER', 'OWNER'])
  * ไม่อ่าน approval_settings (ปิดไม่ได้) และไม่มี bypass รายคน/ตามแผนก — ข้ามได้เฉพาะ ADMIN/MASTER/OWNER
  * (ผู้เรียกต้อง recordAutoAction เองหลังทำสำเร็จ เหมือนหมวดอื่น)
  */
-const ALWAYS_REQUIRED = new Set<GateCategory>(['sales_cancel'])
+const ALWAYS_REQUIRED = new Set<GateCategory>(['sales_cancel', 'purchase_cancel'])
 
 // หมวดอนุมัติ → resource ในระบบสิทธิ์เดิม (Settings > สิทธิ์การใช้งาน) ที่ถือว่า "ผูกกัน"
 const CATEGORY_RESOURCE: Record<GateCategory, string> = {
@@ -56,11 +58,22 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   pos_shift_close: 'orders',
   pos_shift_expense: 'orders',
   sales_cancel: 'orders',
+  purchase_cancel: 'purchase',
+}
+
+/** GM ตามที่เจ้าของกำหนด (2026-10-24) = ADMIN/MASTER/OWNER หรือแผนก CEO */
+export function isGm(user: GateUser): boolean {
+  return APPROVER_ROLES.has(user.role) || !!user.departments?.includes('CEO')
+}
+
+/** หมวดที่ต้องอนุมัติเสมอ (ยกเลิกเอกสารขาย/ซื้อ): GM ทำเองได้เลย และอนุมัติคำขอคนอื่นได้ไม่ต้องมอบสิทธิ์/ไม่ติดเพดาน 5,000 */
+export function gmActsOn(user: GateUser, category?: string): boolean {
+  return !!category && ALWAYS_REQUIRED.has(category as GateCategory) && isGm(user)
 }
 
 /** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท */
 export function canApprove(tenantId: string, user: GateUser, moduleType?: string, amount = 0): boolean {
-  if (APPROVER_ROLES.has(user.role)) return true
+  if (APPROVER_ROLES.has(user.role) || gmActsOn(user, moduleType)) return true
   // Non-admins capped at 5,000 THB max
   if (amount > 5000) return false
 
@@ -84,7 +97,7 @@ export function isApprovalRequired(
   category: GateCategory,
   amount = 0
 ): boolean {
-  if (APPROVER_ROLES.has(user.role)) return false
+  if (APPROVER_ROLES.has(user.role) || gmActsOn(user, category)) return false
   if (ALWAYS_REQUIRED.has(category)) return true
 
   const setting = db.prepare(
@@ -114,7 +127,7 @@ export function posDiscountApprovalPct(tenantId: string): number {
  * แต่เช็คลัดตรงนี้ก่อนเพื่อไม่ต้องพึ่งพา departments/customPermissions ที่อาจไม่ได้ส่งมา)
  */
 export function hasBypass(tenantId: string, user: GateUser, category: GateCategory): boolean {
-  if (APPROVER_ROLES.has(user.role)) return true
+  if (APPROVER_ROLES.has(user.role) || gmActsOn(user, category)) return true
   if (ALWAYS_REQUIRED.has(category)) return false
 
   const perm = db.prepare(

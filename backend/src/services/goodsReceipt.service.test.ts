@@ -201,3 +201,22 @@ describe('goodsReceipt.service — confirmGoodsReceipt', () => {
     expect(after.quantity).toBeCloseTo(0, 6)
   })
 })
+
+describe('POST /goods-receipts — accepted qty 0 และผลรวมจำนวน', () => {
+  it('รับดี 0 / ของเสียทั้งหมด ต้องเก็บ accepted = 0 (เดิม || ทำให้กลายเป็นรับครบ)', async () => {
+    const { tenantId, token } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId } = seedPoWithMaterial(tenantId, { qty: 5 })
+    const res = await request(app).post('/api/purchase/goods-receipts').set('Authorization', `Bearer ${token}`)
+      .send({ purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 5, acceptedQty: 0, rejectedQty: 5 }] })
+    expect(res.status).toBe(201)
+    expect(res.body.data.items[0].accepted_qty).toBe(0)
+  })
+
+  it('รับดี + ของเสีย เกินที่รับ → 400', async () => {
+    const { tenantId, token } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId } = seedPoWithMaterial(tenantId, { qty: 5 })
+    const res = await request(app).post('/api/purchase/goods-receipts').set('Authorization', `Bearer ${token}`)
+      .send({ purchaseOrderId: poId, items: [{ poItemId, orderedQty: 5, receivedQty: 3, acceptedQty: 3, rejectedQty: 2 }] })
+    expect(res.status).toBe(400)
+  })
+})

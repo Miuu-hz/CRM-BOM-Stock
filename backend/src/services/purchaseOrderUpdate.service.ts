@@ -40,6 +40,20 @@ export function resolveSupplierId(tenantId: string, supplierId: unknown): string
   return id
 }
 
+/** บัญชีธนาคารต้องเป็นของเทแนนต์นี้ — เดิมเก็บ id ดิบจาก body แล้ว GET join ออกชื่อ/เลขบัญชีของคนอื่นได้ */
+export function resolveBankAccountId(tenantId: string, bankAccountId: unknown): string | null {
+  const id = blankToNull(bankAccountId as any)
+  if (!id) return null
+  if (!db.prepare('SELECT 1 FROM bank_accounts WHERE id = ? AND tenant_id = ?').get(id, tenantId)) {
+    throw new PurchaseOrderUpdateError('ไม่พบบัญชีธนาคารที่เลือก')
+  }
+  return id
+}
+
+/** เจ้าของสั่ง 2026-10-24 (D1): ใบที่ส่งอนุมัติ/อนุมัติแล้วแก้ไม่ได้ — ต้องเปิดใหม่ (reopen) เป็นร่างก่อน */
+export const PO_LOCKED_MESSAGE = 'PO ส่งอนุมัติ/อนุมัติแล้ว แก้ไขไม่ได้ — ใช้ปุ่มเปิดใหม่ (reopen) ก่อน'
+export const isPoLocked = (status: string | null | undefined) => status === 'SUBMITTED' || status === 'APPROVED'
+
 /**
  * บัญชีค่าใช้จ่ายต่อบรรทัดของรายการ skip_stock (ของไม่นับสต็อก) — ต้องเป็นบัญชีประเภท EXPENSE
  * ของ tenant นี้เท่านั้น ไม่งั้น throw 400 ไทย เก็บเฉพาะบรรทัดที่ skip_stock จริง (บรรทัดสต็อกไม่มี
@@ -161,7 +175,7 @@ export function receiptIssuesForItems(tenantId: string, items: ReceivableItem[])
   return issues
 }
 
-export function poReceiptIssues(tenantId: string, poId: string): string[] {
+function poReceiptIssues(tenantId: string, poId: string): string[] {
   const items = db.prepare('SELECT material_id, unit, skip_stock, description FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?')
     .all(poId, tenantId) as ReceivableItem[]
   return receiptIssuesForItems(tenantId, items)
@@ -213,9 +227,21 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
   const { expectedDate, notes, items, taxRate, discountAmount, paymentMethod, paymentReference, isPaid, paidAmount } = payload
   const now = new Date().toISOString()
 
+  // คำขอแก้ไข (doc_edit) ที่ค้างจากก่อน D1 ก็ห้ามรันกับใบที่ล็อกแล้ว
+  const current = db.prepare('SELECT status FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
+  if (isPoLocked(current?.status)) throw new PurchaseOrderUpdateError(PO_LOCKED_MESSAGE)
   // ตรวจก่อนแตะ DB: ค่าที่ทำ FK พังต้องกลายเป็น 400 ที่บอกเหตุผล ไม่ใช่ 500 กลางทาง
+  // กติกาเดียวทุกทางเข้า (REST / อนุมัติคำขอแก้ / MCP): มีใบรับสินค้าหรือใบแจ้งหนี้ที่ยังไม่ยกเลิกแล้ว ห้ามแก้
+  // — คำขอแก้ที่รออนุมัติอยู่ อาจมี GR มายืนยันระหว่างรอ แก้ราคาตอนนี้ 2109 จะไม่ตรงกับใบแจ้งหนี้
+  const liveGr = db.prepare("SELECT gr_number FROM goods_receipts WHERE tenant_id = ? AND purchase_order_id = ? AND status != 'CANCELLED' LIMIT 1")
+    .get(tenantId, poId) as any
+  if (liveGr) throw new PurchaseOrderUpdateError(`แก้ไขไม่ได้ — มีใบรับสินค้า ${liveGr.gr_number} อ้างอิงอยู่ กรุณายกเลิกใบรับสินค้าก่อน`)
+  const liveInvoice = db.prepare(`SELECT pi_number FROM purchase_invoices WHERE tenant_id = ? AND status != 'CANCELLED'
+    AND (purchase_order_id = ? OR purchase_order_ids LIKE ?) LIMIT 1`).get(tenantId, poId, `%"${poId}"%`) as any
+  if (liveInvoice) throw new PurchaseOrderUpdateError(`แก้ไขไม่ได้ — มีใบแจ้งหนี้ ${liveInvoice.pi_number} อ้างอิงอยู่ กรุณายกเลิกใบแจ้งหนี้ก่อน`)
+
   const supplierId = resolveSupplierId(tenantId, payload.supplierId)
-  const bankAccountId = blankToNull(payload.bankAccountId)
+  const bankAccountId = resolveBankAccountId(tenantId, payload.bankAccountId)
   if (items) {
     try {
       for (const item of items) resolveStockItemId(tenantId, item.materialId, item.description)
@@ -225,18 +251,18 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
     }
   }
 
-  let subtotal = 0
-  if (items && items.length > 0) {
-    subtotal = items.reduce((sum: number, item) => sum + (item.quantity * item.unitPrice), 0)
-  }
-  const tax = taxRate || 0
+  // ช่องที่ไม่ส่งมา = คงค่าเดิมของใบ (เดิมไม่ส่ง items/taxRate แล้วยอดทั้งใบกลายเป็น 0)
+  const poRow = db.prepare('SELECT vat_inclusive, tax_rate, discount_amount FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
+  const lines = items ?? (db.prepare('SELECT quantity, unit_price AS unitPrice FROM purchase_order_items WHERE purchase_order_id = ? AND tenant_id = ?')
+    .all(poId, tenantId) as Array<{ quantity: number; unitPrice: number }>)
+  let subtotal = lines.reduce((sum: number, item) => sum + (item.quantity * item.unitPrice), 0)
+  const tax = taxRate ?? poRow?.tax_rate ?? 0
   // ส่วนลดหักออกจากฐานก่อนคิดภาษี (ม.79) — เดิมฝั่งซื้อไม่มีที่เก็บส่วนลดเลย
-  const poRow = db.prepare('SELECT vat_inclusive FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(poId, tenantId) as any
   // เดิมอ่านจากใบเดิมอย่างเดียว ฟอร์มเปลี่ยน "เพิ่ม VAT" → "รวม VAT" แล้วกดบันทึกก็เด้งกลับเป็นแบบเดิม
   const inclusive = payload.vatInclusive !== undefined && payload.vatInclusive !== null
     ? payload.vatInclusive === true || payload.vatInclusive === 1
     : poRow?.vat_inclusive === 1
-  const calc = calcVat(subtotal, { rate: tax, discountAmount, inclusive })
+  const calc = calcVat(subtotal, { rate: tax, discountAmount: discountAmount ?? poRow?.discount_amount ?? 0, inclusive })
   const { taxAmount, totalAmount, discount } = calc
   subtotal = calc.subtotal
 
@@ -372,16 +398,8 @@ export function applyPurchaseOrderUpdate(tenantId: string, poId: string, payload
   // ในรอบนี้แล้วยังใช้ของเดิมอยู่ (COALESCE ในคำสั่ง UPDATE ด้านบน)
   rememberContactVatMode(tenantId, 'supplier', po?.supplier_id, po?.tax_rate, po?.vat_inclusive === 1)
 
-  // แก้ใบที่ส่ง/อนุมัติไปแล้วจนมีบรรทัดที่รับเข้าคลังไม่ได้ = ถอยกลับเป็นร่าง ให้แก้ให้ครบแล้วส่งใหม่
-  // (ไม่งั้นใบอนุมัติแล้วจะไปพังตอนยืนยันใบรับสินค้า) — PUT ล็อกใบที่มี GR/ใบแจ้งหนี้ไว้แล้ว จึงไม่มีเอกสารลูกค้าง
+  // ใบที่ส่ง/อนุมัติแล้วแก้ไม่ได้ (D1, เช็คที่หัวฟังก์ชัน) — บรรทัดที่รับเข้าคลังไม่ได้แค่แจ้งเตือนในร่าง
   const receiptIssues = receiptIssuesForItems(tenantId, poItems as ReceivableItem[])
-  if (receiptIssues.length > 0 && (po?.status === 'SUBMITTED' || po?.status === 'APPROVED')) {
-    db.prepare("UPDATE purchase_orders SET status = 'DRAFT', approved_by = NULL, approved_at = NULL, updated_at = ? WHERE id = ? AND tenant_id = ?")
-      .run(new Date().toISOString(), poId, tenantId)
-    po.status = 'DRAFT'
-    po.approved_by = null
-    po.approved_at = null
-  }
 
   return { ...(po as any), items: poItems, receipt_issues: receiptIssues }
 }

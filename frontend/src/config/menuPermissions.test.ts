@@ -17,6 +17,21 @@ describe('menuPermissions — แคชเชียร์', () => {
   })
 })
 
+// ผู้ใช้พื้นฐาน (USER ไม่มีแผนก) — ต้องตรงกับ backend cashierScope.basicUserDenied
+describe('menuPermissions — ผู้ใช้พื้นฐาน', () => {
+  it('ไม่เห็นบัญชี/ภาษี/รายงาน/ลูกหนี้ แต่ยังเห็นแคชเชียร์และจัดซื้อ', () => {
+    for (const p of ['/accounting', '/accounting/reports', '/accounting/journal-entries', '/tax', '/receivables']) {
+      expect(canViewMenu('USER', p, [])).toBe(false)
+    }
+    expect(canViewMenu('USER', '/cashier', [])).toBe(true)
+    expect(canViewMenu('USER', '/purchase', undefined)).toBe(true)
+  })
+  it('USER ที่มีแผนกบัญชี ยังเห็นเมนูบัญชีตามเดิม', () => {
+    expect(canViewMenu('USER', '/accounting', ['ACCOUNTING'])).toBe(true)
+    expect(canViewMenu('MANAGER', '/tax', [])).toBe(true)
+  })
+})
+
 describe('menuPermissions — isMenuLocked (Phase 3)', () => {
   it('เมนูพื้นฐาน (Dashboard, CRM, Stock, Sales, Purchase) ไม่เคยล็อก', () => {
     expect(isMenuLocked('/', [])).toBe(false)
@@ -52,5 +67,11 @@ describe('menuPermissions — isMenuLocked (Phase 3)', () => {
     // Shopee/Lazada Settlement ต้องการ 'platform_settlement'
     expect(isMenuLocked('/accounting/platform-settlement', ['accounting'])).toBe(true)
     expect(isMenuLocked('/accounting/platform-settlement', ['accounting', 'platform_settlement'])).toBe(false)
+  })
+})
+describe('GM แผนก CEO', () => {
+  it('USER แผนก CEO เห็นเมนูอนุมัติ · USER แผนกอื่นไม่เห็น', () => {
+    expect(canViewMenu('USER', '/approvals', ['CEO'])).toBe(true)
+    expect(canViewMenu('USER', '/approvals', ['SALES'])).toBe(false)
   })
 })

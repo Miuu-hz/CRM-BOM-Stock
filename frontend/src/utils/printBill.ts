@@ -50,7 +50,7 @@ const DOCS: Record<PrintDocType, DocSpec> = {
   gr:      { bill: 'GOODS_RECEIPT',    number: ['gr_number'],        date: ['receipt_date'],   ref: ['po_number'],        party: 'supplier' },
   pi:      { bill: 'PURCHASE_INVOICE', number: ['pi_number'],        date: ['invoice_date'],   ref: ['po_number', 'gr_number'], due: ['due_date'], party: 'supplier' },
   payment: { bill: 'PAYMENT',          number: ['payment_number'],   date: ['payment_date'],   ref: ['pi_number', 'supplier_invoice_number'], party: 'supplier' },
-  return:  { bill: 'PURCHASE_RETURN',  number: ['return_number', 'rt_number', 'po_number'], date: ['return_date'], ref: ['po_number', 'pr_number'], party: 'supplier' },
+  return:  { bill: 'PURCHASE_RETURN',  number: ['return_number', 'rt_number', 'pr_number', 'po_number'], date: ['return_date'], ref: ['po_number', 'pr_number'], party: 'supplier' },
   pos:     { bill: 'RECEIPT',          number: ['bill_number'],      date: ['closed_at', 'created_at'], party: 'customer' },
   wo:      { bill: 'WORK_ORDER',       number: ['wo_number'],        date: ['start_date', 'created_at'], due: ['due_date'], party: 'none' },
 }

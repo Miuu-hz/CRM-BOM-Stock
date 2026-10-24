@@ -81,13 +81,15 @@ const decide = (token: string, reqId: string, decision = 'APPROVED') =>
 describe('ประตู sales_cancel', () => {
   it('ต้องขออนุมัติเสมอแม้ไม่มี approval_settings · bypass รายคน/แผนกไม่ช่วย · ADMIN ผ่าน', () => {
     const s = tenant()
-    const mgr = s.user('MANAGER', ['CEO'])
+    const mgr = s.user('MANAGER', ['SALES'])
     db.prepare(`INSERT INTO user_approval_permissions (id, tenant_id, user_id, module_type, can_approve, can_bypass)
       VALUES (?, ?, ?, 'sales_cancel', 1, 1)`).run(generateId(), s.t, mgr.userId)
-    const g = { userId: mgr.userId, email: mgr.email, role: 'MANAGER', departments: ['CEO'] as any }
+    const g = { userId: mgr.userId, email: mgr.email, role: 'MANAGER', departments: ['SALES'] as any }
     expect(isApprovalRequired(s.t, g, 'sales_cancel')).toBe(true)
     expect(hasBypass(s.t, g, 'sales_cancel')).toBe(false)
     expect(isApprovalRequired(s.t, { ...g, role: 'ADMIN' }, 'sales_cancel')).toBe(false)
+    // GM = ADMIN/MASTER/OWNER หรือแผนก CEO (เจ้าของกำหนด 2026-10-24) ทำเองได้
+    expect(isApprovalRequired(s.t, { ...g, departments: ['CEO'] as any }, 'sales_cancel')).toBe(false)
   })
 })
 

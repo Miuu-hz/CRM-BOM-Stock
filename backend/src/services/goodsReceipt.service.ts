@@ -6,6 +6,7 @@ import { priceToBaseUnitCost } from './stockMovement.service'
 import { postJournal, isVatRegistered } from './accounting.service'
 import { ACC } from '../config/accountCodes'
 import { resolveStockItemId, StockItemRefError, normName, rememberAlias, findAliasTarget } from './stockItem.service'
+import { closedPeriodLabel } from '../routes/journal.routes'
 
 /**
  * ตรรกะ "สร้าง GR" และ "ยืนยัน GR" ยกออกมาจาก routes/purchase.routes.ts (ตัวที่ครบสุด)
@@ -24,6 +25,7 @@ const PACK_EPS = 1e-9
 export class GoodsReceiptError extends Error {
   constructor(
     public code:
+      | 'BAD_QTY'
       | 'PO_NOT_FOUND'
       | 'PO_RECEIVED'
       | 'PO_CANCELLED'
@@ -33,7 +35,9 @@ export class GoodsReceiptError extends Error {
       | 'GR_NOT_FOUND'
       | 'NOT_DRAFT'
       | 'UNBOUND_ITEM'
-      | 'NO_CONVERSION',
+      | 'NO_CONVERSION'
+      | 'PERIOD_CLOSED'
+      | 'PO_ITEM_MISMATCH',
     message: string
   ) {
     super(message)
@@ -110,6 +114,14 @@ export function createGoodsReceipt(tenantId: string, receivedByEmail: string, pa
     throw new GoodsReceiptError('PO_NOT_APPROVED', `ใบสั่งซื้อนี้ยังไม่ได้รับการอนุมัติ (สถานะปัจจุบัน: ${po.status}) ต้องอนุมัติก่อนจึงรับสินค้าได้`)
   }
 
+  // จำนวนต้องไม่ติดลบ และ รับดี + ของเสีย ต้องไม่เกินจำนวนที่รับ
+  for (const item of items || []) {
+    const rec = Number(item.receivedQty), acc = Number(item.acceptedQty ?? item.receivedQty), rej = Number(item.rejectedQty || 0)
+    if (![rec, acc, rej].every(Number.isFinite) || rec < 0 || acc < 0 || rej < 0 || acc + rej > rec + PACK_EPS) {
+      throw new GoodsReceiptError('BAD_QTY', 'จำนวนรับไม่ถูกต้อง — จำนวนที่รับดี + ของเสีย ต้องไม่เกินจำนวนที่รับ และห้ามติดลบ')
+    }
+  }
+
   // materialId (= stock_items.id) มาจากฟอร์ม ต้องเป็นของเทแนนต์นี้
   for (const item of items || []) {
     try {
@@ -140,7 +152,11 @@ export function createGoodsReceipt(tenantId: string, receivedByEmail: string, pa
     )
     for (const item of items) {
       const poItem = poItemById.get(item.poItemId)
-      if (!poItem) continue // free-text line ไม่ผูกกับ PO item — ไม่มีอะไรให้ cap
+      if (!poItem) {
+        if (!item.poItemId) continue // free-text line ไม่ผูกกับ PO item — ไม่มีอะไรให้ cap
+        // บรรทัดที่อ้าง PO item ของใบอื่น = รับของโดยไม่ผ่านการอนุมัติ/เพดานของใบนั้น — ปฏิเสธ
+        throw new GoodsReceiptError('PO_ITEM_MISMATCH', 'รายการรับสินค้าไม่อยู่ในใบสั่งซื้อนี้')
+      }
       const pendingQty = poItem.quantity - poItem.received_qty
       const acceptedQty = item.acceptedQty ?? item.receivedQty
       if (acceptedQty > pendingQty + PACK_EPS) {
@@ -219,6 +235,9 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
 
   const items = db.prepare('SELECT * FROM goods_receipt_items WHERE goods_receipt_id = ?').all(gr.id) as any[]
   const now = new Date().toISOString()
+  // ยืนยันแล้วลง Dr สต็อก/Cr 2109 ตามวันที่รับของ — ห้ามลงย้อนเข้างวดที่ปิดแล้ว
+  const closedLabel = closedPeriodLabel(tenantId, gr.receipt_date || now)
+  if (closedLabel) throw new GoodsReceiptError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว ยืนยันรับสินค้าวันที่นี้ไม่ได้`)
   // มูลค่าของที่เข้าคลังจริงในใบนี้ (ราคาตามใบสั่งซื้อ) — ใช้ตั้งค้างรับของ
   // นับเฉพาะบรรทัดที่เข้าสต็อกจริง บรรทัด skip_stock (ปากกา ของใช้สำนักงาน) ไม่ใช่สินทรัพย์
   let accruedValue = 0
@@ -263,8 +282,8 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
       //   ไม่ติด = สินค้าจริงที่ลืมผูก → ต้องบล็อก ไม่งั้นจ่ายเงินแล้วของไม่เข้าระบบแบบไม่มีใครรู้
       //   (เคยเกิดจริงที่ GR-2026-00008: ตะหลิวสเตนเลส + กล่องไอโอ2ช่อง รวม ฿318)
       if (!item.material_id && item.accepted_qty > 0) {
-        const poLine = db.prepare('SELECT skip_stock, description FROM purchase_order_items WHERE id = ?')
-          .get(item.purchase_order_item_id) as any
+        const poLine = db.prepare('SELECT skip_stock, description FROM purchase_order_items WHERE id = ? AND tenant_id = ? AND purchase_order_id = ?')
+          .get(item.purchase_order_item_id, tenantId, gr.purchase_order_id) as any
         if (!poLine?.skip_stock) {
           throw new GoodsReceiptError(
             'UNBOUND_ITEM',
@@ -274,8 +293,10 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
           )
         }
       }
-      if (item.material_id && item.accepted_qty > 0) {
-        const poItem = db.prepare('SELECT unit_price, unit, description FROM purchase_order_items WHERE id = ?').get(item.purchase_order_item_id) as any
+      // บรรทัด "ไม่นับสต็อก" ที่ดันผูกสินค้าไว้ด้วย: ใบแจ้งหนี้ลงเป็นค่าใช้จ่าย ห้ามเข้าคลัง/ตั้ง 2109 ซ้ำ
+      const poItem = db.prepare('SELECT unit_price, unit, description, skip_stock FROM purchase_order_items WHERE id = ? AND tenant_id = ? AND purchase_order_id = ?')
+        .get(item.purchase_order_item_id, tenantId, gr.purchase_order_id) as any
+      if (item.material_id && item.accepted_qty > 0 && !poItem?.skip_stock) {
         const unitPrice = poItem?.unit_price || 0
         // ต้นทุนจริง (หัก/บวก VAT ตามกฎด้านบน) — ใช้แทน unitPrice เฉพาะตอนคำนวณ unit_cost
         const costUnitPrice = purchasePriceToRealCost(unitPrice)
@@ -335,6 +356,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
           movementNotes = `Received from purchase (converted: ${item.accepted_qty} ${poUnit} → ${stockQty} ${stockUnit}, factor: ${converted.factor})`
         }
 
+        let setUnitCost: number | null = null
         if (stockItem) {
           if (addToSealed) {
             // sealed path เก็บ qty เป็น display_unit (แพ็คที่ยังไม่แกะ) แต่ unit_cost ต้องเป็น
@@ -343,12 +365,14 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
             const sealedUnitCost = unitPrice
               ? priceToBaseUnitCost(costUnitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
               : stockItem.unit_cost
+            setUnitCost = sealedUnitCost
             db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(sealedPacks, stockQty, sealedUnitCost, unitPrice || null, unitPrice ? (poUnit || null) : null, now, stockItem.id, tenantId)
           } else {
             const newUnitCost = unitPrice
               ? priceToBaseUnitCost(costUnitPrice, appliedFactor, `${poUnit || stockUnit}→${stockUnit} (material ${item.material_id})`)
               : stockItem.unit_cost
+            setUnitCost = newUnitCost
             db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(stockQty, newUnitCost, unitPrice || null, unitPrice ? (poUnit || stockUnit || null) : null, now, stockItem.id, tenantId)
           }
@@ -363,7 +387,9 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
         }
 
         if (stockItem) {
-          accruedValue += (Number(item.accepted_qty) || 0) * (Number(unitPrice) || 0)
+          // ตั้ง 2109 ด้วยต้นทุนจริง (ตัด/บวก VAT ตามสถานะจด VAT) ให้ตรงกับยอดที่ใบแจ้งหนี้จะมาปิด
+          // เดิมใช้ราคาดิบ: จด VAT + PO รวม VAT ตั้งไว้ 107 แต่ใบแจ้งหนี้ปิดได้ 100 → 2109 ค้าง 7 ถาวร
+          accruedValue += (Number(item.accepted_qty) || 0) * (Number(costUnitPrice) || 0)
           // ชื่อตามใบของผู้ขายไม่ตรงกับชื่อสินค้า (เช่น ยี่ห้อ B เข้า SKU ยี่ห้อ A) → จำเป็นชื่อรอง
           // และจดชื่อจริงไว้ใน stock log ให้ย้อนได้ว่ารอบไหนรับยี่ห้อไหนเข้ามา
           const lineName = String(poItem?.description || '').trim()
@@ -381,12 +407,14 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
           // เก็บ snapshot สิ่งที่เข้าสต็อกจริง — ยกเลิก GR อ่านค่านี้กลับแทนการคำนวณใหม่
           try {
             db.prepare(`UPDATE goods_receipt_items
-              SET stock_item_id = ?, stock_qty = ?, stock_sealed_qty = ?, stock_factor = ?
+              SET stock_item_id = ?, stock_qty = ?, stock_sealed_qty = ?, stock_factor = ?, prev_unit_cost = ?, set_unit_cost = ?
               WHERE id = ?`).run(
               stockItem.id,
               stockQty,
               addToSealed ? sealedPacks : 0,
               appliedFactor,
+              stockItem.unit_cost ?? null,
+              setUnitCost,
               item.id
             )
           } catch (e) {
@@ -396,8 +424,8 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
       }
 
       if (item.accepted_qty > 0) {
-        db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ? AND tenant_id = ?')
-          .run(item.accepted_qty, item.purchase_order_item_id, tenantId)
+        db.prepare('UPDATE purchase_order_items SET received_qty = received_qty + ? WHERE id = ? AND tenant_id = ? AND purchase_order_id = ?')
+          .run(item.accepted_qty, item.purchase_order_item_id, tenantId, gr.purchase_order_id)
       }
     }
 

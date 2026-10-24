@@ -21,6 +21,8 @@ import { registerPlatformMonthTools } from './tools/platformMonth'
 import { registerBindingTools } from './tools/binding'
 import { registerPurchaseBillingTools } from './tools/purchaseBilling'
 import { registerSalesBillingTools } from './tools/salesBilling'
+import { loadPermUser, isBasicUser } from '../services/rbac.service'
+import { isCashierOnly } from '../middleware/cashierScope'
 
 // โหมดอ่านอย่างเดียว (audit) — ผู้ใช้ mcp_scope='readonly' เห็นแค่ tool ใน allowlist นี้
 // allowlist (ไม่ใช่ denylist) เพื่อให้ tool เขียนข้อมูลตัวใหม่ในอนาคตถูกบล็อกโดยปริยาย
@@ -40,6 +42,12 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   const callerName: string = callerRow?.name ?? callerRow?.email ?? userId
   // Master API key has no row in `users` (resolved separately in mcp/server.ts) — treat as MASTER role
   const callerRole: string = userId === 'master' ? 'MASTER' : (callerRow?.role ?? 'USER')
+
+  // ขอบเขตเดียวกับ REST: แคชเชียร์ (cashierScope) ใช้ได้แค่ POS ซึ่ง MCP ไม่มี → ไม่เห็น tool ใดเลย
+  // ผู้ใช้พื้นฐาน (D2) ไม่เห็นงานบัญชี/รายงาน/ลูกหนี้-เจ้าหนี้ (finance, platform settlement)
+  const perm = loadPermUser(userId, callerRole)
+  if (isCashierOnly(perm.role, perm.departments)) return
+  const basic = isBasicUser(perm)
 
   // Master key สิทธิ์เต็มเสมอ — ผู้ใช้ปกติดูที่ mcp_scope ('full' ถ้าไม่ตั้ง)
   const readonly = userId !== 'master' && callerRow?.mcp_scope === 'readonly'
@@ -62,10 +70,10 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerStockTools(target, tenantId, userId, callerName, callerRole)
   registerProductionTools(target, tenantId, userId, callerRole)
   registerBomTools(target, tenantId)
-  registerFinanceTools(target, tenantId, callerRole)
+  if (!basic) registerFinanceTools(target, tenantId, callerRole)
   registerCrmTools(target, tenantId)
   registerMarketingTools(target, tenantId)
-  registerPlatformMonthTools(target, tenantId, userId)
+  if (!basic) registerPlatformMonthTools(target, tenantId, userId)
   registerBindingTools(target, tenantId)
   registerPurchaseBillingTools(target, tenantId, userId, callerName, callerRole)
   registerSalesBillingTools(target, tenantId, userId, callerName, callerRole)

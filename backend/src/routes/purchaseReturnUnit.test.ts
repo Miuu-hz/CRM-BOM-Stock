@@ -18,7 +18,7 @@ const app = buildApp()
 
 /** Seeds a supplier + DRAFT PO (just enough for POST /purchase/returns' FK checks) and a
  * stock item sold/stocked in `baseUnit`. */
-function seedOrderAndItem(tenantId: string, baseUnit: string, quantity: number) {
+function seedOrderAndItem(tenantId: string, baseUnit: string, quantity: number, poUnit = 'case') {
   const supplierId = generateId()
   db.prepare(`
     INSERT INTO suppliers (id, tenant_id, code, name, contact_name, status)
@@ -36,6 +36,22 @@ function seedOrderAndItem(tenantId: string, baseUnit: string, quantity: number) 
     INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
     VALUES (?, ?, ?, 'Returnable Item', 'RAW', ?, ?, ?, 10, 'WH1', 'ACTIVE')
   `).run(stockItemId, tenantId, stockItemId, quantity, baseUnit, baseUnit)
+
+  // คืนได้เฉพาะของที่รับเข้ามาแล้ว — ต้องมีบรรทัด PO + ใบรับสินค้าที่ยืนยันแล้ว (ราคา/จำนวนคืนอ้างจากบรรทัดนี้)
+  const poItemId = generateId()
+  db.prepare(`
+    INSERT INTO purchase_order_items (id, tenant_id, purchase_order_id, material_id, description, quantity, unit, unit_price, total_price, received_qty)
+    VALUES (?, ?, ?, ?, 'Returnable Item', 2, ?, 100, 200, 2)
+  `).run(poItemId, tenantId, poId, stockItemId, poUnit)
+  const grId = generateId()
+  db.prepare(`
+    INSERT INTO goods_receipts (id, tenant_id, gr_number, purchase_order_id, supplier_id, received_by, status, invoiced_at)
+    VALUES (?, ?, ?, ?, ?, 'tester', 'CONFIRMED', '2026-10-01')
+  `).run(grId, tenantId, 'GR-' + grId.slice(0, 6), poId, supplierId)
+  db.prepare(`
+    INSERT INTO goods_receipt_items (id, tenant_id, goods_receipt_id, purchase_order_item_id, material_id, ordered_qty, received_qty, accepted_qty)
+    VALUES (?, ?, ?, ?, ?, 2, 2, 2)
+  `).run(generateId(), tenantId, grId, poItemId, stockItemId)
 
   return { poId, stockItemId }
 }
@@ -85,7 +101,7 @@ describe('PUT /api/purchase/returns/:id/confirm — unit conversion', () => {
 
   it('refuses to confirm (400, Thai message) when the line unit has no conversion rule, and leaves stock untouched', async () => {
     const { tenantId, token } = createTestUser()
-    const { poId, stockItemId } = seedOrderAndItem(tenantId, 'pcs', 50)
+    const { poId, stockItemId } = seedOrderAndItem(tenantId, 'pcs', 50, 'mysteryunit')
     // ไม่สร้างกฎแปลงหน่วยให้ "mysteryunit" เลย
 
     const { id } = await createApprovedReturn(token, poId, [

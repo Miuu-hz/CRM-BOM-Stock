@@ -215,3 +215,23 @@ describe('ช่องโหว่ข้าม tenant / module ที่ไม�
     expect(row).toBeUndefined()
   })
 })
+
+describe('กล่องคำขอ — GM แผนก CEO', () => {
+  it('USER แผนก CEO เห็นคำขอยกเลิกเอกสาร (purchase_cancel) แต่ไม่เห็นหมวดอื่นที่ไม่ได้มอบสิทธิ์', async () => {
+    const gm = createTestUser({ role: 'USER' })
+    db.prepare('UPDATE users SET departments = ? WHERE id = ?').run(JSON.stringify(['CEO']), gm.userId)
+    const requester = createTestUser({ role: 'MANAGER', tenantId: gm.tenantId })
+    const cancelReq = createRequest({
+      tenantId: gm.tenantId,
+      user: { userId: requester.userId, email: requester.email, role: requester.role },
+      category: 'purchase_cancel', refType: 'goods_receipts', refId: generateId(), description: 'ขอยกเลิก GR',
+    })
+    const other = seedPending(gm.tenantId)
+
+    const res = await request(app).get('/api/approval/pending').set('Authorization', `Bearer ${gm.token}`)
+    expect(res.status).toBe(200)
+    const ids = res.body.data.map((r: any) => r.id)
+    expect(ids).toContain(cancelReq.id)
+    expect(ids).not.toContain(other.id)
+  })
+})

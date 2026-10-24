@@ -81,6 +81,8 @@ function journalSummary(tenantId: string, piId: string) {
   return { je, lines, byCode, debitTotal, creditTotal }
 }
 
+const creditOf = (lines: any[], code: string) => lines.filter(l => l.code === code).reduce((s, l) => s + l.credit, 0)
+
 describe('ใบแจ้งหนี้ซื้อ — แยก skip_stock ออกจากสต็อก (5403 ไม่ใช่ 1107)', () => {
   it('(a) ทุกบรรทัดเป็น skip_stock → เดบิต 5403 เต็มยอด ไม่มี 1107 เลย', () => {
     const user = createTestUser({ role: 'ADMIN' })
@@ -105,12 +107,13 @@ describe('ใบแจ้งหนี้ซื้อ — แยก skip_stock �
     // subtotal 700, skipShare = 200/700, discount 70 → base 630, vat 44.1, total 674.1
     const inv = createPurchaseInvoice(user.tenantId, user.email, { goodsReceiptIds: [gr.id], discountAmount: 70 })
 
-    const { byCode, debitTotal, creditTotal } = journalSummary(user.tenantId, inv.id)
+    const { byCode, debitTotal, creditTotal, lines } = journalSummary(user.tenantId, inv.id)
     expect(debitTotal).toBeCloseTo(creditTotal, 5)
-    expect(debitTotal).toBeCloseTo(674.1, 2)
-    expect(byCode('2109')).toBeCloseTo(450, 2)   // min(accrued 500, 630-180)
+    expect(debitTotal).toBeCloseTo(724.1, 2)     // 674.1 + Cr สต็อกคืน 50
+    expect(byCode('2109')).toBeCloseTo(500, 2)   // ปิด 2109 เต็มยอดที่ GR ตั้ง (เดิม 450 → ค้าง 50 ถาวร)
     expect(byCode('5403')).toBeCloseTo(180, 2)   // 630 × (200/700)
-    expect(byCode('1107')).toBeCloseTo(0, 2)     // residual หลังหัก 2109+5403 = 0
+    expect(byCode('1107')).toBeCloseTo(0, 2)
+    expect(creditOf(lines, '1107')).toBeCloseTo(50, 2) // ส่วนลดของส่วนสต็อก (500 − 450) ลดต้นทุนสต็อก
     expect(byCode('1110')).toBeCloseTo(44.1, 2)  // จด VAT แล้ว — ภาษีซื้อไม่ถูกแยกตาม skip_stock
   })
 
@@ -128,9 +131,9 @@ describe('ใบแจ้งหนี้ซื้อ — แยก skip_stock �
     const { byCode, debitTotal, creditTotal } = journalSummary(user.tenantId, inv.id)
     expect(debitTotal).toBeCloseTo(creditTotal, 5)
     expect(debitTotal).toBeCloseTo(321, 2)
-    expect(byCode('2109')).toBeCloseTo(200, 2)
+    expect(byCode('2109')).toBeCloseTo(214, 2)  // GR ตั้ง 2109 ด้วยต้นทุนจริงรวมภาษีที่ขอคืนไม่ได้ (2 × 107)
     expect(byCode('5403')).toBeCloseTo(107, 2)  // ส่วนของ (100) + ส่วนภาษีซื้อขอคืนไม่ได้ (7)
-    expect(byCode('1107')).toBeCloseTo(14, 2)   // ภาษีซื้อขอคืนไม่ได้ ส่วนที่ไม่ใช่ skip_stock (21 × 2/3)
+    expect(byCode('1107')).toBeCloseTo(0, 2)    // ภาษีส่วนสต็อก (14) อยู่ใน 1107 ตั้งแต่ GR แล้ว
   })
 
   it('(d) แก้ไขใบแจ้งหนี้ (เปลี่ยนส่วนลด) → สัดส่วน skip_stock คำนวณใหม่ด้วยสูตรเดียวกัน', () => {
@@ -151,8 +154,9 @@ describe('ใบแจ้งหนี้ซื้อ — แยก skip_stock �
     updatePurchaseInvoice(user.tenantId, user.email, inv.id, { discountAmount: 50 })
     s = journalSummary(user.tenantId, inv.id)
     expect(s.debitTotal).toBeCloseTo(s.creditTotal, 5)
-    expect(s.debitTotal).toBeCloseTo(481.5, 2)
-    expect(s.byCode('2109')).toBeCloseTo(360, 2)
+    expect(s.debitTotal).toBeCloseTo(521.5, 2)
+    expect(s.byCode('2109')).toBeCloseTo(400, 2)
+    expect(creditOf(s.lines, '1107')).toBeCloseTo(40, 2)
     expect(s.byCode('5403')).toBeCloseTo(90, 2)
     expect(s.byCode('1110')).toBeCloseTo(31.5, 2)
   })
@@ -174,7 +178,7 @@ describe('ใบแจ้งหนี้ซื้อ — แยก skip_stock �
 
     const { byCode, debitTotal, creditTotal } = journalSummary(user.tenantId, inv.id)
     expect(debitTotal).toBeCloseTo(creditTotal, 5)
-    expect(debitTotal).toBeCloseTo(577.8, 2)
+    expect(debitTotal).toBeCloseTo(607.8, 2)   // + Cr สต็อกคืน 30 (ส่วนลดของส่วนสต็อก)
     expect(byCode('5308')).toBeCloseTo(90, 2)
     expect(byCode('5204')).toBeCloseTo(90, 2)
     expect(byCode('5403')).toBeCloseTo(90, 2) // บรรทัดที่ไม่ได้เลือกบัญชี → fallback ไปค่าใช้จ่ายอื่น

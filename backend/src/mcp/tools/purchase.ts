@@ -16,13 +16,20 @@ import {
   GoodsReceiptError,
   type CreateGoodsReceiptLine,
 } from '../../services/goodsReceipt.service'
-import { applyPurchaseOrderUpdate, changePurchaseOrderDate, PurchaseOrderUpdateError, poNotReceivableMessage } from '../../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, changePurchaseOrderDate, PurchaseOrderUpdateError, poNotReceivableMessage, isPoLocked, PO_LOCKED_MESSAGE } from '../../services/purchaseOrderUpdate.service'
+import { loadPermUser, userCan, isBasicUser, canDraftPurchase, canReceivePurchase, canHandleBilling } from '../../services/rbac.service'
+import { gatePurchaseCancel, PurchaseCancelError } from '../../services/purchaseCancel.service'
+import { recordAutoAction } from '../../services/approvalGate.service'
+import { cancelPurchaseOrderNow } from '../../routes/purchaseOrder.routes'
 
 /** วันที่ปฏิทินจริงหรือไม่ (ตัด 2026-02-31 / 2026-13-01 ที่ regex ปล่อยผ่าน) — เช็คแบบเดียวกับ changePurchaseOrderDate */
 const isRealDate = (d: string) => !isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d
 const badDateMessage = (d: string) => `วันที่ "${d}" ไม่ถูกต้อง — ใช้รูปแบบ YYYY-MM-DD ปี ค.ศ.`
 
 export function registerPurchaseTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
+  // สิทธิ์เดียวกับ REST (rbac.service) — โหลดแผนก/สิทธิ์รายคนเหมือน auth middleware
+  const perm = loadPermUser(userId, callerRole)
+  const denied = (what: string) => ok({ success: false, message: `ไม่มีสิทธิ์${what}` })
   // ── 5. create_purchase_request ─────────────────────────────────────────────
   server.tool(
     'create_purchase_request',
@@ -135,6 +142,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
         payment_method, payment_reference, bank_hint, is_paid, paid_amount,
         image_base64, image_name, bill_date,
       } = args
+      if (!canDraftPurchase(perm)) return denied('สร้างใบสั่งซื้อ — ต้องเป็นฝ่ายจัดซื้อ')
       if (bill_date && !isRealDate(bill_date)) return ok({ success: false, message: badDateMessage(bill_date) })
       const now = new Date().toISOString()
       const orderDate = bill_date || thaiDateStr() // เก็บเป็นวันที่ไทย ไม่ใช่ UTC ISO
@@ -240,7 +248,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       }
 
       // ── สร้างผู้ขายใหม่ (ถ้ามี supplier_hint ที่ยังไม่อยู่ในระบบ) และออกเลข PO หลังผ่านทุกการ์ดแล้ว ──
-      if (supplier_hint && !supplierId) {
+      if (supplier_hint && !supplierId && userCan(perm, 'suppliers', 'write')) {
         const codeTaken = db.prepare('SELECT 1 FROM suppliers WHERE tenant_id = ? AND code = ?')
         let supCode = formatDocumentNumber('SUP', tenantId, 'SUPPLIER', new Date().getFullYear(), 4)
         while (codeTaken.get(tenantId, supCode)) {
@@ -260,8 +268,9 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       const poNumber = formatDocumentNumber('PO', tenantId, 'PO', docYear(bill_date), 5, bill_date)
 
       // ── Resolve payment & cash purchase status ───────────────────────────
-      const resolvedIsPaid = is_paid ?? (Boolean(payment_reference) || Boolean(payment_method))
-      const resolvedPaidAmount = paid_amount ?? (resolvedIsPaid ? totalAmount : 0)
+      // "จ่ายแล้ว" ทำให้ออกใบแจ้งหนี้+จ่ายเงินอัตโนมัติ — เชื่อเฉพาะคนที่มีสิทธิ์จ่ายเงิน (เหมือน REST)
+      const resolvedIsPaid = canHandleBilling(perm, 'purchase') && (is_paid ?? (Boolean(payment_reference) || Boolean(payment_method)))
+      const resolvedPaidAmount = resolvedIsPaid ? (paid_amount ?? totalAmount) : 0
       const resolvedPaymentMethod = payment_method || (payment_reference ? 'โอนเงิน' : null)
       const resolvedPaymentRef = payment_reference || null
 
@@ -427,6 +436,11 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       if (!pr) {
         return ok({ success: false, message: `ไม่พบ PR: ${pr_id}` })
       }
+      // CONVERTED/CANCELLED/REJECTED ห้ามอนุมัติซ้ำ (เดิมอนุมัติ PR ที่แปลงแล้วแล้วแปลงเป็น PO ซ้ำได้)
+      if (!['DRAFT', 'PENDING'].includes(pr.status)) {
+        return ok({ success: false, message: `อนุมัติได้เฉพาะ PR สถานะ DRAFT/PENDING (ปัจจุบัน: ${pr.status})` })
+      }
+      if (isBasicUser(perm)) return denied('อนุมัติใบขอซื้อ')
 
       const check = checkApprovalPermission(tenantId, userId, callerRole, 'purchase_request', pr.total_amount || 0)
       if (!check.allowed) {
@@ -455,6 +469,7 @@ PR ต้องมีสถานะ APPROVED ก่อน
     },
     async (args) => {
       const { pr_id, supplier_id } = args
+      if (!userCan(perm, 'purchase', 'write')) return denied('แปลงใบขอซื้อเป็นใบสั่งซื้อ — ต้องเป็นฝ่ายจัดซื้อ')
 
       let pr = db.prepare('SELECT * FROM purchase_requests WHERE id = ? AND tenant_id = ?').get(pr_id, tenantId) as any
       if (!pr) {
@@ -649,6 +664,8 @@ order_date = แก้วันที่สั่งซื้อ/วันที
       let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) return ok({ success: false, message: `ไม่พบ PO: ${po_id}` })
+      if (!canDraftPurchase(perm)) return denied('แก้ใบสั่งซื้อ — ต้องเป็นฝ่ายจัดซื้อ')
+      if (isPoLocked(po.status)) return ok({ success: false, message: PO_LOCKED_MESSAGE })
       if (po.status !== 'DRAFT') return ok({ success: false, message: `ไม่สามารถแก้ไขได้ — PO สถานะ ${po.status} (ต้องเป็น DRAFT เท่านั้น)` })
 
       let supplierId: string | null = null
@@ -727,6 +744,7 @@ order_date = แก้วันที่สั่งซื้อ/วันที
     },
     async (args) => {
       const { gr_id } = args
+      if (!canReceivePurchase(perm)) return denied('ยืนยันรับสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง')
       try {
         const receipt = confirmGoodsReceipt(tenantId, userId, gr_id) as any
         return ok({ success: true, grId: receipt.id, grNumber: receipt.gr_number, message: `ยืนยันรับสินค้า ${receipt.gr_number} สำเร็จ` })
@@ -755,6 +773,7 @@ order_date = แก้วันที่สั่งซื้อ/วันที
         return ok({ success: false, message: `ปฏิเสธได้เฉพาะ PR สถานะ DRAFT/PENDING (ปัจจุบัน: ${pr.status})` })
       }
 
+      if (isBasicUser(perm)) return denied('ปฏิเสธใบขอซื้อ')
       const check = checkCanApprove(tenantId, userId, callerRole, 'purchase_request')
       if (!check.allowed) {
         return ok({ success: false, message: check.message })
@@ -793,6 +812,9 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
         return ok({ success: false, message: `ส่งขออนุมัติได้เฉพาะ PO สถานะ DRAFT (ปัจจุบัน: ${po.status})` })
       }
       if (status === 'SUBMITTED' || status === 'APPROVED') {
+        if (isBasicUser(perm) || (status === 'SUBMITTED' && !userCan(perm, 'purchase', 'write'))) {
+          return denied('ส่งอนุมัติ/อนุมัติใบสั่งซื้อ — ต้องเป็นฝ่ายจัดซื้อ')
+        }
         const notReceivable = poNotReceivableMessage(tenantId, po.id)
         if (notReceivable) return ok({ success: false, message: notReceivable })
       }
@@ -804,7 +826,29 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       }
 
       const now = new Date().toISOString()
-      if (status === 'APPROVED') {
+      if (status === 'CANCELLED') {
+        // เหมือน REST: ร่างยกเลิกได้เลย · ใบที่ส่ง/อนุมัติแล้วต้องมีสิทธิ์แผนก ไม่งั้นส่งคำขออนุมัติ (D3)
+        try {
+          if (po.status === 'DRAFT') {
+            if (!canDraftPurchase(perm)) return denied('ยกเลิกใบสั่งซื้อ')
+            cancelPurchaseOrderNow(tenantId, po.id)
+          } else {
+            const { pending, gateArgs } = gatePurchaseCancel({
+              tenantId, user: { userId, email: callerName, ...perm }, kind: 'purchase_order',
+              refId: po.id, docNumber: po.po_number, amount: po.total_amount,
+            })
+            if (pending) {
+              return ok({ success: true, pending_approval: true, requestNumber: pending.request_number,
+                message: `ส่งคำขออนุมัติแล้ว (${pending.request_number}) — ${po.po_number} จะถูกยกเลิกเมื่อผู้อนุมัติยืนยัน` })
+            }
+            cancelPurchaseOrderNow(tenantId, po.id)
+            recordAutoAction(gateArgs)
+          }
+        } catch (e) {
+          if (e instanceof PurchaseCancelError) return ok({ success: false, message: e.message })
+          throw e
+        }
+      } else if (status === 'APPROVED') {
         db.prepare('UPDATE purchase_orders SET status = ?, approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
           .run(status, userId, now, now, po.id, tenantId)
       } else {
@@ -836,6 +880,7 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
     },
     async (args) => {
       const { po_id, items, delivery_note_no, notes, receipt_date } = args
+      if (!canReceivePurchase(perm)) return denied('รับสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง')
       if (receipt_date && !isRealDate(receipt_date)) return ok({ success: false, message: badDateMessage(receipt_date) })
       let po = db.prepare('SELECT * FROM purchase_orders WHERE id = ? AND tenant_id = ?').get(po_id, tenantId) as any
       if (!po) po = db.prepare('SELECT * FROM purchase_orders WHERE po_number = ? AND tenant_id = ?').get(po_id, tenantId) as any

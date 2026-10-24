@@ -2186,6 +2186,15 @@ export function runMigrations(db: any): void {
     // NULL = ยังไม่เคยมีเอกสารเลย (ดู backfill ท้ายไฟล์นี้)
     "ALTER TABLE customers ADD COLUMN vat_mode TEXT",
     "ALTER TABLE suppliers ADD COLUMN vat_mode TEXT",
+    // บัญชี Dr/Cr ที่ผู้ใช้เลือกตอนออกใบแจ้งหนี้ซื้อ — แก้ไขใบต้องลงบัญชีเดิม และจ่ายเงินต้อง Dr บัญชีหนี้ของใบนั้น (2026-10-24)
+    "ALTER TABLE purchase_invoices ADD COLUMN dr_account_id TEXT",
+    "ALTER TABLE purchase_invoices ADD COLUMN cr_account_id TEXT",
+    // ต้นทุนต่อหน่วยก่อน/หลังยืนยัน GR — ยกเลิก GR คืนต้นทุนเดิมได้ถ้ายังไม่มี GR อื่นมาทับ (2026-10-24)
+    "ALTER TABLE goods_receipt_items ADD COLUMN prev_unit_cost REAL",
+    "ALTER TABLE goods_receipt_items ADD COLUMN set_unit_cost REAL",
+    // คืนสินค้า: จำนวนในหน่วยของ PO (ไว้เทียบกับยอดรับ) + ธงว่าคืนก่อนออกใบแจ้งหนี้ (ลง Dr 2109 แทนเจ้าหนี้)
+    "ALTER TABLE purchase_return_items ADD COLUMN po_unit_qty REAL",
+    "ALTER TABLE purchase_returns ADD COLUMN grni_return INTEGER DEFAULT 0",
   ].forEach(sql => { try { db.exec(sql) } catch { /* column already exists */ } })
 
   // ==================== ยุบ materials เข้ากับ stock_items (2026-09-16) ====================

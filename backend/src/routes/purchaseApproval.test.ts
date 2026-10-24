@@ -60,6 +60,7 @@ describe('สิทธิ์อนุมัติ PR/PO ผ่านปุ่ม
       INSERT INTO user_approval_permissions (id, tenant_id, user_id, module_type, can_approve, can_approve_unlimited, approval_limit)
       VALUES (?, ?, ?, 'purchase_request', 1, 0, 1000)
     `).run(generateId(), user.tenantId, user.userId)
+    db.prepare("UPDATE users SET departments = '[\"STOCK\"]' WHERE id = ?").run(user.userId)  // มีแผนก = ไม่ใช่ผู้ใช้พื้นฐาน (D2)
     const prId = seedPR(user.tenantId, 5000)
 
     const res = await request(app).put(`/api/purchase/requests/${prId}/status`)
@@ -75,6 +76,7 @@ describe('สิทธิ์อนุมัติ PR/PO ผ่านปุ่ม
       INSERT INTO user_approval_permissions (id, tenant_id, user_id, module_type, can_approve, can_approve_unlimited, approval_limit)
       VALUES (?, ?, ?, 'purchase_request', 1, 0, 10000)
     `).run(generateId(), user.tenantId, user.userId)
+    db.prepare("UPDATE users SET departments = '[\"STOCK\"]' WHERE id = ?").run(user.userId)  // มีแผนก = ไม่ใช่ผู้ใช้พื้นฐาน (D2)
     const prId = seedPR(user.tenantId, 5000)
 
     const res = await request(app).put(`/api/purchase/requests/${prId}/status`)
@@ -108,6 +110,21 @@ describe('สิทธิ์อนุมัติ PR/PO ผ่านปุ่ม
     const ok = await request(app).put(`/api/purchase-orders/${poId}/status`)
       .set('Authorization', `Bearer ${admin.token}`).send({ status: 'APPROVED' })
     expect(ok.status).toBe(200)
-    expect(db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(poId)).toMatchObject({ status: 'APPROVED' })
+    // อนุมัติผ่านเว็บต้องบันทึกผู้อนุมัติ (เดิมเขียนแค่ status)
+    expect(db.prepare('SELECT status, approved_by FROM purchase_orders WHERE id = ?').get(poId)).toMatchObject({ status: 'APPROVED', approved_by: admin.userId })
+    expect((db.prepare('SELECT approved_at FROM purchase_orders WHERE id = ?').get(poId) as any).approved_at).toBeTruthy()
+  })
+
+  it('D2: ผู้ใช้พื้นฐาน (USER ไม่มีแผนก) อนุมัติไม่ได้ แม้ถูกมอบสิทธิ์และวงเงินพอ', async () => {
+    const user = createTestUser({ role: 'USER' })
+    db.prepare(`
+      INSERT INTO user_approval_permissions (id, tenant_id, user_id, module_type, can_approve, can_approve_unlimited, approval_limit)
+      VALUES (?, ?, ?, 'purchase_request', 1, 1, 0)
+    `).run(generateId(), user.tenantId, user.userId)
+    const prId = seedPR(user.tenantId, 5000)
+    const res = await request(app).put(`/api/purchase/requests/${prId}/status`)
+      .set('Authorization', `Bearer ${user.token}`).send({ status: 'APPROVED' })
+    expect(res.status).toBe(403)
+    expect(db.prepare('SELECT status FROM purchase_requests WHERE id = ?').get(prId)).toMatchObject({ status: 'PENDING' })
   })
 })

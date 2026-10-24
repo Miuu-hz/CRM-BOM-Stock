@@ -62,10 +62,22 @@ export function isCashierOnly(role: string | undefined, departments: string[] | 
   return !!departments && departments.length > 0 && departments.every(d => d === 'POS')
 }
 
+/**
+ * ผู้ใช้พื้นฐาน = role USER ที่ไม่มีแผนก (เจ้าของสั่ง 2026-10-24) → ไม่เห็นงานบัญชี/ภาษี/รายงาน/ลูกหนี้
+ * ต้องตรงกับ backend/src/middleware/cashierScope.ts basicUserDenied ซึ่งเป็นตัวกันจริง
+ */
+export function isBasicUser(role: string | undefined, departments: string[] | undefined): boolean {
+  return role === 'USER' && !(departments && departments.length > 0)
+}
+const BASIC_HIDDEN = /^\/(accounting|tax|receivables)(\/|$)/
+
 export function canViewMenu(role: string | undefined, path: string, departments?: string[]): boolean {
   if (!role) return false
   if (path.startsWith('/help')) return true // หน้าคำอธิบายเปิดได้ทุกคน
   if (isCashierOnly(role, departments)) return CASHIER_PATHS.includes(path)
+  if (isBasicUser(role, departments) && BASIC_HIDDEN.test(path)) return false
+  // GM แผนก CEO อนุมัติคำขอยกเลิกเอกสารได้ (approvalGate.isGm) — ต้องเข้ากล่องอนุมัติได้แม้ role เป็น USER
+  if (path === '/approvals' && departments?.includes('CEO')) return true
   const allowed = MENU_PERMISSIONS[path]
   if (!allowed) return true
   return allowed.includes(role as Role)

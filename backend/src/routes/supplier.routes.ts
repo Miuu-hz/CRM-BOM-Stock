@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { userCan } from '../services/rbac.service'
 
 const router = Router()
 
@@ -10,6 +11,9 @@ router.use(authenticate)
 
 // โหมด VAT ที่ยอมรับตอนตั้ง/แก้ผู้ขาย — ค่าอื่นถือเป็นข้อมูลผิด ปฏิเสธด้วย 400
 const VALID_VAT_MODES = ['NONE', 'INCLUSIVE', 'EXCLUSIVE']
+
+// แก้ทะเบียนผู้ขาย (เลขภาษี/โหมด VAT ไหลไปรายงานภาษี) — ตามสิทธิ์ 'suppliers' (D2: ผู้ใช้พื้นฐานทำไม่ได้)
+const deny = (action: string) => ({ success: false, message: `ไม่มีสิทธิ์${action}ผู้ขาย — ต้องเป็นฝ่ายจัดซื้อ` })
 
 function generateId() {
   return randomUUID().replace(/-/g, '').substring(0, 25)
@@ -21,8 +25,8 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const suppliers = db.prepare(`
       SELECT s.*,
-        (SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = s.id) as total_orders,
-        (SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders WHERE supplier_id = s.id AND status != 'CANCELLED') as total_spent
+        (SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = s.id AND tenant_id = s.tenant_id) as total_orders,
+        (SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders WHERE supplier_id = s.id AND tenant_id = s.tenant_id AND status != 'CANCELLED') as total_spent
       FROM suppliers s
       WHERE s.tenant_id = ?
       ORDER BY s.created_at DESC
@@ -45,13 +49,13 @@ router.get('/stats', async (req: Request, res: Response) => {
     const totalPOs = db.prepare(`
       SELECT COUNT(*) as count FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
-      WHERE s.tenant_id = ?
+      WHERE s.tenant_id = ? AND po.tenant_id = s.tenant_id
     `).get(tenantId) as any
     const totalSpent = db.prepare(`
       SELECT COALESCE(SUM(po.total_amount), 0) as total 
       FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
-      WHERE s.tenant_id = ? AND po.status != 'CANCELLED'
+      WHERE s.tenant_id = ? AND po.tenant_id = s.tenant_id AND po.status != 'CANCELLED'
     `).get(tenantId) as any
 
     res.json({
@@ -79,8 +83,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const purchaseOrders = db.prepare(`
-      SELECT * FROM purchase_orders WHERE supplier_id = ? ORDER BY created_at DESC LIMIT 20
-    `).all(req.params.id)
+      SELECT * FROM purchase_orders WHERE supplier_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 20
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...supplier, purchaseOrders } })
   } catch (error) {
@@ -93,6 +97,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!userCan(req.user!, 'suppliers', 'write')) return res.status(403).json(deny('เพิ่ม'))
     const { code, name, type, contactName, email, phone, address, city, taxId, paymentTerms, notes, vatMode } = req.body
     if (vatMode != null && !VALID_VAT_MODES.includes(vatMode)) {
       return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
@@ -135,6 +140,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!userCan(req.user!, 'suppliers', 'write')) return res.status(403).json(deny('แก้'))
     const { name, type, contactName, email, phone, address, city, taxId, paymentTerms, rating, status, notes, vatMode } = req.body
     if (vatMode != null && !VALID_VAT_MODES.includes(vatMode)) {
       return res.status(400).json({ success: false, message: `vatMode ต้องเป็นหนึ่งใน ${VALID_VAT_MODES.join(', ')}` })
@@ -194,8 +200,8 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
           ELSE 0 
         END as avgOrderValue
       FROM purchase_orders 
-      WHERE supplier_id = ? AND status != 'CANCELLED'
-    `).get(id) as any
+      WHERE supplier_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+    `).get(id, tenantId) as any
     
     // Get recent purchase orders with items
     const recentOrders = db.prepare(`
@@ -203,10 +209,10 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
         id, po_number as poNumber, order_date as orderDate, 
         total_amount as totalAmount, status, notes
       FROM purchase_orders
-      WHERE supplier_id = ? AND status != 'CANCELLED'
+      WHERE supplier_id = ? AND tenant_id = ? AND status != 'CANCELLED'
       ORDER BY order_date DESC
       LIMIT 10
-    `).all(id) as any[]
+    `).all(id, tenantId) as any[]
     
     // Get PO items for each order
     for (const order of recentOrders) {
@@ -234,11 +240,11 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       LEFT JOIN stock_items m ON poi.material_id = m.id AND m.tenant_id = poi.tenant_id
-      WHERE po.supplier_id = ? AND po.status != 'CANCELLED'
+      WHERE po.supplier_id = ? AND po.tenant_id = ? AND po.status != 'CANCELLED'
       GROUP BY poi.material_id
       ORDER BY totalQuantity DESC
       LIMIT 10
-    `).all(id) || []
+    `).all(id, tenantId) || []
     
     // Get yearly spending trend
     const spendingTrend = db.prepare(`
@@ -247,12 +253,12 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
         COUNT(*) as orderCount,
         COALESCE(SUM(total_amount), 0) as totalAmount
       FROM purchase_orders
-      WHERE supplier_id = ? 
+      WHERE supplier_id = ? AND tenant_id = ?
         AND status != 'CANCELLED'
         AND order_date >= date('now', '-12 months')
       GROUP BY strftime('%Y-%m', order_date)
       ORDER BY month
-    `).all(id) || []
+    `).all(id, tenantId) || []
     
     res.json({
       success: true,
@@ -282,6 +288,7 @@ router.get('/:id/insights', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!userCan(req.user!, 'suppliers', 'delete')) return res.status(403).json(deny('ลบ'))
     
     // Check if supplier exists and belongs to this tenant
     const existing = db.prepare('SELECT id FROM suppliers WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
@@ -289,7 +296,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Supplier not found' })
     }
     
-    const poCount = db.prepare('SELECT COUNT(*) as count FROM purchase_orders WHERE supplier_id = ?').get(req.params.id) as any
+    const poCount = db.prepare('SELECT COUNT(*) as count FROM purchase_orders WHERE supplier_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (poCount.count > 0) {
       return res.status(400).json({ success: false, message: 'Cannot delete supplier with existing purchase orders' })
     }

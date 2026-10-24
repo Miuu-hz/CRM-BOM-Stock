@@ -68,14 +68,13 @@ describe('PO ที่รับเข้าคลังไม่ได้ ห้
     expect((await check('pcs')).body.data.issues).toEqual([])
   })
 
-  it('แก้ใบที่อนุมัติแล้วให้มีบรรทัดไม่ผูกสินค้า → ถอยกลับเป็นร่าง ล้างผู้อนุมัติ', () => {
+  it('แก้ใบที่อนุมัติแล้วไม่ได้ (D1) — สถานะ/ผู้อนุมัติคงเดิม', () => {
     const user = createTestUser({ role: 'ADMIN' })
     const { poId } = seed(user.tenantId, 'APPROVED', { material: true })
-    const result = applyPurchaseOrderUpdate(user.tenantId, poId, {
+    expect(() => applyPurchaseOrderUpdate(user.tenantId, poId, {
       items: [{ description: 'ของใหม่ไม่ผูก', quantity: 1, unit: 'pcs', unitPrice: 10 }] as any,
-    })
-    expect(result.receipt_issues.length).toBe(1)
+    })).toThrow(/reopen/)
     const po = db.prepare('SELECT status, approved_by FROM purchase_orders WHERE id = ?').get(poId) as any
-    expect(po).toEqual({ status: 'DRAFT', approved_by: null })
+    expect(po).toEqual({ status: 'APPROVED', approved_by: 'u' })
   })
 })

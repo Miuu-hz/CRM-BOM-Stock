@@ -3,11 +3,14 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { deductStockForSO, soStockAlreadyDeducted } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
-import { approvalDenyReason, canApprove as canApproveRequests } from '../services/approvalGate.service'
+import { approvalDenyReason, canApprove as canApproveRequests, gmActsOn, isGm } from '../services/approvalGate.service'
 import { applyStockMovement, applyManualUnpack, StockMovementError } from '../services/stockMovement.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
 import { recalculateBillTotals } from './pos-bill.routes'
-import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
+import { applyPurchaseOrderUpdate, PurchaseOrderUpdateError } from '../services/purchaseOrderUpdate.service'
+import { PurchaseCancelError } from '../services/purchaseCancel.service'
+import { cancelGoodsReceiptNow, cancelPurchaseInvoiceNow, voidSupplierPaymentNow, cancelPurchaseReturnNow } from './purchase.routes'
+import { cancelPurchaseOrderNow } from './purchaseOrder.routes'
 import { cancelSalesOrderNow, cancelInvoiceNow, voidReceiptNow, SalesCancelError } from '../services/salesCancel.service'
 import { cancelCreditNoteNow } from './sales/creditNotes'
 
@@ -282,6 +285,8 @@ router.get('/pending', async (req: Request, res: Response) => {
     `).all(tenantId, userId) as any[]
 
     const moduleTypes = userPerms.map((p: any) => p.module_type)
+    // GM (แผนก CEO) อนุมัติหมวดยกเลิกเอกสารได้โดยไม่ต้องมอบสิทธิ์ — ต้องเห็นคำขอในกล่องด้วย
+    if (!isBlanketApprover && isGm(req.user! as any)) moduleTypes.push('sales_cancel', 'purchase_cancel')
 
     if (!isBlanketApprover && moduleTypes.length === 0) {
       return res.json({ success: true, data: [] })
@@ -444,7 +449,7 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     const requestAmount = Number(request.amount) || 0
 
     // Privilege Escalation Guard: Non-admin จำกัดวงเงินไม่เกิน 5,000 บาท
-    if (!isAdminOrMaster && requestAmount > 5000) {
+    if (!isAdminOrMaster && requestAmount > 5000 && !gmActsOn(req.user! as any, request.module_type)) {
       return res.status(403).json({ success: false, message: 'วงเงินคำขอเกินสิทธิ์การอนุมัติ (จำกัดไม่เกิน 5,000 บาท ต้องให้ Admin หรือ Owner อนุมัติ)' })
     }
 
@@ -528,9 +533,9 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: `Request ${decision.toLowerCase()}` })
   } catch (error) {
-    if (error instanceof SalesCancelError) {
+    if (error instanceof SalesCancelError || error instanceof PurchaseCancelError || error instanceof PurchaseOrderUpdateError) {
       // ทรานแซกชัน rollback แล้ว คำขอยัง PENDING — ผู้อนุมัติเห็นเหตุผลแล้วปฏิเสธ/แก้ต้นเหตุได้
-      return res.status(error.status === 404 ? 404 : 409).json({ success: false, message: `อนุมัติไม่สำเร็จ: ${error.message}` })
+      return res.status((error as any).status === 404 ? 404 : 409).json({ success: false, message: `อนุมัติไม่สำเร็จ: ${error.message}` })
     }
     if (error instanceof StockMovementError) {
       // ทรานแซกชัน rollback ไปแล้ว คำขอจึงยังเป็น PENDING ให้ลองใหม่ได้
@@ -559,6 +564,8 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
   // ยกเลิกไม่ผ่าน (เช่น มีใบแจ้งหนี้เกิดขึ้นระหว่างรอ) → SalesCancelError → rollback คำขอยัง PENDING
   if (request.module_type === 'sales_cancel') {
     executeSalesCancel(request, executorId)
+  } else if (request.module_type === 'purchase_cancel') {
+    executePurchaseCancel(request, executorId, executorName)
   } else if (request.reference_type === 'work_orders') {
     // Work order approved - can proceed to production
     db.prepare("UPDATE work_orders SET status = 'APPROVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -637,10 +644,25 @@ function executeSalesCancel(request: any, executorId: string) {
   }
 }
 
+// อนุมัติคำขอยกเลิกเอกสารซื้อ (D3) → executor ตัวเดียวกับที่คนมีสิทธิ์แผนกใช้ตอนกดเอง (เช็คเงื่อนไขซ้ำตอนรันจริง)
+function executePurchaseCancel(request: any, executorId: string, executorName: string) {
+  const payload = request.payload ? JSON.parse(request.payload) : {}
+  const tenantId = request.tenant_id
+  const refId = request.reference_id
+  switch (payload.kind) {
+    case 'purchase_order': cancelPurchaseOrderNow(tenantId, refId); break
+    case 'goods_receipt': cancelGoodsReceiptNow(tenantId, refId, { userId: executorId, email: executorName }); break
+    case 'purchase_invoice': cancelPurchaseInvoiceNow(tenantId, refId, executorName); break
+    case 'supplier_payment': voidSupplierPaymentNow(tenantId, refId, executorName); break
+    case 'purchase_return': cancelPurchaseReturnNow(tenantId, refId); break
+    default: throw new PurchaseCancelError(400, `ไม่รู้จักชนิดเอกสารที่ขอยกเลิก (${payload.kind})`)
+  }
+}
+
 // Helper function to revert reference status when rejected
 function revertReferenceStatus(request: any) {
-  // ปฏิเสธคำขอยกเลิกเอกสารขาย = เอกสารคงสถานะเดิม ไม่ต้องย้อนอะไร (ห้ามตก branch receipts/sales_orders ด้านล่าง)
-  if (request.module_type === 'sales_cancel') return
+  // ปฏิเสธคำขอยกเลิกเอกสารขาย/ซื้อ = เอกสารคงสถานะเดิม ไม่ต้องย้อนอะไร (ห้ามตก branch supplier_payments/receipts ด้านล่าง)
+  if (request.module_type === 'sales_cancel' || request.module_type === 'purchase_cancel') return
   if (request.reference_type === 'work_orders') {
     db.prepare("UPDATE work_orders SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'supplier_payments') {

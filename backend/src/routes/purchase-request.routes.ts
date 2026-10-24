@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { randomUUID } from 'crypto'
-import { approvalDenyReason } from '../services/approvalGate.service'
-import { authenticate, requireRole } from '../middleware/auth.middleware'
+import { authenticate } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { formatDocumentNumber } from '../utils/id'
-import { lineBotService } from '../services/line-bot.service'
 
 const router = Router()
 router.use(authenticate)
@@ -64,22 +62,6 @@ router.post('/', (req: Request, res: Response) => {
   }
 })
 
-// ─── POST /api/purchase-requests/from-image — OCR รูปภาพ → สร้าง Draft PR ──────
-// รองรับ 2 โหมด:
-//   1. imageBase64 — backend ส่งรูปไปยัง LLM provider (vision) เพื่อ OCR
-//   2. extractedItems — mobile (Gemma4 E2B/E4B บนเครื่อง) ส่ง items ที่อ่านแล้วมาเลย
-const FromImageSchema = z.object({
-  imageBase64:    z.string().optional(),
-  imageType:      z.string().default('image/jpeg'),
-  extractedItems: z.array(z.object({
-    name:       z.string().min(1).max(255),
-    quantity:   z.coerce.number().positive(),
-    unit:       z.string().max(50).default('pcs'),
-    unit_price: z.coerce.number().min(0).default(0),
-  })).optional(),
-  notes:      z.string().max(500).optional(),
-  providerId: z.string().optional(),
-})
 router.post('/:id/cancel', (req: Request, res: Response) => {
     try {
         const { tenantId, role, email } = req.user!

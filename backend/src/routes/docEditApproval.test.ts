@@ -55,7 +55,7 @@ describe('หมวดแก้เอกสารที่ออกไปแล�
     const admin = createTestUser({ role: 'ADMIN' })
     const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
     openDocEdit(admin.tenantId)
-    const po = seedPO(admin.tenantId, 'APPROVED')
+    const po = seedPO(admin.tenantId, 'CANCELLED')
 
     const res = await edit(user.token, po)
 
@@ -75,7 +75,7 @@ describe('หมวดแก้เอกสารที่ออกไปแล�
     const admin = createTestUser({ role: 'ADMIN' })
     const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
     openDocEdit(admin.tenantId)
-    const po = seedPO(admin.tenantId, 'APPROVED')
+    const po = seedPO(admin.tenantId, 'CANCELLED')
 
     await edit(user.token, po)
     const pending = pendingOf(po.id)
@@ -92,7 +92,7 @@ describe('หมวดแก้เอกสารที่ออกไปแล�
     const admin = createTestUser({ role: 'ADMIN' })
     const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
     openDocEdit(admin.tenantId)
-    const po = seedPO(admin.tenantId, 'APPROVED')
+    const po = seedPO(admin.tenantId, 'CANCELLED')
 
     await edit(user.token, po)
     const pending = pendingOf(po.id)
@@ -107,7 +107,7 @@ describe('หมวดแก้เอกสารที่ออกไปแล�
     const admin = createTestUser({ role: 'ADMIN' })
     const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
     openDocEdit(admin.tenantId)
-    const po = seedPO(admin.tenantId, 'SUBMITTED')
+    const po = seedPO(admin.tenantId, 'CANCELLED')
 
     await edit(user.token, po)
     const second = await edit(user.token, po)
@@ -140,9 +140,41 @@ describe('หมวดแก้เอกสารที่ออกไปแล�
   it('หมวดปิดอยู่ → พฤติกรรมเดิม (แก้ได้ทันที)', async () => {
     const admin = createTestUser({ role: 'ADMIN' })
     const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
-    const po = seedPO(admin.tenantId, 'APPROVED')   // ไม่เปิดหมวด
+    const po = seedPO(admin.tenantId, 'CANCELLED')   // ไม่เปิดหมวด
 
     const res = await edit(user.token, po)
     expect(res.status).toBe(200)
+  })
+})
+
+// เจ้าของสั่ง 2026-10-24 (D1): ใบที่ส่งอนุมัติ/อนุมัติแล้วแก้ไม่ได้เลย — เดิมแก้ราคาแล้วสถานะยัง APPROVED (ข้ามวงเงินอนุมัติ)
+describe('D1 — PO SUBMITTED/APPROVED แก้ไม่ได้', () => {
+  it.each(['SUBMITTED', 'APPROVED'])('%s: ทั้ง USER และ ADMIN ได้ 409 ยอดไม่เปลี่ยน สถานะคงเดิม', async (status) => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+    const po = seedPO(admin.tenantId, status)
+    for (const token of [user.token, admin.token]) {
+      const res = await edit(token, po)
+      expect(res.status).toBe(409)
+      expect(res.body.message).toContain('reopen')
+    }
+    expect(totalOf(po.id)).toBe(1070)
+    expect((db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(po.id) as any).status).toBe(status)
+  })
+
+  it('คำขอแก้ไขที่ค้างอยู่ อนุมัติทีหลังตอนใบถูกอนุมัติไปแล้ว → ไม่แก้ (409) คำขอยังค้าง', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    const user = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+    openDocEdit(admin.tenantId)
+    const po = seedPO(admin.tenantId, 'CANCELLED')
+    await edit(user.token, po)
+    const pending = pendingOf(po.id)
+    db.prepare("UPDATE purchase_orders SET status = 'APPROVED' WHERE id = ?").run(po.id)
+
+    const res = await request(app).put(`/api/approval/requests/${pending.id}/decision`)
+      .set('Authorization', `Bearer ${admin.token}`).send({ decision: 'APPROVED' })
+    expect(res.status).toBe(409)
+    expect(totalOf(po.id)).toBe(1070)
+    expect(pendingOf(po.id)).toBeTruthy()
   })
 })

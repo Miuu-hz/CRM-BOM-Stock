@@ -164,9 +164,10 @@ describe('สิทธิ์ย้อนคืนเป็นร่าง — �
       expect(res.status, role + ' ต้องถูกปฏิเสธ').toBe(403)
       expect((db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(poId) as any).status).toBe('APPROVED')
 
-      // แต่ยกเลิกใบยังทำได้ตามเดิม
+      // ยกเลิกใบ: ไม่มีแผนกจัดซื้อ/บัญชี = ส่งคำขออนุมัติแทน (D3) ใบยังไม่ถูกยกเลิก
       const cancel = await request(app).put(`/api/purchase-orders/${poId}/status`).set('Authorization', `Bearer ${user.token}`).send({ status: 'CANCELLED' })
-      expect(cancel.status, role + ' ยังยกเลิกใบได้').toBe(200)
+      expect(cancel.status, role + ' ส่งคำขอยกเลิก').toBe(202)
+      expect((db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(poId) as any).status).toBe('APPROVED')
     }
   })
 

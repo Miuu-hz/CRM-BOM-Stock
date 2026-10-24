@@ -49,3 +49,16 @@ export function cashierAllowed(method: string, originalUrl: string): boolean {
   const list = method === 'GET' || method === 'HEAD' || method === 'OPTIONS' ? READ : WRITE
   return list.some(r => r.test(path))
 }
+
+/**
+ * เจ้าของสั่ง 2026-10-24 (D2): ผู้ใช้พื้นฐาน (role USER ไม่มีแผนก) ห้ามเข้างานบัญชี/ภาษี/รายงาน/ลูกหนี้-เจ้าหนี้
+ * ยกเว้นรายชื่อบัญชีเงินสด/ธนาคารที่หน้าแคชเชียร์ใช้ตอนรับเงิน (ชุดเดียวกับ READ ของแคชเชียร์ด้านบน)
+ */
+const BASIC_DENY = /^\/(accounts|journal|period-closing|bank-accounts|tax|reports|receivables)(\/|$)/
+const BASIC_POS_READ: RegExp[] = [/^\/bank-accounts$/, /^\/accounts$/]
+
+export function basicUserDenied(method: string, originalUrl: string): boolean {
+  const path = originalUrl.split('?')[0].replace(/^\/api(?=\/)/, '')
+  if (!BASIC_DENY.test(path)) return false
+  return !(method === 'GET' && BASIC_POS_READ.some(r => r.test(path)))
+}

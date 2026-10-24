@@ -1,7 +1,7 @@
 import db from '../db/sqlite'
 import { closedPeriodLabel } from '../routes/journal.routes'
 import { createGoodsReceipt, confirmGoodsReceipt, getPendingPoItems } from './goodsReceipt.service'
-import { createPurchaseInvoice, paySupplier } from './purchaseBilling.service'
+import { createPurchaseInvoice, paySupplier, poPaymentTarget } from './purchaseBilling.service'
 import { poNotReceivableMessage } from './purchaseOrderUpdate.service'
 import { thaiDateStr } from '../utils/id'
 
@@ -36,28 +36,10 @@ export const isAwaitingHumanReview = (po: any): boolean => po.is_paid !== 1 && P
 
 function openInvoicesOfPo(tenantId: string, poId: string): any[] {
   return db.prepare(`
-    SELECT id, pi_number, balance_amount FROM purchase_invoices
+    SELECT id, pi_number, balance_amount, supplier_id FROM purchase_invoices
     WHERE tenant_id = ? AND status != 'CANCELLED' AND balance_amount > 0.005
       AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)
   `).all(tenantId, poId, `%"${poId}"%`) as any[]
-}
-
-/**
- * ยอดที่ PO บอกว่าจ่ายไปแล้ว แต่ใบแจ้งหนี้ยังไม่ได้บันทึกจ่าย
- * is_paid + paid_amount น้อยกว่ายอด PO = จ่ายบางส่วน → จ่ายแค่ paid_amount ส่วนที่เหลือค้างเป็นเจ้าหนี้
- * is_paid + paid_amount ว่าง/0/ครบยอด = จ่ายเต็มยอดค้างของใบแจ้งหนี้
- * หักยอดที่ใบแจ้งหนี้ของ PO นี้จ่ายไปแล้ว — เรียกซ้ำแล้วไม่จ่ายซ้ำ
- */
-export function poPaymentTarget(tenantId: string, po: any): { partial: boolean; remaining: number } {
-  if (po.is_paid !== 1) return { partial: false, remaining: 0 }
-  const paid = Number(po.paid_amount) || 0
-  const partial = paid > 0.005 && paid < (Number(po.total_amount) || 0) - 0.005
-  if (!partial) return { partial: false, remaining: Infinity }
-  const already = (db.prepare(`
-    SELECT COALESCE(SUM(paid_amount), 0) AS s FROM purchase_invoices
-    WHERE tenant_id = ? AND status != 'CANCELLED' AND (purchase_order_id = ? OR purchase_order_ids LIKE ?)
-  `).get(tenantId, po.id, `%"${po.id}"%`) as any).s as number
-  return { partial: true, remaining: Math.max(0, Math.round((paid - already) * 100) / 100) }
 }
 
 function freeGoodsReceipts(tenantId: string, poId: string): any[] {
@@ -167,7 +149,7 @@ export function completePurchaseChain(
           if (amount <= 0.005) break
           run(`จ่ายเงิน ${inv.pi_number}${note}`, () => {
             const pay = paySupplier(tenantId, actor, {
-              supplierId: po.supplier_id,
+              supplierId: inv.supplier_id, // ใบรวมหลาย PO อาจผูกผู้ขายแถวอื่นที่เลขภาษีเดียวกัน
               purchaseInvoiceId: inv.id,
               paymentDate: docDate,
               paymentMethod: po.payment_method || 'TRANSFER',

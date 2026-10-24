@@ -54,6 +54,12 @@ import {
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import { fetchStockAliases, type StockAlias } from '../services/sales.service'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
+import { calcWht, buildPurchaseRequestPayload } from '../utils/purchaseHelpers'
+
+/** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — toISOString เป็น UTC ทำให้ตี 0–7 โมงได้วันเมื่อวาน */
+const todayStr = () => new Date().toLocaleDateString('sv-SE')
+const round2 = (n: number) => Math.round(n * 100) / 100
+const effWht = (f: { amount: number; withholding_tax: number; wht_rate: number }) => f.wht_rate > 0 ? calcWht(f.amount, f.wht_rate) : round2(f.withholding_tax)
 
 // ร้านจด VAT แล้วหรือยัง — ใบขายใหม่ ใบซื้อใหม่ ใช้ตัดสินโหมด VAT เริ่มต้น
 const vatRegisteredCo = () => {
@@ -326,7 +332,7 @@ interface ReturnItem {
 
 // ─── Module-level helpers (stable refs — no re-creation on parent re-render) ──
 
-const formatCurrency = (amount: number) => `฿${(amount || 0).toLocaleString('th-TH')}`
+const formatCurrency = (amount: number) => `฿${(amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 function ModalShell({ title, onClose, children, footer }: {
   title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode
@@ -711,7 +717,7 @@ const QuickAddSupplierModal = ({ onClose, onCreated }: {
 }) => {
   const { t } = useTranslation()
   useModalClose(onClose)
-  const [form, setForm] = useState({ code: `SUP-${Date.now().toString().slice(-4)}`, name: '', contactName: '', phone: '', email: '', vatMode: null as VatMode | null })
+  const [form, setForm] = useState({ code: `SUP-${Date.now().toString(36).toUpperCase()}`, name: '', contactName: '', phone: '', email: '', vatMode: null as VatMode | null })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const save = async () => {
@@ -1407,6 +1413,8 @@ const Purchase = () => {
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([])
   const [payments, setPayments] = useState<SupplierPayment[]>([])
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
+  // บรรทัดของ GR ที่เลือกในฟอร์มคืนสินค้า — ใช้ผูก grItemId และจำกัดจำนวนคืนไม่เกินที่รับ
+  const [returnGrItems, setReturnGrItems] = useState<{ id: string; material_id: string; accepted_qty: number; unit_price: number }[]>([])
   const tabHasData = {
     overview: !!summary, requests: requests.length > 0, orders: orders.length > 0, receipts: receipts.length > 0,
     invoices: invoices.length > 0, payments: payments.length > 0, returns: returns.length > 0,
@@ -1487,7 +1495,6 @@ const Purchase = () => {
   const [orderForm, setOrderForm] = useState({
     supplier_id: '',
     expected_date: '',
-    payment_terms: 30,
     discount: 0,
     tax_rate: 7,
     vat_inclusive: false,
@@ -1504,7 +1511,7 @@ const Purchase = () => {
 
   const [receiptForm, setReceiptForm] = useState({
     purchase_order_id: '',
-    receipt_date: new Date().toISOString().split('T')[0],
+    receipt_date: todayStr(),
     received_by: user?.email || '',
     delivery_note_no: '',
     notes: '',
@@ -1521,12 +1528,13 @@ const Purchase = () => {
     // แก้ราคา/จำนวนได้เพื่อให้ตรงกับบิลจริงที่ผู้ขายส่งมา
     items: [] as { grItemId?: string; id?: string; description: string; quantity: number; unit: string; unitPrice: number }[],
     supplier_invoice_number: '',
-    invoice_date: new Date().toISOString().split('T')[0],
+    invoice_date: todayStr(),
     due_date: '',
     tax_rate: 7,
     vat_inclusive: false,
     _vat_touched: false,
     discount_amount: 0,
+    _discount_touched: false,  // false = ไม่ส่ง discountAmount ให้ backend ใช้ส่วนลด PO ที่ยังไม่ถูกใช้
     notes: '',
     dr_account_id: '',   // '' = default 1107 สต็อกวัตถุดิบ
     cr_account_id: '',   // '' = default 2101 เจ้าหนี้การค้า
@@ -1556,11 +1564,12 @@ const Purchase = () => {
   const [paymentForm, setPaymentForm] = useState({
     supplier_id: '',
     purchase_invoice_id: '',
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: todayStr(),
     payment_method: 'TRANSFER',
     payment_reference: '',
     amount: 0,
     withholding_tax: 0,
+    wht_rate: 0,   // >0 = คิดจากยอดจ่าย (ตามยอดล่าสุดเสมอ) · 0 = กรอกจำนวนเอง
     notes: '',
     bank_account_id: '',   // '' = ให้ระบบเลือกตามวิธีจ่าย (เงินสด 1101 / อื่น ๆ 1102)
     pos_cash_movement_id: '', // วิธีจ่าย POS_CASH — รายการเงินออกจากลิ้นชักที่บิลนี้จับคู่
@@ -1569,7 +1578,7 @@ const Purchase = () => {
   const [returnForm, setReturnForm] = useState({
     purchase_order_id: '',
     goods_receipt_id: '',
-    return_date: new Date().toISOString().split('T')[0],
+    return_date: todayStr(),
     reason: '',
     tax_rate: 7,
     vat_inclusive: false,
@@ -1620,10 +1629,20 @@ const Purchase = () => {
           return { ...p, goods_receipt_ids: ids, ...deriveInvoiceLineDefaults(ids, list, p), _preselect_po_id: '' }
         })
       })
-      .catch(() => { if (alive) setBillableReceipts([]) })
+      .catch((e: any) => { if (alive) { setBillableReceipts([]); toast.error(e?.response?.data?.message || t('purchase.error.generic')) } })
       .finally(() => { if (alive) setBillableLoading(false) })
     return () => { alive = false }
   }, [modalOpen, modalMode, invoiceForm.supplier_id])
+
+  useEffect(() => {
+    const grId = returnForm.goods_receipt_id
+    if (modalOpen !== 'return' || !grId) { setReturnGrItems([]); return }
+    let alive = true
+    api.get(`/purchase/goods-receipts/${grId}`)
+      .then(r => { if (alive) setReturnGrItems(r.data?.data?.items || []) })
+      .catch((e: any) => { if (alive) { setReturnGrItems([]); toast.error(e?.response?.data?.message || t('purchase.error.generic')) } })
+    return () => { alive = false }
+  }, [modalOpen, returnForm.goods_receipt_id])
 
   // Fetch tab-specific list data when switching tabs
   useEffect(() => {
@@ -1658,7 +1677,7 @@ const Purchase = () => {
     const amount = isReqCreate
       ? requestForm.items.reduce((s, i) => s + (i.estimated_total_price || 0), 0)
       : (() => {
-          const subtotal = orderForm.items.reduce((s, i) => s + i.total_price, 0)
+          const subtotal = orderForm.items.filter(i => i.material_id || i.description).reduce((s, i) => s + i.quantity * i.unit_price, 0)
           return calcVat(subtotal, { rate: orderForm.tax_rate, discountAmount: orderForm.discount || 0, inclusive: orderForm.vat_inclusive }).totalAmount
         })()
 
@@ -1679,11 +1698,26 @@ const Purchase = () => {
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [modalOpen, modalMode, requestForm.items, orderForm.items, orderForm.discount, orderForm.tax_rate, user?.role])
+  }, [modalOpen, modalMode, requestForm.items, orderForm.items, orderForm.discount, orderForm.tax_rate, orderForm.vat_inclusive, user?.role])
+
+  // backend ตอบ 202 = สร้างคำขออนุมัติแทนการทำจริง (ผู้ใช้ไม่มีสิทธิ์ตรง) — ห้ามขึ้นว่าสำเร็จ
+  const pendingApproval = (res: any) => {
+    if (res?.status !== 202) return false
+    toast(res.data?.message || 'ส่งคำขออนุมัติแล้ว', { icon: '📝', duration: 6000 })
+    return true
+  }
+  // กันกดซ้ำระหว่างรอ response ของปุ่มที่ทำงานนอกโมดัล (ยืนยัน/ยกเลิก/void/เปลี่ยนสถานะ)
+  const inflight = useRef(new Set<string>())
+  const once = <A extends any[]>(name: string, fn: (...a: A) => Promise<void>) => async (...a: A) => {
+    const k = `${name}:${String(a[0])}`
+    if (inflight.current.has(k)) return
+    inflight.current.add(k)
+    try { await fn(...a) } finally { inflight.current.delete(k) }
+  }
 
   const handleApiError = (error: any, defaultMsg: string) => {
     console.error('API Error:', error)
-    if (error.status === 401) {
+    if (error?.response?.status === 401) {
       toast.error('Session expired. Please login again.')
     } else {
       toast.error(defaultMsg)
@@ -1837,11 +1871,7 @@ const Purchase = () => {
   const submitRequestFlow = async (toStatus?: 'PENDING' | 'APPROVED') => {
     setFormLoading(true)
     try {
-      const items = requestForm.items.filter(i => i.material_id || i.description).map(item => ({
-        ...item,
-        estimated_total_price: item.quantity * item.estimated_unit_price
-      }))
-      const { data } = await api.post('/purchase/requests', { ...requestForm, items })
+      const { data } = await api.post('/purchase/requests', buildPurchaseRequestPayload(requestForm))
       if (!data.success) { toast.error(data.message || t('purchase.toast.requestCreateFailed')); return }
       if (toStatus) {
         try {
@@ -1891,22 +1921,22 @@ const Purchase = () => {
     } finally { setFormLoading(false) }
   }
 
-  const handleDeleteRequest = async (id: string) => {
+  const handleDeleteRequest0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.deleteRequest'))) return
     try {
       await api.delete(`/purchase/requests/${id}`)
       toast.success(t('purchase.toast.requestDeleted'))
       fetchRequests()
-    } catch (error) { toast.error(t('purchase.toast.requestDeleteFailed')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.toast.requestDeleteFailed')) }
   }
 
-  const handleSubmitRequestDirect = async (id: string, toStatus: 'PENDING' | 'APPROVED') => {
+  const handleSubmitRequestDirect0 = async (id: string, toStatus: 'PENDING' | 'APPROVED') => {
     try {
       const { data } = await api.put(`/purchase/requests/${id}/status`, { status: toStatus })
       if (data.success) {
         toast.success(toStatus === 'PENDING' ? t('purchase.toast.submitted') : t('purchase.toast.approved'))
         fetchRequests()
-      }
+      } else toast.error(data.message || t('purchase.error.generic'))
     } catch (error: any) {
       toast.error(error.response?.data?.message || t('purchase.error.generic'))
     }
@@ -1923,7 +1953,9 @@ const Purchase = () => {
     setConverting(true)
     try {
       const { data } = await api.post(`/purchase/requests/${convertPRId}/convert-to-po`, {
-        supplierId: convertForm.supplier_id
+        supplierId: convertForm.supplier_id,
+        expectedDate: convertForm.expected_date || undefined,
+        notes: convertForm.notes || undefined,
       })
       if (data.success) {
         toast.success(t('purchase.toast.convertedToOrder'))
@@ -2023,7 +2055,7 @@ const Purchase = () => {
         paymentReference: orderForm.payment_reference || undefined,
         bankAccountId: orderForm.bank_account_id || undefined,
         isPaid: orderForm.is_paid ? 1 : 0,
-        paidAmount: orderForm.is_paid ? (orderForm.paid_amount || totalAmount) : 0,
+        paidAmount: orderForm.is_paid ? totalAmount : 0,
         items,
         subtotal,
         taxAmount,
@@ -2081,7 +2113,7 @@ const Purchase = () => {
         paymentReference: orderForm.payment_reference || undefined,
         bankAccountId: orderForm.bank_account_id || undefined,
         isPaid: orderForm.is_paid ? 1 : 0,
-        paidAmount: orderForm.is_paid ? (orderForm.paid_amount || totalAmount) : 0,
+        paidAmount: orderForm.is_paid ? totalAmount : 0,
         items,
         subtotal,
         taxAmount,
@@ -2102,14 +2134,16 @@ const Purchase = () => {
     finally { setFormLoading(false) }
   }
 
-  const handleUpdateOrderStatus = async (id: string, status: string) => {
+  const handleUpdateOrderStatus0 = async (id: string, status: string) => {
     try {
-      const { data } = await api.put(`/purchase-orders/${id}/status`, { status })
+      const res = await api.put(`/purchase-orders/${id}/status`, { status })
+      const data = res.data
+      if (pendingApproval(res)) { fetchOrders(); return }
       if (data.success) {
         const labels: Record<string, string> = {
           SUBMITTED: t('purchase.status.submitted'), APPROVED: t('purchase.status.approved'), CANCELLED: t('purchase.status.cancelled')
         }
-        toast.success(labels[status] || t('purchase.toast.statusUpdated'))
+        toast.success(data.pending_approval ? data.message : (labels[status] || t('purchase.toast.statusUpdated')))
         fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
     } catch (error: any) {
@@ -2119,13 +2153,13 @@ const Purchase = () => {
     }
   }
 
-  const handleDeleteOrder = async (id: string) => {
+  const handleDeleteOrder0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.deleteOrder'))) return
     try {
       await api.delete(`/purchase-orders/${id}`)
       toast.success(t('purchase.toast.orderDeleted'))
       fetchOrders()
-    } catch (error) { toast.error(t('purchase.toast.orderDeleteFailed')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.toast.orderDeleteFailed')) }
   }
 
   const handleCreateReceipt = async () => {
@@ -2180,7 +2214,7 @@ const Purchase = () => {
     }
   }
 
-  const handleConfirmReceipt = async (id: string) => {
+  const handleConfirmReceipt0 = async (id: string) => {
     try {
       const { data } = await api.put(`/purchase/goods-receipts/${id}/confirm`)
       if (data.success) {
@@ -2192,27 +2226,30 @@ const Purchase = () => {
         } else {
           toast.success(t('purchase.toast.receiptConfirmed'))
         }
+        if (modalOpen === 'receipt') closeModal()
         fetchReceipts()
         fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.receiptConfirmFailed')) }
     } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.receiptConfirmFailed')) }
   }
 
-  const handleDeleteReceipt = async (id: string) => {
+  const handleDeleteReceipt0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.deleteReceipt'))) return
     try {
       await api.delete(`/purchase/goods-receipts/${id}`)
       toast.success(t('purchase.toast.receiptDeleted'))
       fetchReceipts()
-    } catch { toast.error(t('purchase.toast.receiptDeleteFailed')) }
+    } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.toast.receiptDeleteFailed')) }
   }
 
   // Cancel a CONFIRMED goods receipt — backend reverses stock automatically and
   // blocks the call if an active purchase invoice already references this GR.
-  const handleCancelReceipt = async (id: string) => {
+  const handleCancelReceipt0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.cancelReceipt'))) return
     try {
-      const { data } = await api.put(`/purchase/goods-receipts/${id}/status`, { status: 'CANCELLED' })
+      const res = await api.put(`/purchase/goods-receipts/${id}/status`, { status: 'CANCELLED' })
+      const data = res.data
+      if (pendingApproval(res)) { fetchReceipts(); return }
       if (data.success) {
         toast.success(data.message || t('purchase.toast.receiptCancelled'))
         fetchReceipts()
@@ -2230,7 +2267,9 @@ const Purchase = () => {
     return {
       items,
       auto_pay: selected.length > 0 && selected.every(r => !!r.po_is_paid),
-      tax_rate: !prev._vat_touched && prev.goods_receipt_ids.length === 0 && selected[0] ? (selected[0].po_tax_rate ?? 7) : prev.tax_rate,
+      // โหมด VAT ของใบแจ้งหนี้ตามใบสั่งซื้อของ GR ใบแรกเสมอ (backend ใช้ค่านี้ ไม่ใช้ที่หน้าเว็บส่ง)
+      tax_rate: selected[0] ? (selected[0].po_tax_rate ?? 7) : prev.tax_rate,
+      vat_inclusive: selected[0] ? orders.find(o => o.id === selected[0].purchase_order_id)?.vat_inclusive === 1 : prev.vat_inclusive,
     }
   }
 
@@ -2272,7 +2311,7 @@ const Purchase = () => {
         dueDate: invoiceForm.due_date,
         taxRate: invoiceForm.tax_rate,
         vatInclusive: invoiceForm.vat_inclusive,
-        discountAmount: invoiceForm.discount_amount || undefined,
+        discountAmount: invoiceForm._discount_touched ? invoiceForm.discount_amount : undefined,
         notes: invoiceForm.notes,
         drAccountId: invoiceForm.dr_account_id || undefined,
         crAccountId: invoiceForm.pos_cash_movement_id ? undefined : (invoiceForm.cr_account_id || undefined),
@@ -2335,10 +2374,12 @@ const Purchase = () => {
   // Cancel a purchase invoice — backend reverses linked supplier payments first,
   // then reverses the AP/inventory journal and input VAT entry.
   // ยกเลิกใบขอซื้อ — server ตรวจเงื่อนไขให้ (สิทธิ์, สถานะ, และต้องไม่มีใบสั่งซื้อค้างอยู่)
-  const handleCancelRequest = async (id: string, prNumber: string) => {
+  const handleCancelRequest0 = async (id: string, prNumber: string) => {
     if (!confirm(`ยืนยันยกเลิกใบขอซื้อ ${prNumber}?`)) return
     try {
-      const { data } = await api.post(`/purchase-requests/${id}/cancel`, {})
+      const res = await api.post(`/purchase-requests/${id}/cancel`, {})
+      const data = res.data
+      if (pendingApproval(res)) { fetchRequests(); return }
       if (data.success) {
         toast.success(data.message || 'ยกเลิกใบขอซื้อเรียบร้อย')
         fetchRequests()
@@ -2355,7 +2396,7 @@ const Purchase = () => {
   }
 
   // ย้อนคืน PO กลับเป็นร่าง — สำหรับ admin เมื่อพบว่ามีรายการยังไม่ผูก SKU หรือ skip_stock
-  const handleReopenOrder = async (id: string, poNumber: string) => {
+  const handleReopenOrder0 = async (id: string, poNumber: string) => {
     if (!confirm(`ย้อนคืน ${poNumber} กลับเป็นร่าง? ใบรับสินค้า DRAFT ที่เชื่อมอยู่จะถูกลบด้วย`)) return
     try {
       const { data } = await api.post(`/purchase-orders/${id}/reopen`, {})
@@ -2370,10 +2411,12 @@ const Purchase = () => {
     }
   }
 
-  const handleCancelInvoice = async (id: string) => {
+  const handleCancelInvoice0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.cancelInvoice'))) return
     try {
-      const { data } = await api.put(`/purchase/invoices/${id}/status`, { status: 'CANCELLED' })
+      const res = await api.put(`/purchase/invoices/${id}/status`, { status: 'CANCELLED' })
+      const data = res.data
+      if (pendingApproval(res)) { fetchInvoices(); return }
       if (data.success) {
         toast.success(data.message || t('purchase.toast.invoiceCancelled'))
         fetchInvoices()
@@ -2384,11 +2427,14 @@ const Purchase = () => {
 
   const handleCreatePayment = async () => {
     const selInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
-    if (selInv && paymentForm.amount > selInv.balance_amount) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
+    const wht = effWht(paymentForm)
+    if (!(paymentForm.amount > 0)) { toast.error('ระบุจำนวนเงิน'); return }
+    if (wht < 0 || wht > paymentForm.amount) { toast.error('ภาษีหัก ณ ที่จ่ายต้องไม่เกินจำนวนเงิน'); return }
+    if (selInv && paymentForm.amount > selInv.balance_amount + 0.005) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
     if (paymentForm.payment_method === 'POS_CASH') {
       const mv = posCashItems.find(m => m.id === paymentForm.pos_cash_movement_id)
       if (!mv) { toast.error(t('purchase.paymentModal.posCashPlaceholder')); return }
-      if (paymentForm.amount - paymentForm.withholding_tax > mv.remaining + 0.005) {
+      if (paymentForm.amount - wht > mv.remaining + 0.005) {
         toast.error(t('purchase.paymentModal.posCashOver', { amount: formatCurrency(mv.remaining) })); return
       }
     }
@@ -2408,7 +2454,7 @@ const Purchase = () => {
         paymentMethod: paymentForm.payment_method,
         paymentReference: paymentForm.payment_reference,
         amount: paymentForm.amount,
-        withholdingTax: paymentForm.withholding_tax,
+        withholdingTax: wht,
         bankAccountId: paymentForm.payment_method === 'POS_CASH' ? undefined : (paymentForm.bank_account_id || undefined),
         posCashMovementId: paymentForm.payment_method === 'POS_CASH' ? paymentForm.pos_cash_movement_id : undefined,
         notes: paymentForm.notes,
@@ -2437,10 +2483,12 @@ const Purchase = () => {
 
   // Void a supplier payment — backend reverses its journal and restores the
   // linked purchase invoice's paid/balance/payment_status. Hard-deletes the payment row.
-  const handleVoidPayment = async (id: string) => {
+  const handleVoidPayment0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.voidPayment'))) return
     try {
-      const { data } = await api.delete(`/purchase/payments/${id}`)
+      const res = await api.delete(`/purchase/payments/${id}`)
+      const data = res.data
+      if (pendingApproval(res)) { fetchPayments(); return }
       if (data.success) {
         toast.success(data.message || t('purchase.toast.paymentVoided'))
         fetchPayments()
@@ -2457,7 +2505,15 @@ const Purchase = () => {
       // — ก่อนหน้านี้ส่ง key แบบ snake_case ของ state ไปตรง ๆ ทำให้ purchaseOrderId/item.materialId
       // เป็น undefined เสมอ สร้างใบคืนสินค้าไม่ได้แม้แต่ใบเดียว (400 "Purchase order ... required"
       // หรือ 500 ตอน insert) ไม่ใช่แค่หน่วยหาย
-      const items = returnForm.items.filter(i => i.material_id && i.quantity > 0).map(item => ({
+      const rows = returnForm.items.filter(i => i.material_id && i.quantity > 0)
+      for (const r of rows) {
+        const gi = returnGrItems.find(g => g.material_id === r.material_id)
+        if (returnForm.goods_receipt_id && gi && r.quantity > gi.accepted_qty + 0.0001) {
+          toast.error(`จำนวนคืนเกินที่รับ (รับ ${gi.accepted_qty})`); return
+        }
+      }
+      const items = rows.map(item => ({
+        grItemId: returnGrItems.find(g => g.material_id === item.material_id)?.id,
         materialId: item.material_id,
         quantity: item.quantity,
         unit: item.unit,
@@ -2482,18 +2538,20 @@ const Purchase = () => {
     finally { setFormLoading(false) }
   }
 
-  const handleUpdateReturnStatus = async (id: string, status: string) => {
+  const handleUpdateReturnStatus0 = async (id: string, status: string) => {
     try {
-      const { data } = await api.put(`/purchase/returns/${id}/status`, { status })
+      const res = await api.put(`/purchase/returns/${id}/status`, { status })
+      const data = res.data
+      if (pendingApproval(res)) { fetchReturns(); return }
       if (data.success) {
         const labels: Record<string, string> = { SUBMITTED: t('purchase.status.submitted'), APPROVED: t('purchase.status.approved'), CANCELLED: t('purchase.status.cancelled') }
-        toast.success(labels[status] || t('purchase.toast.statusUpdated'))
+        toast.success(data.pending_approval ? data.message : (labels[status] || t('purchase.toast.statusUpdated')))
         fetchReturns()
       } else { toast.error(data.message || t('purchase.toast.statusUpdateFailed')) }
     } catch (error: any) { toast.error(error?.response?.data?.message || t('purchase.error.generic')) }
   }
 
-  const handleDeleteReturn = async (id: string) => {
+  const handleDeleteReturn0 = async (id: string) => {
     if (!confirm(t('purchase.confirm.deleteReturn'))) return
     try {
       await api.delete(`/purchase/returns/${id}`)
@@ -2502,7 +2560,7 @@ const Purchase = () => {
     } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.returnDeleteFailed')) }
   }
 
-  const handleConfirmReturn = async (id: string) => {
+  const handleConfirmReturn0 = async (id: string) => {
     try {
       const { data } = await api.put(`/purchase/returns/${id}/confirm`)
       if (data.success) {
@@ -2511,6 +2569,23 @@ const Purchase = () => {
       } else { toast.error(data.message || t('purchase.toast.returnConfirmFailed')) }
     } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.returnConfirmFailed')) }
   }
+
+
+  // ห่อด้วย once() — กดซ้ำระหว่างรอ response ไม่ยิงซ้ำ
+  const handleConfirmReceipt = once('gr-confirm', handleConfirmReceipt0)
+  const handleCancelReceipt = once('gr-cancel', handleCancelReceipt0)
+  const handleCancelInvoice = once('inv-cancel', handleCancelInvoice0)
+  const handleVoidPayment = once('pay-void', handleVoidPayment0)
+  const handleUpdateOrderStatus = once('po-status', handleUpdateOrderStatus0)
+  const handleSubmitRequestDirect = once('pr-status', handleSubmitRequestDirect0)
+  const handleConfirmReturn = once('ret-confirm', handleConfirmReturn0)
+  const handleUpdateReturnStatus = once('ret-status', handleUpdateReturnStatus0)
+  const handleCancelRequest = once('pr-cancel', handleCancelRequest0)
+  const handleReopenOrder = once('po-reopen', handleReopenOrder0)
+  const handleDeleteReturn = once('ret-del', handleDeleteReturn0)
+  const handleDeleteReceipt = once('gr-del', handleDeleteReceipt0)
+  const handleDeleteOrder = once('po-del', handleDeleteOrder0)
+  const handleDeleteRequest = once('pr-del', handleDeleteRequest0)
 
   // กฎเดียวที่ใช้ตัดสินว่า PO ใบนี้ยังออกใบแจ้งหนี้ได้อยู่ไหม
   // เคยมี 2 ชุดแยกกัน (ตาราง PO กับ dropdown ในโมดัล) แล้วไม่ตรงกัน —
@@ -2708,8 +2783,8 @@ const Purchase = () => {
           allLabel={t('purchase.filter.all')} onChange={v => { setStatusFilter(v); setCurrentPage(1) }} />
       </FilterChips>
       <div className="flex items-center gap-2 ml-auto">
-        <PageSizeSelect />
-        <ViewToggle />
+        {PageSizeSelect()}
+        {ViewToggle()}
       </div>
     </FilterBar>
   )
@@ -2799,8 +2874,7 @@ const Purchase = () => {
         setOrderForm({
           supplier_id: data.supplier_id || '',
           expected_date: data.expected_date?.split('T')[0] || '',
-          payment_terms: data.payment_terms || 30,
-          discount: data.discount || 0,
+          discount: data.discount_amount || 0,
           tax_rate: data.tax_rate ?? 7,  // 0 = ผู้ขายไม่เก็บ VAT (ตลาด) — || 7 เคยเปลี่ยน 0 เป็น 7 เงียบ ๆ ตอนเปิดแก้
           vat_inclusive: data.vat_inclusive === 1,
           _vat_touched: true,
@@ -2821,7 +2895,7 @@ const Purchase = () => {
       } else if (type === 'receipt') {
         setReceiptForm({
           purchase_order_id: data.purchase_order_id || '',
-          receipt_date: data.receipt_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+          receipt_date: data.receipt_date?.split('T')[0] || todayStr(),
           received_by: data.received_by || user?.email || '',
           delivery_note_no: data.delivery_note_no || '',
           notes: data.notes || '',
@@ -2838,12 +2912,13 @@ const Purchase = () => {
           goods_receipt_ids: [],
           items: [],
           supplier_invoice_number: data.supplier_invoice_number || '',
-          invoice_date: new Date().toISOString().split('T')[0],
+          invoice_date: todayStr(),
           due_date: data.due_date || '',
           tax_rate: data.tax_rate ?? 7,
           vat_inclusive: data.vat_inclusive ?? false,
           _vat_touched: true,
           discount_amount: 0,
+          _discount_touched: false,
           notes: '',
           dr_account_id: '',
           cr_account_id: '',
@@ -2873,12 +2948,13 @@ const Purchase = () => {
           goods_receipt_ids: grIds,
           items,
           supplier_invoice_number: data.supplier_invoice_number || '',
-          invoice_date: data.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+          invoice_date: data.invoice_date?.split('T')[0] || todayStr(),
           due_date: data.due_date?.split('T')[0] || '',
           tax_rate: data.tax_rate ?? 7,
           vat_inclusive: data.vat_inclusive === 1,
           _vat_touched: true,
           discount_amount: data.discount_amount || 0,
+          _discount_touched: true,
           notes: data.notes || '',
           dr_account_id: '',
           cr_account_id: '',
@@ -2901,11 +2977,12 @@ const Purchase = () => {
         setPaymentForm({
           supplier_id: data.supplier_id || '',
           purchase_invoice_id: data.purchase_invoice_id || '',
-          payment_date: data.payment_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+          payment_date: data.payment_date?.split('T')[0] || todayStr(),
           payment_method: data.payment_method || 'TRANSFER',
           payment_reference: data.payment_reference || '',
           amount: data.amount || 0,
           withholding_tax: data.withholding_tax || 0,
+          wht_rate: 0,
           notes: data.notes || '',
           bank_account_id: data.bank_account_id || defaultBankId(),
           pos_cash_movement_id: data.pos_cash_movement_id || '',
@@ -2914,7 +2991,7 @@ const Purchase = () => {
         setReturnForm({
           purchase_order_id: data.purchase_order_id || '',
           goods_receipt_id: data.goods_receipt_id || '',
-          return_date: data.return_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+          return_date: data.return_date?.split('T')[0] || todayStr(),
           reason: data.reason || '',
           tax_rate: data.tax_rate ?? 7,
           vat_inclusive: data.vat_inclusive === 1,
@@ -2927,11 +3004,11 @@ const Purchase = () => {
       // ล้างเฉพาะฟอร์มของชนิดที่กำลังเปิด — เดิมล้างทุกใบรวด ทำให้เปิดใบแจ้งหนี้
       // ไปทับใบสั่งซื้อที่กรอกค้างไว้ และทำให้ค่าที่ปุ่ม "ขั้นต่อไป" ใส่มาหายเกลี้ยง
       if (type === 'request') setRequestForm({ department: '', required_date: '', priority: 'NORMAL', preferred_supplier_id: '', notes: '', items: [{ material_id: '', description: '', quantity: 1, unit: '', estimated_unit_price: 0, estimated_total_price: 0, notes: '' }] })
-      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', payment_terms: 30, discount: 0, tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
-      if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: new Date().toISOString().split('T')[0], received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
-      if (type === 'invoice') setInvoiceForm({ invoice_id: '', supplier_id: '', goods_receipt_ids: [], items: [], supplier_invoice_number: '', invoice_date: new Date().toISOString().split('T')[0], due_date: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, discount_amount: 0, notes: '', dr_account_id: '', cr_account_id: '', pos_cash_movement_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _preselect_po_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
-      if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: new Date().toISOString().split('T')[0], payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, notes: '', bank_account_id: defaultBankId(), pos_cash_movement_id: '' })
-      if (type === 'return') setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: new Date().toISOString().split('T')[0], reason: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
+      if (type === 'order') setOrderForm({ supplier_id: '', expected_date: '', discount: 0, tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', linked_pr_id: '', payment_method: '', payment_reference: '', bank_account_id: '', is_paid: false, paid_amount: 0, items: [{ material_id: '', description: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, notes: '', skip_stock: false }] })
+      if (type === 'receipt') setReceiptForm({ purchase_order_id: '', receipt_date: todayStr(), received_by: user?.email || '', delivery_note_no: '', notes: '', items: [] })
+      if (type === 'invoice') setInvoiceForm({ invoice_id: '', supplier_id: '', goods_receipt_ids: [], items: [], supplier_invoice_number: '', invoice_date: todayStr(), due_date: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, discount_amount: 0, _discount_touched: false, notes: '', dr_account_id: '', cr_account_id: '', pos_cash_movement_id: '', auto_pay: false, payment_method: '', payment_reference: '', bank_account_id: '', _preselect_po_id: '', _subtotal: 0, _tax_amount: 0, _total_amount: 0, _supplier_name: '', _pi_number: '', _paid_amount: 0, _balance_amount: 0, _payment_status: '' })
+      if (type === 'payment') setPaymentForm({ supplier_id: '', purchase_invoice_id: '', payment_date: todayStr(), payment_method: 'TRANSFER', payment_reference: '', amount: 0, withholding_tax: 0, wht_rate: 0, notes: '', bank_account_id: defaultBankId(), pos_cash_movement_id: '' })
+      if (type === 'return') setReturnForm({ purchase_order_id: '', goods_receipt_id: '', return_date: todayStr(), reason: '', tax_rate: 7, vat_inclusive: false, _vat_touched: false, notes: '', items: [{ material_id: '', quantity: 1, unit: '', unit_price: 0, total_price: 0, reason: '' }] })
     }
   }
 
@@ -2956,7 +3033,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get(endpointMap[type])
       const doc = data?.data || data
-      printBill(type, { ...doc, _company: user?.name || t('purchase.common.companyFallback') }, format)
+      printBill(type, { ...doc, _company: (getCachedCompanySettings() as any)?.name || user?.name || t('purchase.common.companyFallback') }, format)
     } catch { toast.error(t('purchase.error.loadPrintData')) }
   }
 
@@ -3094,6 +3171,7 @@ const Purchase = () => {
           }
         })
       }
+      else toast.error(data.message || t('purchase.error.loadPendingReceipts'))
     } catch (error) { toast.error(t('purchase.error.loadPendingReceipts')) }
   }
 
@@ -3404,7 +3482,7 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.requestsPlaceholder'), base, false)}
-        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.requests')} /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? EmptyState({ text: t('purchase.empty.requests') }) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{sortLabel(t('purchase.requests.headers.number'), 'pr_number')}</span><span className="col-span-3">{sortLabel(t('purchase.requests.headers.requester'), 'requester_name')}</span>
@@ -3460,7 +3538,7 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{req.requester_name || req.supplier_name || '-'}</p>
                     <p className="text-sm text-[var(--fg-3)]">{req.department || req.supplier_name || '-'}</p>
                   </div>
-                  <StatusBadge status={req.status} />
+                  {StatusBadge({ status: req.status })}
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>{t('purchase.requests.card.requestedOn', { date: formatDate(req.request_date) })}</span>
@@ -3494,7 +3572,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
-        <Pagination total={filtered.length} />
+        {Pagination({ total: filtered.length })}
       </div>
     )
   }
@@ -3510,7 +3588,7 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.ordersPlaceholder'), base, true)}
-        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.orders')} /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? EmptyState({ text: t('purchase.empty.orders') }) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{sortLabel(t('purchase.orders.headers.poNumber'), 'po_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
@@ -3593,7 +3671,7 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{order.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">{order.supplier_code}</p>
                   </div>
-                  <StatusBadge status={order.status} />
+                  {StatusBadge({ status: order.status })}
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>{t('purchase.orders.card.orderedOn', { date: formatDate(order.order_date) })}</span>
@@ -3653,7 +3731,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
-        <Pagination total={filtered.length} />
+        {Pagination({ total: filtered.length })}
       </div>
     )
   }
@@ -3669,7 +3747,7 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.receiptsPlaceholder'), base, false)}
-        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.receipts')} /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? EmptyState({ text: t('purchase.empty.receipts') }) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{sortLabel(t('purchase.receipts.headers.grNumber'), 'gr_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
@@ -3718,7 +3796,7 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{receipt.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {receipt.po_number}</p>
                   </div>
-                  <StatusBadge status={receipt.status} />
+                  {StatusBadge({ status: receipt.status })}
                 </div>
                 <p className="text-xs text-[var(--fg-4)] mt-2">{t('purchase.receipts.card.receivedOn', { date: formatDate(receipt.receipt_date) })}</p>
                 {receipt.journal_entry_number && (
@@ -3744,7 +3822,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
-        <Pagination total={filtered.length} />
+        {Pagination({ total: filtered.length })}
       </div>
     )
   }
@@ -3760,7 +3838,7 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.invoicesPlaceholder'), base, true)}
-        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.invoices')} /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? EmptyState({ text: t('purchase.empty.invoices') }) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{sortLabel(t('purchase.invoices.headers.piNumber'), 'pi_number')}</span><span className="col-span-2">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
@@ -3811,7 +3889,7 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{invoice.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {invoice.po_number}</p>
                   </div>
-                  <StatusBadge status={invoice.status === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status} />
+                  {StatusBadge({ status: invoice.status === 'CANCELLED' ? 'CANCELLED' : invoice.payment_status })}
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-[var(--fg-4)]">
                   <span>{t('purchase.invoices.card.issuedOn', { date: formatDate(invoice.invoice_date) })}</span>
@@ -3842,7 +3920,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
-        <Pagination total={filtered.length} />
+        {Pagination({ total: filtered.length })}
       </div>
     )
   }
@@ -3858,7 +3936,7 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.paymentsPlaceholder'), base, null, 'payment_method', m => methodLabel[m] || m)}
-        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.payments')} /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? EmptyState({ text: t('purchase.empty.payments') }) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{sortLabel(t('purchase.payments.headers.number'), 'payment_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
@@ -3933,7 +4011,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
-        <Pagination total={filtered.length} />
+        {Pagination({ total: filtered.length })}
       </div>
     )
   }
@@ -3953,7 +4031,7 @@ const Purchase = () => {
     return (
       <div className="space-y-4">
         {listFilters(t('purchase.search.returnsPlaceholder'), base, false)}
-        {filtered.length === 0 ? <EmptyState text={t('purchase.empty.returns')} /> : viewMode === 'list' ? (
+        {filtered.length === 0 ? EmptyState({ text: t('purchase.empty.returns') }) : viewMode === 'list' ? (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-2">{sortLabel(t('purchase.returns.headers.number'), 'pr_number')}</span><span className="col-span-3">{sortLabel(t('purchase.common.supplier'), 'supplier_name')}</span>
@@ -4002,7 +4080,7 @@ const Purchase = () => {
                     <p className="font-semibold text-[var(--fg-1)] mt-0.5 truncate">{ret.supplier_name}</p>
                     <p className="text-sm text-[var(--fg-3)]">PO: {ret.po_number}</p>
                   </div>
-                  <StatusBadge status={ret.status} />
+                  {StatusBadge({ status: ret.status })}
                 </div>
                 <p className="text-xs text-warning/80 mt-1">{reasonLabel[ret.reason] || ret.reason}</p>
                 <p className="font-bold text-danger text-sm mt-2 text-right">{formatCurrency(ret.total_amount)}</p>
@@ -4021,7 +4099,7 @@ const Purchase = () => {
             ))}
           </div>
         )}
-        <Pagination total={filtered.length} />
+        {Pagination({ total: filtered.length })}
       </div>
     )
   }
@@ -4279,7 +4357,8 @@ const Purchase = () => {
   }
 
   const OrderModal = () => {
-    const subtotal   = orderForm.items.reduce((s, i) => s + i.total_price, 0)
+    // รายการที่จะถูกส่งจริง (ตัวกรองเดียวกับ submitOrderFlow) — แถวว่างไม่นับ
+    const subtotal   = orderForm.items.filter(i => i.material_id || i.description).reduce((s, i) => s + i.quantity * i.unit_price, 0)
     const { taxAmount, totalAmount: grandTotal, discount } =
       calcVat(subtotal, { rate: orderForm.tax_rate, discountAmount: orderForm.discount || 0, inclusive: orderForm.vat_inclusive })
     const registered = vatRegisteredCo()
@@ -4430,17 +4509,6 @@ const Purchase = () => {
           <input type="date" value={orderForm.expected_date}
             onChange={e => setOrderForm(p => ({ ...p, expected_date: e.target.value }))}
             disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')} />
-        </Field>
-        <Field label={t('purchase.orderModal.paymentTerms')}>
-          <select value={orderForm.payment_terms}
-            onChange={e => setOrderForm(p => ({ ...p, payment_terms: parseInt(e.target.value) }))}
-            disabled={modalMode === 'view'} className={inputCls(modalMode === 'view')}>
-            <option value={0}>{t('purchase.orderModal.paymentTermsCod')}</option>
-            <option value={15}>{t('purchase.orderModal.paymentTermsNet15')}</option>
-            <option value={30}>{t('purchase.orderModal.paymentTermsNet30')}</option>
-            <option value={45}>{t('purchase.orderModal.paymentTermsNet45')}</option>
-            <option value={60}>{t('purchase.orderModal.paymentTermsNet60')}</option>
-          </select>
         </Field>
       </div>
 
@@ -5121,7 +5189,7 @@ const Purchase = () => {
         <Field label={t('common.vatMode', { defaultValue: 'โหมด VAT' })}>
           <div ref={invoiceVatSelectorRef}>
             <VatModeSelector value={effectiveInvoiceVatMode} onChange={handleInvoiceVatModeChange}
-              locked={isView ? { reason: t('purchase.common.viewOnly', { defaultValue: 'ดูอย่างเดียว' }) } : undefined}
+              locked={{ reason: isView ? t('purchase.common.viewOnly', { defaultValue: 'ดูอย่างเดียว' }) : 'โหมด VAT ตามใบสั่งซื้อ — แก้ที่ใบสั่งซื้อ' }}
               sourceHint={invoiceVatHint} warning={invoiceVatWarning} />
           </div>
         </Field>
@@ -5286,8 +5354,9 @@ const Purchase = () => {
             <div className="relative w-32">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
               <input type="number" min="0" value={invoiceForm.discount_amount}
-                onChange={e => setInvoiceForm(p => ({ ...p, discount_amount: parseFloat(e.target.value) || 0 }))}
+                onChange={e => setInvoiceForm(p => ({ ...p, discount_amount: parseFloat(e.target.value) || 0, _discount_touched: true }))}
                 className="w-full pl-5 pr-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo text-right" />
+              {isCreate && !invoiceForm._discount_touched && <p className="text-[10px] text-[var(--fg-4)] mt-0.5 whitespace-nowrap">ใช้ส่วนลดตาม PO</p>}
             </div>
           ) : <span className="text-warning">-{formatCurrency(invoiceForm.discount_amount)}</span>}
         </div>
@@ -5440,7 +5509,8 @@ const Purchase = () => {
   // ─── 5. Payment Modal ────────────────────────────────────────────────────────
   const PaymentModal = () => {
     const selectedInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
-    const netPay      = paymentForm.amount - paymentForm.withholding_tax
+    const wht         = effWht(paymentForm)
+    const netPay      = round2(paymentForm.amount - wht)
     return (
     <div className="fixed inset-0 bg-[var(--fg-1)]/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
@@ -5502,13 +5572,13 @@ const Purchase = () => {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-sm font-medium text-[var(--fg-2)]">{t('purchase.common.supplier')} <span className="text-danger">*</span></label>
-              <button onClick={() => openQuickAddSupplier(id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0 })))}
+              <button onClick={() => openQuickAddSupplier(id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0, wht_rate: 0 })))}
                 className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-2 py-0.5 border border-phopy-indigo/30 rounded-lg hover:bg-phopy-indigo/10 transition-colors">
                 <Plus className="w-3 h-3" /> {t('purchase.actions.addSupplier')}
               </button>
             </div>
             <SupplierSearchInput suppliers={suppliers} value={paymentForm.supplier_id}
-              onChange={id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0 }))}
+              onChange={id => setPaymentForm(p => ({ ...p, supplier_id: id, purchase_invoice_id: '', amount: 0, withholding_tax: 0, wht_rate: 0 }))}
               placeholder={t('purchase.paymentModal.supplierPlaceholder')} />
           </div>
 
@@ -5542,7 +5612,8 @@ const Purchase = () => {
               className={inputCls()}>
               <option value="">{t('purchase.paymentModal.invoicePlaceholder')}</option>
               {invoices
-                .filter(i => i.payment_status !== 'PAID' && (!paymentForm.supplier_id || i.supplier_id === paymentForm.supplier_id))
+                
+                .filter(i => i.payment_status !== 'PAID' && i.status !== 'CANCELLED' && (!paymentForm.supplier_id || i.supplier_id === paymentForm.supplier_id))
                 .map(i => (
                   <option key={i.id} value={i.id}>{t('purchase.paymentModal.invoiceOption', { piNumber: i.pi_number, amount: formatCurrency(i.balance_amount) })}</option>
                 ))}
@@ -5639,8 +5710,8 @@ const Purchase = () => {
             <div className="flex items-center gap-3">
               <div className="w-40">
                 <label className="text-xs text-[var(--fg-3)] mb-1 block">{t('purchase.paymentModal.whtRate')}</label>
-                <select
-                  onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: p.amount * (parseFloat(e.target.value) / 100) }))}
+                <select value={paymentForm.wht_rate}
+                  onChange={e => setPaymentForm(p => ({ ...p, wht_rate: parseFloat(e.target.value), withholding_tax: 0 }))}
                   className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo">
                   <option value="0">{t('purchase.paymentModal.whtNone')}</option>
                   <option value="1">{t('purchase.paymentModal.wht1')}</option>
@@ -5652,8 +5723,8 @@ const Purchase = () => {
                 <label className="text-xs text-[var(--fg-3)] mb-1 block">{t('purchase.paymentModal.withholdingTax')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-sm">฿</span>
-                  <input type="number" min="0" step="0.01" value={paymentForm.withholding_tax}
-                    onChange={e => setPaymentForm(p => ({ ...p, withholding_tax: parseFloat(e.target.value) || 0 }))}
+                  <input type="number" min="0" step="0.01" value={wht}
+                    onChange={e => setPaymentForm(p => ({ ...p, wht_rate: 0, withholding_tax: parseFloat(e.target.value) || 0 }))}
                     className="w-full pl-7 pr-3 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
                 </div>
               </div>
@@ -5711,14 +5782,14 @@ const Purchase = () => {
                     <span className="flex-1 min-w-0 text-xs text-[var(--fg-2)] truncate">{outLabel}</span>
                     <span className="shrink-0 text-xs font-mono font-semibold text-warning tabular-nums">{formatCurrency(netPay)}</span>
                   </div>
-                  {paymentForm.withholding_tax > 0 && (
+                  {wht > 0 && (
                     <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--bg)]">
                       <span className="shrink-0 w-[68px] text-[10px] font-bold text-center py-1 rounded-md bg-[var(--warning-soft)] text-warning">{t('purchase.invoiceModal.creditSide')}</span>
                       <span className="flex-1 min-w-0 text-xs text-[var(--fg-3)] truncate">
                         {t('purchase.journal.withholdingTaxPayable')}
                         <span className="text-[var(--fg-4)]"> · {t('purchase.invoiceModal.fixedByChart')}</span>
                       </span>
-                      <span className="shrink-0 text-xs font-mono text-[var(--fg-2)] tabular-nums">{formatCurrency(paymentForm.withholding_tax)}</span>
+                      <span className="shrink-0 text-xs font-mono text-[var(--fg-2)] tabular-nums">{formatCurrency(wht)}</span>
                     </div>
                   )}
                 </div>
@@ -5752,10 +5823,10 @@ const Purchase = () => {
     const effectiveReturnVatMode: VatMode = vatModeOf(returnForm.tax_rate, returnForm.vat_inclusive)
     const returnVatWarning = vatModeWarning(effectiveReturnVatMode, { side: 'purchase', registered, contactMode: returnContactMode })
     const handleReturnPOChange = (poId: string) => setReturnForm(p => {
-      if (p._vat_touched) return { ...p, purchase_order_id: poId }
+      if (p._vat_touched) return { ...p, purchase_order_id: poId, goods_receipt_id: '' }
       const order = orders.find(o => o.id === poId)
-      if (order) return { ...p, purchase_order_id: poId, tax_rate: order.tax_rate ?? 0, vat_inclusive: order.vat_inclusive === 1 }
-      return { ...p, purchase_order_id: poId }
+      if (order) return { ...p, purchase_order_id: poId, goods_receipt_id: '', tax_rate: order.tax_rate ?? 0, vat_inclusive: order.vat_inclusive === 1 }
+      return { ...p, purchase_order_id: poId, goods_receipt_id: '' }
     })
     const handleReturnVatModeChange = (m: VatMode) => {
       const { rate, inclusive } = vatModeToFields(m)
@@ -5802,6 +5873,7 @@ const Purchase = () => {
       <div ref={returnVatSelectorRef}>
         <Field label={t('common.vatMode', { defaultValue: 'โหมด VAT' })}>
           <VatModeSelector value={effectiveReturnVatMode} onChange={handleReturnVatModeChange}
+            locked={{ reason: 'โหมด VAT ตามใบสั่งซื้อ' }}
             sourceHint={returnVatHint} warning={returnVatWarning} />
         </Field>
       </div>
@@ -5840,7 +5912,7 @@ const Purchase = () => {
               <MaterialSearchInput materials={materials} value={item.material_id}
                 onChange={(id) => {
                   const mat = materials.find(m => m.id === id)
-                  updateReturnItemFields(index, { material_id: id, unit: item.unit || mat?.unit || '' })
+                  updateReturnItemFields(index, { material_id: id, unit: item.unit || mat?.unit || '', ...(item.unit_price ? {} : { unit_price: returnGrItems.find(g => g.material_id === id)?.unit_price || 0 }) })
                 }} />
               <div className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-2">

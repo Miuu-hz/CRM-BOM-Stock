@@ -532,6 +532,7 @@ export const flexTemplates = {
             doc_edit:          { label: 'แก้ไขเอกสาร',       icon: '✏️', bg: '#FAF5FF', color: '#9333EA' },
             sales_order:       { label: 'คำสั่งขาย',         icon: '🛒', bg: '#ECFEFF', color: '#0891B2' },
             sales_cancel:      { label: 'ยกเลิกเอกสารขาย',   icon: '🚫', bg: '#FEF2F2', color: '#DC2626' },
+            purchase_cancel:   { label: 'ยกเลิกเอกสารซื้อ',  icon: '🚫', bg: '#FEF2F2', color: '#DC2626' },
             purchase_order:    { label: 'ใบสั่งซื้อ',         icon: '🛍️', bg: '#F0FDF4', color: '#16A34A' },
             purchase_request:  { label: 'ใบขอซื้อ',          icon: '📄', bg: '#FEF3C7', color: '#D97706' },
             work_orders:       { label: 'ใบสั่งผลิต',        icon: '🏭', bg: '#F1F5F9', color: '#475569' },
