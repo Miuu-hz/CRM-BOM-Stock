@@ -81,3 +81,55 @@ describe('KDS ตามบิล', () => {
     expect((await tickets(paid)).length).toBe(1)
   })
 })
+
+describe('KDS ติ๊กรายเมนู', () => {
+  it('ติ๊กได้หลังรับงานเท่านั้น · สลับไปมาได้ รายการไม่หาย · ไม่บังคับครบก่อนกดเสร็จทั้งตั๋ว', async () => {
+    const s = seed()
+    const second = generateId()
+    db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name, quantity, unit_price, total_price)
+      VALUES (?, ?, ?, (SELECT pos_menu_id FROM pos_bill_items WHERE id = ?), 'ไข่ดาว', 1, 10, 10)`).run(second, s.T, s.billId, s.itemId)
+    await send(s)
+    const [t] = await tickets(s)
+    const item = t.items.find((i: any) => i.bill_item_id === s.itemId)
+    const tick = (done: boolean) => request(app).patch(`/api/pos/kds/tickets/${t.id}/items/${item.id}`).set(s.auth).send({ done })
+
+    // ยังไม่กดรับงาน → ติ๊กไม่ได้
+    expect((await tick(true)).status).toBe(400)
+
+    await request(app).patch(`/api/pos/kds/tickets/${t.id}/status`).set(s.auth).send({ status: 'IN_PROGRESS' })
+    const before = db.prepare('SELECT updated_at FROM pos_kds_tickets WHERE id = ?').get(t.id) as any
+    const ticked = await tick(true)
+    expect(ticked.status).toBe(200)
+    let items = (await tickets(s))[0].items
+    expect(items).toHaveLength(2)
+    expect(items.find((i: any) => i.id === item.id).status).toBe('DONE')
+    expect((db.prepare('SELECT status FROM pos_bill_items WHERE id = ?').get(s.itemId) as any).status).toBe('READY')
+
+    // เอาติ๊กออก → กลับเป็นยังไม่เสร็จ รายการยังอยู่
+    expect((await tick(false)).status).toBe(200)
+    items = (await tickets(s))[0].items
+    expect(items.find((i: any) => i.id === item.id).status).toBe('PENDING')
+    expect((db.prepare('SELECT status FROM pos_bill_items WHERE id = ?').get(s.itemId) as any).status).toBe('PREPARING')
+
+    // ติ๊กรายเมนูไม่ไปแตะเวลาแก้ของตั๋ว (จอครัวใช้จับการแก้จาก POS เพื่อส่งเสียง)
+    expect((db.prepare('SELECT updated_at FROM pos_kds_tickets WHERE id = ?').get(t.id) as any).updated_at)
+      .toBe(before.updated_at)
+
+    // ค่าที่ไม่ใช่ boolean ไม่รับ
+    expect((await request(app).patch(`/api/pos/kds/tickets/${t.id}/items/${item.id}`).set(s.auth).send({ done: 'yes' })).status).toBe(400)
+
+    // ติ๊กไม่ครบก็กดเสร็จทั้งตั๋วได้
+    expect((await request(app).patch(`/api/pos/kds/tickets/${t.id}/status`).set(s.auth).send({ status: 'DONE' })).status).toBe(200)
+    expect((await tick(true)).status).toBe(400) // ตั๋วปิดแล้ว
+  })
+
+  it('รายการที่ถูกยกเลิกติ๊กไม่ได้', async () => {
+    const s = seed()
+    await send(s)
+    const [t] = await tickets(s)
+    await request(app).patch(`/api/pos/kds/tickets/${t.id}/status`).set(s.auth).send({ status: 'IN_PROGRESS' })
+    await request(app).delete(`/api/pos/bills/${s.billId}/items/${s.itemId}`).set(s.auth).send({ reason: 'ของหมด' })
+    const res = await request(app).patch(`/api/pos/kds/tickets/${t.id}/items/${t.items[0].id}`).set(s.auth).send({ done: true })
+    expect(res.status).toBe(400)
+  })
+})

@@ -14,7 +14,19 @@ import {
   Star,
   XCircle,
 } from 'lucide-react'
-import kdsService, { KDSTicket } from '../services/kds.service'
+import kdsService, { KDSTicket, KDSTicketItem } from '../services/kds.service'
+
+// สีการ์ดตามเวลาที่ตั๋วยังทำไม่เสร็จ (นับจากเวลาส่งครัว) — ทีละ 5 นาที
+const TIME_TONES = [
+  { upTo: 5, label: '< 5 นาที', border: 'border-emerald-500', header: 'bg-emerald-500/15', text: 'text-emerald-600 dark:text-emerald-400', swatch: 'bg-emerald-500' },
+  { upTo: 10, label: '5–10', border: 'border-yellow-400', header: 'bg-yellow-400/20', text: 'text-yellow-600 dark:text-yellow-400', swatch: 'bg-yellow-400' },
+  { upTo: 15, label: '10–15', border: 'border-orange-500', header: 'bg-orange-500/20', text: 'text-orange-600 dark:text-orange-400', swatch: 'bg-orange-500' },
+  { upTo: Infinity, label: '15+ นาที', border: 'border-red-500', header: 'bg-red-500/20', text: 'text-red-600 dark:text-red-400', swatch: 'bg-red-500' },
+]
+const timeTone = (minutes: number) => TIME_TONES.find(t => minutes < t.upTo)!
+
+/** รายการที่ยังต้องทำจริง (ไม่นับที่ถูกยกเลิกทั้งรายการ) */
+const isItemGone = (item: KDSTicketItem) => item.status === 'CANCELLED' || (item.void_qty || 0) >= item.quantity
 
 const KDS: React.FC = () => {
   const [tickets, setTickets] = useState<KDSTicket[]>([])
@@ -36,6 +48,12 @@ const KDS: React.FC = () => {
   // id → สถานะ|เวลาแก้ล่าสุด — ใช้จับว่าตั๋วเดิมถูกยกเลิก/ลดรายการ เพื่อส่งเสียงเตือนครัว
   const seenVersions = useRef<Map<string, string>>(new Map())
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  // ติ๊กรายเมนูที่ยังรอ server ตอบ — ทับผล polling ไว้ก่อน ไม่งั้นติ๊กแล้วเด้งกลับชั่วครู่
+  const pendingItemDone = useRef<Map<string, 'DONE' | 'PENDING'>>(new Map())
+  const applyPendingItems = (list: KDSTicket[]) => pendingItemDone.current.size === 0 ? list : list.map(t => ({
+    ...t,
+    items: t.items.map(i => pendingItemDone.current.has(i.id) ? { ...i, status: pendingItemDone.current.get(i.id)! } : i),
+  }))
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -79,7 +97,7 @@ const KDS: React.FC = () => {
   const fetchTickets = async () => {
     try {
       const data = await kdsService.getTickets()
-      setTickets(data)
+      setTickets(applyPendingItems(data))
 
       const currentIds = new Set(data.map(t => t.id))
       if (!isFirstLoad.current) {
@@ -149,6 +167,25 @@ const KDS: React.FC = () => {
     }
   }
 
+  // ติ๊ก/เอาติ๊กออกรายเมนู — สลับได้เสมอ รายการไม่หาย (กันกดพลาด)
+  const toggleItemDone = async (ticketId: string, item: KDSTicketItem) => {
+    stopNotificationSound()
+    const next: 'DONE' | 'PENDING' = item.status === 'DONE' ? 'PENDING' : 'DONE'
+    const setItemStatus = (status: KDSTicketItem['status']) => setTickets(prev => prev.map(t => t.id !== ticketId ? t : {
+      ...t, items: t.items.map(i => i.id === item.id ? { ...i, status } : i),
+    }))
+    pendingItemDone.current.set(item.id, next)
+    setItemStatus(next)
+    try {
+      await kdsService.setItemDone(ticketId, item.id, next === 'DONE')
+    } catch (e: any) {
+      setItemStatus(item.status)
+      alert(e?.response?.data?.message || 'ไม่สามารถอัปเดตรายการได้')
+    } finally {
+      pendingItemDone.current.delete(item.id)
+    }
+  }
+
   const getElapsed = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime()
     const m = Math.floor(diff / 60000)
@@ -175,6 +212,13 @@ const KDS: React.FC = () => {
             Kitchen Display System
           </h1>
           <p className="text-[var(--fg-3)] text-sm mt-1">Polling ทุก 3 วินาที · {tickets.length} ticket ที่รอดำเนินการ</p>
+          <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--fg-3)]" aria-label="สีการ์ดตามเวลาที่รอ">
+            {TIME_TONES.map(t => (
+              <span key={t.label} className="flex items-center gap-1">
+                <span className={`w-2.5 h-2.5 rounded-sm ${t.swatch}`} /> {t.label}
+              </span>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -236,15 +280,20 @@ const KDS: React.FC = () => {
             const cfg = statusConfig[ticket.status]
             const elapsed = getElapsedMinutes(ticket.sent_at)
             const isCancelled = ticket.status === 'CANCELLED'
-            const isUrgent = elapsed >= 10 && ticket.status !== 'DONE' && !isCancelled
+            const canTick = ticket.status === 'IN_PROGRESS'
+            const activeItems = ticket.items.filter(i => !isItemGone(i))
+            const doneCount = activeItems.filter(i => i.status === 'DONE').length
+            const allDone = activeItems.length > 0 && doneCount === activeItems.length
+            // ทำครบทุกเมนูแล้ว = เขียวตลอด (รอแค่กดเสร็จ) · ยังไม่ครบ = สีตามเวลาที่รอ
+            const tone = allDone ? TIME_TONES[0] : timeTone(elapsed)
             return (
               <div
                 key={ticket.id}
-                className={`bg-[var(--surface)] border rounded-xl shadow-lg flex flex-col transition-all ${isCancelled ? 'border-2 border-danger ring-4 ring-danger/20' : isUrgent ? 'border-danger/70 shadow-danger/10' : cfg.border}`}
+                className={`bg-[var(--surface)] border-2 rounded-xl shadow-lg flex flex-col transition-colors ${isCancelled ? 'border-danger ring-4 ring-danger/20' : tone.border}`}
                 aria-label={isCancelled ? `บิล ${ticket.bill_number} ถูกยกเลิก หยุดทำ` : undefined}
               >
                 {/* Ticket Header */}
-                <div className={`p-4 border-b border-[var(--border)] ${cfg.bg} rounded-t-xl`}>
+                <div className={`p-4 border-b border-[var(--border)] ${isCancelled ? cfg.bg : tone.header} rounded-t-xl`}>
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
@@ -260,10 +309,15 @@ const KDS: React.FC = () => {
                         <div className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${ticket.status === 'PENDING' ? 'animate-pulse' : ''}`} />
                         {cfg.label}
                       </div>
-                      <div className={`flex items-center gap-1 text-xs ${isUrgent ? 'text-danger font-bold' : 'text-[var(--fg-3)]'}`}>
+                      <div className={`flex items-center gap-1 text-xs font-semibold ${isCancelled ? 'text-[var(--fg-3)]' : tone.text}`}>
                         <Clock className="w-3 h-3" />
                         {getElapsed(ticket.sent_at)}
                       </div>
+                      {canTick && activeItems.length > 0 && (
+                        <div className={`text-xs font-bold ${allDone ? 'text-success' : 'text-[var(--fg-2)]'}`}>
+                          เสร็จ {doneCount}/{activeItems.length}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -276,11 +330,34 @@ const KDS: React.FC = () => {
 
                 {/* Items */}
                 <div className="p-3 flex-1 space-y-2">
+                  {canTick && (
+                    <p className="text-[11px] text-[var(--fg-4)] px-1">แตะเมนูเพื่อติ๊กว่าทำเสร็จ · แตะซ้ำเพื่อเอาติ๊กออก</p>
+                  )}
                   {ticket.items.map(item => {
                     const voided = item.void_qty || 0
-                    const gone = isCancelled || item.status === 'CANCELLED' || voided >= item.quantity
+                    const gone = isCancelled || isItemGone(item)
+                    const itemDone = !gone && item.status === 'DONE'
+                    const tickable = canTick && !gone
                     return (
-                    <div key={item.id} className={`flex items-start gap-3 rounded-lg p-3 ${gone ? 'bg-[var(--danger-soft)]' : voided ? 'bg-[var(--warning-soft)]' : 'bg-[var(--surface-2)]'}`}>
+                    <div
+                      key={item.id}
+                      role={tickable ? 'checkbox' : undefined}
+                      aria-checked={tickable ? itemDone : undefined}
+                      tabIndex={tickable ? 0 : undefined}
+                      onClick={tickable ? (e) => { e.stopPropagation(); toggleItemDone(ticket.id, item) } : undefined}
+                      onKeyDown={tickable ? (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleItemDone(ticket.id, item) } } : undefined}
+                      className={`flex items-start gap-3 rounded-lg p-3 border-2 transition-colors ${
+                        gone ? 'bg-[var(--danger-soft)] border-transparent'
+                        : itemDone ? 'bg-[var(--success-soft)] border-success/60'
+                        : voided ? 'bg-[var(--warning-soft)] border-transparent'
+                        : 'bg-[var(--surface-2)] border-transparent'
+                      } ${tickable ? 'cursor-pointer select-none hover:border-success/40' : ''}`}
+                    >
+                      {tickable && (
+                        <span className={`mt-0.5 w-6 h-6 shrink-0 rounded-md border-2 flex items-center justify-center ${itemDone ? 'bg-success border-success text-white' : 'border-[var(--fg-4)]'}`}>
+                          {itemDone && <Check className="w-4 h-4" />}
+                        </span>
+                      )}
                       {voided > 0 && !gone ? (
                         <span className="font-bold text-lg leading-none whitespace-nowrap" aria-label={`จาก ${item.quantity} เหลือ ${item.quantity - voided}`}>
                           <s className="text-[var(--fg-4)]">{item.quantity}</s> <span className="text-warning">→ {item.quantity - voided}×</span>
@@ -289,7 +366,10 @@ const KDS: React.FC = () => {
                         <span className={`font-bold text-lg leading-none ${gone ? 'text-danger line-through' : 'text-success'}`}>{item.quantity}×</span>
                       )}
                       <div className="flex-1">
-                        <p className={`font-semibold ${gone ? 'text-danger line-through' : 'text-[var(--fg-1)]'}`}>{item.product_name}</p>
+                        <p className={`font-semibold ${gone ? 'text-danger line-through' : itemDone ? 'text-success' : 'text-[var(--fg-1)]'}`}>
+                          {item.product_name}
+                          {itemDone && <span className="ml-2 text-xs font-bold">✓ เสร็จแล้ว</span>}
+                        </p>
                         {(gone || voided > 0) && !isCancelled && (
                           <p className={`text-xs font-bold mt-1 ${gone ? 'text-danger' : 'text-warning'}`}>
                             {gone ? '❌ ยกเลิกรายการนี้' : `⚠️ ลดลง ${voided}`}{item.void_reason ? ` · ${item.void_reason}` : ''}

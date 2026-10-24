@@ -125,4 +125,37 @@ router.patch('/tickets/:id/status', (req, res) => {
   }
 })
 
+// PATCH /tickets/:id/items/:itemId — ติ๊ก/ยกเลิกติ๊ก "ทำเสร็จแล้ว" รายเมนู (หลังกดรับงาน)
+// กดสลับได้เรื่อย ๆ รายการไม่หายจากการ์ด — กันกดพลาด · ไม่บังคับให้ติ๊กครบก่อนกด "เสร็จแล้ว" ทั้งตั๋ว
+// ไม่แตะ pos_kds_tickets.updated_at — จอครัวใช้ค่านั้นจับ "ตั๋วถูกแก้จาก POS" เพื่อส่งเสียงเตือน
+router.patch('/tickets/:id/items/:itemId', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { id, itemId } = req.params
+    const done = req.body?.done
+    if (typeof done !== 'boolean') return res.status(400).json({ success: false, message: 'done ต้องเป็น true/false' })
+
+    const ticket = db.prepare(`SELECT status FROM pos_kds_tickets WHERE id = ? AND tenant_id = ?`).get(id, tenantId) as any
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' })
+    if (ticket.status !== 'IN_PROGRESS') {
+      return res.status(400).json({ success: false, message: ticket.status === 'PENDING' ? 'กดรับงานก่อนแล้วค่อยติ๊กเมนูที่ทำเสร็จ' : 'ตั๋วนี้ปิดไปแล้ว' })
+    }
+    const item = db.prepare(`SELECT id, bill_item_id, status FROM pos_kds_ticket_items WHERE id = ? AND ticket_id = ?`).get(itemId, id) as any
+    if (!item) return res.status(404).json({ success: false, message: 'Item not found' })
+    if (item.status === 'CANCELLED') return res.status(400).json({ success: false, message: 'รายการนี้ถูกยกเลิกแล้ว' })
+
+    db.transaction(() => {
+      db.prepare(`UPDATE pos_kds_ticket_items SET status = ? WHERE id = ?`).run(done ? 'DONE' : 'PENDING', itemId)
+      // ให้ฝั่ง POS เห็นรายเมนูเหมือนตอนปิดทั้งตั๋ว (READY) — เอาติ๊กออกกลับเป็นกำลังทำ
+      db.prepare(`UPDATE pos_bill_items SET status = ? WHERE id = ? AND tenant_id = ?`)
+        .run(done ? 'READY' : 'PREPARING', item.bill_item_id, tenantId)
+    })()
+
+    res.json({ success: true, data: { id: itemId, status: done ? 'DONE' : 'PENDING' } })
+  } catch (error) {
+    console.error('Error toggling KDS item:', error)
+    res.status(500).json({ success: false, message: 'Failed to update item' })
+  }
+})
+
 export default router

@@ -64,6 +64,12 @@ const kdsService = {
     updateTicketStatus: async (ticketId: string, status: 'IN_PROGRESS' | 'DONE' | 'CANCEL_ACK'): Promise<any> => {
         const response = await api.patch(`/pos/kds/tickets/${ticketId}/status`, { status })
         return response.data
+    },
+
+    // ติ๊ก/เอาติ๊กออก "ทำเสร็จแล้ว" รายเมนู — ใช้ได้หลังกดรับงาน
+    setItemDone: async (ticketId: string, itemId: string, done: boolean): Promise<any> => {
+        const response = await api.patch(`/pos/kds/tickets/${ticketId}/items/${itemId}`, { done })
+        return response.data
     }
 }
 
