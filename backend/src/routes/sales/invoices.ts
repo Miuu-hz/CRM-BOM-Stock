@@ -33,9 +33,9 @@ router.get('/', async (req: Request, res: Response) => {
       SELECT i.*, c.name as customer_name, c.code as customer_code,
         so.so_number, pb.bill_number as pos_bill_number
       FROM invoices i
-      LEFT JOIN customers c ON i.customer_id = c.id
-      LEFT JOIN sales_orders so ON i.sales_order_id = so.id
-      LEFT JOIN pos_running_bills pb ON i.pos_bill_id = pb.id
+      LEFT JOIN customers c ON i.customer_id = c.id AND c.tenant_id = i.tenant_id
+      LEFT JOIN sales_orders so ON i.sales_order_id = so.id AND so.tenant_id = i.tenant_id
+      LEFT JOIN pos_running_bills pb ON i.pos_bill_id = pb.id AND pb.tenant_id = i.tenant_id
       WHERE i.tenant_id = ?
       ORDER BY i.created_at DESC
     `).all(tenantId)
@@ -56,9 +56,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT i.*, c.name as customer_name, c.code as customer_code, c.tax_id as customer_tax_id, c.address as customer_address, c.email as customer_email, c.phone as customer_phone,
         c.tax_branch as customer_tax_branch, so.so_number, pb.bill_number as pos_bill_number
       FROM invoices i
-      LEFT JOIN customers c ON i.customer_id = c.id
-      LEFT JOIN sales_orders so ON i.sales_order_id = so.id
-      LEFT JOIN pos_running_bills pb ON i.pos_bill_id = pb.id
+      LEFT JOIN customers c ON i.customer_id = c.id AND c.tenant_id = i.tenant_id
+      LEFT JOIN sales_orders so ON i.sales_order_id = so.id AND so.tenant_id = i.tenant_id
+      LEFT JOIN pos_running_bills pb ON i.pos_bill_id = pb.id AND pb.tenant_id = i.tenant_id
       WHERE i.id = ? AND i.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -72,20 +72,20 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT ii.*, COALESCE(si.name, ii.product_name) as product_name, si.sku as product_code
       FROM invoice_items ii
       LEFT JOIN stock_items si ON ii.stock_item_id = si.id AND si.tenant_id = ii.tenant_id
-      WHERE ii.invoice_id = ?
-    `).all(req.params.id)
+      WHERE ii.invoice_id = ? AND ii.tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     const receipts = db.prepare(`
-      SELECT r.* FROM receipts r WHERE r.invoice_id = ? ORDER BY r.created_at DESC
-    `).all(req.params.id)
+      SELECT r.* FROM receipts r WHERE r.invoice_id = ? AND r.tenant_id = ? ORDER BY r.created_at DESC
+    `).all(req.params.id, tenantId)
 
     const withholdingTax = db.prepare(`
-      SELECT * FROM withholding_tax WHERE invoice_id = ?
-    `).all(req.params.id)
+      SELECT * FROM withholding_tax WHERE invoice_id = ? AND tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     const attachments = db.prepare(`
-      SELECT * FROM invoice_attachments WHERE invoice_id = ? ORDER BY created_at ASC
-    `).all(req.params.id)
+      SELECT * FROM invoice_attachments WHERE invoice_id = ? AND tenant_id = ? ORDER BY created_at ASC
+    `).all(req.params.id, tenantId)
 
     // Paperless receipt: lazily mint/reuse a public share token + QR for this invoice
     const receiptToken = getOrCreateReceiptToken('invoice', req.params.id, tenantId)
@@ -218,7 +218,7 @@ router.post('/:id/withholding-tax', async (req: Request, res: Response) => {
     `).run(id, tenantId, req.params.id, taxType, taxRate, taxBase, taxAmount, description || '', now)
 
     // Update invoice net amount (deduct withholding tax)
-    const whtTotal = (db.prepare('SELECT COALESCE(SUM(tax_amount), 0) as total FROM withholding_tax WHERE invoice_id = ?').get(req.params.id) as any).total
+    const whtTotal = (db.prepare('SELECT COALESCE(SUM(tax_amount), 0) as total FROM withholding_tax WHERE invoice_id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any).total
     const netAmount = invoice.total_amount - whtTotal
 
     res.json({

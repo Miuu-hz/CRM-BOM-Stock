@@ -249,8 +249,8 @@ router.get('/', async (req: Request, res: Response) => {
         c.tax_id as customer_tax_id, c.address as customer_address,
         i.invoice_number
       FROM credit_notes cn
-      LEFT JOIN customers c ON cn.customer_id = c.id
-      LEFT JOIN invoices i ON cn.invoice_id = i.id
+      LEFT JOIN customers c ON cn.customer_id = c.id AND c.tenant_id = cn.tenant_id
+      LEFT JOIN invoices i ON cn.invoice_id = i.id AND i.tenant_id = cn.tenant_id
       WHERE cn.tenant_id = ?
       ORDER BY cn.created_at DESC
     `).all(tenantId)
@@ -271,8 +271,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT cn.*, c.name as customer_name, c.code as customer_code,
         i.invoice_number
       FROM credit_notes cn
-      LEFT JOIN customers c ON cn.customer_id = c.id
-      LEFT JOIN invoices i ON cn.invoice_id = i.id
+      LEFT JOIN customers c ON cn.customer_id = c.id AND c.tenant_id = cn.tenant_id
+      LEFT JOIN invoices i ON cn.invoice_id = i.id AND i.tenant_id = cn.tenant_id
       WHERE cn.id = ? AND cn.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -288,10 +288,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     const items = db.prepare(`
       SELECT cni.*, ii.product_name as product_name, si.sku as product_code
       FROM credit_note_items cni
-      LEFT JOIN invoice_items ii ON cni.invoice_item_id = ii.id
-      LEFT JOIN stock_items si ON ii.stock_item_id = si.id
-      WHERE cni.credit_note_id = ?
-    `).all(req.params.id)
+      LEFT JOIN invoice_items ii ON cni.invoice_item_id = ii.id AND ii.tenant_id = cni.tenant_id
+      LEFT JOIN stock_items si ON ii.stock_item_id = si.id AND si.tenant_id = cni.tenant_id
+      WHERE cni.credit_note_id = ? AND cni.tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...creditNote, items } })
   } catch (error) {

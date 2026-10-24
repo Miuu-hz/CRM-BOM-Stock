@@ -64,6 +64,7 @@ export interface QuotationItem {
   quantity: number
   unitPrice: number
   discountPercent?: number
+  unit?: string
   notes?: string
 }
 
@@ -88,6 +89,7 @@ export interface SOItem {
   unitPrice: number
   discountPercent?: number
   quotationItemId?: string
+  unit?: string
   notes?: string
 }
 
@@ -96,6 +98,9 @@ export interface CreateSOPayload {
   quotationId?: string
   deliveryDate?: string
   taxRate?: number
+  vatInclusive?: boolean
+  extraChargeAmount?: number
+  extraChargeLabel?: string
   discountAmount?: number
   notes?: string
   items: SOItem[]

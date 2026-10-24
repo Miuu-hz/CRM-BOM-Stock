@@ -21,11 +21,11 @@ router.get('/', async (req: Request, res: Response) => {
     const salesOrders = db.prepare(`
       SELECT so.*, c.name as customer_name, c.code as customer_code,
         q.quotation_number,
-        (SELECT COUNT(*) FROM sales_order_items WHERE sales_order_id = so.id) as item_count,
-        (SELECT SUM(quantity - delivered_qty) FROM sales_order_items WHERE sales_order_id = so.id AND quantity > delivered_qty) as pending_qty
+        (SELECT COUNT(*) FROM sales_order_items WHERE sales_order_id = so.id AND tenant_id = so.tenant_id) as item_count,
+        (SELECT SUM(quantity - delivered_qty) FROM sales_order_items WHERE sales_order_id = so.id AND tenant_id = so.tenant_id AND quantity > delivered_qty) as pending_qty
       FROM sales_orders so
-      LEFT JOIN customers c ON so.customer_id = c.id
-      LEFT JOIN quotations q ON so.quotation_id = q.id
+      LEFT JOIN customers c ON so.customer_id = c.id AND c.tenant_id = so.tenant_id
+      LEFT JOIN quotations q ON so.quotation_id = q.id AND q.tenant_id = so.tenant_id
       WHERE so.tenant_id = ?
       ORDER BY so.created_at DESC
     `).all(tenantId)
@@ -46,8 +46,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT so.*, c.name as customer_name, c.code as customer_code, c.tax_id as customer_tax_id, c.address as customer_address, c.email as customer_email, c.phone as customer_phone,
         q.quotation_number
       FROM sales_orders so
-      LEFT JOIN customers c ON so.customer_id = c.id
-      LEFT JOIN quotations q ON so.quotation_id = q.id
+      LEFT JOIN customers c ON so.customer_id = c.id AND c.tenant_id = so.tenant_id
+      LEFT JOIN quotations q ON so.quotation_id = q.id AND q.tenant_id = so.tenant_id
       WHERE so.id = ? AND so.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -61,9 +61,9 @@ router.get('/:id', async (req: Request, res: Response) => {
         COALESCE(si.sku, si.name) as product_code,
         si.quantity as stock_qty
       FROM sales_order_items soi
-      LEFT JOIN stock_items si ON soi.stock_item_id = si.id
-      WHERE soi.sales_order_id = ?
-    `).all(req.params.id)
+      LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
+      WHERE soi.sales_order_id = ? AND soi.tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...salesOrder, items } })
   } catch (error) {
@@ -80,6 +80,26 @@ router.post('/', async (req: Request, res: Response) => {
     
     if (!customerId) {
       return res.status(400).json({ success: false, message: 'Customer is required' })
+    }
+
+    const cust = db.prepare('SELECT id, tenant_id FROM customers WHERE id = ?').get(customerId) as any
+    if (cust && cust.tenant_id !== tenantId) {
+      return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
+    }
+
+    // ตรวจสอบความถูกต้องของรายการ ราคา และส่วนลด
+    if (items && items.length > 0) {
+      const invalid = items.some((item: any) =>
+        !(Number(item.quantity) > 0) ||
+        Number(item.unitPrice) < 0 ||
+        Number(item.discountPercent || 0) < 0 ||
+        Number(item.discountPercent || 0) > 100
+      )
+      if (invalid || Number(discountAmount || 0) < 0 || Number(req.body.extraChargeAmount || 0) < 0) {
+        return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
+      }
+    } else if (Number(discountAmount || 0) < 0 || Number(req.body.extraChargeAmount || 0) < 0) {
+      return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
     }
 
     if (quotationId) {
@@ -166,7 +186,7 @@ router.post('/', async (req: Request, res: Response) => {
     rememberContactVatMode(tenantId, 'customer', customerId, tax, inclusive)
 
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(id)
+    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').all(id, tenantId)
 
     res.status(201).json({ success: true, data: { ...salesOrder, items: salesOrderItems } })
   } catch (error) {
@@ -186,6 +206,26 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ success: false, message: 'Sales order not found' })
     if (existing.status !== 'DRAFT') {
       return res.status(400).json({ success: false, message: `ไม่สามารถแก้ไขได้ — สถานะ ${existing.status} (ต้องเป็น DRAFT เท่านั้น)` })
+    }
+
+    if (customerId) {
+      const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+      if (!cust) return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
+    }
+
+    // ตรวจสอบความถูกต้องของรายการ ราคา และส่วนลด
+    if (items && items.length > 0) {
+      const invalid = items.some((item: any) =>
+        !(Number(item.quantity) > 0) ||
+        Number(item.unitPrice) < 0 ||
+        Number(item.discountPercent || 0) < 0 ||
+        Number(item.discountPercent || 0) > 100
+      )
+      if (invalid || (discountAmount !== undefined && Number(discountAmount) < 0) || (req.body.extraChargeAmount !== undefined && Number(req.body.extraChargeAmount) < 0)) {
+        return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
+      }
+    } else if ((discountAmount !== undefined && Number(discountAmount) < 0) || (req.body.extraChargeAmount !== undefined && Number(req.body.extraChargeAmount) < 0)) {
+      return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
     }
 
     let subtotal = 0
@@ -228,7 +268,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       `).run(customerId || null, deliveryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, notes ?? null, now, req.params.id, tenantId)
 
       if (items) {
-        db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ?').run(req.params.id)
+        db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
         const ins = db.prepare(`
           INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -247,7 +287,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     rememberContactVatMode(tenantId, 'customer', customerId || existing.customer_id, tax, !!inclusive)
 
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(req.params.id)
+    const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').all(req.params.id, tenantId)
     res.json({ success: true, data: { ...salesOrder, items: salesOrderItems } })
   } catch (error) {
     console.error('Update sales order error:', error)
@@ -350,9 +390,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
                si.base_unit as stock_base_unit, si.display_unit as stock_display_unit,
                COALESCE(soi.product_name, si.name) as item_name
         FROM sales_order_items soi
-        LEFT JOIN stock_items si ON soi.stock_item_id = si.id
-        WHERE soi.sales_order_id = ?
-      `).all(req.params.id) as any[]
+        LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
+        WHERE soi.sales_order_id = ? AND soi.tenant_id = ?
+      `).all(req.params.id, tenantId) as any[]
 
       const shortItems = soItems.filter(it => {
         if (!it.stock_item_id) return false
@@ -506,7 +546,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'ลบได้เฉพาะ SO สถานะ DRAFT เท่านั้น' })
     }
     const tx = db.transaction(() => {
-      db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
       db.prepare('DELETE FROM sales_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })
     tx()

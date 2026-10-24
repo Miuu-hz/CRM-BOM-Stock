@@ -17,8 +17,8 @@ router.get('/', async (req: Request, res: Response) => {
       SELECT do.*, c.name as customer_name, c.code as customer_code,
         so.so_number, so.total_amount
       FROM delivery_orders do
-      LEFT JOIN customers c ON do.customer_id = c.id
-      LEFT JOIN sales_orders so ON do.sales_order_id = so.id
+      LEFT JOIN customers c ON do.customer_id = c.id AND c.tenant_id = do.tenant_id
+      LEFT JOIN sales_orders so ON do.sales_order_id = so.id AND so.tenant_id = do.tenant_id
       WHERE do.tenant_id = ?
       ORDER BY do.created_at DESC
     `).all(tenantId)
@@ -39,8 +39,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT do.*, c.name as customer_name, c.code as customer_code,
         so.so_number, so.total_amount
       FROM delivery_orders do
-      LEFT JOIN customers c ON do.customer_id = c.id
-      LEFT JOIN sales_orders so ON do.sales_order_id = so.id
+      LEFT JOIN customers c ON do.customer_id = c.id AND c.tenant_id = do.tenant_id
+      LEFT JOIN sales_orders so ON do.sales_order_id = so.id AND so.tenant_id = do.tenant_id
       WHERE do.id = ? AND do.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -52,10 +52,10 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT doi.*, COALESCE(p.name, soi.product_name) as product_name, p.code as product_code,
         soi.quantity as ordered_qty, soi.unit
       FROM delivery_order_items doi
-      LEFT JOIN sales_order_items soi ON doi.sales_order_item_id = soi.id
-      LEFT JOIN products p ON doi.product_id = p.id
-      WHERE doi.delivery_order_id = ?
-    `).all(req.params.id)
+      LEFT JOIN sales_order_items soi ON doi.sales_order_item_id = soi.id AND soi.tenant_id = doi.tenant_id
+      LEFT JOIN products p ON doi.product_id = p.id AND p.tenant_id = doi.tenant_id
+      WHERE doi.delivery_order_id = ? AND doi.tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...deliveryOrder, items } })
   } catch (error) {
@@ -78,6 +78,21 @@ router.post('/', async (req: Request, res: Response) => {
     const salesOrder = db.prepare('SELECT customer_id FROM sales_orders WHERE id = ? AND tenant_id = ?').get(salesOrderId, tenantId) as any
     if (!salesOrder) {
       return res.status(404).json({ success: false, message: 'Sales order not found' })
+    }
+
+    if (items && items.length > 0) {
+      for (const item of items) {
+        if (!(Number(item.quantity) > 0)) {
+          return res.status(400).json({ success: false, message: 'จำนวนส่งมอบต้องมากกว่า 0' })
+        }
+        if (item.salesOrderItemId) {
+          const soi = db.prepare('SELECT id FROM sales_order_items WHERE id = ? AND sales_order_id = ? AND tenant_id = ?')
+            .get(item.salesOrderItemId, salesOrderId, tenantId)
+          if (!soi) {
+            return res.status(400).json({ success: false, message: 'รายการในคำสั่งขายไม่ถูกต้องหรือไม่ได้อยู่ในกิจการนี้' })
+          }
+        }
+      }
     }
 
     const id = generateId()
@@ -114,7 +129,7 @@ router.post('/', async (req: Request, res: Response) => {
     transaction()
 
     const deliveryOrder = db.prepare('SELECT * FROM delivery_orders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const deliveryOrderItems = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ?').all(id)
+    const deliveryOrderItems = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ? AND tenant_id = ?').all(id, tenantId)
 
     res.status(201).json({ success: true, data: { ...deliveryOrder, items: deliveryOrderItems } })
   } catch (error) {
@@ -166,7 +181,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // When delivered, deduct stock
     if (status === 'DELIVERED' && deliveryOrder.status !== 'DELIVERED') {
-      const items = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ?').all(req.params.id) as any[]
+      const items = db.prepare('SELECT * FROM delivery_order_items WHERE delivery_order_id = ? AND tenant_id = ?').all(req.params.id, tenantId) as any[]
 
       const transaction = db.transaction(() => {
         db.prepare("UPDATE delivery_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -175,12 +190,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
         // Update sales order delivered quantity
         for (const item of items) {
-          db.prepare('UPDATE sales_order_items SET delivered_qty = delivered_qty + ? WHERE id = ?')
-            .run(item.quantity, item.sales_order_item_id)
+          db.prepare('UPDATE sales_order_items SET delivered_qty = delivered_qty + ? WHERE id = ? AND sales_order_id = ? AND tenant_id = ?')
+            .run(item.quantity, item.sales_order_item_id, deliveryOrder.sales_order_id, tenantId)
 
           // Deduct stock (with unit conversion)
           // แถวขายส่วนใหญ่ไม่มี product_id — ของจริงอยู่ที่ sales_order_items.stock_item_id
-          const soItem = db.prepare('SELECT unit, stock_item_id, product_name FROM sales_order_items WHERE id = ?').get(item.sales_order_item_id) as any
+          const soItem = db.prepare('SELECT unit, stock_item_id, product_name FROM sales_order_items WHERE id = ? AND tenant_id = ?').get(item.sales_order_item_id, tenantId) as any
           const stockItem = db.prepare('SELECT * FROM stock_items WHERE (id = ? OR product_id = ?) AND tenant_id = ?')
             .get(soItem?.stock_item_id || null, item.product_id || null, tenantId) as any
           // ค่าขนส่ง/ค่าแพ็ค ไม่มีของให้ตัด · ตัดไปแล้วตอนยืนยัน SO ก็ไม่ตัดซ้ำ
@@ -248,11 +263,11 @@ router.put('/:id/status', async (req: Request, res: Response) => {
           `ต้นทุนขาย DO ${deliveryOrder.do_number} (SO ${parentSO.so_number})`, deliveryOrder.do_number)
 
         // Check if all items delivered and update sales order status
-        const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(deliveryOrder.sales_order_id) as any[]
+        const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').all(deliveryOrder.sales_order_id, tenantId) as any[]
         const allDelivered = salesOrderItems.every((item: any) => item.delivered_qty >= item.quantity)
         if (allDelivered) {
-          db.prepare("UPDATE sales_orders SET status = 'DELIVERED', updated_at = ? WHERE id = ?")
-            .run(now, deliveryOrder.sales_order_id)
+          db.prepare("UPDATE sales_orders SET status = 'DELIVERED', updated_at = ? WHERE id = ? AND tenant_id = ?")
+            .run(now, deliveryOrder.sales_order_id, tenantId)
 
           // ส่งครบแล้ว — ปิดของค้างส่งที่เปิดค้างไว้สำหรับ SO นี้ (ถ้ามี) อัตโนมัติ
           db.prepare("UPDATE backorders SET status = 'FULFILLED', updated_at = ? WHERE sales_order_id = ? AND tenant_id = ? AND status = 'PENDING'")
@@ -269,9 +284,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             // ponytail: ลบ-สร้างรายการใหม่ทุกครั้งแทนการ diff ทีละแถว — ของค้างส่งมีไม่กี่รายการต่อใบ
             const boId = existingBO ? existingBO.id : generateId()
             if (existingBO) {
-              db.prepare('DELETE FROM backorder_items WHERE backorder_id = ?').run(boId)
-              db.prepare("UPDATE backorders SET original_do_id = ?, updated_at = ? WHERE id = ?")
-                .run(deliveryOrder.id, now, boId)
+              db.prepare('DELETE FROM backorder_items WHERE backorder_id = ? AND tenant_id = ?').run(boId, tenantId)
+              db.prepare("UPDATE backorders SET original_do_id = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+                .run(deliveryOrder.id, now, boId, tenantId)
             } else {
               const boNumber = formatDocumentNumber('BO', tenantId, 'BACKORDER', new Date().getFullYear(), 5)
               db.prepare(`
@@ -318,7 +333,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบส่งของสถานะ DRAFT เท่านั้น' })
     }
     const tx = db.transaction(() => {
-      db.prepare('DELETE FROM delivery_order_items WHERE delivery_order_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM delivery_order_items WHERE delivery_order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
       db.prepare('DELETE FROM delivery_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })
     tx()

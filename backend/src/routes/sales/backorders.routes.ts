@@ -13,9 +13,9 @@ router.get('/', async (req: Request, res: Response) => {
       SELECT bo.*, c.name as customer_name, c.code as customer_code,
         so.so_number, do.do_number as original_do
       FROM backorders bo
-      LEFT JOIN customers c ON bo.customer_id = c.id
-      LEFT JOIN sales_orders so ON bo.sales_order_id = so.id
-      LEFT JOIN delivery_orders do ON bo.original_do_id = do.id
+      LEFT JOIN customers c ON bo.customer_id = c.id AND c.tenant_id = bo.tenant_id
+      LEFT JOIN sales_orders so ON bo.sales_order_id = so.id AND so.tenant_id = bo.tenant_id
+      LEFT JOIN delivery_orders do ON bo.original_do_id = do.id AND do.tenant_id = bo.tenant_id
       WHERE bo.tenant_id = ?
       ORDER BY bo.created_at DESC
     `).all(tenantId)
@@ -37,6 +37,18 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Sales order and items are required' })
     }
 
+    const so = db.prepare('SELECT id, customer_id FROM sales_orders WHERE id = ? AND tenant_id = ?').get(salesOrderId, tenantId) as any
+    if (!so) {
+      return res.status(404).json({ success: false, message: 'Sales order not found' })
+    }
+    const finalCustomerId = customerId || so.customer_id
+    if (finalCustomerId) {
+      const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(finalCustomerId, tenantId)
+      if (!cust) {
+        return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
+      }
+    }
+
     const id = generateId()
     let boNumber = ''
     const now = new Date().toISOString()
@@ -47,7 +59,7 @@ router.post('/', async (req: Request, res: Response) => {
       db.prepare(`
         INSERT INTO backorders (id, tenant_id, bo_number, sales_order_id, original_do_id, customer_id, status, notes, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
-      `).run(id, tenantId, boNumber, salesOrderId, originalDoId || null, customerId, notes || '', now, now)
+      `).run(id, tenantId, boNumber, salesOrderId, originalDoId || null, finalCustomerId, notes || '', now, now)
 
       const insertItem = db.prepare(`
         INSERT INTO backorder_items (id, tenant_id, backorder_id, sales_order_item_id, product_id, ordered_qty, delivered_qty, remaining_qty, notes)
@@ -64,7 +76,7 @@ router.post('/', async (req: Request, res: Response) => {
     transaction()
 
     const backorder = db.prepare('SELECT * FROM backorders WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const backorderItems = db.prepare('SELECT * FROM backorder_items WHERE backorder_id = ?').all(id)
+    const backorderItems = db.prepare('SELECT * FROM backorder_items WHERE backorder_id = ? AND tenant_id = ?').all(id, tenantId)
 
     res.status(201).json({ success: true, data: { ...backorder, items: backorderItems } })
   } catch (error) {
@@ -83,9 +95,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT bo.*, c.name as customer_name, c.code as customer_code,
         so.so_number, do.do_number as original_do
       FROM backorders bo
-      LEFT JOIN customers c ON bo.customer_id = c.id
-      LEFT JOIN sales_orders so ON bo.sales_order_id = so.id
-      LEFT JOIN delivery_orders do ON bo.original_do_id = do.id
+      LEFT JOIN customers c ON bo.customer_id = c.id AND c.tenant_id = bo.tenant_id
+      LEFT JOIN sales_orders so ON bo.sales_order_id = so.id AND so.tenant_id = bo.tenant_id
+      LEFT JOIN delivery_orders do ON bo.original_do_id = do.id AND do.tenant_id = bo.tenant_id
       WHERE bo.id = ? AND bo.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -96,10 +108,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     const items = db.prepare(`
       SELECT boi.*, COALESCE(p.name, soi.product_name) as product_name, soi.unit
       FROM backorder_items boi
-      LEFT JOIN sales_order_items soi ON boi.sales_order_item_id = soi.id
-      LEFT JOIN products p ON boi.product_id = p.id
-      WHERE boi.backorder_id = ?
-    `).all(req.params.id)
+      LEFT JOIN sales_order_items soi ON boi.sales_order_item_id = soi.id AND soi.tenant_id = boi.tenant_id
+      LEFT JOIN products p ON boi.product_id = p.id AND p.tenant_id = boi.tenant_id
+      WHERE boi.backorder_id = ? AND boi.tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...backorder, items } })
   } catch (error) {
@@ -157,7 +169,7 @@ router.get('/pending-items/:salesOrderId', async (req: Request, res: Response) =
         (soi.quantity - soi.delivered_qty) as remaining_qty
       FROM sales_order_items soi
       LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
-      LEFT JOIN products p ON soi.product_id = p.id
+      LEFT JOIN products p ON soi.product_id = p.id AND p.tenant_id = soi.tenant_id
       WHERE soi.tenant_id = ? AND soi.sales_order_id = ? AND soi.quantity > soi.delivered_qty
     `).all(tenantId, salesOrderId)
 

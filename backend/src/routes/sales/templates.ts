@@ -45,9 +45,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       FROM quotation_template_items qti
       -- product_id ในระบบนี้ชี้ stock_items ไม่ใช่ products ที่เลิกใช้แล้ว (ตาราง 0 แถว แก้ไว้ก่อนเปิดใช้)
       LEFT JOIN stock_items p ON qti.product_id = p.id AND p.tenant_id = qti.tenant_id
-      WHERE qti.template_id = ?
+      WHERE qti.template_id = ? AND qti.tenant_id = ?
       ORDER BY qti.sort_order ASC
-    `).all(req.params.id)
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...template, items } })
   } catch (error) {
@@ -154,7 +154,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Template not found' })
     }
 
-    db.prepare('DELETE FROM quotation_templates WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM quotation_template_items WHERE template_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+      db.prepare('DELETE FROM quotation_templates WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    })
+    tx()
 
     res.json({ success: true, message: 'Template deleted' })
   } catch (error) {
@@ -173,6 +177,11 @@ router.post('/from-template', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Template and customer are required' })
     }
 
+    const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+    if (!cust) {
+      return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
+    }
+
     // Get template
     const template = db.prepare('SELECT * FROM quotation_templates WHERE id = ? AND tenant_id = ?').get(templateId, tenantId) as any
     if (!template) {
@@ -180,7 +189,7 @@ router.post('/from-template', async (req: Request, res: Response) => {
     }
 
     // Get template items
-    const templateItems = db.prepare('SELECT * FROM quotation_template_items WHERE template_id = ?').all(templateId) as any[]
+    const templateItems = db.prepare('SELECT * FROM quotation_template_items WHERE template_id = ? AND tenant_id = ?').all(templateId, tenantId) as any[]
 
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · กติกาเดียวกับ quotations.ts
     // เช็คก่อนออกเลขเอกสารเสมอ ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย

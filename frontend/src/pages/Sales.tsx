@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp, Package, RotateCcw, LayoutTemplate, LayoutList, LayoutGrid, ChevronRight, ArrowRight, X, Store, ShoppingBag, Ban, ChevronDown, ChevronUp, Banknote, QrCode, Printer, Trash2, Pencil, AlertTriangle, Check} from 'lucide-react'
@@ -317,6 +317,419 @@ const JournalPreview = ({ entries }: { entries: { dr?: boolean; account: string;
   )
 }
 
+// ── POS components (outside main component to avoid remounting on state changes) ──
+const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
+const fmtDT = (s: string) => new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+const PendingBillsPanel = ({ bills, onVoid }: { bills: POSPendingBill[]; onVoid: (b: POSPendingBill) => void }) => {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)}
+        className="w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30">
+        <div className="flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-[var(--primary)]" />
+          <span className="text-sm font-medium text-[var(--fg-1)]">{t('sales.pos.billsInShift')}</span>
+          <span className="text-xs text-[var(--fg-4)]">{t('sales.common.billCount', { count: bills.length })}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-[var(--primary)]">
+            {fmt(bills.reduce((s, b) => s + b.total_amount, 0))}
+          </span>
+          {expanded ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" /> : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
+        </div>
+      </button>
+      {expanded && (
+        <div className="divide-y divide-[var(--border)]/50">
+          {bills.map(bill => (
+            <div key={bill.id} className="px-5 py-3 flex items-center justify-between bg-[var(--bg)]/20">
+              <div>
+                <div className="flex items-center gap-2">
+                  {bill.payment_method === 'CASH'
+                    ? <Banknote className="w-3 h-3 text-warning" />
+                    : <QrCode className="w-3 h-3 text-blue-400" />}
+                  <span className="text-sm text-[var(--fg-1)]">{bill.bill_number}</span>
+                </div>
+                <p className="text-xs text-[var(--fg-4)] mt-0.5">
+                  {bill.display_name} · {fmtDT(bill.closed_at)}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-[var(--fg-1)]">{fmt(bill.total_amount)}</span>
+                <button onClick={() => onVoid(bill)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-danger border border-danger/30 hover:bg-[var(--danger-soft)]">
+                  <Ban className="w-3 h-3" /> {t('sales.common.cancel')}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const OpenShiftModal = ({ onClose, onOpened }: { onClose: () => void; onOpened?: () => void }) => {
+  const { t } = useTranslation()
+  const [openingCash, setOpeningCash] = useState('0')
+  const [lastClosedShift, setLastClosedShift] = useState<{ shift_number: string; closing_cash_counted: number } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    posService.getLastClosedShift().then((res: any) => {
+      if (res.success && res.data) {
+        setLastClosedShift(res.data)
+        if (res.suggested_opening_cash !== undefined && res.suggested_opening_cash > 0) {
+          setOpeningCash(res.suggested_opening_cash.toString())
+        }
+      }
+    }).catch(() => {})
+  }, [])
+
+  const handleOpen = async () => {
+    setSaving(true)
+    try {
+      const { data } = await api.post('/sales/pos-shifts/open', { opening_cash: parseFloat(openingCash) || 0 })
+      if (data.success) {
+        toast.success(`${t('sales.toast.shiftOpened')}: ${data.data.shift_number}`)
+        onOpened?.()
+        onClose()
+      }
+    } catch (e: any) { toast.error(e.response?.data?.message || t('sales.error.openShiftFailed')) }
+    finally { setSaving(false) }
+  }
+  return (
+    <ModalShell title={t('sales.actions.openShift')} icon={ShoppingBag} onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
+          <button onClick={handleOpen} disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50">
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            {t('sales.pos.startShift')}
+          </button>
+        </>
+      }>
+      <div className="p-4 bg-blue-500/10 border border-info/30 rounded-lg">
+        <p className="text-sm text-blue-400">{t('sales.pos.openShiftHint')}</p>
+      </div>
+      <Field label={t('sales.pos.cashInDrawerStart')}>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
+          <input type="number" value={openingCash}
+            onChange={e => setOpeningCash(e.target.value)}
+            onFocus={e => e.target.select()}
+            className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
+        </div>
+        {lastClosedShift && (lastClosedShift.closing_cash_counted ?? 0) > 0 && (
+          <div className="mt-2 text-xs text-[var(--fg-3)] bg-[var(--bg)] p-2.5 rounded-lg border border-[var(--border)] flex items-center justify-between">
+            <span>{t('sales.pos.previousShiftRemaining', { shift: lastClosedShift.shift_number })}:</span>
+            <span className="font-semibold text-success">{fmt(lastClosedShift.closing_cash_counted)}</span>
+          </div>
+        )}
+      </Field>
+    </ModalShell>
+  )
+}
+
+const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClose: () => void; onClosed?: () => void }) => {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const live = shift.live
+  const cashRevenue = live?.cash_revenue || 0
+  const cashIn = live?.cash_in || 0
+  const paidOut = live?.paid_out || 0
+  const expectedCash = expectedShiftCash(shift)
+  const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [openBillsError, setOpenBillsError] = useState<{ message: string; bills: string[] } | null>(null)
+  const [movements, setMovements] = useState<Array<{ id: string; type: 'PAID_OUT' | 'CASH_IN'; amount: number; reason?: string; created_at: string }>>([])
+  const [expenses, setExpenses] = useState<Array<{ id: string; reason: string; amount: string }>>([])
+
+  const totalNewExpenses = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+  const adjustedExpectedCash = Math.round((expectedCash - totalNewExpenses) * 100) / 100
+  const diff = (parseFloat(closingCash) || 0) - adjustedExpectedCash
+
+  useEffect(() => {
+    api.get(`/sales/pos-shifts/${shift.id}/cash-movements`)
+      .then(({ data }) => { if (data.success) setMovements(data.data) })
+      .catch(() => {})
+  }, [shift.id])
+
+  const handleClose = async () => {
+    setSaving(true)
+    try {
+      const validExpenses = expenses
+        .filter(e => (parseFloat(e.amount) || 0) > 0 && e.reason.trim())
+        .map(e => ({ reason: e.reason.trim(), amount: parseFloat(e.amount) || 0 }))
+
+      const { data } = await api.post(`/sales/pos-shifts/${shift.id}/close`, {
+        closing_cash_counted: parseFloat(closingCash) || 0,
+        notes,
+        cash_expenses: validExpenses.length > 0 ? validExpenses : undefined
+      })
+      if (data.success) {
+        toast.success(t('sales.toast.shiftClosed'))
+        onClosed?.()
+        onClose()
+      }
+    } catch (e: any) {
+      const message = e.response?.data?.message || t('sales.error.closeShiftFailed')
+      // ยังมีบิลค้างชำระ → ค้างโมดัลไว้ พร้อมบอกเลขบิลที่ต้องจัดการก่อน
+      if (shiftErrorCode(e) === 'SHIFT_HAS_OPEN_BILLS') setOpenBillsError({ message, bills: openBillNumbers(e) })
+      toast.error(message)
+    }
+    finally { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
+            <X className="w-5 h-5 text-danger" /> {t('sales.actions.closeShift')} — {shift.shift_number}
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="overflow-y-auto p-5 space-y-4">
+          {openBillsError && (
+            <div className="p-3 rounded-lg bg-[var(--danger-soft)] border border-danger/30 text-sm text-danger">
+              <p className="font-semibold">{openBillsError.message}</p>
+              {openBillsError.bills.length > 0 && <p className="text-xs mt-1">{t('sales.pos.openBillsList', { bills: openBillsError.bills.join(', ') })}</p>}
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.common.total')}</p>
+              <p className="text-base font-bold text-[var(--primary)]">{fmt(live?.total_revenue || 0)}</p>
+            </div>
+            <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.cash')}</p>
+              <p className="text-base font-bold text-warning">{fmt(cashRevenue)}</p>
+            </div>
+            <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
+              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.qrTransfer')}</p>
+              <p className="text-base font-bold text-blue-400">{fmt(live?.bank_revenue || 0)}</p>
+            </div>
+          </div>
+          <div className="p-4 bg-[var(--bg)] rounded-lg space-y-1 text-sm">
+            <div className="flex justify-between text-[var(--fg-3)]">
+              <span>{t('sales.pos.openingCash')}</span><span>{fmt(shift.opening_cash)}</span>
+            </div>
+            <div className="flex justify-between text-[var(--fg-3)]">
+              <span>{t('sales.pos.cashSales')}</span><span>{fmt(cashRevenue)}</span>
+            </div>
+            {cashIn > 0 && (
+              <div className="flex justify-between text-success">
+                <span>+ {t('sales.pos.cashIn')}</span><span>{fmt(cashIn)}</span>
+              </div>
+            )}
+            {paidOut > 0 && (
+              <div className="flex justify-between text-danger">
+                <span>− {t('sales.pos.paidOut')}</span><span>{fmt(paidOut)}</span>
+              </div>
+            )}
+            {totalNewExpenses > 0 && (
+              <div className="flex justify-between text-danger font-medium">
+                <span>− {t('sales.pos.cashExpensesBeforeClose')} ({expenses.filter(e => (parseFloat(e.amount) || 0) > 0).length})</span>
+                <span>−{fmt(totalNewExpenses)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold text-[var(--fg-1)] border-t border-[var(--border)] pt-2 mt-2">
+              <span>{t('sales.pos.expectedCash')}</span><span>{fmt(adjustedExpectedCash)}</span>
+            </div>
+          </div>
+          {movements.length > 0 && (
+            <div className="p-3 bg-[var(--bg)] rounded-lg">
+              <p className="text-xs font-medium text-[var(--fg-3)] mb-2">{t('sales.pos.cashMovementsInShift')}</p>
+              <div className="space-y-1.5">
+                {movements.map(m => (
+                  <div key={m.id} className="flex justify-between items-center text-xs">
+                    <span className={m.type === 'CASH_IN' ? 'text-success' : 'text-danger'}>
+                      {m.type === 'CASH_IN' ? '+' : '−'} {m.reason || (m.type === 'CASH_IN' ? t('sales.pos.cashIn') : t('sales.pos.paidOut'))}
+                    </span>
+                    <span className="text-[var(--fg-2)]">{fmt(m.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* รายการใช้เงินสด / นำเงินออกจากเก๊ะก่อนปิดกะ */}
+          <div className="border border-[var(--border)] rounded-xl p-3 bg-[var(--bg)]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-[var(--fg-2)] flex items-center gap-1.5">
+                <Receipt className="w-3.5 h-3.5 text-warning" />
+                {t('sales.pos.cashExpenses')} ({expenses.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => setExpenses(prev => [...prev, { id: Date.now().toString(), reason: '', amount: '' }])}
+                className="px-2.5 py-1 text-xs font-medium rounded-md bg-phopy-indigo/10 text-phopy-indigo hover:bg-phopy-indigo/20 flex items-center gap-1 border border-phopy-indigo/30 transition-colors"
+              >
+                <Plus className="w-3 h-3" /> {t('sales.pos.addCashExpense')}
+              </button>
+            </div>
+
+            {diff < -0.01 && expenses.length === 0 && (
+              <div className="mb-2 p-2 rounded-lg bg-danger/10 border border-danger/20 text-xs text-danger flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{t('sales.pos.cashDiscrepancyHint', { amount: fmt(Math.abs(diff)) })}</span>
+              </div>
+            )}
+
+            {expenses.length === 0 ? (
+              <p className="text-xs text-[var(--fg-4)] py-1 italic text-center">{t('sales.pos.noExpensesAdded')}</p>
+            ) : (
+              <div className="space-y-2 mt-2 max-h-44 overflow-y-auto pr-1">
+                {expenses.map((exp, idx) => (
+                  <div key={exp.id} className="flex items-center gap-2 bg-[var(--surface)] p-2 rounded-lg border border-[var(--border)]">
+                    <span className="text-xs text-[var(--fg-4)] w-4 text-center">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      placeholder={t('sales.pos.expenseReasonPlaceholder')}
+                      value={exp.reason}
+                      onChange={e => {
+                        const val = e.target.value
+                        setExpenses(prev => prev.map(item => item.id === exp.id ? { ...item, reason: val } : item))
+                      }}
+                      className="flex-1 min-w-0 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+                    />
+                    <div className="relative w-24 shrink-0">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">฿</span>
+                      <input
+                        type="number"
+                        placeholder="0"
+                        value={exp.amount}
+                        onChange={e => {
+                          const val = e.target.value
+                          setExpenses(prev => prev.map(item => item.id === exp.id ? { ...item, amount: val } : item))
+                        }}
+                        className="w-full pl-5 pr-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-xs font-semibold text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo text-right"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExpenses(prev => prev.filter(item => item.id !== exp.id))}
+                      className="p-1 text-danger hover:bg-danger/10 rounded transition-colors"
+                      title={t('sales.common.delete')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {totalNewExpenses > 0 && (
+                  <div className="flex justify-between items-center text-xs font-medium text-[var(--fg-2)] pt-1 px-1">
+                    <span>{t('sales.pos.totalExpenses')}:</span>
+                    <span className="text-danger font-bold">−{fmt(totalNewExpenses)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <Field label={t('sales.pos.countCash')}>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
+              <input type="number" value={closingCash}
+                onChange={e => setClosingCash(e.target.value)}
+                onFocus={e => e.target.select()}
+                className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
+            </div>
+          </Field>
+          <div className={`flex justify-between items-center p-3 rounded-lg text-sm font-medium ${
+            Math.abs(diff) < 0.01 ? 'bg-success/10 border border-success/30 text-success'
+            : diff > 0 ? 'bg-[var(--warning-soft)] border border-warning/30 text-warning'
+            : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
+          }`}>
+            <span>{t('sales.pos.difference')}</span>
+            <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? t('sales.pos.match') : diff > 0 ? t('sales.pos.over') : t('sales.pos.short')}</span>
+          </div>
+          <Field label={t('sales.pos.noteOptional')}>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none"
+              placeholder={t('sales.pos.notePlaceholder')} />
+          </Field>
+        </div>
+        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
+          <button onClick={handleClose} disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 disabled:opacity-50">
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            {t('sales.pos.confirmCloseShift')}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+const VoidBillModal = ({ bill, onClose, onVoided }: { bill: POSPendingBill; onClose: () => void; onVoided?: () => void }) => {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const approvalGate = useApprovalGate()
+  const handleVoid = async () => {
+    if (!reason.trim()) { toast.error(t('sales.validation.cancelReason')); return }
+    try {
+      setSaving(true)
+      const res = await posService.voidBill(bill.id, reason)
+      // ติดด่านอนุมัติ: บิลยังไม่ถูกยกเลิก — เปิด popup ค้างบนโมดัลเดิม ไม่ปิดหน้าต่าง
+      if (approvalGate.handleResponse(res)) { setSaving(false); return }
+      if (res.success) {
+        toast.success(`${t('sales.actions.voidBill')} ${bill.bill_number} ${t('sales.common.success')}`)
+        onVoided?.()
+        onClose()
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || t('sales.toast.cancelBillFailed'))
+    } finally { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {approvalGate.modal}
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        className="bg-[var(--surface)] border border-danger/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
+          <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
+            <Ban className="w-5 h-5 text-danger" /> {t('sales.actions.voidBill')}
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="bg-[var(--danger-soft)] border border-danger/20 rounded-xl p-4">
+            <p className="text-sm font-medium text-[var(--fg-1)]">{bill.bill_number}</p>
+            <p className="text-xs text-[var(--fg-3)] mt-0.5">
+              {bill.display_name} · {fmt(bill.total_amount)} · {bill.payment_method === 'CASH' ? t('sales.paymentMethod.cash') : t('sales.paymentMethod.qrTransfer')}
+            </p>
+          </div>
+          <div className="bg-[var(--warning-soft)] border border-yellow-500/20 rounded-lg px-3 py-2 text-xs text-warning">
+            {t('sales.pos.voidJournalHint')}
+          </div>
+          <Field label={t('sales.labels.cancelReason')}>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-red-400 resize-none"
+              placeholder={t('sales.placeholders.cancelReason')} />
+          </Field>
+        </div>
+        <div className="p-5 border-t border-[var(--border)] flex gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.close')}</button>
+          <button onClick={handleVoid} disabled={saving || !reason.trim()}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 hover:bg-red-500 text-white font-semibold rounded-lg disabled:opacity-50">
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Ban className="w-4 h-4" />}
+            {t('sales.pos.confirmVoidBill')}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 const Sales = () => {
   const { t } = useTranslation()
@@ -342,6 +755,35 @@ const Sales = () => {
   // tab's list happens to be loaded), so a category shows its real outstanding count
   // even if the user has never opened that tab yet this session.
   const [badgeCounts, setBadgeCounts] = useState({ quotations: 0, orders: 0, deliveryOrders: 0, invoices: 0, backorders: 0 })
+
+  // Memoized O(1) lookup maps
+  const doBySoNumber = useMemo(() => {
+    const map = new Map<string, DeliveryOrder[]>()
+    for (const d of deliveryOrders) {
+      if (!d.so_number) continue
+      const list = map.get(d.so_number)
+      if (list) list.push(d)
+      else map.set(d.so_number, [d])
+    }
+    return map
+  }, [deliveryOrders])
+
+  const invCountBySoNumber = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const inv of invoices) {
+      if (!inv.so_number) continue
+      map.set(inv.so_number, (map.get(inv.so_number) || 0) + 1)
+    }
+    return map
+  }, [invoices])
+
+  const soByNumber = useMemo(() => {
+    const map = new Map<string, SalesOrder>()
+    for (const so of salesOrders) {
+      if (so.so_number) map.set(so.so_number, so)
+    }
+    return map
+  }, [salesOrders])
 
   // POS shift modals
   const [showOpenShift, setShowOpenShift] = useState(false)
@@ -383,13 +825,13 @@ const Sales = () => {
       fetchQuotations()
     } else if (activeTab === 'orders') {
       fetchSalesOrders()
-      fetchDeliveryOrders()
-      fetchInvoices()
+      fetchDeliveryOrders(true)
+      fetchInvoices(true)
     } else if (activeTab === 'delivery-orders') {
       fetchDeliveryOrders()
     } else if (activeTab === 'invoices') {
       fetchInvoices()
-      fetchSalesOrders()
+      fetchSalesOrders(true)
     } else if (activeTab === 'credit-notes') {
       fetchCreditNotes()
     } else if (activeTab === 'backorders') {
@@ -412,6 +854,7 @@ const Sales = () => {
   }
 
   const fetchSummary = async () => {
+    setLoading(true)
     try {
       const { data } = await api.get('/sales/summary')
       if (data.success) setSummary(data.data)
@@ -433,26 +876,26 @@ const Sales = () => {
     } finally { setLoading(false) }
   }
 
-  const fetchSalesOrders = async () => {
-    setLoading(true)
+  const fetchSalesOrders = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get('/sales/sales-orders')
       if (data.success) setSalesOrders(data.data)
       fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadOrders'))
-    } finally { setLoading(false) }
+    } finally { if (!silent) setLoading(false) }
   }
 
-  const fetchInvoices = async () => {
-    setLoading(true)
+  const fetchInvoices = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get('/sales/invoices')
       if (data.success) setInvoices(data.data)
       fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadInvoices'))
-    } finally { setLoading(false) }
+    } finally { if (!silent) setLoading(false) }
   }
 
   const fetchCreditNotes = async () => {
@@ -476,15 +919,15 @@ const Sales = () => {
     } finally { setLoading(false) }
   }
 
-  const fetchDeliveryOrders = async () => {
-    setLoading(true)
+  const fetchDeliveryOrders = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get('/sales/delivery-orders')
       if (data.success) setDeliveryOrders(data.data)
       fetchBadgeCounts()
     } catch (error: any) {
       handleApiError(error, t('sales.error.loadDeliveries'))
-    } finally { setLoading(false) }
+    } finally { if (!silent) setLoading(false) }
   }
 
   const fetchTemplates = async () => {
@@ -1140,7 +1583,8 @@ const Sales = () => {
                   const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
                   const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
                   const next = soNextStatus[order.status]
-                  const hasDO = deliveryOrders.some(d => d.so_number === order.so_number && d.status !== 'CANCELLED')
+                  const orderDOs = doBySoNumber.get(order.so_number) || []
+                  const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
                   return (
                     <tr key={order.id} className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3">
@@ -1150,7 +1594,7 @@ const Sales = () => {
                             <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
                           )}
                           {(() => {
-                            const doAll = deliveryOrders.filter(d => d.so_number === order.so_number)
+                            const doAll = orderDOs
                             const doDraft = doAll.filter(d => d.status === 'DRAFT')
                             const doShipped = doAll.filter(d => d.status === 'SHIPPED')
                             return (<>
@@ -1162,7 +1606,7 @@ const Sales = () => {
                               )}
                             </>)
                           })()}
-                          {(() => { const invCount = invoices.filter(i => i.so_number === order.so_number).length; return invCount > 0 ? (
+                          {(() => { const invCount = invCountBySoNumber.get(order.so_number) || 0; return invCount > 0 ? (
                             <span className="text-[10px] text-[var(--primary)] bg-phopy-indigo/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
                           ) : null })()}
                         </div>
@@ -1242,7 +1686,8 @@ const Sales = () => {
               const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
               const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
               const next = soNextStatus[order.status]
-              const hasDO = deliveryOrders.some(d => d.so_number === order.so_number && d.status !== 'CANCELLED')
+              const orderDOs = doBySoNumber.get(order.so_number) || []
+              const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -1255,7 +1700,7 @@ const Sales = () => {
                           <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
                         )}
                         {(() => {
-                          const doAll = deliveryOrders.filter(d => d.so_number === order.so_number)
+                          const doAll = orderDOs
                           const doDraft = doAll.filter(d => d.status === 'DRAFT')
                           const doShipped = doAll.filter(d => d.status === 'SHIPPED')
                           return (<>
@@ -1267,7 +1712,7 @@ const Sales = () => {
                             )}
                           </>)
                         })()}
-                        {(() => { const invCount = invoices.filter(i => i.so_number === order.so_number).length; return invCount > 0 ? (
+                        {(() => { const invCount = invCountBySoNumber.get(order.so_number) || 0; return invCount > 0 ? (
                           <span className="text-[10px] text-[var(--primary)] bg-phopy-indigo/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
                         ) : null })()}
                       </div>
@@ -1375,7 +1820,7 @@ const Sales = () => {
               <tbody className="divide-y divide-[var(--border)]/50">
                 {items.map(inv => {
                   const isOverdue = inv.payment_status === 'OVERDUE'
-                  const isUnpaid = (inv.payment_status === 'UNPAID' || isOverdue) && inv.status !== 'CANCELLED'
+                  const isUnpaid = (inv.payment_status === 'UNPAID' || inv.payment_status === 'PARTIAL' || isOverdue) && inv.status !== 'CANCELLED'
                   return (
                     <tr key={inv.id} className={`hover:bg-[var(--surface-2)] transition-colors ${isOverdue ? 'bg-red-500/5' : ''}`}>
                       <td className="px-4 py-3">
@@ -1390,7 +1835,7 @@ const Sales = () => {
                           <div className="flex items-center gap-1 flex-wrap">
                             <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">{inv.so_number}</span>
                             {(() => {
-                              const so = salesOrders.find(s => s.so_number === inv.so_number)
+                              const so = soByNumber.get(inv.so_number)
                               return so?.quotation_number ? (
                                 <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
                               ) : null
@@ -1404,7 +1849,7 @@ const Sales = () => {
                           {formatDate(inv.due_date)}{isOverdue ? <AlertTriangle className="w-3 h-3 inline" /> : ''}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center"><StatusBadge payment status={inv.payment_status} /></td>
+                      <td className="px-4 py-3 text-center"><StatusBadge payment status={inv.status === 'CANCELLED' ? 'CANCELLED' : inv.payment_status} /></td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(inv.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
                         <span className={`text-xs font-semibold ${inv.balance_amount > 0 ? 'text-danger' : 'text-success'}`}>
@@ -1434,7 +1879,7 @@ const Sales = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((inv, i) => {
               const isOverdue = inv.payment_status === 'OVERDUE'
-              const isUnpaid  = (inv.payment_status === 'UNPAID' || isOverdue) && inv.status !== 'CANCELLED'
+              const isUnpaid  = (inv.payment_status === 'UNPAID' || inv.payment_status === 'PARTIAL' || isOverdue) && inv.status !== 'CANCELLED'
               return (
                 <motion.div key={inv.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
@@ -1447,7 +1892,7 @@ const Sales = () => {
                           <>
                             <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">{inv.so_number}</span>
                             {(() => {
-                              const so = salesOrders.find(s => s.so_number === inv.so_number)
+                              const so = soByNumber.get(inv.so_number)
                               return so?.quotation_number ? (
                                 <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
                               ) : null
@@ -1494,7 +1939,8 @@ const Sales = () => {
 
   // ── Credit Notes ───────────────────────────────────────────────────────────
   const CreditNotesContent = () => {
-    const items = filterItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date')
+    const filtered = filterItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date')
+    const items = paginate(filtered)
     return (
       <div className="space-y-3">
         {ListToolbar({ rows: searchItems(creditNotes, ['cn_number', 'customer_name'], 'credit_date'), placeholder: t('sales.searchCreditNote'), action: (
@@ -1504,7 +1950,7 @@ const Sales = () => {
           </button>
         ) })}
 
-        {items.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
             <RotateCcw className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p>{t('sales.emptyCreditNote')}</p>
@@ -1555,9 +2001,7 @@ const Sales = () => {
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-[var(--border)]/50 text-xs text-[var(--fg-4)]">
-              {t('sales.common.showingCount', { count: items.length })}
-            </div>
+            {Pagination({ total: filtered.length })}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1593,6 +2037,7 @@ const Sales = () => {
                 </div>
               </motion.div>
             ))}
+            {Pagination({ total: filtered.length })}
           </div>
         )}
       </div>
@@ -1601,7 +2046,8 @@ const Sales = () => {
 
   // ── Backorders ─────────────────────────────────────────────────────────────
   const BackordersContent = () => {
-    const items = filterItems(backorders, ['bo_number', 'customer_name'])
+    const filtered = filterItems(backorders, ['bo_number', 'customer_name'])
+    const items = paginate(filtered)
     return (
       <div className="space-y-3">
         {ListToolbar({ rows: searchItems(backorders, ['bo_number', 'customer_name']), placeholder: t('sales.search.backorder'), action: (
@@ -1611,7 +2057,7 @@ const Sales = () => {
           </button>
         ) })}
 
-        {items.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]">
             <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p>{t('sales.emptyBackorder')}</p>
@@ -1650,9 +2096,7 @@ const Sales = () => {
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-2 border-t border-[var(--border)]/50 text-xs text-[var(--fg-4)]">
-              {t('sales.common.showingCount', { count: items.length })}
-            </div>
+            {Pagination({ total: filtered.length })}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1680,6 +2124,7 @@ const Sales = () => {
                 </div>
               </motion.div>
             ))}
+            {Pagination({ total: filtered.length })}
           </div>
         )}
       </div>
@@ -1876,411 +2321,6 @@ const Sales = () => {
     { id: 'pos-daily',       label: t('sales.tabs.posShifts'),    icon: Store,          badge: 0 },
   ]
 
-  // ── POS components (fully functional — keep intact) ────────────────────────
-  const PendingBillsPanel = ({ bills, onVoid }: { bills: POSPendingBill[]; onVoid: (b: POSPendingBill) => void }) => {
-    const [expanded, setExpanded] = useState(false)
-    return (
-      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
-        <button onClick={() => setExpanded(!expanded)}
-          className="w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30">
-          <div className="flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-[var(--primary)]" />
-            <span className="text-sm font-medium text-[var(--fg-1)]">{t('sales.pos.billsInShift')}</span>
-            <span className="text-xs text-[var(--fg-4)]">{t('sales.common.billCount', { count: bills.length })}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-[var(--primary)]">
-              {fmt(bills.reduce((s, b) => s + b.total_amount, 0))}
-            </span>
-            {expanded ? <ChevronUp className="w-4 h-4 text-[var(--fg-4)]" /> : <ChevronDown className="w-4 h-4 text-[var(--fg-4)]" />}
-          </div>
-        </button>
-        {expanded && (
-          <div className="divide-y divide-[var(--border)]/50">
-            {bills.map(bill => (
-              <div key={bill.id} className="px-5 py-3 flex items-center justify-between bg-[var(--bg)]/20">
-                <div>
-                  <div className="flex items-center gap-2">
-                    {bill.payment_method === 'CASH'
-                      ? <Banknote className="w-3 h-3 text-warning" />
-                      : <QrCode className="w-3 h-3 text-blue-400" />}
-                    <span className="text-sm text-[var(--fg-1)]">{bill.bill_number}</span>
-                  </div>
-                  <p className="text-xs text-[var(--fg-4)] mt-0.5">
-                    {bill.display_name} · {fmtDT(bill.closed_at)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-[var(--fg-1)]">{fmt(bill.total_amount)}</span>
-                  <button onClick={() => onVoid(bill)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-danger border border-danger/30 hover:bg-[var(--danger-soft)]">
-                    <Ban className="w-3 h-3" /> {t('sales.common.cancel')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  const OpenShiftModal = ({ onClose }: { onClose: () => void }) => {
-    const [openingCash, setOpeningCash] = useState('0')
-    const [lastClosedShift, setLastClosedShift] = useState<{ shift_number: string; closing_cash_counted: number } | null>(null)
-    const [saving, setSaving] = useState(false)
-
-    useEffect(() => {
-      posService.getLastClosedShift().then((res: any) => {
-        if (res.success && res.data) {
-          setLastClosedShift(res.data)
-          if (res.suggested_opening_cash !== undefined && res.suggested_opening_cash > 0) {
-            setOpeningCash(res.suggested_opening_cash.toString())
-          }
-        }
-      }).catch(() => {})
-    }, [])
-
-    const handleOpen = async () => {
-      setSaving(true)
-      try {
-        const { data } = await api.post('/sales/pos-shifts/open', { opening_cash: parseFloat(openingCash) || 0 })
-        if (data.success) {
-          toast.success(`${t('sales.toast.shiftOpened')}: ${data.data.shift_number}`)
-          fetchPOSShifts()
-          onClose()
-        }
-      } catch (e: any) { toast.error(e.response?.data?.message || t('sales.error.openShiftFailed')) }
-      finally { setSaving(false) }
-    }
-    return (
-      <ModalShell title={t('sales.actions.openShift')} icon={ShoppingBag} onClose={onClose}
-        footer={
-          <>
-            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
-            <button onClick={handleOpen} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50">
-              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {t('sales.pos.startShift')}
-            </button>
-          </>
-        }>
-        <div className="p-4 bg-blue-500/10 border border-info/30 rounded-lg">
-          <p className="text-sm text-blue-400">{t('sales.pos.openShiftHint')}</p>
-        </div>
-        <Field label={t('sales.pos.cashInDrawerStart')}>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
-            <input type="number" value={openingCash}
-              onChange={e => setOpeningCash(e.target.value)}
-              onFocus={e => e.target.select()}
-              className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
-          </div>
-          {lastClosedShift && (lastClosedShift.closing_cash_counted ?? 0) > 0 && (
-            <div className="mt-2 text-xs text-[var(--fg-3)] bg-[var(--bg)] p-2.5 rounded-lg border border-[var(--border)] flex items-center justify-between">
-              <span>{t('sales.pos.previousShiftRemaining', { shift: lastClosedShift.shift_number })}:</span>
-              <span className="font-semibold text-success">฿{fmt(lastClosedShift.closing_cash_counted)}</span>
-            </div>
-          )}
-        </Field>
-      </ModalShell>
-    )
-  }
-
-  const CloseShiftModal = ({ shift, onClose }: { shift: POSShift; onClose: () => void }) => {
-    const live = shift.live
-    const cashRevenue = live?.cash_revenue || 0
-    const cashIn = live?.cash_in || 0
-    const paidOut = live?.paid_out || 0
-    const expectedCash = expectedShiftCash(shift)
-    const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
-    const [notes, setNotes] = useState('')
-    const [saving, setSaving] = useState(false)
-    const [openBillsError, setOpenBillsError] = useState<{ message: string; bills: string[] } | null>(null)
-    const [movements, setMovements] = useState<Array<{ id: string; type: 'PAID_OUT' | 'CASH_IN'; amount: number; reason?: string; created_at: string }>>([])
-    const [expenses, setExpenses] = useState<Array<{ id: string; reason: string; amount: string }>>([])
-
-    const totalNewExpenses = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
-    const adjustedExpectedCash = Math.round((expectedCash - totalNewExpenses) * 100) / 100
-    const diff = (parseFloat(closingCash) || 0) - adjustedExpectedCash
-
-    useEffect(() => {
-      api.get(`/sales/pos-shifts/${shift.id}/cash-movements`)
-        .then(({ data }) => { if (data.success) setMovements(data.data) })
-        .catch(() => {})
-    }, [])
-
-    const handleClose = async () => {
-      setSaving(true)
-      try {
-        const validExpenses = expenses
-          .filter(e => (parseFloat(e.amount) || 0) > 0 && e.reason.trim())
-          .map(e => ({ reason: e.reason.trim(), amount: parseFloat(e.amount) || 0 }))
-
-        const { data } = await api.post(`/sales/pos-shifts/${shift.id}/close`, {
-          closing_cash_counted: parseFloat(closingCash) || 0,
-          notes,
-          cash_expenses: validExpenses.length > 0 ? validExpenses : undefined
-        })
-        if (data.success) {
-          toast.success(t('sales.toast.shiftClosed'))
-          fetchPOSShifts()
-          onClose()
-        }
-      } catch (e: any) {
-        const message = e.response?.data?.message || t('sales.error.closeShiftFailed')
-        // ยังมีบิลค้างชำระ → ค้างโมดัลไว้ พร้อมบอกเลขบิลที่ต้องจัดการก่อน
-        if (shiftErrorCode(e) === 'SHIFT_HAS_OPEN_BILLS') setOpenBillsError({ message, bills: openBillNumbers(e) })
-        toast.error(message)
-      }
-      finally { setSaving(false) }
-    }
-    return (
-      <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-          <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-            <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-              <X className="w-5 h-5 text-danger" /> {t('sales.actions.closeShift')} — {shift.shift_number}
-            </h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
-          </div>
-          <div className="overflow-y-auto p-5 space-y-4">
-            {openBillsError && (
-              <div className="p-3 rounded-lg bg-[var(--danger-soft)] border border-danger/30 text-sm text-danger">
-                <p className="font-semibold">{openBillsError.message}</p>
-                {openBillsError.bills.length > 0 && <p className="text-xs mt-1">{t('sales.pos.openBillsList', { bills: openBillsError.bills.join(', ') })}</p>}
-              </div>
-            )}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.common.total')}</p>
-                <p className="text-base font-bold text-[var(--primary)]">{fmt(live?.total_revenue || 0)}</p>
-              </div>
-              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.cash')}</p>
-                <p className="text-base font-bold text-warning">{fmt(cashRevenue)}</p>
-              </div>
-              <div className="bg-[var(--bg)] rounded-lg p-3 text-center">
-                <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.pos.qrTransfer')}</p>
-                <p className="text-base font-bold text-blue-400">{fmt(live?.bank_revenue || 0)}</p>
-              </div>
-            </div>
-            <div className="p-4 bg-[var(--bg)] rounded-lg space-y-1 text-sm">
-              <div className="flex justify-between text-[var(--fg-3)]">
-                <span>{t('sales.pos.openingCash')}</span><span>{fmt(shift.opening_cash)}</span>
-              </div>
-              <div className="flex justify-between text-[var(--fg-3)]">
-                <span>{t('sales.pos.cashSales')}</span><span>{fmt(cashRevenue)}</span>
-              </div>
-              {cashIn > 0 && (
-                <div className="flex justify-between text-success">
-                  <span>+ {t('sales.pos.cashIn')}</span><span>{fmt(cashIn)}</span>
-                </div>
-              )}
-              {paidOut > 0 && (
-                <div className="flex justify-between text-danger">
-                  <span>− {t('sales.pos.paidOut')}</span><span>{fmt(paidOut)}</span>
-                </div>
-              )}
-              {totalNewExpenses > 0 && (
-                <div className="flex justify-between text-danger font-medium">
-                  <span>− {t('sales.pos.cashExpensesBeforeClose')} ({expenses.filter(e => (parseFloat(e.amount) || 0) > 0).length})</span>
-                  <span>−{fmt(totalNewExpenses)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold text-[var(--fg-1)] border-t border-[var(--border)] pt-2 mt-2">
-                <span>{t('sales.pos.expectedCash')}</span><span>{fmt(adjustedExpectedCash)}</span>
-              </div>
-            </div>
-            {movements.length > 0 && (
-              <div className="p-3 bg-[var(--bg)] rounded-lg">
-                <p className="text-xs font-medium text-[var(--fg-3)] mb-2">{t('sales.pos.cashMovementsInShift')}</p>
-                <div className="space-y-1.5">
-                  {movements.map(m => (
-                    <div key={m.id} className="flex justify-between items-center text-xs">
-                      <span className={m.type === 'CASH_IN' ? 'text-success' : 'text-danger'}>
-                        {m.type === 'CASH_IN' ? '+' : '−'} {m.reason || (m.type === 'CASH_IN' ? t('sales.pos.cashIn') : t('sales.pos.paidOut'))}
-                      </span>
-                      <span className="text-[var(--fg-2)]">{fmt(m.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* รายการใช้เงินสด / นำเงินออกจากเก๊ะก่อนปิดกะ */}
-            <div className="border border-[var(--border)] rounded-xl p-3 bg-[var(--bg)]">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-[var(--fg-2)] flex items-center gap-1.5">
-                  <Receipt className="w-3.5 h-3.5 text-warning" />
-                  {t('sales.pos.cashExpenses')} ({expenses.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setExpenses(prev => [...prev, { id: Date.now().toString(), reason: '', amount: '' }])}
-                  className="px-2.5 py-1 text-xs font-medium rounded-md bg-phopy-indigo/10 text-phopy-indigo hover:bg-phopy-indigo/20 flex items-center gap-1 border border-phopy-indigo/30 transition-colors"
-                >
-                  <Plus className="w-3 h-3" /> {t('sales.pos.addCashExpense')}
-                </button>
-              </div>
-
-              {diff < -0.01 && expenses.length === 0 && (
-                <div className="mb-2 p-2 rounded-lg bg-danger/10 border border-danger/20 text-xs text-danger flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{t('sales.pos.cashDiscrepancyHint', { amount: fmt(Math.abs(diff)) })}</span>
-                </div>
-              )}
-
-              {expenses.length === 0 ? (
-                <p className="text-xs text-[var(--fg-4)] py-1 italic text-center">{t('sales.pos.noExpensesAdded')}</p>
-              ) : (
-                <div className="space-y-2 mt-2 max-h-44 overflow-y-auto pr-1">
-                  {expenses.map((exp, idx) => (
-                    <div key={exp.id} className="flex items-center gap-2 bg-[var(--surface)] p-2 rounded-lg border border-[var(--border)]">
-                      <span className="text-xs text-[var(--fg-4)] w-4 text-center">{idx + 1}.</span>
-                      <input
-                        type="text"
-                        placeholder={t('sales.pos.expenseReasonPlaceholder')}
-                        value={exp.reason}
-                        onChange={e => {
-                          const val = e.target.value
-                          setExpenses(prev => prev.map(item => item.id === exp.id ? { ...item, reason: val } : item))
-                        }}
-                        className="flex-1 min-w-0 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
-                      />
-                      <div className="relative w-24 shrink-0">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[var(--fg-4)]">฿</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={exp.amount}
-                          onChange={e => {
-                            const val = e.target.value
-                            setExpenses(prev => prev.map(item => item.id === exp.id ? { ...item, amount: val } : item))
-                          }}
-                          className="w-full pl-5 pr-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-xs font-semibold text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo text-right"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setExpenses(prev => prev.filter(item => item.id !== exp.id))}
-                        className="p-1 text-danger hover:bg-danger/10 rounded transition-colors"
-                        title={t('sales.common.delete')}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  {totalNewExpenses > 0 && (
-                    <div className="flex justify-between items-center text-xs font-medium text-[var(--fg-2)] pt-1 px-1">
-                      <span>{t('sales.pos.totalExpenses')}:</span>
-                      <span className="text-danger font-bold">−฿{fmt(totalNewExpenses)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <Field label={t('sales.pos.countCash')}>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-3)] text-sm">฿</span>
-                <input type="number" value={closingCash}
-                  onChange={e => setClosingCash(e.target.value)}
-                  onFocus={e => e.target.select()}
-                  className="w-full pl-8 pr-3 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-xl font-bold focus:outline-none focus:border-phopy-indigo" />
-              </div>
-            </Field>
-            <div className={`flex justify-between items-center p-3 rounded-lg text-sm font-medium ${
-              Math.abs(diff) < 0.01 ? 'bg-success/10 border border-success/30 text-success'
-              : diff > 0 ? 'bg-[var(--warning-soft)] border border-warning/30 text-warning'
-              : 'bg-[var(--danger-soft)] border border-danger/30 text-danger'
-            }`}>
-              <span>{t('sales.pos.difference')}</span>
-              <span>{diff >= 0 ? '+' : ''}{fmt(diff)} {Math.abs(diff) < 0.01 ? t('sales.pos.match') : diff > 0 ? t('sales.pos.over') : t('sales.pos.short')}</span>
-            </div>
-            <Field label={t('sales.pos.noteOptional')}>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none"
-                placeholder={t('sales.pos.notePlaceholder')} />
-            </Field>
-          </div>
-          <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
-            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
-            <button onClick={handleClose} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 disabled:opacity-50">
-              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {t('sales.pos.confirmCloseShift')}
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    )
-  }
-
-  const VoidBillModal = ({ bill, onClose }: { bill: POSPendingBill; onClose: () => void }) => {
-    const [reason, setReason] = useState('')
-    const [saving, setSaving] = useState(false)
-    const approvalGate = useApprovalGate()
-    const handleVoid = async () => {
-      if (!reason.trim()) { toast.error(t('sales.validation.cancelReason')); return }
-      try {
-        setSaving(true)
-        const res = await posService.voidBill(bill.id, reason)
-        // ติดด่านอนุมัติ: บิลยังไม่ถูกยกเลิก — เปิด popup ค้างบนโมดัลเดิม ไม่ปิดหน้าต่าง
-        if (approvalGate.handleResponse(res)) { setSaving(false); return }
-        if (res.success) {
-          toast.success(`${t('sales.actions.voidBill')} ${bill.bill_number} ${t('sales.common.success')}`)
-          fetchPOSDailySales()
-          fetchPOSShifts()
-          onClose()
-        }
-      } catch (err: any) {
-        toast.error(err.response?.data?.message || t('sales.toast.cancelBillFailed'))
-      } finally { setSaving(false) }
-    }
-    return (
-      <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        {approvalGate.modal}
-        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-[var(--surface)] border border-danger/40 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto">
-          <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
-            <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-              <Ban className="w-5 h-5 text-danger" /> {t('sales.actions.voidBill')}
-            </h2>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="p-5 space-y-4">
-            <div className="bg-[var(--danger-soft)] border border-danger/20 rounded-xl p-4">
-              <p className="text-sm font-medium text-[var(--fg-1)]">{bill.bill_number}</p>
-              <p className="text-xs text-[var(--fg-3)] mt-0.5">
-                {bill.display_name} · {fmt(bill.total_amount)} · {bill.payment_method === 'CASH' ? t('sales.paymentMethod.cash') : t('sales.paymentMethod.qrTransfer')}
-              </p>
-            </div>
-            <div className="bg-[var(--warning-soft)] border border-yellow-500/20 rounded-lg px-3 py-2 text-xs text-warning">
-              {t('sales.pos.voidJournalHint')}
-            </div>
-            <Field label={t('sales.labels.cancelReason')}>
-              <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
-                className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-red-400 resize-none"
-                placeholder={t('sales.placeholders.cancelReason')} />
-            </Field>
-          </div>
-          <div className="p-5 border-t border-[var(--border)] flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.close')}</button>
-            <button onClick={handleVoid} disabled={saving || !reason.trim()}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 hover:bg-red-500 text-white font-semibold rounded-lg disabled:opacity-50">
-              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Ban className="w-4 h-4" />}
-              {t('sales.pos.confirmVoidBill')}
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    )
-  }
-
   const POSDailyContent = () => (
     <div className="space-y-5 max-w-2xl">
       <div className="flex justify-between items-center">
@@ -2406,11 +2446,11 @@ const Sales = () => {
         <PendingBillsPanel bills={posPendingBills} onVoid={b => setVoidingBill(b)} />
       )}
 
-      {showOpenShift && <OpenShiftModal onClose={() => setShowOpenShift(false)} />}
+      {showOpenShift && <OpenShiftModal onClose={() => setShowOpenShift(false)} onOpened={fetchPOSShifts} />}
       {showCloseShift && posCurrentShift && (
-        <CloseShiftModal shift={posCurrentShift} onClose={() => setShowCloseShift(false)} />
+        <CloseShiftModal shift={posCurrentShift} onClose={() => setShowCloseShift(false)} onClosed={fetchPOSShifts} />
       )}
-      {voidingBill && <VoidBillModal bill={voidingBill} onClose={() => setVoidingBill(null)} />}
+      {voidingBill && <VoidBillModal bill={voidingBill} onClose={() => setVoidingBill(null)} onVoided={() => { fetchPOSDailySales(); fetchPOSShifts() }} />}
     </div>
   )
 
@@ -2777,6 +2817,7 @@ interface LineItem {
   unit: string
   unitPrice: number
   discountPercent: number
+  quotationItemId?: string
   /** true เมื่อผู้ใช้พิมพ์ราคาเองในแถวนี้ — กันไม่ให้การเปลี่ยนหน่วยทับราคาที่ตั้งใจพิมพ์ */
   priceEdited?: boolean
 }
@@ -3428,6 +3469,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           unit: it.unit || '',
           unitPrice: it.unit_price,
           discountPercent: it.discount_percent || 0,
+          quotationItemId: it.quotation_item_id || undefined,
           priceEdited: true,
         }))
       : [{ productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }]
@@ -3474,6 +3516,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
                   unit: it.unit || '',
                   unitPrice: it.unit_price,
                   discountPercent: it.discount_percent || 0,
+                  quotationItemId: it.id,
                 }
               }))
             }
@@ -3490,6 +3533,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   const handleSave = async () => {
     if (!customer) { toast.error(t('sales.validation.selectCustomer')); return }
     if (items.every(it => !it.productName && !it.productId)) { toast.error(t('sales.validation.addItem')); return }
+    if (invalidLineValues(items, discountAmount, extraCharge.amount)) { toast.error(t('sales.validation.itemValues', { defaultValue: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })); return }
     setSaving(true)
     try {
       const { rate, inclusive } = vatModeToFields(effectiveVatMode)
@@ -3510,6 +3554,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           unit: it.unit,
           unitPrice: it.unitPrice,
           discountPercent: it.discountPercent,
+          quotationItemId: it.quotationItemId,
         })),
       }
       if (isEdit) {
@@ -4030,8 +4075,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                 {/* Totals */}
                 <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
                   <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.invoiceDetail.summary')}</p>
-                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.invoiceDetail.beforeTax')}</span><span>{fmt((detail?.total_amount || 0) / (detail?.vat_rate ? (1 + detail.vat_rate / 100) : 1))}</span></div>
-                  {detail?.vat_amount > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.tax')} {detail?.vat_rate || 7}%</span><span>{fmt(detail?.vat_amount)}</span></div>}
+                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.invoiceDetail.beforeTax')}</span><span>{fmt(detail?.subtotal ?? ((detail?.total_amount || 0) - (detail?.tax_amount || detail?.vat_amount || 0)))}</span></div>
+                  {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{fmt(detail.discount_amount)}</span></div>}
+                  {(detail?.extra_charge_amount || 0) > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{detail.extra_charge_label || t('common.extraCharge')}</span><span>+{fmt(detail.extra_charge_amount)}</span></div>}
+                  {((detail?.tax_amount ?? detail?.vat_amount) || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate ?? detail?.vat_rate ?? 7}%)</span><span>+{fmt(detail?.tax_amount ?? detail?.vat_amount)}</span></div>}
                   <div className="flex justify-between text-[var(--fg-2)] border-t border-[var(--border)]/50 pt-1.5"><span>{t('sales.common.total')}</span><span>{fmt(detail?.total_amount)}</span></div>
                   {(detail?.withholdingTax || []).length > 0 && (
                     <>

@@ -15,9 +15,9 @@ router.get('/', async (req: Request, res: Response) => {
     
     const quotations = db.prepare(`
       SELECT q.*, c.name as customer_name, c.code as customer_code,
-        (SELECT COUNT(*) FROM quotation_items WHERE quotation_id = q.id) as item_count
+        (SELECT COUNT(*) FROM quotation_items WHERE quotation_id = q.id AND tenant_id = q.tenant_id) as item_count
       FROM quotations q
-      LEFT JOIN customers c ON q.customer_id = c.id
+      LEFT JOIN customers c ON q.customer_id = c.id AND c.tenant_id = q.tenant_id
       WHERE q.tenant_id = ?
       ORDER BY q.created_at DESC
     `).all(tenantId)
@@ -37,7 +37,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const quotation = db.prepare(`
       SELECT q.*, c.name as customer_name, c.code as customer_code, c.tax_id as customer_tax_id, c.address as customer_address, c.email as customer_email, c.phone as customer_phone
       FROM quotations q
-      LEFT JOIN customers c ON q.customer_id = c.id
+      LEFT JOIN customers c ON q.customer_id = c.id AND c.tenant_id = q.tenant_id
       WHERE q.id = ? AND q.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -50,8 +50,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT qi.*, COALESCE(si.name, qi.product_name) as product_name, si.sku as product_code
       FROM quotation_items qi
       LEFT JOIN stock_items si ON qi.stock_item_id = si.id AND si.tenant_id = qi.tenant_id
-      WHERE qi.quotation_id = ?
-    `).all(req.params.id)
+      WHERE qi.quotation_id = ? AND qi.tenant_id = ?
+    `).all(req.params.id, tenantId)
 
     res.json({ success: true, data: { ...quotation, items } })
   } catch (error) {
@@ -70,10 +70,30 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
 
+    const customer = db.prepare('SELECT id, tenant_id, campaign FROM customers WHERE id = ?').get(customerId) as any
+    if (customer && customer.tenant_id !== tenantId) {
+      return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
+    }
+
     // แคมเปญ: ไม่ส่งมา → เอาจากลูกค้ารายนี้ (ผูกดีลเข้าแคมเปญเดิมของลูกค้าโดยอัตโนมัติ)
     // ส่งมาเป็น '' ชัดเจน (ล้างค่า) ต่างจากไม่ส่งมาเลย (undefined) — ใช้ default เฉพาะกรณีหลัง
     const campaign = req.body.campaign !== undefined ? (req.body.campaign || null)
-      : (db.prepare('SELECT campaign FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any)?.campaign || null
+      : (customer?.campaign || null)
+
+    // ตรวจสอบความถูกต้องของรายการ ราคา และส่วนลด
+    if (items && items.length > 0) {
+      const invalid = items.some((item: any) =>
+        !(Number(item.quantity) > 0) ||
+        Number(item.unitPrice) < 0 ||
+        Number(item.discountPercent || 0) < 0 ||
+        Number(item.discountPercent || 0) > 100
+      )
+      if (invalid || Number(discountAmount || 0) < 0 || Number(req.body.extraChargeAmount || 0) < 0) {
+        return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
+      }
+    } else if (Number(discountAmount || 0) < 0 || Number(req.body.extraChargeAmount || 0) < 0) {
+      return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
+    }
 
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
     if ((Number(taxRate) || 0) > 0 && !isVatRegistered(tenantId)) {
@@ -141,7 +161,7 @@ router.post('/', async (req: Request, res: Response) => {
     rememberContactVatMode(tenantId, 'customer', customerId, tax, inclusive)
 
     const quotation = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(id, tenantId)
-    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ?').all(id)
+    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ? AND tenant_id = ?').all(id, tenantId)
 
     res.status(201).json({ success: true, data: { ...quotation, items: quotationItems } })
   } catch (error) {
@@ -163,6 +183,26 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ success: false, message: 'Quotation not found' })
     if (!['DRAFT', 'SENT'].includes(existing.status)) {
       return res.status(400).json({ success: false, message: `ไม่สามารถแก้ไขได้ — สถานะ ${existing.status}` })
+    }
+
+    if (customerId) {
+      const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
+      if (!cust) return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลลูกค้าในกิจการนี้' })
+    }
+
+    // ตรวจสอบความถูกต้องของรายการ ราคา และส่วนลด
+    if (items && items.length > 0) {
+      const invalid = items.some((item: any) =>
+        !(Number(item.quantity) > 0) ||
+        Number(item.unitPrice) < 0 ||
+        Number(item.discountPercent || 0) < 0 ||
+        Number(item.discountPercent || 0) > 100
+      )
+      if (invalid || (discountAmount !== undefined && Number(discountAmount) < 0) || (req.body.extraChargeAmount !== undefined && Number(req.body.extraChargeAmount) < 0)) {
+        return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
+      }
+    } else if ((discountAmount !== undefined && Number(discountAmount) < 0) || (req.body.extraChargeAmount !== undefined && Number(req.body.extraChargeAmount) < 0)) {
+      return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
     }
 
     let subtotal = 0
@@ -206,7 +246,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       `).run(customerId || null, expiryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, campaign, notes ?? null, now, req.params.id, tenantId)
 
       if (items) {
-        db.prepare('DELETE FROM quotation_items WHERE quotation_id = ?').run(req.params.id)
+        db.prepare('DELETE FROM quotation_items WHERE quotation_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
         const ins = db.prepare(`
           INSERT INTO quotation_items (id, tenant_id, quotation_id, stock_item_id, product_id, product_name, quantity, unit, unit_price, discount_percent, total_price, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -225,7 +265,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     rememberContactVatMode(tenantId, 'customer', customerId || existing.customer_id, tax, !!inclusive)
 
     const quotation = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ?').all(req.params.id)
+    const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ? AND tenant_id = ?').all(req.params.id, tenantId)
     res.json({ success: true, data: { ...quotation, items: quotationItems } })
   } catch (error) {
     console.error('Update quotation error:', error)
@@ -294,7 +334,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบเสนอราคาสถานะ DRAFT เท่านั้น' })
     }
     const tx = db.transaction(() => {
-      db.prepare('DELETE FROM quotation_items WHERE quotation_id = ?').run(req.params.id)
+      db.prepare('DELETE FROM quotation_items WHERE quotation_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
       db.prepare('DELETE FROM quotations WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
     })
     tx()
