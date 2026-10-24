@@ -9,126 +9,352 @@ import {
   AlertCircle,
   Loader2,
   Ban,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  RefreshCw,
+  GitBranch,
+  Box,
+  Check,
 } from 'lucide-react'
 import bomService, { BOM } from '../../services/bom'
 import materialsService, { Material } from '../../services/materials'
+import api from '../../services/api'
 import { unitLabel } from '../../hooks/useUnits'
+import { SearchableDropdown } from '../common/SearchableDropdown'
 
-interface MaterialRequirement {
+interface RequirementRow {
+  rowKey: string
+  itemType: 'MATERIAL' | 'CHILD_BOM'
   materialId: string
   materialName: string
   materialCode: string
-  requiredQuantity: number
+  recipeQuantity: number
+  recipeUnit: string
+  requiredStockQty: number
+  stockUnit: string
   availableStock: number
-  unit: string
-  unitCost: number
-  totalCost: number
-  status: 'OK' | 'LOW' | 'INSUFFICIENT' | 'OUT_OF_STOCK'
   shortage: number
+  originalUnitCost: number
+  simulatedUnitCost: number
+  originalTotal: number
+  simulatedTotal: number
+  change: number
+  changePercent: number
+  status: 'OK' | 'LOW' | 'INSUFFICIENT' | 'OUT_OF_STOCK' | 'CHILD_BOM'
 }
+
+const getBomProductName = (b: any): string =>
+  b?.productName || b?.product_name || b?.product?.name || '-'
+
+const getBomProductCode = (b: any): string =>
+  b?.productCode || b?.product_code || b?.product?.code || ''
+
+const getBomOutputQty = (b: any): number => {
+  const q = Number(b?.outputQty ?? b?.output_qty)
+  return q > 0 ? q : 1
+}
+
+const getBomOutputUnit = (b: any): string =>
+  b?.outputUnit || b?.output_unit || b?.productUnit || b?.product_unit || b?.product?.unit || ''
 
 function ProductionCalculator() {
   const { t } = useTranslation()
   const [boms, setBoms] = useState<BOM[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
+  const [bomLoading, setBomLoading] = useState(false)
 
   const [selectedBomId, setSelectedBomId] = useState('')
-  const [quantity, setQuantity] = useState(1)
-  const [requirements, setRequirements] = useState<MaterialRequirement[]>([])
-  const [totalCost, setTotalCost] = useState(0)
+  const [selectedBomFull, setSelectedBomFull] = useState<any | null>(null)
+  const [quantity, setQuantity] = useState<number>(1)
+
+  // Unit conversion factors cache: `${materialId}:${fromUnit}->${toUnit}` => factor
+  const [conversionFactors, setConversionFactors] = useState<Record<string, number>>({})
+  // Simulated unit prices keyed by rowKey (materialId or childBomId)
+  const [priceChanges, setPriceChanges] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    loadData()
+    loadInitialData()
   }, [])
 
-  const loadData = async () => {
+  const loadInitialData = async () => {
     setLoading(true)
     try {
       const [bomsData, materialsData] = await Promise.all([
         bomService.getAll(),
         materialsService.getAll(),
       ])
-      setBoms((bomsData || []).filter((b) => b.status === 'ACTIVE'))
-      setMaterials(materialsData)
+      setBoms(bomsData || [])
+      setMaterials(materialsData || [])
     } catch (err) {
-      console.error('Failed to load data:', err)
+      console.error('Failed to load BOM/materials data:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  const calculateRequirements = () => {
-    if (!selectedBomId || quantity <= 0) {
-      setRequirements([])
-      setTotalCost(0)
+  // Fetch full BOM (with items) when selectedBomId changes
+  useEffect(() => {
+    if (!selectedBomId) {
+      setSelectedBomFull(null)
+      setPriceChanges({})
       return
     }
 
-    const selectedBom = boms.find((b) => b.id === selectedBomId)
-    if (!selectedBom) return
+    let cancelled = false
+    const loadBomDetail = async () => {
+      setBomLoading(true)
+      try {
+        const full = await bomService.getById(selectedBomId)
+        if (cancelled) return
+        setSelectedBomFull(full)
 
-    // BOM ไม่ได้ผลิตได้แค่ 1 หน่วยเสมอไปอีกต่อไป (R2) — bomItem.quantity คือวัตถุดิบที่ต้องเบิก
-    // "ต่อ 1 ชุด" ซึ่ง 1 ชุดผลิตได้ outputQty หน่วย ดังนั้นต้องแปลง "จำนวนที่ต้องการผลิต" เป็น
-    // "จำนวนชุด" ก่อน แล้วค่อยคูณ ไม่ใช่คูณ quantity ตรง ๆ (ไม่งั้นจะได้วัตถุดิบเกินจริงเป็นเท่าตัว)
-    const outputQtyPerBatch = Number((selectedBom as any).outputQty ?? (selectedBom as any).output_qty) || 1
-    const batches = quantity / outputQtyPerBatch
+        const items: any[] = full.items || full.materials || []
+        const initialPrices: Record<string, number> = {}
+        const newFactors: Record<string, number> = {}
 
-    const reqs: MaterialRequirement[] = (selectedBom.materials || []).map((bomItem) => {
-      const material = materials.find((m) => m.id === bomItem.materialId)
-      const requiredQty = Number(bomItem.quantity) * batches
-      const availableStock = material?.currentStock || 0
-      const shortage = Math.max(0, requiredQty - availableStock)
-      const unitCost = material ? Number(material.unitCost) : 0
+        for (const item of items) {
+          const isChild = (item.itemType || item.item_type) === 'CHILD_BOM'
+          if (isChild) {
+            const cId = item.childBomId || item.child_bom_id
+            const childBom =
+              boms.find((b) => b.id === cId) ||
+              (full as any).availableChildBOMs?.find((b: any) => b.id === cId)
+            initialPrices[`child:${cId}`] = Number(childBom?.totalCost) || 0
+          } else {
+            const mId = item.materialId || item.material_id
+            const mat = materials.find((m) => m.id === mId) || item.material
+            const unitCost = Number(mat?.unitCost ?? item.material?.unitCost) || 0
+            initialPrices[`mat:${mId}`] = unitCost
 
-      let status: 'OK' | 'LOW' | 'INSUFFICIENT' | 'OUT_OF_STOCK' = 'OK'
-      if (availableStock === 0) {
+            const stockUnit = mat?.unit || item.material?.unit || ''
+            const recipeUnit = item.unit || stockUnit
+            if (mId && recipeUnit && stockUnit && recipeUnit !== stockUnit) {
+              const key = `${mId}:${recipeUnit}->${stockUnit}`
+              try {
+                const res = await api.post('/materials/unit-conversions/convert', {
+                  quantity: 1,
+                  from_unit: recipeUnit,
+                  to_unit: stockUnit,
+                  material_id: mId,
+                })
+                const converted = res.data?.data?.converted
+                if (typeof converted === 'number' && converted > 0) {
+                  newFactors[key] = converted
+                }
+              } catch {
+                // fallback factor 1
+              }
+            }
+          }
+        }
+
+        if (!cancelled) {
+          setPriceChanges(initialPrices)
+          if (Object.keys(newFactors).length > 0) {
+            setConversionFactors((prev) => ({ ...prev, ...newFactors }))
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch BOM detail:', err)
+      } finally {
+        if (!cancelled) setBomLoading(false)
+      }
+    }
+
+    loadBomDetail()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedBomId, materials, boms])
+
+  const selectedBom = selectedBomFull || boms.find((b) => b.id === selectedBomId)
+  const outputQtyPerBatch = getBomOutputQty(selectedBom)
+  const outputUnit = getBomOutputUnit(selectedBom)
+  const safeQuantity = Math.max(0, Number(quantity) || 0)
+  const batches = safeQuantity / outputQtyPerBatch
+
+  // Build unified requirements + cost simulation rows
+  const rows: RequirementRow[] = (() => {
+    if (!selectedBomFull || safeQuantity <= 0) return []
+    const items: any[] = selectedBomFull.items || selectedBomFull.materials || []
+
+    return items.map((item) => {
+      const isChild = (item.itemType || item.item_type) === 'CHILD_BOM'
+      if (isChild) {
+        const cId = item.childBomId || item.child_bom_id || ''
+        const rowKey = `child:${cId}`
+        const childBom =
+          boms.find((b) => b.id === cId) ||
+          (selectedBomFull as any).availableChildBOMs?.find((b: any) => b.id === cId)
+        const name =
+          item.childBomProductName ||
+          item.child_bom_product_name ||
+          getBomProductName(childBom)
+        const code =
+          item.childBomProductCode ||
+          item.child_bom_product_code ||
+          getBomProductCode(childBom)
+        const reqQty = Number(item.quantity) * batches
+        const childUnit = getBomOutputUnit(childBom) || item.unit || 'ชุด'
+        const origCost = Number(childBom?.totalCost) || 0
+        const simCost = priceChanges[rowKey] ?? origCost
+        const origTotal = reqQty * origCost
+        const simTotal = reqQty * simCost
+        const change = simTotal - origTotal
+        const changePercent = origTotal > 0 ? (change / origTotal) * 100 : 0
+
+        return {
+          rowKey,
+          itemType: 'CHILD_BOM',
+          materialId: cId,
+          materialName: name,
+          materialCode: code,
+          recipeQuantity: reqQty,
+          recipeUnit: childUnit,
+          requiredStockQty: reqQty,
+          stockUnit: childUnit,
+          availableStock: 0,
+          shortage: 0,
+          originalUnitCost: origCost,
+          simulatedUnitCost: simCost,
+          originalTotal: origTotal,
+          simulatedTotal: simTotal,
+          change,
+          changePercent,
+          status: 'CHILD_BOM',
+        }
+      }
+
+      const mId = item.materialId || item.material_id || ''
+      const rowKey = `mat:${mId}`
+      const mat = materials.find((m) => m.id === mId)
+      const name = mat?.name || item.material?.name || '-'
+      const code = mat?.code || item.material?.code || ''
+      const stockUnit = mat?.unit || item.material?.unit || item.unit || ''
+      const recipeUnit = item.unit || stockUnit
+      const factorKey = `${mId}:${recipeUnit}->${stockUnit}`
+      const factor = recipeUnit !== stockUnit ? (conversionFactors[factorKey] ?? 1) : 1
+
+      const recipeQty = Number(item.quantity) * batches
+      const requiredStockQty = recipeQty * factor
+      const availableStock = Number(mat?.currentStock) || 0
+      const shortage = Math.max(0, requiredStockQty - availableStock)
+
+      const origCost = Number(mat?.unitCost ?? item.material?.unitCost) || 0
+      const simCost = priceChanges[rowKey] ?? origCost
+      const origTotal = requiredStockQty * origCost
+      const simTotal = requiredStockQty * simCost
+      const change = simTotal - origTotal
+      const changePercent = origTotal > 0 ? (change / origTotal) * 100 : 0
+
+      let status: RequirementRow['status'] = 'OK'
+      if (availableStock <= 0) {
         status = 'OUT_OF_STOCK'
-      } else if (availableStock < requiredQty) {
+      } else if (availableStock < requiredStockQty) {
         status = 'INSUFFICIENT'
-      } else if (availableStock < requiredQty * 1.2) {
+      } else if (availableStock < requiredStockQty * 1.2) {
         status = 'LOW'
       }
 
       return {
-        materialId: bomItem.materialId ?? '',
-        materialName: bomItem.material?.name ?? '',
-        materialCode: bomItem.material?.code ?? '',
-        requiredQuantity: requiredQty,
+        rowKey,
+        itemType: 'MATERIAL',
+        materialId: mId,
+        materialName: name,
+        materialCode: code,
+        recipeQuantity: recipeQty,
+        recipeUnit,
+        requiredStockQty,
+        stockUnit,
         availableStock,
-        unit: bomItem.unit ?? '',
-        unitCost,
-        totalCost: requiredQty * unitCost,
-        status,
         shortage,
+        originalUnitCost: origCost,
+        simulatedUnitCost: simCost,
+        originalTotal: origTotal,
+        simulatedTotal: simTotal,
+        change,
+        changePercent,
+        status,
       }
     })
+  })()
 
-    setRequirements(reqs)
-    setTotalCost(reqs.reduce((sum, r) => sum + r.totalCost, 0))
+  const handlePriceChange = (rowKey: string, val: number) => {
+    setPriceChanges((prev) => ({ ...prev, [rowKey]: Math.max(0, val) }))
   }
 
-  useEffect(() => {
-    calculateRequirements()
-  }, [selectedBomId, quantity, boms, materials])
+  const applyPercentageChange = (percent: number) => {
+    const updated: Record<string, number> = {}
+    rows.forEach((r) => {
+      updated[r.rowKey] = Math.round(r.originalUnitCost * (1 + percent / 100) * 100) / 100
+    })
+    setPriceChanges((prev) => ({ ...prev, ...updated }))
+  }
 
-  const getStatusIcon = (status: string) => {
+  const resetPrices = () => {
+    const initial: Record<string, number> = {}
+    rows.forEach((r) => {
+      initial[r.rowKey] = r.originalUnitCost
+    })
+    setPriceChanges(initial)
+  }
+
+  const materialRows = rows.filter((r) => r.itemType === 'MATERIAL')
+  const hasZeroStock = materialRows.some((r) => r.status === 'OUT_OF_STOCK')
+  const hasInsufficient = materialRows.some((r) => r.status === 'INSUFFICIENT')
+  const canProduce = rows.length > 0 && !hasZeroStock && !hasInsufficient
+  const readyCount = materialRows.filter((r) => r.status === 'OK' || r.status === 'LOW').length
+
+  const originalTotal = rows.reduce((sum, r) => sum + r.originalTotal, 0)
+  const simulatedTotal = rows.reduce((sum, r) => sum + r.simulatedTotal, 0)
+  const totalChange = simulatedTotal - originalTotal
+  const totalChangePercent = originalTotal > 0 ? (totalChange / originalTotal) * 100 : 0
+
+  const originalPerUnit = safeQuantity > 0 ? originalTotal / safeQuantity : 0
+  const simulatedPerUnit = safeQuantity > 0 ? simulatedTotal / safeQuantity : 0
+  const changePerUnit = simulatedPerUnit - originalPerUnit
+
+  const getStatusBadge = (status: RequirementRow['status']) => {
     switch (status) {
       case 'OK':
-        return <CheckCircle className="w-5 h-5 text-success" />
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--success-soft)] text-success">
+            <CheckCircle className="w-3.5 h-3.5" />
+            พร้อมผลิต
+          </span>
+        )
       case 'LOW':
-        return <AlertTriangle className="w-5 h-5 text-warning" />
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--warning-soft)] text-warning">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            ใกล้หมด
+          </span>
+        )
       case 'INSUFFICIENT':
-        return <AlertCircle className="w-5 h-5 text-danger" />
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--danger-soft)] text-danger">
+            <AlertCircle className="w-3.5 h-3.5" />
+            ไม่พอ
+          </span>
+        )
       case 'OUT_OF_STOCK':
-        return <AlertCircle className="w-5 h-5 text-red-500" />
-      default:
-        return null
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-500">
+            <Ban className="w-3.5 h-3.5" />
+            สต็อกหมด
+          </span>
+        )
+      case 'CHILD_BOM':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-500">
+            <GitBranch className="w-3.5 h-3.5" />
+            Child BOM
+          </span>
+        )
     }
   }
-
-  const hasZeroStock = requirements.some((r) => r.availableStock === 0)
-  const canProduce = requirements.length > 0 && requirements.every((r) => r.status !== 'INSUFFICIENT') && !hasZeroStock
 
   if (loading) {
     return (
@@ -140,283 +366,605 @@ function ProductionCalculator() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="phopy-card p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center">
-            <Calculator className="w-6 h-6 text-white" />
+      {/* Control Panel */}
+      <div className="phopy-card p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-phopy-indigo to-purple-500 flex items-center justify-center shadow-1">
+              <Calculator className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-[var(--fg-1)]">
+                คำนวณการผลิต & จำลองต้นทุน
+              </h2>
+              <p className="text-sm text-[var(--fg-3)]">
+                ตรวจสอบความพร้อมของวัตถุดิบในคลัง คำนวณปริมาณที่ต้องใช้ และจำลองผลกระทบเมื่อราคาวัตถุดิบเปลี่ยนแปลง
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-[var(--fg-1)]">Production Calculator</h2>
-            <p className="text-sm text-[var(--fg-3)]">
-              Calculate material requirements for production
-            </p>
-          </div>
+
+          {/* Quick Price Simulation Controls */}
+          {selectedBomId && rows.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-[var(--fg-3)] mr-1">
+                จำลองปรับราคาวัตถุดิบ:
+              </span>
+              <button
+                type="button"
+                onClick={() => applyPercentageChange(-10)}
+                className="px-2.5 py-1.5 bg-[var(--success-soft)] text-success rounded-lg hover:opacity-85 text-xs font-semibold transition-opacity"
+              >
+                -10%
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPercentageChange(-5)}
+                className="px-2.5 py-1.5 bg-[var(--success-soft)] text-success rounded-lg hover:opacity-85 text-xs font-semibold transition-opacity"
+              >
+                -5%
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPercentageChange(5)}
+                className="px-2.5 py-1.5 bg-[var(--danger-soft)] text-danger rounded-lg hover:opacity-85 text-xs font-semibold transition-opacity"
+              >
+                +5%
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPercentageChange(10)}
+                className="px-2.5 py-1.5 bg-[var(--danger-soft)] text-danger rounded-lg hover:opacity-85 text-xs font-semibold transition-opacity"
+              >
+                +10%
+              </button>
+              <button
+                type="button"
+                onClick={resetPrices}
+                className="px-3 py-1.5 border border-[var(--border)] bg-[var(--surface-2)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--surface)] flex items-center gap-1.5 text-xs font-medium transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                รีเซ็ตราคาจริง
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">Select BOM</label>
-            <select
+        {/* BOM Selection & Production Quantity */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end pt-2 border-t border-[var(--border)]">
+          <div className="md:col-span-7">
+            <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+              เลือกสูตรการผลิต (BOM)
+            </label>
+            <SearchableDropdown
               value={selectedBomId}
-              onChange={(e) => setSelectedBomId(e.target.value)}
-              className="phopy-input w-full"
-            >
-              <option value="">-- Select a BOM --</option>
-              {(boms || []).map((bom) => (
-                <option key={bom.id} value={bom.id}>
-                  {bom.product.name} ({bom.version})
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedBomId}
+              options={(boms || []).map((bom) => {
+                const name = getBomProductName(bom)
+                const code = getBomProductCode(bom)
+                const u = getBomOutputUnit(bom)
+                const cost = Number(bom.totalCost || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                const statusTag = bom.status === 'ACTIVE' ? '' : ` [${bom.status}]`
+                return {
+                  id: bom.id,
+                  label: `${code ? `${code} - ` : ''}${name} (${bom.version})${statusTag} — ฿${cost}${u ? `/${unitLabel(u)}` : ''}`,
+                  searchText: `${code} ${name} ${bom.version}`,
+                }
+              })}
+              placeholder="ค้นหาหรือเลือกสูตรการผลิต (BOM)..."
+            />
           </div>
 
-          <div>
-            <label className="block text-sm text-[var(--fg-3)] mb-2">
-              Production Quantity
-              {(() => {
-                const b = boms.find((x) => x.id === selectedBomId) as any
-                const outUnit = b?.outputUnit || b?.output_unit
-                return outUnit ? (
-                  <span className="text-[var(--fg-4)] font-normal"> ({t('bom.common.unitLabel')}: {unitLabel(outUnit)})</span>
-                ) : null
-              })()}
-            </label>
+          <div className="md:col-span-5">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium text-[var(--fg-2)]">
+                จำนวนที่ต้องการผลิต
+                {outputUnit && (
+                  <span className="text-[var(--fg-3)] font-normal">
+                    {' '}({unitLabel(outputUnit)})
+                  </span>
+                )}
+              </label>
+              <div className="flex items-center gap-1">
+                {[1, 10, 50, 100].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setQuantity(preset)}
+                    className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                      quantity === preset
+                        ? 'bg-[var(--primary)] text-white'
+                        : 'bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
             <input
               type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+              value={quantity || ''}
+              onChange={(e) => setQuantity(Math.max(0, parseFloat(e.target.value) || 0))}
               min="1"
-              className="phopy-input w-full"
+              step="any"
+              className="phopy-input w-full h-[42px] text-sm tabular-nums"
             />
           </div>
         </div>
+
+        {selectedBom && outputQtyPerBatch > 1 && (
+          <div className="text-xs text-[var(--fg-3)] flex items-center gap-2 pt-1">
+            <span>
+              * สูตรนี้ 1 ชุดผลิตได้ <strong>{outputQtyPerBatch.toLocaleString('th-TH')} {unitLabel(outputUnit)}</strong>
+              {' '}→ การผลิต {safeQuantity.toLocaleString('th-TH')} {unitLabel(outputUnit)} ใช้{' '}
+              <strong className="text-[var(--primary)]">{batches.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ชุดผลิต</strong>
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Results */}
-      {selectedBomId && requirements.length > 0 && (
+      {bomLoading && (
+        <div className="phopy-card p-12 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-[var(--primary)] animate-spin" />
+        </div>
+      )}
+
+      {/* Results & Simulation */}
+      {!bomLoading && selectedBomId && rows.length > 0 && (
         <>
-          {/* Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 4 KPI Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Production Status */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="phopy-card p-4"
+              className={`phopy-card p-4 border ${
+                canProduce
+                  ? 'border-success/40'
+                  : hasZeroStock
+                  ? 'border-red-500/60'
+                  : 'border-danger/50'
+              }`}
             >
-              <p className="text-sm text-[var(--fg-3)] mb-1">Total Materials</p>
-              <p className="text-2xl font-bold text-[var(--primary)]">{requirements.length}</p>
+              <p className="text-xs font-medium text-[var(--fg-3)] mb-1">สถานะสต็อกพร้อมผลิต</p>
+              <div className="flex items-center gap-2">
+                {canProduce ? (
+                  <>
+                    <CheckCircle className="w-6 h-6 text-success shrink-0" />
+                    <span className="text-xl font-bold text-success">พร้อมผลิต</span>
+                  </>
+                ) : hasZeroStock ? (
+                  <>
+                    <Ban className="w-6 h-6 text-red-500 shrink-0" />
+                    <span className="text-xl font-bold text-red-500">สต็อกหมด</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-6 h-6 text-danger shrink-0" />
+                    <span className="text-xl font-bold text-danger">วัตถุดิบไม่พอ</span>
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-[var(--fg-4)] mt-1.5">
+                พร้อมใช้ {readyCount} / {materialRows.length} รายการวัตถุดิบ
+              </p>
             </motion.div>
 
+            {/* 2. Original Cost */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="phopy-card p-4"
+            >
+              <p className="text-xs font-medium text-[var(--fg-3)] mb-1">
+                ต้นทุนการผลิตจริง ({safeQuantity.toLocaleString()} {unitLabel(outputUnit) || 'หน่วย'})
+              </p>
+              <p className="text-2xl font-bold text-[var(--fg-1)] tabular-nums">
+                ฿{originalTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-[var(--fg-4)] mt-1.5 tabular-nums">
+                เฉลี่ย ฿{originalPerUnit.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {unitLabel(outputUnit) || 'หน่วย'}
+              </p>
+            </motion.div>
+
+            {/* 3. Simulated Cost */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
               className="phopy-card p-4"
             >
-              <p className="text-sm text-[var(--fg-3)] mb-1">Total Cost</p>
-              <p className="text-2xl font-bold text-success">
-                ฿{totalCost.toLocaleString()}
+              <p className="text-xs font-medium text-[var(--fg-3)] mb-1">
+                ต้นทุนจำลอง ({safeQuantity.toLocaleString()} {unitLabel(outputUnit) || 'หน่วย'})
+              </p>
+              <p className="text-2xl font-bold text-[var(--primary)] tabular-nums">
+                ฿{simulatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-[var(--fg-4)] mt-1.5 tabular-nums">
+                เฉลี่ย ฿{simulatedPerUnit.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {unitLabel(outputUnit) || 'หน่วย'}
               </p>
             </motion.div>
 
+            {/* 4. Difference */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+              transition={{ delay: 0.15 }}
               className={`phopy-card p-4 ${
-                canProduce ? 'border-success/50' : hasZeroStock ? 'border-red-600/70' : 'border-danger/50'
+                totalChange > 0
+                  ? 'border-danger/40'
+                  : totalChange < 0
+                  ? 'border-success/40'
+                  : ''
               }`}
             >
-              <p className="text-sm text-[var(--fg-3)] mb-1">Production Status</p>
-              <div className="flex items-center gap-2">
-                {canProduce ? (
-                  <>
-                    <CheckCircle className="w-6 h-6 text-success" />
-                    <span className="text-xl font-bold text-success">Ready</span>
-                  </>
-                ) : hasZeroStock ? (
-                  <>
-                    <Ban className="w-6 h-6 text-red-500" />
-                    <span className="text-xl font-bold text-red-500">Blocked</span>
-                  </>
+              <p className="text-xs font-medium text-[var(--fg-3)] mb-1">ส่วนต่างต้นทุน (จำลอง vs จริง)</p>
+              <div className="flex items-center gap-1.5">
+                {totalChange > 0 ? (
+                  <TrendingUp className="w-5 h-5 text-danger shrink-0" />
+                ) : totalChange < 0 ? (
+                  <TrendingDown className="w-5 h-5 text-success shrink-0" />
                 ) : (
-                  <>
-                    <AlertCircle className="w-6 h-6 text-danger" />
-                    <span className="text-xl font-bold text-danger">Insufficient</span>
-                  </>
+                  <Minus className="w-5 h-5 text-[var(--fg-4)] shrink-0" />
                 )}
+                <span
+                  className={`text-2xl font-bold tabular-nums ${
+                    totalChange > 0
+                      ? 'text-danger'
+                      : totalChange < 0
+                      ? 'text-success'
+                      : 'text-[var(--fg-3)]'
+                  }`}
+                >
+                  {totalChange > 0 ? '+' : ''}฿{totalChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+                <span
+                  className={`text-xs font-semibold tabular-nums ${
+                    totalChange > 0
+                      ? 'text-danger'
+                      : totalChange < 0
+                      ? 'text-success'
+                      : 'text-[var(--fg-4)]'
+                  }`}
+                >
+                  ({totalChangePercent > 0 ? '+' : ''}{totalChangePercent.toFixed(1)}%)
+                </span>
               </div>
+              <p className="text-xs text-[var(--fg-4)] mt-1.5 tabular-nums">
+                ต่อหน่วย: {changePerUnit > 0 ? '+' : ''}฿{changePerUnit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
             </motion.div>
           </div>
 
-          {/* Materials Table */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="phopy-card overflow-hidden"
-          >
-            <div className="p-4 border-b border-[var(--border)]">
-              <h3 className="text-lg font-semibold text-[var(--fg-1)]">Material Requirements</h3>
+          {/* Unified Requirements & Price Simulation Table */}
+          <div className="phopy-card overflow-hidden">
+            <div className="p-4 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--fg-1)]">
+                  ตารางคำนวณวัตถุดิบและจำลองราคา
+                </h3>
+                <p className="text-xs text-[var(--fg-3)]">
+                  สามารถแก้ไขตัวเลขในช่อง &ldquo;ราคาจำลอง/หน่วย&rdquo; เพื่อดูผลกระทบต่อต้นทุนรวมได้ทันที
+                </p>
+              </div>
             </div>
+
             <div className="overflow-x-auto">
-            <table className="phopy-table w-full">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Material</th>
-                  <th>Code</th>
-                  <th>Required</th>
-                  <th>Available</th>
-                  <th>Shortage</th>
-                  <th>Unit Cost</th>
-                  <th>Total Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(requirements || []).map((req) => (
-                  <tr
-                    key={req.materialId}
-                    className={req.status === 'OUT_OF_STOCK' ? 'bg-red-600/20' : req.status === 'INSUFFICIENT' ? 'bg-[var(--danger-soft)]' : ''}
-                  >
-                    <td>{getStatusIcon(req.status)}</td>
-                    <td className="text-[var(--fg-2)]">{req.materialName}</td>
-                    <td className="text-[var(--fg-3)] font-mono">{req.materialCode}</td>
-                    <td className="text-[var(--fg-2)]">
-                      {req.requiredQuantity.toLocaleString()} {unitLabel(req.unit)}
+              <table className="phopy-table stock-grid w-full">
+                <thead>
+                  <tr>
+                    <th>สถานะ</th>
+                    <th>วัตถุดิบ / ส่วนประกอบ</th>
+                    <th className="text-right">ปริมาณที่ใช้</th>
+                    <th className="text-right">คงเหลือในคลัง</th>
+                    <th className="text-right">ขาดอีก</th>
+                    <th className="text-right">ต้นทุนจริง/หน่วย</th>
+                    <th className="text-right">ราคาจำลอง/หน่วย (฿)</th>
+                    <th className="text-right">ต้นทุนรวม</th>
+                    <th className="text-right">เปลี่ยนแปลง</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const isChild = row.itemType === 'CHILD_BOM'
+                    const unitConverted = row.recipeUnit !== row.stockUnit
+                    const priceModified = Math.abs(row.simulatedUnitCost - row.originalUnitCost) > 0.0001
+
+                    return (
+                      <tr
+                        key={row.rowKey}
+                        className={
+                          row.status === 'OUT_OF_STOCK'
+                            ? 'bg-red-500/10'
+                            : row.status === 'INSUFFICIENT'
+                            ? 'bg-[var(--danger-soft)]/50'
+                            : ''
+                        }
+                      >
+                        <td>{getStatusBadge(row.status)}</td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            {isChild ? (
+                              <GitBranch className="w-4 h-4 text-purple-500 shrink-0" />
+                            ) : (
+                              <Box className="w-4 h-4 text-[var(--primary)] shrink-0" />
+                            )}
+                            <div>
+                              <div className="font-medium text-[var(--fg-1)]">{row.materialName}</div>
+                              {row.materialCode && (
+                                <div className="text-xs text-[var(--fg-4)] font-mono">{row.materialCode}</div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="text-right tabular-nums">
+                          <div className="font-medium text-[var(--fg-1)]">
+                            {row.recipeQuantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
+                            {unitLabel(row.recipeUnit)}
+                          </div>
+                          {unitConverted && (
+                            <div className="text-xs text-[var(--fg-4)]">
+                              ≈ {row.requiredStockQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
+                              {unitLabel(row.stockUnit)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-right tabular-nums">
+                          {isChild ? (
+                            <span className="text-[var(--fg-4)]">-</span>
+                          ) : row.availableStock <= 0 ? (
+                            <span className="text-red-500 font-semibold">0 {unitLabel(row.stockUnit)}</span>
+                          ) : (
+                            <span
+                              className={
+                                row.status === 'INSUFFICIENT'
+                                  ? 'text-danger font-medium'
+                                  : row.status === 'LOW'
+                                  ? 'text-warning font-medium'
+                                  : 'text-success font-medium'
+                              }
+                            >
+                              {row.availableStock.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                              {unitLabel(row.stockUnit)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-right tabular-nums">
+                          {!isChild && row.shortage > 0 ? (
+                            <span className="text-danger font-semibold">
+                              -{row.shortage.toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
+                              {unitLabel(row.stockUnit)}
+                            </span>
+                          ) : (
+                            <span className="text-[var(--fg-4)]">-</span>
+                          )}
+                        </td>
+                        <td className="text-right tabular-nums text-[var(--fg-3)]">
+                          ฿{row.originalUnitCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          {row.stockUnit && (
+                            <span className="text-xs text-[var(--fg-4)]"> / {unitLabel(row.stockUnit)}</span>
+                          )}
+                        </td>
+                        <td className="text-right">
+                          <div className="inline-flex items-center justify-end gap-1">
+                            <input
+                              type="number"
+                              value={priceChanges[row.rowKey] ?? row.originalUnitCost}
+                              onChange={(e) =>
+                                handlePriceChange(row.rowKey, parseFloat(e.target.value) || 0)
+                              }
+                              min="0"
+                              step="0.01"
+                              className={`phopy-input w-28 h-8 px-2 py-1 text-sm text-right tabular-nums ${
+                                priceModified ? 'border-[var(--primary)] bg-[var(--primary-soft)]/30 font-semibold' : ''
+                              }`}
+                            />
+                          </div>
+                        </td>
+                        <td className="text-right tabular-nums">
+                          <div className="font-semibold text-[var(--primary)]">
+                            ฿{row.simulatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </div>
+                          {priceModified && (
+                            <div className="text-xs text-[var(--fg-4)] line-through">
+                              ฿{row.originalTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-right tabular-nums">
+                          <div className="inline-flex items-center justify-end gap-1">
+                            {row.change > 0.001 ? (
+                              <TrendingUp className="w-3.5 h-3.5 text-danger" />
+                            ) : row.change < -0.001 ? (
+                              <TrendingDown className="w-3.5 h-3.5 text-success" />
+                            ) : (
+                              <Minus className="w-3.5 h-3.5 text-[var(--fg-4)]" />
+                            )}
+                            <span
+                              className={
+                                row.change > 0.001
+                                  ? 'text-danger font-medium'
+                                  : row.change < -0.001
+                                  ? 'text-success font-medium'
+                                  : 'text-[var(--fg-4)]'
+                              }
+                            >
+                              {row.change > 0.001 ? '+' : ''}
+                              {row.changePercent.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-[var(--border)] bg-[var(--surface-2)]/50">
+                    <td colSpan={5} className="text-right font-semibold text-[var(--fg-2)]">
+                      รวมต้นทุนการผลิต ({safeQuantity.toLocaleString()} {unitLabel(outputUnit) || 'หน่วย'}):
                     </td>
-                    <td
-                      className={
-                        req.status === 'OUT_OF_STOCK'
-                          ? 'text-red-500'
-                          : req.status === 'INSUFFICIENT'
-                          ? 'text-danger'
-                          : req.status === 'LOW'
-                          ? 'text-warning'
-                          : 'text-success'
-                      }
-                    >
-                      {req.availableStock === 0 ? (
-                        <span className="flex items-center gap-1">
-                          <Ban className="w-4 h-4" />
-                          OUT OF STOCK
-                        </span>
-                      ) : (
-                        `${req.availableStock.toLocaleString()} ${unitLabel(req.unit)}`
-                      )}
+                    <td className="text-right font-semibold text-[var(--fg-3)] tabular-nums">
+                      ฿{originalTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
-                    <td className={req.shortage > 0 ? 'text-danger font-semibold' : 'text-[var(--fg-4)]'}>
-                      {req.shortage > 0 ? `-${req.shortage.toLocaleString()}` : '-'}
+                    <td></td>
+                    <td className="text-right text-lg font-bold text-[var(--primary)] tabular-nums">
+                      ฿{simulatedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
-                    <td className="text-[var(--fg-3)]">฿{req.unitCost.toLocaleString()}</td>
-                    <td className="text-success font-semibold">
-                      ฿{req.totalCost.toLocaleString()}
+                    <td className="text-right font-semibold tabular-nums">
+                      <span
+                        className={
+                          totalChange > 0.001
+                            ? 'text-danger'
+                            : totalChange < -0.001
+                            ? 'text-success'
+                            : 'text-[var(--fg-4)]'
+                        }
+                      >
+                        {totalChange > 0.001 ? '+' : ''}
+                        {totalChangePercent.toFixed(1)}%
+                      </span>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-[var(--border)]">
-                  <td colSpan={7} className="text-right text-[var(--fg-3)] font-semibold">
-                    Total Production Cost:
-                  </td>
-                  <td className="text-2xl font-bold text-[var(--primary)]">
-                    ฿{totalCost.toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                </tfoot>
+              </table>
             </div>
-          </motion.div>
+          </div>
 
-          {/* Zero Stock Warning */}
-          {hasZeroStock && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="phopy-card p-6 border-red-600/70 bg-red-500/5"
-            >
-              <div className="flex items-start gap-4">
-                <Ban className="w-8 h-8 text-red-500 flex-shrink-0" />
-                <div>
-                  <h3 className="text-lg font-semibold text-red-500 mb-2">
-                    Production Blocked - Zero Stock
-                  </h3>
-                  <p className="text-[var(--fg-3)] mb-4">
-                    Production cannot proceed because the following materials have zero stock:
-                  </p>
-                  <ul className="space-y-2">
-                    {requirements
-                      .filter((r) => r.availableStock === 0)
-                      .map((r) => (
-                        <li key={r.materialId} className="flex items-center gap-2 text-[var(--fg-2)]">
-                          <Ban className="w-4 h-4 text-red-500" />
-                          <span>
-                            {r.materialName}{' '}
-                            <span className="text-red-500 font-semibold">
-                              (0 {unitLabel(r.unit)} available)
+          {/* Alerts & Impact Analysis Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Stock Shortage Warning */}
+            {!canProduce && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`phopy-card p-5 border ${
+                  hasZeroStock ? 'border-red-500/60 bg-red-500/5' : 'border-danger/50 bg-[var(--danger-soft)]/20'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  {hasZeroStock ? (
+                    <Ban className="w-6 h-6 text-red-500 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-6 h-6 text-danger shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-danger mb-1">
+                      รายการวัตถุดิบที่ต้องสั่งซื้อ/เติมสต็อกก่อนผลิต
+                    </h3>
+                    <p className="text-xs text-[var(--fg-3)] mb-3">
+                      วัตถุดิบต่อไปนี้มีสต็อกไม่เพียงพอสำหรับการผลิต {safeQuantity.toLocaleString()} {unitLabel(outputUnit) || 'หน่วย'}:
+                    </p>
+                    <ul className="space-y-1.5 text-sm">
+                      {materialRows
+                        .filter((r) => r.status === 'OUT_OF_STOCK' || r.status === 'INSUFFICIENT')
+                        .map((r) => (
+                          <li key={r.rowKey} className="flex items-center justify-between gap-2 py-1 px-2.5 rounded bg-[var(--surface)]/80 border border-[var(--border)]">
+                            <span className="font-medium text-[var(--fg-1)]">
+                              {r.materialName}{' '}
+                              {r.materialCode && <span className="text-xs text-[var(--fg-4)] font-mono">({r.materialCode})</span>}
                             </span>
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                  <p className="text-danger/80 text-sm mt-4">
-                    Please restock these materials before attempting production.
-                  </p>
+                            <span className="text-danger font-semibold tabular-nums">
+                              ขาดอีก {r.shortage.toLocaleString(undefined, { maximumFractionDigits: 4 })} {unitLabel(r.stockUnit)}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          )}
+              </motion.div>
+            )}
 
-          {/* Shortages Warning */}
-          {!canProduce && !hasZeroStock && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="phopy-card p-6 border-danger/50"
-            >
-              <div className="flex items-start gap-4">
-                <AlertCircle className="w-8 h-8 text-danger flex-shrink-0" />
-                <div>
-                  <h3 className="text-lg font-semibold text-danger mb-2">
-                    Insufficient Materials
-                  </h3>
-                  <p className="text-[var(--fg-3)] mb-4">
-                    The following materials need to be restocked before production:
-                  </p>
-                  <ul className="space-y-2">
-                    {requirements
-                      .filter((r) => r.status === 'INSUFFICIENT')
-                      .map((r) => (
-                        <li key={r.materialId} className="flex items-center gap-2 text-[var(--fg-2)]">
-                          <Package className="w-4 h-4 text-danger" />
-                          <span>
-                            {r.materialName}: Need{' '}
-                            <span className="text-danger font-semibold">
-                              {r.shortage.toLocaleString()} {unitLabel(r.unit)}
-                            </span>{' '}
-                            more
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
+            {/* Cost Impact Analysis */}
+            {Math.abs(totalChangePercent) > 0.01 && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`phopy-card p-5 border ${
+                  totalChange > 0 ? 'border-danger/40' : 'border-success/40'
+                }`}
+              >
+                <h3 className="text-base font-bold text-[var(--fg-1)] mb-3 flex items-center gap-2">
+                  {totalChange > 0 ? (
+                    <TrendingUp className="w-5 h-5 text-danger" />
+                  ) : (
+                    <TrendingDown className="w-5 h-5 text-success" />
+                  )}
+                  วิเคราะห์ผลกระทบด้านต้นทุน (Impact Analysis)
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-[var(--surface-2)]/60">
+                    <p className="text-xs text-[var(--fg-3)] mb-1">
+                      {t('bom.simulation.perUnitImpact')}
+                    </p>
+                    <p
+                      className={`text-xl font-bold tabular-nums ${
+                        totalChange > 0 ? 'text-danger' : 'text-success'
+                      }`}
+                    >
+                      {changePerUnit > 0 ? '+' : ''}฿{changePerUnit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[var(--surface-2)]/60">
+                    <p className="text-xs text-[var(--fg-3)] mb-1">
+                      {t('bom.simulation.for100Units')}
+                    </p>
+                    <p
+                      className={`text-xl font-bold tabular-nums ${
+                        totalChange > 0 ? 'text-danger' : 'text-success'
+                      }`}
+                    >
+                      {changePerUnit > 0 ? '+' : ''}฿{(changePerUnit * 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          )}
+                <div className="flex items-center gap-2 text-xs text-[var(--fg-3)] mt-3 pt-3 border-t border-[var(--border)]">
+                  {totalChange > 0 ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-danger shrink-0" />
+                      <span>
+                        ราคาวัตถุดิบที่ปรับเพิ่มขึ้น จะทำให้ต้นทุนการผลิตสูงขึ้น{' '}
+                        <strong className="text-danger">+{totalChangePercent.toFixed(1)}%</strong>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 text-success shrink-0" />
+                      <span>
+                        ราคาวัตถุดิบที่ปรับลดลง จะช่วยประหยัดต้นทุนการผลิตได้{' '}
+                        <strong className="text-success">{Math.abs(totalChangePercent).toFixed(1)}%</strong>
+                      </span>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </div>
         </>
       )}
 
-      {/* Empty State */}
+      {/* Empty State when BOM has no items */}
+      {!bomLoading && selectedBomId && rows.length === 0 && (
+        <div className="phopy-card p-12 text-center">
+          <Package className="w-12 h-12 text-[var(--fg-4)] mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-1">
+            สูตรการผลิตนี้ยังไม่มีรายการวัตถุดิบ
+          </h3>
+          <p className="text-sm text-[var(--fg-4)]">
+            กรุณาเพิ่มวัตถุดิบในสูตรการผลิต (BOM) ก่อนคำนวณการผลิตและจำลองต้นทุน
+          </p>
+        </div>
+      )}
+
+      {/* Empty State when no BOM selected */}
       {!selectedBomId && (
         <div className="phopy-card p-12 text-center">
           <Calculator className="w-16 h-16 text-[var(--fg-4)] mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-[var(--fg-2)] mb-2">
-            Select a BOM to Calculate
+            เลือกสูตรการผลิต (BOM) เพื่อคำนวณและจำลองต้นทุน
           </h3>
-          <p className="text-[var(--fg-4)]">
-            Choose a Bill of Materials and enter the production quantity to see material
-            requirements
+          <p className="text-[var(--fg-4)] max-w-lg mx-auto">
+            เลือกสูตรการผลิตและระบุจำนวนที่ต้องการผลิต เพื่อตรวจสอบสต็อกวัตถุดิบ คำนวณปริมาณที่ต้องใช้ และทดลองปรับราคาวัตถุดิบเพื่อดูผลกระทบต่อต้นทุนในหน้าเดียว
           </p>
         </div>
       )}

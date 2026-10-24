@@ -431,7 +431,6 @@ function BOMPage() {
     { id: 'bom' as TabType, label: t('bom.tabs.bomList'), icon: FileText },
     { id: 'materials' as TabType, label: t('bom.tabs.materials'), icon: Boxes },
     { id: 'calculator' as TabType, label: t('bom.tabs.productionCalculator'), icon: Calculator },
-    { id: 'simulation' as TabType, label: t('bom.tabs.costSimulation'), icon: TrendingUp },
   ]
 
   const filterTabs: { id: BOMFilterType; label: string; count?: number }[] = [

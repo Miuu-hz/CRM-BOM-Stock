@@ -536,279 +536,300 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Product & Version & Status */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="md:col-span-1">
-                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        {t('bomModal.labels.product')} <span className="text-danger">*</span>
-                      </label>
-                      <SearchableDropdown
-                        value={productId}
-                        onChange={handleProductSelect}
-                        options={(products || []).map((p) => ({
-                          id: p.id,
-                          label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
-                          searchText: `${p.code} ${p.name} ${p.category}`,
-                        }))}
-                        placeholder={t('bomModal.placeholders.product')}
-                        disabled={isEdit}
-                      />
+                  {/* Product, Version, Status & Output Config */}
+                  <div className="p-4 rounded-xl bg-[var(--surface-2)]/50 border border-[var(--border)] space-y-4">
+                    {/* Row 1: Product (6 cols) | Version (3 cols) | Status (3 cols) */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                      <div className="md:col-span-6">
+                        <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                          {t('bomModal.labels.product')} <span className="text-danger">*</span>
+                        </label>
+                        <SearchableDropdown
+                          value={productId}
+                          onChange={handleProductSelect}
+                          options={(products || []).map((p) => ({
+                            id: p.id,
+                            label: `[${getCategoryLabel(p.category)}] ${p.code} - ${p.name}`,
+                            searchText: `${p.code} ${p.name} ${p.category}`,
+                          }))}
+                          placeholder={t('bomModal.placeholders.product')}
+                          disabled={isEdit}
+                        />
+                      </div>
+
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                          {t('bomModal.labels.version')} <span className="text-danger">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={version}
+                          onChange={(e) => setVersion(e.target.value)}
+                          placeholder={t('bomModal.placeholders.version')}
+                          className="phopy-input w-full h-[42px] text-sm"
+                        />
+                      </div>
+
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                          {t('bomModal.labels.status')}
+                        </label>
+                        <select
+                          value={status}
+                          onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE' | 'ARCHIVED')}
+                          className="phopy-input w-full h-[42px] py-0 text-sm"
+                        >
+                          <option value="DRAFT">{t('bomModal.status.draft')}</option>
+                          <option value="ACTIVE">{t('bomModal.status.active')}</option>
+                          <option value="ARCHIVED">{t('bomModal.status.archived')}</option>
+                        </select>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        {t('bomModal.labels.version')} <span className="text-danger">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={version}
-                        onChange={(e) => setVersion(e.target.value)}
-                        placeholder={t('bomModal.placeholders.version')}
-                        className="phopy-input w-full"
-                      />
-                    </div>
+                    {/* Row 2: Output Qty (3 cols) | Output Unit (3 cols) | BOM Type (6 cols) */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                          {t('bomModal.labels.outputQty')}
+                        </label>
+                        <input
+                          type="number"
+                          min={0.0001}
+                          step="any"
+                          value={outputQty}
+                          onChange={(e) => setOutputQty(parseFloat(e.target.value) || 0)}
+                          className="phopy-input w-full h-[42px] text-sm tabular-nums"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        {t('bomModal.labels.status')}
-                      </label>
-                      <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'ACTIVE' | 'ARCHIVED')}
-                        className="phopy-input w-full"
-                      >
-                        <option value="DRAFT">{t('bomModal.status.draft')}</option>
-                        <option value="ACTIVE">{t('bomModal.status.active')}</option>
-                        <option value="ARCHIVED">{t('bomModal.status.archived')}</option>
-                      </select>
-                    </div>
+                      <div className="md:col-span-3">
+                        <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                          {t('bomModal.labels.outputUnit')}
+                        </label>
+                        <UnitPicker
+                          value={outputUnit}
+                          onChange={(u) => { setOutputUnit(u); setOutputUnitTouched(true) }}
+                          materialId={productId || null}
+                          placeholder={t('bomModal.placeholders.outputUnit')}
+                          className="[&>button]:h-[42px]"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        {t('bomModal.labels.bomType')}
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setIsSemiFinished(!isSemiFinished)}
-                        className={`flex items-center gap-2 w-full p-2.5 rounded-lg border transition-all ${isSemiFinished
-                            ? 'bg-[var(--primary)]/20 border-[var(--primary)] text-[var(--primary)]'
-                            : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-2)]'
+                      <div className="md:col-span-6">
+                        <label className="block text-sm font-medium text-[var(--fg-2)] mb-1.5">
+                          {t('bomModal.labels.bomType')}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsSemiFinished(!isSemiFinished)}
+                          className={`flex items-center gap-2.5 w-full h-[42px] px-3.5 rounded-md border text-sm transition-all ${
+                            isSemiFinished
+                              ? 'bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)] font-medium'
+                              : 'bg-[var(--surface)] border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                           }`}
-                      >
-                        {isSemiFinished ? (
-                          <CheckSquare className="w-5 h-5" />
-                        ) : (
-                          <Square className="w-5 h-5" />
-                        )}
-                        <GitBranch className="w-4 h-4" />
-                        <span>{t('bomModal.semiFinishedLabel')}</span>
-                      </button>
+                        >
+                          {isSemiFinished ? (
+                            <CheckSquare className="w-4 h-4 shrink-0" />
+                          ) : (
+                            <Square className="w-4 h-4 shrink-0" />
+                          )}
+                          <GitBranch className="w-4 h-4 shrink-0" />
+                          <span className="truncate">{t('bomModal.semiFinishedLabel')}</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Output Qty & Unit (R2-UI) — BOM 1 ชุด ผลิตได้กี่หน่วย */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        {t('bomModal.labels.outputQty')}
-                      </label>
-                      <input
-                        type="number"
-                        min={0.0001}
-                        step="any"
-                        value={outputQty}
-                        onChange={(e) => setOutputQty(parseFloat(e.target.value) || 0)}
-                        className="phopy-input w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--fg-2)] mb-2">
-                        {t('bomModal.labels.outputUnit')}
-                      </label>
-                      <UnitPicker
-                        value={outputUnit}
-                        onChange={(u) => { setOutputUnit(u); setOutputUnitTouched(true) }}
-                        materialId={productId || null}
-                        placeholder={t('bomModal.placeholders.outputUnit')}
-                      />
-                    </div>
-                    <div className="md:col-span-2 flex items-end">
-                      {outputQty > 0 && (outputUnit || products.find(p => p.id === productId)?.unit) && (
-                        <p className="text-xs text-[var(--fg-4)] pb-2.5">
-                          {t('bomModal.hints.outputSummary', {
-                            qty: outputQty.toLocaleString('th-TH'),
-                            unit: unitLabel(outputUnit || products.find(p => p.id === productId)?.unit),
-                          })}
-                        </p>
-                      )}
-                    </div>
+                    {outputQty > 0 && (outputUnit || products.find(p => p.id === productId)?.unit) && (
+                      <p className="text-xs text-[var(--fg-3)] pt-1 border-t border-[var(--border)]/60">
+                        {t('bomModal.hints.outputSummary', {
+                          qty: outputQty.toLocaleString('th-TH'),
+                          unit: unitLabel(outputUnit || products.find(p => p.id === productId)?.unit),
+                        })}
+                      </p>
+                    )}
                   </div>
 
                   {/* Items Section */}
                   <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <label className="block text-sm font-medium text-[var(--fg-2)]">
-                        {t('bomModal.labels.items')} <span className="text-danger">*</span>
-                      </label>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2">
+                        <label className="block text-sm font-semibold text-[var(--fg-1)]">
+                          {t('bomModal.labels.items')} <span className="text-danger">*</span>
+                        </label>
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-[var(--surface-2)] text-[var(--fg-3)]">
+                          {(itemRows || []).filter(r => r.id && r.id.trim() !== '').length}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsMaterialModalOpen(true)}
+                          className="text-xs text-[var(--fg-2)] hover:text-[var(--primary)] flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          {t('bomModal.addNewMaterial')}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleAddItem('MATERIAL')}
-                          className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-phopy-indigo/10 border border-phopy-indigo-50"
+                          className="text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary)]/15 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--primary)]/10 border border-[var(--primary)]/30 transition-colors"
                         >
-                          <Box className="w-4 h-4" />
+                          <Box className="w-3.5 h-3.5" />
                           {t('bomModal.addMaterial')}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleAddItem('CHILD_BOM')}
-                          className="text-sm text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--primary)]/10 border border-[var(--primary)]/20"
+                          className="text-xs font-medium text-purple-500 hover:bg-purple-500/15 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           disabled={availableChildBOMs.length === 0}
                         >
-                          <GitBranch className="w-4 h-4" />
+                          <GitBranch className="w-3.5 h-3.5" />
                           {t('bomModal.addChildBOM')}
                         </button>
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      {(itemRows || []).filter(row => row.id && row.id.trim() !== '').map((row) => {
-                        const isMaterial = row.itemType === 'MATERIAL'
-                        const selectedMaterial = isMaterial ? materials.find((m) => m.id === row.materialId) : null
-                        const selectedChildBOM = !isMaterial ? availableChildBOMs.find((b) => b.id === row.childBomId) : null
-                        const rowTotal = rowCosts[row.id] || 0
+                    <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--surface)]">
+                      {/* Table Column Headers */}
+                      <div className="hidden md:grid md:grid-cols-12 gap-3 px-3 py-2.5 text-xs font-semibold text-[var(--fg-3)] bg-[var(--surface-2)] border-b border-[var(--border)]">
+                        <div className="col-span-5">{t('bomModal.labels.items')}</div>
+                        <div className="col-span-2 text-right">{t('bomModal.placeholders.quantity')}</div>
+                        <div className="col-span-2">{t('bomModal.unitOptions.selectUnit')}</div>
+                        <div className="col-span-2 text-right">{t('bom.itemsTable.total')}</div>
+                        <div className="col-span-1 text-center"></div>
+                      </div>
 
-                        return (
-                          <div
-                            key={row.id}
-                            className={`grid grid-cols-12 gap-3 items-start p-3 rounded-lg border ${isMaterial
-                                ? 'bg-[var(--surface-2)] border-[var(--border)]'
-                                : 'bg-[var(--primary)]/5 border-[var(--primary)]/30'
+                      {/* Item Rows */}
+                      <div className="divide-y divide-[var(--border)]">
+                        {(itemRows || []).filter(row => row.id && row.id.trim() !== '').map((row, idx) => {
+                          const isMaterial = row.itemType === 'MATERIAL'
+                          const selectedMaterial = isMaterial ? materials.find((m) => m.id === row.materialId) : null
+                          const selectedChildBOM = !isMaterial ? availableChildBOMs.find((b) => b.id === row.childBomId) : null
+                          const rowTotal = rowCosts[row.id] || 0
+
+                          return (
+                            <div
+                              key={row.id}
+                              className={`grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-3 transition-colors ${
+                                isMaterial
+                                  ? 'hover:bg-[var(--surface-2)]/40'
+                                  : 'bg-purple-500/5 hover:bg-purple-500/10'
                               }`}
-                          >
-                            {/* Type Indicator */}
-                            <div className="col-span-1">
-                              <div className={`w-full h-10 rounded-lg flex items-center justify-center ${isMaterial ? 'bg-phopy-indigo/10' : 'bg-[var(--primary)]/20'
-                                }`}>
-                                {isMaterial ? (
-                                  <Box className="w-4 h-4 text-[var(--primary)]" />
+                            >
+                              {/* Type Icon + Item Selection (5 cols) */}
+                              <div className="md:col-span-5 flex items-center gap-2.5 min-w-0">
+                                <div
+                                  title={isMaterial ? t('bom.itemType.material') : t('bom.itemType.childBOM')}
+                                  className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-xs font-semibold ${
+                                    isMaterial
+                                      ? 'bg-[var(--primary)]/10 text-[var(--primary)]'
+                                      : 'bg-purple-500/15 text-purple-500'
+                                  }`}
+                                >
+                                  {isMaterial ? (
+                                    <Box className="w-4 h-4" />
+                                  ) : (
+                                    <GitBranch className="w-4 h-4" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  {isMaterial ? (
+                                    <SearchableDropdown
+                                      value={row.materialId}
+                                      onChange={(value) => handleMaterialSelect(row.id, value)}
+                                      options={(materials || []).map((m) => ({
+                                        id: m.id,
+                                        label: `${m.code} - ${m.name}`,
+                                        searchText: `${m.code} ${m.name}`,
+                                      }))}
+                                      placeholder={`${idx + 1}. ${t('bomModal.placeholders.searchMaterial')}`}
+                                    />
+                                  ) : (
+                                    <SearchableDropdown
+                                      value={row.childBomId}
+                                      onChange={(value) => handleItemChange(row.id, 'childBomId', value)}
+                                      options={(availableChildBOMs || []).map((b) => ({
+                                        id: b.id,
+                                        label: `${b.productCode || b.product?.code} - ${b.productName || b.product?.name} (฿${(b.totalCost || 0).toLocaleString()})`,
+                                        searchText: `${b.productCode || b.product?.code} ${b.productName || b.product?.name}`,
+                                      }))}
+                                      placeholder={`${idx + 1}. ${t('bomModal.placeholders.selectChildBOM')}`}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Quantity (2 cols) */}
+                              <div className="md:col-span-2">
+                                <input
+                                  type="number"
+                                  value={row.quantity || ''}
+                                  onChange={(e) =>
+                                    handleItemChange(row.id, 'quantity', parseFloat(e.target.value) || 0)
+                                  }
+                                  placeholder={t('bomModal.placeholders.quantity')}
+                                  min="0"
+                                  step="0.01"
+                                  className="phopy-input w-full h-[42px] text-sm text-right tabular-nums"
+                                />
+                              </div>
+
+                              {/* Unit (2 cols) */}
+                              <div className="md:col-span-2">
+                                {isMaterial && row.materialId ? (
+                                  <UnitPicker
+                                    value={row.unit || getMaterialUnit(row.materialId) || ''}
+                                    onChange={(u) => handleItemChange(row.id, 'unit', u)}
+                                    materialId={row.materialId}
+                                    baseUnit={getMaterialUnit(row.materialId)}
+                                    restrict="warn"
+                                    size="sm"
+                                    hideUnreachableHint
+                                    placeholder={t('bomModal.unitOptions.selectUnit')}
+                                    className="[&>button]:h-[42px]"
+                                  />
                                 ) : (
-                                  <GitBranch className="w-4 h-4 text-[var(--primary)]" />
+                                  <div className="phopy-input w-full h-[42px] text-sm bg-[var(--surface-2)] text-[var(--fg-3)] font-medium flex items-center justify-center">
+                                    {selectedChildBOM ? t('bomModal.unitOptions.set') : '-'}
+                                  </div>
                                 )}
                               </div>
-                            </div>
 
-                            {/* Item Selection */}
-                            <div className="col-span-4">
-                              {isMaterial ? (
-                                <>
-                                  <SearchableDropdown
-                                    value={row.materialId}
-                                    onChange={(value) => handleMaterialSelect(row.id, value)}
-                                    options={(materials || []).map((m) => ({
-                                      id: m.id,
-                                      label: `${m.code} - ${m.name}`,
-                                      searchText: `${m.code} ${m.name}`,
-                                    }))}
-                                    placeholder={t('bomModal.placeholders.searchMaterial')}
-                                  />
-                                  {!row.materialId && (
-                                    <div className="mt-1 flex items-center gap-2">
-                                      <span className="text-xs text-[var(--fg-4)]">{t('bomModal.noMaterialFound')}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setIsMaterialModalOpen(true)}
-                                        className="text-xs text-[var(--primary)] hover:text-phopy-indigo-600 flex items-center gap-1"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                        {t('bomModal.addNewMaterial')}
-                                      </button>
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <SearchableDropdown
-                                  value={row.childBomId}
-                                  onChange={(value) => handleItemChange(row.id, 'childBomId', value)}
-                                  options={(availableChildBOMs || []).map((b) => ({
-                                    id: b.id,
-                                    label: `${b.productCode || b.product?.code} - ${b.productName || b.product?.name} (฿${(b.totalCost || 0).toLocaleString()})`,
-                                    searchText: `${b.productCode || b.product?.code} ${b.productName || b.product?.name}`,
-                                  }))}
-                                  placeholder={t('bomModal.placeholders.selectChildBOM')}
-                                />
-                              )}
-                            </div>
-
-                            {/* Quantity */}
-                            <div className="col-span-2">
-                              <input
-                                type="number"
-                                value={row.quantity || ''}
-                                onChange={(e) =>
-                                  handleItemChange(row.id, 'quantity', parseFloat(e.target.value) || 0)
-                                }
-                                placeholder={t('bomModal.placeholders.quantity')}
-                                min="0"
-                                step="0.01"
-                                className="phopy-input w-full text-sm"
-                              />
-                            </div>
-
-                            {/* Unit Dropdown & Search with categories */}
-                            <div className="col-span-2">
-                              {isMaterial && row.materialId ? (
-                                <UnitPicker
-                                  value={row.unit || getMaterialUnit(row.materialId) || ''}
-                                  onChange={(u) => handleItemChange(row.id, 'unit', u)}
-                                  materialId={row.materialId}
-                                  baseUnit={getMaterialUnit(row.materialId)}
-                                  restrict="warn"
-                                  size="sm"
-                                  hideUnreachableHint
-                                  placeholder={t('bomModal.unitOptions.selectUnit')}
-                                />
-                              ) : (
-                                <div className="phopy-input w-full text-sm bg-[var(--surface-2)] text-[var(--primary)] font-semibold flex items-center justify-center">
-                                  {selectedChildBOM ? t('bomModal.unitOptions.set') : '-'}
+                              {/* Unit Cost & Row Total (2 cols) */}
+                              <div className="md:col-span-2 text-right">
+                                <div className="text-sm font-semibold text-success tabular-nums">
+                                  ฿{rowTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                 </div>
-                              )}
-                            </div>
+                                <div className="text-xs text-[var(--fg-4)] tabular-nums truncate">
+                                  {isMaterial
+                                    ? selectedMaterial
+                                      ? `@ ฿${Number(selectedMaterial.unitCost).toLocaleString()} / ${unitLabel(selectedMaterial.unit)}`
+                                      : '-'
+                                    : selectedChildBOM
+                                    ? `@ ฿${(selectedChildBOM.totalCost || 0).toLocaleString()}`
+                                    : '-'}
+                                </div>
+                              </div>
 
-                            {/* Unit Cost */}
-                            <div className="col-span-1 text-right">
-                              <span className="text-sm text-[var(--fg-3)]">
-                                {isMaterial
-                                  ? selectedMaterial && `฿${Number(selectedMaterial.unitCost).toLocaleString()}`
-                                  : selectedChildBOM && `฿${(selectedChildBOM.totalCost || 0).toLocaleString()}`}
-                              </span>
+                              {/* Remove Button (1 col) */}
+                              <div className="md:col-span-1 flex justify-end md:justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveItem(row.id)}
+                                  disabled={itemRows.length === 1}
+                                  className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--danger-soft)] text-[var(--fg-3)] hover:text-danger disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
-
-                            {/* Row Total */}
-                            <div className="col-span-1 text-right">
-                              <span className="text-sm font-semibold text-success">
-                                ฿{rowTotal.toLocaleString()}
-                              </span>
-                            </div>
-
-                            {/* Remove Button */}
-                            <div className="col-span-1 text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveItem(row.id)}
-                                disabled={itemRows.length === 1}
-                                className="p-1.5 rounded hover:bg-[var(--danger-soft)] text-[var(--fg-3)] hover:text-danger disabled:opacity-30 disabled:cursor-not-allowed"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        })}
+                      </div>
                     </div>
 
                     {availableChildBOMs.length === 0 && (
-                      <p className="text-sm text-[var(--fg-4)] mt-2">
+                      <p className="text-xs text-[var(--fg-4)] mt-2">
                         * {t('bomModal.noChildBOMs')}
                       </p>
                     )}
@@ -872,11 +893,26 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   )}
 
                   {/* Total Cost */}
-                  <div className="flex items-center justify-end gap-4 pt-4 border-t border-[var(--border)]">
-                    <span className="text-[var(--fg-3)]">{t('bomModal.totalCost')}</span>
-                    <span className="text-2xl font-bold text-[var(--primary)]">
-                      ฿{totalCost.toLocaleString()}
-                    </span>
+                  <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-[var(--border)]">
+                    <div className="text-xs text-[var(--fg-3)]">
+                      {outputQty > 1 && (
+                        <span>
+                          {t('bom.common.costPerUnitLabel')}:{' '}
+                          <strong className="text-[var(--fg-1)] font-semibold tabular-nums">
+                            ฿{(totalCost / outputQty).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </strong>
+                          {(outputUnit || products.find(p => p.id === productId)?.unit) && (
+                            <span> / {unitLabel(outputUnit || products.find(p => p.id === productId)?.unit)}</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 ml-auto">
+                      <span className="text-sm text-[var(--fg-3)]">{t('bomModal.totalCost')}</span>
+                      <span className="text-2xl font-bold text-[var(--primary)] tabular-nums">
+                        ฿{totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
                   </div>
                 </form>
               )}
@@ -939,7 +975,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       disabled={changingCategory}
                       className="p-4 rounded-lg border border-phopy-indigo/30 bg-phopy-indigo/10 hover:bg-[var(--primary-soft)] text-left transition-all group"
                     >
-                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Check className="w-4 h-4" /> {t('bomModal.categoryChange.finished.title')}</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1 flex items-center gap-1.5"><Check className="w-4 h-4 shrink-0" /> {t('bomModal.categoryChange.finished.title')}</div>
                       <div className="text-xs text-[var(--fg-3)]">{t('bomModal.categoryChange.finished.subtitle')}</div>
                       <div className="text-xs text-[var(--fg-4)] mt-2">{t('bomModal.categoryChange.finished.description')}</div>
                     </button>
@@ -948,7 +984,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                       disabled={changingCategory}
                       className="p-4 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 text-left transition-all"
                     >
-                      <div className="text-[var(--primary)] font-semibold text-sm mb-1"><Wrench className="w-4 h-4" /> {t('bomModal.categoryChange.wip.title')}</div>
+                      <div className="text-[var(--primary)] font-semibold text-sm mb-1 flex items-center gap-1.5"><Wrench className="w-4 h-4 shrink-0" /> {t('bomModal.categoryChange.wip.title')}</div>
                       <div className="text-xs text-[var(--fg-3)]">{t('bomModal.categoryChange.wip.subtitle')}</div>
                       <div className="text-xs text-[var(--fg-4)] mt-2">{t('bomModal.categoryChange.wip.description')}</div>
                     </button>
@@ -1246,7 +1282,7 @@ function CreateMaterialModal({ isOpen, onClose, onSuccess }: CreateMaterialModal
                 <button
                   type="submit"
                   disabled={saving || !selectedCategory}
-                  className="px-3 py-1.5 text-sm bg-phopy-indigo text-black rounded hover:shadow-2 disabled:opacity-50 flex items-center gap-1"
+                  className="px-3 py-1.5 text-sm bg-phopy-indigo text-white rounded hover:shadow-2 disabled:opacity-50 flex items-center gap-1"
                 >
                   {saving && <Loader2 className="w-3 h-3 animate-spin" />}
                   <Plus className="w-3 h-3" />
