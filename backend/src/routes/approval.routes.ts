@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { approvalDenyReason, canApprove as canApproveRequests } from '../services/approvalGate.service'
 import { applyStockMovement, applyManualUnpack, StockMovementError } from '../services/stockMovement.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
+import { recalculateBillTotals } from './pos-bill.routes'
 import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
 
 const router = Router()
@@ -41,7 +42,7 @@ router.get('/settings', async (req: Request, res: Response) => {
 // โมดูลที่ตัวบังคับจริง (approvalGate.service GateCategory + approvalDenyReason) เช็คอยู่เท่านั้น —
 // กันแอดมินตั้งค่าหมวดที่ไม่มีใครบังคับ (เช่น work_orders เดิม) แล้วหลงคิดว่าใช้งานได้จริง
 const ENFORCED_MODULE_TYPES = new Set([
-  'purchase_request', 'purchase_order', 'sales_order', 'stock_adjust', 'pos_void', 'doc_edit', 'pos_invoice',
+  'purchase_request', 'purchase_order', 'sales_order', 'stock_adjust', 'pos_void', 'pos_discount', 'doc_edit', 'pos_invoice',
 ])
 
 // POST create/update approval setting (Master only)
@@ -447,7 +448,7 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     // ยกเลิกบิล POS ต้องเรียก service แบบ async จึงทำก่อนเปิดทรานแซกชัน
-    if (decision === 'APPROVED' && request.reference_type === 'pos_running_bills') {
+    if (decision === 'APPROVED' && request.reference_type === 'pos_running_bills' && request.module_type === 'pos_void') {
       const posPayload = request.payload ? JSON.parse(request.payload) : null
       if (posPayload) {
         await cancelPosBill(tenantId, request.requester_id, posPayload.billId,
@@ -567,6 +568,12 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     if (unpackPayload) {
       applyManualUnpack(request.tenant_id, request.requester_name, unpackPayload)
     }
+  } else if (request.reference_type === 'pos_running_bills' && request.module_type === 'pos_discount') {
+    // อนุมัติส่วนลด POS: บันทึกยอดส่วนลดที่อนุมัติลงบิลไว้ให้พร้อมรับชำระเงินทันที
+    const discountAmt = Math.max(0, Number(request.amount) || 0)
+    db.prepare("UPDATE pos_running_bills SET discount_amount = ? WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
+      .run(discountAmt, request.reference_id, request.tenant_id)
+    recalculateBillTotals(request.reference_id)
   }
 
   // Log execution
@@ -589,6 +596,10 @@ function revertReferenceStatus(request: any) {
   } else if (request.reference_type === 'sales_orders') {
     db.prepare("UPDATE sales_orders SET status = 'DRAFT', updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(new Date().toISOString(), request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'pos_running_bills' && request.module_type === 'pos_discount') {
+    db.prepare("UPDATE pos_running_bills SET discount_amount = 0 WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
+      .run(request.reference_id, request.tenant_id)
+    recalculateBillTotals(request.reference_id)
   }
 }
 

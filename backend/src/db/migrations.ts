@@ -1905,6 +1905,11 @@ export function runMigrations(db: any): void {
     db.exec(`ALTER TABLE supplier_payments ADD COLUMN pos_cash_movement_id TEXT`)
     console.log('✅ Migration: supplier_payments.pos_cash_movement_id added')
   } catch { /* column already exists */ }
+  // ใบแจ้งหนี้ซื้อที่ฝั่ง Cr จับคู่กับเงินจาก POS โดยตรง (Dr ของ/2109 · Cr 1182) — ไม่ผ่านเจ้าหนี้
+  try {
+    db.exec(`ALTER TABLE purchase_invoices ADD COLUMN pos_cash_movement_id TEXT`)
+    console.log('✅ Migration: purchase_invoices.pos_cash_movement_id added')
+  } catch { /* column already exists */ }
 
   // Migration: purchase_return_items.material_id FK rebuild — it pointed at
   // materials(id), but every writer of this column (the return-modal's

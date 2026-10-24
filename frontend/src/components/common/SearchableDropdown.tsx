@@ -146,25 +146,25 @@ export function SearchableDropdown({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`phopy-input w-full flex items-center justify-between text-left ${
+        className={`phopy-input w-full h-[42px] py-0 flex items-center justify-between gap-2 text-left ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
         }`}
       >
-        <span className={selectedOption ? 'text-[var(--fg-2)]' : 'text-[var(--fg-4)]'}>
+        <span className={`truncate flex-1 min-w-0 text-sm ${selectedOption ? 'text-[var(--fg-2)]' : 'text-[var(--fg-4)]'}`}>
           {selectedOption?.label || placeholder}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           {value && !disabled && (
             <div
               onClick={handleClear}
-              className="p-0.5 hover:bg-[var(--bg)] rounded cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+              className="p-1 hover:bg-[var(--surface-2)] rounded cursor-pointer flex items-center justify-center"
               role="button"
             >
-              <X className="w-4 h-4 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />
+              <X className="w-3.5 h-3.5 text-[var(--fg-3)] hover:text-[var(--fg-2)]" />
             </div>
           )}
           <ChevronDown
-            className={`w-4 h-4 text-[var(--fg-3)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-[var(--fg-3)] shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           />
         </div>
       </button>

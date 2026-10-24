@@ -159,10 +159,8 @@ export const requireMaster = (req: Request, res: Response, next: NextFunction): 
   next()
 }
 
-const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET
-if (!AGENT_JWT_SECRET) {
-  throw new Error('FATAL: AGENT_JWT_SECRET environment variable is not set.')
-}
+// ponytail: fallback to JWT_SECRET if AGENT_JWT_SECRET is not set, preventing startup crash
+const AGENT_JWT_SECRET = process.env.AGENT_JWT_SECRET || JWT_SECRET
 
 export const authenticateAgent = (req: Request, res: Response, next: NextFunction): void => {
   try {

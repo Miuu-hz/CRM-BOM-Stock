@@ -1031,6 +1031,9 @@
       "step4Hint": "Debit = which account receives the value · Credit = which account carries the debt",
       "debitSide": "Debit",
       "creditSide": "Credit",
+      "crPayableGroup": "Payable (liability)",
+      "crPosCashGroup": "Already paid with cash from POS (awaiting bill)",
+      "crPosCashHint": "This bill is matched with cash already taken from the POS drawer — no payable is created; the invoice is marked paid immediately",
       "defaultCrAccount": "Accounts payable (default)",
       "fixedByChart": "fixed by the chart of accounts",
       "balanceHint": "Total debit = total credit = {{amount}} · posted automatically on create",
@@ -2244,7 +2247,7 @@
     "tabs": {
       "bomList": "BOM List",
       "materials": "Materials",
-      "productionCalculator": "Production Calculator",
+      "productionCalculator": "Production & Cost Simulator",
       "costSimulation": "Cost Simulation"
     },
     "filter": {
