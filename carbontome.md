@@ -1,7 +1,7 @@
 # 🏭 Carbon ERP - System Architecture & Development Guide
 
 > เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
-> อัปเดตล่าสุด: 21 ตุลาคม 2026
+> อัปเดตล่าสุด: 24 ตุลาคม 2026
 
 ---
 
@@ -36,6 +36,7 @@
 | **Purchase List/Card View** | ✅ | สลับ list/card view (list default), pagination 25/50/100 per page |
 | **Smart Unit Conversion** | ✅ | BFS chain conversion, sealed stock, auto-unpack, LLM advisor, spelling tolerant |
 | **Phopy Board (Business Unit P&L)** | ✅ | ตัวเลขจาก ledger จริง (ไม่นับ closing entry), การ์ด "กำไรขาดทุนตามหน่วยธุรกิจ" Retail/Wholesale/Online, tag `business_unit` จาก `reference_type` ของ JE ต้นทาง |
+| **Company Email** | ✅ | Cloudflare Email Routing + Brevo SMTP Relay (bbpillow.com, phopy.net) |
 
 #### 🧮 Smart Unit Conversion (May 2026)
 สรุปสั้น ๆ: ระบบแปลงหน่วยอัจฉริยะที่แก้ปัญหา 6 อย่าง — (1) **BFS chain conversion** แปลงหน่วยหลายขั้นต่อเนื่องอัตโนมัติ เช่น `แพ็ค → ขวด → ลิตร` (2) **Sealed stock** แยก stock ที่ยังไม่แกะ (`sealed_qty`) ออกจากที่แกะแล้ว (3) **Auto-unpack** ถ้าของหลักหมด → แกะแพ็คอัตโนมัติเพื่อเบิก/ขายต่อ (4) **Spelling tolerant** รับคำเขียนผิดเช่น `แพค/แพ๊ค/แพ็ค` ทั้งหมด map เป็น `pack` (5) **LLM Advisor** ช่วยแนะนำค่า conversion factor ตอนตั้งค่า (6) **List view UX** หน้า Purchase (GR/PO) คลิก row ได้เหมือน card view พร้อมปุ่ม action ครบ
@@ -1692,3 +1693,58 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - เทสต์ก่อน deploy: backend 1082/1083 (ล้ม 1 เดิม encoding `unitConversion.service.ts`) · frontend 230/230 · tsc ผ่าน
 - deploy 24 ต.ค. 2026 ~01:40 UTC: สำรองที่ CT100 `/root/pre-salesfix-20261024/` (dev.db, dist.tgz, HEAD, wip.diff) · migration ใหม่ `company_settings.line_shift_expense_groups`, `approval_settings.max_discount_pct` ลงแล้ว
 - rollback: `git reset --hard 7078cb3` ไม่ได้ (จะทิ้งงานค้างที่ commit แล้ว) → ให้ `git revert 003f4c9 3595d66` แล้ว build ใหม่ หรือแตก `dist.tgz` กลับ + restart
+
+
+## 📅 Session Log — 24 ต.ค. 2026: ติดตั้งระบบอีเมลองค์กร (Cloudflare + Brevo) & แผนระบบยืนยันตัวตนลูกค้า (Email + Phone Link)
+
+### 1. ✅ ระบบอีเมลองค์กร (Company Email Infrastructure) — พร้อมใช้งานแล้ว
+ตั้งค่าโครงสร้างพื้นฐานระบบอีเมลสำหรับแบรนด์และบริษัทครบทั้ง 2 โดเมน:
+- **`contact@bbpillow.com`**: สำหรับแบรนด์เครื่องนอน F&B Bedding / BBPillow
+- **`contact@phopy.net`**: สำหรับระบบ ERP, เทคโนโลยี, และติดต่องานบริษัทหลัก
+
+| ส่วนการทำงาน | ผู้ให้บริการ | การตั้งค่า & สถานะ |
+|---|---|---|
+| **รับเมลเข้า (Inbound)** | Cloudflare Email Routing | Forwarding อัตโนมัติเข้า `haikihake@gmail.com` · MX records 3 ตัว (`route1-3.mx.cloudflare.net`) + SPF Locked สมบูรณ์ |
+| **ส่งเมลออก (Outbound)** | Brevo SMTP Relay (`smtp-relay.brevo.com:587`) | ยืนยันตัวตนครบ 100% (**Authenticated** ทั้ง 2 โดเมน):<br>- **SPF**: รวม `include:_spf.mx.cloudflare.net include:spf.sendinblue.com ~all`<br>- **DKIM 1 & 2**: CNAME `brevo1._domainkey`, `brevo2._domainkey`<br>- **DMARC**: TXT `_dmarc` (`v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com`)<br>- **Brevo Code**: TXT `@` ยืนยันสิทธิ์เป็นเจ้าของโดเมน |
+| **ความปลอดภัย SMTP** | Brevo Security | ปลดล็อก **Authorized IPs** สำหรับ SMTP keys (`Deactivated`) เพื่อให้เซิร์ฟเวอร์ภายนอกและ Gmail Mail Relay สามารถเชื่อมต่อส่งได้โดยไม่ติดบล็อก IP |
+| **Client การใช้งาน** | Google Workspace / Gmail | ตั้งค่า **Send mail as (ส่งอีเมลในนาม)** ทั้ง 2 บัญชี พร้อมแยกตัวตน (`Treat as an alias = false`) และทำตัวกรอง (Filter) + ป้ายกำกับสี (Label) แยกโฟลเดอร์สำหรับ `BB Pillow` และ `Phopy` ชัดเจน |
+
+---
+
+### 2. 📋 แผนพัฒนาระบบถัดไป: Customer Identity Verification (Email + Phone Linking)
+เป้าหมาย: สร้างระบบ Onboarding ลูกค้าที่สมัครสมาชิกให้มีความน่าเชื่อถือ ป้องกันการสมัครซ้ำ และเชื่อมโยงข้อมูลลูกค้าข้ามทุกช่องทาง (POS / KDS / QR สั่งอาหาร / หน้าเว็บ / CRM)
+
+1. **ระบบยืนยันอีเมลลูกค้า (Customer Email Verification Flow)**:
+   - ส่งอีเมลยืนยันตัวตนอัตโนมัติ (Verification Link / 6-digit OTP) ออกผ่าน Brevo SMTP (`contact@phopy.net` หรือ `contact@bbpillow.com` ตามแบรนด์ที่สมัคร)
+   - หน้า Landing Page ยืนยันอีเมลสำเร็จ พร้อมอัปเดตสถานะลูกค้าในฐานข้อมูล `customers.email_verified = 1`
+2. **ระบบผูกอีเมลคู่เบอร์โทรศัพท์ (Dual-Identifier: Email & Phone Pairing)**:
+   - รวมตัวตนลูกค้า: ใช้เบอร์โทรศัพท์ (จากระบบ POS/QR สมาชิกหน้าร้าน) พ่วงเข้ากับอีเมลที่ยืนยันแล้ว
+   - การรวมประวัติ (Merge Profiles): หากลูกค้าเคยสั่งผ่าน POS ด้วยเบอร์โทร และต่อมาสมัครผ่านเว็บด้วยอีเมล ระบบจะจับคู่และดึงแต้มสะสม / ประวัติบิลมารวมเป็น Profile เดียวกัน
+   - ป้องกันการสวมสิทธิ์: กำหนดขั้นตอนเมื่อเปลี่ยนเบอร์โทรหรือเปลี่ยนอีเมล ต้องยืนยันผ่านช่องทางเดิมก่อน
+
+## 📅 Session Log — 24 ต.ค. 2026 (ตรวจ + แก้ระบบจัดซื้อ Purchase) — ✅ deploy แล้ว (`c9e69d3`)
+
+> ตรวจด้วย agent แบ่งตามความยาก (ทุกตัวใช้ ponytail): agy Flash = dead code · Sonnet = หน้า Purchase.tsx · Opus = สิทธิ์/ความปลอดภัย · Opus = บัญชี/สต็อก — แก้ใน worktree แยก รวมที่ `p-integrate` · backend 1130 ผ่าน (ล้ม 1 เดิม encoding) · frontend 234/234 · สำรอง CT100 `/root/pre-purchasefix-20261024/`
+
+**ข้อตกลงกับเจ้าของ (24 ต.ค.)**
+- PO ที่ SUBMITTED/APPROVED **แก้ไม่ได้** (409) สถานะคงเดิม — ต้อง reopen ก่อน
+- **ผู้ใช้พื้นฐาน** = role USER ไม่มีแผนก: ใช้ POS/ปิดกะ/ส่วน POS ในหน้าขาย และ**ร่าง** PR/PO (เว็บ+MCP) ได้ · ส่งอนุมัติ/รับของ/ตั้งหนี้/จ่าย/แก้ผู้ขายไม่ได้ · เข้าบัญชี ภาษี รายงาน ลูกหนี้ไม่ได้ (`basicUserDenied` ใน `cashierScope.ts`, เมนูซ่อนผ่าน `canViewMenu`) — ผู้ใช้แผนกอื่นร่าง PR/PO ได้เช่นกัน ขั้นถัดไปต้องมีสิทธิ์ตามแผนก (`canDraftPurchase`, `canReceivePurchase`, `userCan` ใน `rbac.service.ts`)
+- **MANAGER** แก้/ยกเลิกเอกสารได้เฉพาะแผนกตัวเอง นอกนั้นขออนุมัติ — หมวดใหม่ `purchase_cancel` (ต้องอนุมัติเสมอ แบบ `sales_cancel`) ครอบ ยกเลิก GR/ใบแจ้งหนี้/void จ่ายเงิน/PO/ใบคืน · executor ใน `services/purchaseCancel.service.ts` + `approval.routes.ts`
+- **GM** = ADMIN/MASTER/OWNER หรือแผนก CEO (`isGm`, `gmActsOn` ใน `approvalGate.service.ts`) — ทำ/อนุมัติ `sales_cancel` และ `purchase_cancel` ได้ทันที ไม่ต้องมอบสิทธิ์ ไม่ติดเพดาน 5,000 · เห็นคำขอในกล่อง + เมนู `/approvals` แม้ role เป็น USER
+
+**แก้หลัก**
+| เรื่อง | แก้ |
+|---|---|
+| แก้ราคา PO ที่อนุมัติแล้วได้ (ข้ามวงเงินผู้อนุมัติ) | ล็อก D1 ทั้ง REST/MCP/คำขอ doc_edit ที่ค้าง |
+| GR ใส่รายการของ PO อื่นได้ | `PO_ITEM_MISMATCH` · ยืนยัน/ยกเลิกค้นด้วย tenant + PO |
+| MCP ข้ามสิทธิ์ (ยืนยัน GR, ยกเลิก PO, แปลง PR, อนุมัติ PR ซ้ำ) | `loadPermUser` + helper เดียวกับ REST · แคชเชียร์ไม่มี MCP tools |
+| สถานะย้อนได้ทุกทาง · ไม่บันทึกผู้อนุมัติ (PO รับแล้ว 71 ใบไม่มีชื่อ) | `PO_/PR_/RETURN_TRANSITIONS` · เขียน `approved_by/approved_at` |
+| 2109 ปิดไม่หมด · ส่วนลด PO หักซ้ำทุกใบแจ้งหนี้ · แก้ใบแจ้งหนี้แล้วบัญชีเด้งกลับ 1107/2101 | GR ตั้ง 2109 ด้วยต้นทุนจริง ใบแจ้งหนี้ปิดเต็ม ส่วนต่าง Cr 1107 · ส่วนลดใช้ส่วนที่ยังเหลือของ PO · เก็บ `dr_account_id/cr_account_id` |
+| จ่ายผู้ขายติดลบ/WHT เกิน/ผู้ขายไม่ตรง · auto-pay จ่ายเต็มทั้งที่ PO จ่ายบางส่วน | validate + `postJournal` · `poPaymentTarget` ใน transaction เดียว |
+| คืนของ: VAT 7% ฝังตาย, ราคาจาก client, Dr AP ทั้งที่ยังไม่ตั้งหนี้ | อ้างบรรทัด GR, ราคา/VAT จาก PO, ยังไม่ตั้งหนี้ = Dr 2109 (`grni_return`) |
+| ยกเลิก GR ไม่คืน received_qty (ไม่นับสต็อก), แพ็กที่แกะแล้วค้าง, ไม่คืน unit_cost · ยืนยัน GR ลงงวดที่ปิด | แก้ครบ (`prev_unit_cost`, `PERIOD_CLOSED`) |
+| หน้า Purchase: PR สร้างแล้วราคา 0 (เกิดจริง 2 ใบ), แก้ PO ส่วนลดหาย, ของที่ปฏิเสธเข้าสต็อก, VAT mode ไม่มีผล, WHT ไม่บันทึก, วันที่ UTC, ชื่อพนักงานในใบพิมพ์ | แก้ 16 ข้อ · ส่วนลดใบแจ้งหนี้: ไม่แตะช่อง = ใช้ส่วนลด PO ที่เหลือ |
+| dead code | `timeLock.middleware.ts`, `canEditRecord/checkEditPermission`, `services/purchaseOrder.ts`, `GET /purchase-orders/stats`, import/schema ค้างใน PR routes · JOIN ฝั่ง GET กรอง tenant · 500 ไม่ส่งข้อความภายใน |
+
+**ค้าง — ให้ฝ่ายบัญชีลงเอง (สมุดรายวันทั่วไป งวดที่เปิดอยู่):** 2109 เหลือ 406.18 บาทจากใบแจ้งหนี้ก่อน fix `6ed0b14` (14 ต.ค.) ร้านไม่จด VAT + PO ราคารวม VAT → VAT ถูกนับเข้า 1107 สองรอบ — **Dr 2109 / Cr 1107**: PO-050-040826 11.85 · PO-057-280826 41.66 · PO-052-090826 92.46 · PO-054-180826 109.20 · PO-061-121026 151.01 (ลงเป็นรายการเดียว 5 คู่ หรือยอดรวม 406.18 ก็ได้) · สคริปต์วิเคราะห์ `backend/scripts/one-off/2026-10-24-analyze-2109.js` (อ่านอย่างเดียว)
+**ยังไม่ทำ:** `/dashboard` ยังเปิดให้ผู้ใช้พื้นฐาน · WHT คิดจากยอดรวม VAT (รอนโยบายบัญชี) · ใบแจ้งหนี้ก่อน 29 ก.ย. ที่ไม่มี GR · rollback: `git revert c9e69d3` แล้ว build หรือแตก `dist.tgz`
