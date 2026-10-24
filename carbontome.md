@@ -65,7 +65,7 @@
 
 | โมดูล | ความสำคัญ | รายละเอียด |
 |--------|-----------|---------|
-| **RBAC** | 🚧 บางส่วน | มีแล้ว: `services/rbac.service.ts`, `PermissionSettings.tsx`, `user_approval_permissions`, role gate ใน MCP tools — ยังไม่ครบทุกหน้า |
+| **RBAC** | 🚧 บางส่วน | มีแล้ว: `services/rbac.service.ts`, `PermissionSettings.tsx`, `user_approval_permissions`, role gate ใน MCP tools — ยังไม่ครบทุกหน้า · สรุปการใช้ดู Session Log 22–23 ต.ค. 2026 |
 | ~~**Credit Note**~~ | ✅ | มีแล้ว `routes/sales/creditNotes.ts` mount ที่ `/api/sales/credit-notes` |
 | **Financial Statements** | 🚧 บางส่วน | มี route งบดุลแล้ว + P&L แยกหน่วยธุรกิจบน Phopy Board — ยังไม่ auto-generate เต็มรูปแบบ |
 | **QMS** | 🟡 ต่ำ | Quality Management System |
@@ -1590,3 +1590,72 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - ponytail: ผูกสมาชิกให้บิลหลังจ่าย (กติกา A5) ยอดบิลนั้นยังถูกนับเข้า guest spent ด้วย — แต้มย้อนหลังอาจเกินจริงไม่เกินเพดาน
 
 **ก่อน deploy**: build backend + frontend แล้ว `pm2 restart crm-backend` — migration ใหม่อยู่ท้าย `db/posQrMigrations.ts` (รันซ้ำได้)
+
+---
+
+## 📅 Session Log — 22–23 ต.ค. 2026 (ตรวจระบบขาย Sales.tsx: บั๊ก / dead code / ช่องโหว่) — ✅ deploy แล้ว 24 ต.ค. 2026 (`3595d66`)
+
+> ทำในสำเนา (ไม่แตะ `/opt/crm`): ต้นฉบับ `/root/review/crm-live-1022` ในเครื่องของเจ้าของ · รันเทสต์ในสำเนาทิ้งได้ `/root/crm-salesfix-*` ใน CT100 · patch: `/root/review/sales-fixes-2026-10-23.patch` (40 ไฟล์)
+> แบ่งงาน: **agy Flash** = งานกลไก · **Sonnet** = บั๊ก logic · **Opus** = ช่องโหว่/บัญชี · Claude รวม/แก้ conflict/ตรวจซ้ำ
+> backend 1070/1071 (ล้ม 1 เดิม: encoding `unitConversion.service.ts`) · frontend 216/216 · tsc ผ่านทั้งสองฝั่ง
+
+### ระบบสิทธิ์ตาม role ที่มีอยู่แล้ว (ใช้ระบบนี้ อย่าสร้างใหม่)
+| ชั้น | อยู่ที่ไหน | ใช้ทำอะไร |
+|---|---|---|
+| role | `users.role`: MASTER > ADMIN > MANAGER > POWERUSER > USER (`config/roles.ts`, ฝั่งหน้าเว็บ `config/menuPermissions.ts`) | MASTER/ADMIN ผ่านทุกอย่างในธุรกิจ · MANAGER ได้ read/write/approve/delete เฉพาะ resource ของแผนกตัวเอง |
+| แผนก + สิทธิ์รายคน | `users.departments`, `users.custom_permissions` (`"resource:action": true/false`) ตั้งที่ Settings > สิทธิ์การใช้งาน / จัดการผู้ใช้ | `can(role, departments, resource, action, customPermissions)` ใน `services/rbac.service.ts` — สิทธิ์รายคนชนะค่าตามแผนก · resource: customers, suppliers, orders, purchase, stock, accounting, marketing, production, qc, users, settings |
+| แตะเงิน | `canHandleBilling` (rbac.service) | ออกใบแจ้งหนี้/รับเงิน/สถานะใบแจ้งหนี้/หัก ณ ที่จ่าย |
+| ขออนุมัติ | `services/approvalGate.service.ts` (`gateOrCreate`, `recordAutoAction`) + `approval_settings` + `user_approval_permissions` | คนอนุมัติได้ = ADMIN/MASTER/OWNER เสมอ · คนอื่นต้องให้ admin มอบสิทธิ์รายคน/รายหมวด (หน้า Settings > การอนุมัติ, `POST /approval/permissions` เฉพาะ ADMIN/MASTER) วงเงินไม่เกิน 5,000 · ห้ามอนุมัติคำขอของตัวเอง |
+
+### ข้อตกลงกับเจ้าของ (22–23 ต.ค.)
+- **ใบลดหนี้**: สร้าง/ออก/ยกเลิก เฉพาะ ADMIN/MANAGER (และ MASTER/OWNER)
+- **ค่าใช้จ่ายตอนปิดกะ**: แคชเชียร์ต้องกรอกรายจ่ายที่ยังไม่ได้บันทึกในระบบ · ไม่ต้องอนุมัติ แต่ทุกรายการลงบันทึกความเคลื่อนไหว (`pos_shift_expense`) + ส่ง LINE หา Admin/Manager รายคน · เปิดให้ส่งเข้ากลุ่ม LINE ได้ที่ Settings > LINE (`company_settings.line_shift_expense_groups`, ค่าตั้งต้นปิด)
+- **ห้ามยกเลิกใบขายนอกจากขออนุญาต**: ยกเลิก SO / ใบแจ้งหนี้ / void ใบเสร็จ / ยกเลิกใบลดหนี้ ต้องผ่านหมวด `sales_cancel` ซึ่ง **บังคับขออนุมัติเสมอ** (ไม่อ่าน approval_settings, ไม่มี bypass รายคน) · ADMIN/MASTER/OWNER ทำได้ทันทีแต่ลงประวัติ AUTO · คนอื่นได้ 202 "ส่งคำขออนุมัติแล้ว" อนุมัติแล้วระบบยกเลิกให้ (`executeSalesCancel` ใน `approval.routes.ts` → `services/salesCancel.service.ts`) · เอกสารในงวดภาษีที่ปิดแล้วใช้ทางเดียวกัน คำขอระบุว่างวดปิด
+- **คนอนุมัติได้**: ต้องสูงกว่า MANAGER (ADMIN/MASTER/OWNER) หรือคนที่ admin มอบสิทธิ์อนุมัติให้ในขอบเขตหมวด/วงเงิน — ใช้ระบบเดิมด้านบน
+- **อัตรา VAT**: admin ตั้งที่ Settings > บิล/VAT (`company_settings.pos_vat_rate`, ไม่ตั้ง = 7) · เอกสารขายรับแค่ 0% หรืออัตรานี้ (`vatRateError` ใน `utils/vatSettings.ts`) · คนอื่นเห็นและแก้แท็บนี้ได้เมื่อ admin ให้สิทธิ์ `settings:write` (หรือแผนก CEO/IT/CTO) — แก้ได้เฉพาะ 5 ช่องของแท็บ บิล/VAT ช่องอื่นของบริษัทยังเป็นของ ADMIN/MASTER · `GET /settings/company` ส่ง `can_edit_billing` ให้หน้าเว็บ
+
+### ช่องโหว่ที่ปิด (Opus)
+| เรื่อง | แก้ |
+|---|---|
+| ใครก็ออกใบลดหนี้ได้ + ราคาต่อหน่วยรับจากหน้าเว็บ (ล้างหนี้ลูกค้า / ใบลดหนี้ ฿0 เพื่อเพิ่มสต็อกกลบของหาย) | เช็ค role · ราคาเอาจาก `invoice_items.unit_price` · จำนวนไม่เกินที่เหลือ · ห้ามจากใบแจ้งหนี้ที่ยกเลิก/จากบิล POS |
+| เปลี่ยนสถานะใบแจ้งหนี้ได้ทุกสถานะ (ปลุกใบยกเลิก, ตั้ง PAID เอง) | ตาราง transition · PAID/PARTIAL มาจากใบเสร็จเท่านั้น · CANCELLED จบ · ต้อง `canHandleBilling` · มีใบลดหนี้ ISSUED ห้ามยกเลิก |
+| DO `isPartial` เปลี่ยน SO ที่ DRAFT/ยกเลิก เป็น PARTIAL (ข้ามอนุมัติ) · DO ส่งเกินจำนวน · ออกใบแจ้งหนี้จาก SO DRAFT | DO ได้เฉพาะ SO ที่ยืนยันแล้ว + จำกัดจำนวน · ใบแจ้งหนี้ต้องมาจาก SO ที่ตัดสต็อกแล้ว |
+| ค่าใช้จ่ายปิดกะกลบเงินขาด · ตารางผิด `chart_of_accounts` (500) | ตามข้อตกลงด้านบน · แก้เป็น `accounts` |
+| void บิล POS ที่ออกใบกำกับเต็มรูปแล้ว | 400 ทั้งทางตรงและทางอนุมัติ |
+| อัตรา VAT ติดลบได้ (journal ไม่ balance) | ตามข้อตกลงด้านบน |
+| หัก ณ ที่จ่ายไม่ validate · ยืนยัน SO ไม่ atomic · ยกเลิก SO ที่มีใบแจ้งหนี้ | validate + `canHandleBilling` · transaction เดียว · 409 |
+
+### บั๊กที่แก้ (Sonnet)
+ปิดกะใช้ยอดเก่า + ช่องว่างกลายเป็น 0 · race ในหน้าใบลดหนี้ · `key={i}` · ตัวกรองวันที่ UTC · แปลงใบเสนอราคาเป็น SO ซ้ำ (409) · รายการเทมเพลตติดลบ · ยอดรับเงินต่อ string · ใบที่ยกเลิกถูกนับในยอดสรุป/ลูกหนี้/ป้าย · ค่าขนส่งพิมพ์ซ้ำ
+
+### งานกลไก (agy Flash)
+ลบ import ไม่ใช้ (`AnimatePresence`, `stockService`) · ลบ router ว่าง `invoiceAttachments.routes.ts`, `productVariants.routes.ts` และ `dashboard.routes.ts.bak-20261005` · วันที่รับเงิน/ใบลดหนี้ใช้วันไทย (`todayStr`) · toast แสดงเหตุผลจาก server 8 จุด · dropdown ใบลดหนี้เห็นใบ DRAFT · `priceEdited` ตอนแปลงใบเสนอราคา · จำกัด `limit` ของ `/pos-shifts` · ใบลดหนี้รายใบมีเลขผู้เสียภาษี/ที่อยู่ลูกค้า
+
+### ก่อน deploy
+- ไฟล์ที่ patch แตะ 28 ไฟล์ตรงกับ `/opt/crm` ณ 23 ต.ค. (ไม่มี session อื่นแก้ทับ) · ใน `/opt/crm` ยังมีงานค้างไม่ commit ของ session อื่น 36 ไฟล์ — build แล้วจะขึ้นไปด้วย
+- migration ใหม่: `company_settings.line_shift_expense_groups` (ใน `db/migrations.ts`, รันซ้ำได้)
+- ยังไม่ทำ: ปุ่มยกเลิกใบลดหนี้บนหน้าเว็บ (เดิมก็ไม่มี) · `notifyShiftClosed` ยังโหลดด้วย `require` จึงไม่ถูกเทสต์
+
+### อัปเดต 24 ต.ค. 2026 — ✅ deploy แล้ว + ตรวจงานค้างที่ไม่ได้ commit (push `origin/ui`)
+
+**งานค้างไม่ได้ commit 35 ไฟล์** (session ก่อนหน้า stash ไว้แล้ววางกลับตอน fast-forward ไป `7078cb3` เมื่อ 21 ต.ค. 16:25 UTC และ build ขึ้น production ไปแล้วตั้งแต่ตอนนั้น) — commit ตามสภาพจริงแยกกลุ่ม: `5c81cf8` kds · `0e1e078` bom · `9e10c67` purchase (ตั้งหนี้จากเงินจาก POS 1182) · `58ed267` pos (ส่วนลดเกินเกณฑ์ขออนุมัติ) · `fb1996f` core · `bac5a73` sales (กรอง tenant_id)
+แล้วตรวจด้วย sub-agent แบ่งตามความยาก ทุกตัวใช้ ponytail (`ponytail-review`; agy ติดตั้งเป็น plugin ของ Antigravity): agy Flash = กลุ่มเล็ก/สคริปต์ · Sonnet = KDS, BOM · Opus = core+sales, เงิน (จัดซื้อ/POS)
+
+**แก้ (`003f4c9`)** — patch ฝั่งขายจากรอบ 22–23 ต.ค. อยู่ใน `3595d66`
+| เรื่อง | แก้ | ทำโดย |
+|---|---|---|
+| ส่วนลดแต้มซ้ำ: pay บันทึก `manual + แต้ม` ลงบิลก่อนด่าน → 202 แล้วเปิดบิลจ่ายใหม่ได้ลดแต้ม 2 รอบ (ยังไม่เกิดจริง — ไม่มีร้านเปิดแต้ม) | ก่อนด่านเก็บแค่ส่วนลดมือ · บวกแต้มใน payTx ตอนจ่ายจริง | Opus |
+| ส่วนลดที่ยังไม่อนุมัติค้างในบิล (ใบแจ้งยอด/QR เห็น) | 202 = คืนค่าส่วนลดเดิม + คำนวณยอดใหม่ | Opus |
+| อนุมัติ/ปฏิเสธส่วนลดไปคำนวณยอดบิลที่จ่ายแล้วใหม่ | recalc เฉพาะเมื่อ UPDATE บิล OPEN ได้จริง | Opus |
+| อนุมัติเช็กแค่บาท (ลบรายการแล้วกลายเป็นลด 100%) · ใช้คำขอค้างยอดเก่าซ้ำ | payload เก็บ `baseBeforeDiscount`/% · ใช้ซ้ำเมื่อยอดและ % ครอบคลุม | Opus |
+| อนุมัติ void บิลพร้อมกัน 2 คน = ยกเลิก 2 ครั้ง | claim `PENDING→PROCESSING` ก่อน (ค้าง PROCESSING ได้ถ้าเครื่องดับกลางทาง — reset เอง) | Opus |
+| เกณฑ์ 40% ฝังในโค้ด | **Settings > การอนุมัติ แถวส่วนลด POS: "ลดเกิน __% ต้องขออนุมัติเสมอ"** (`approval_settings.max_discount_pct`, NULL = 40, `posDiscountApprovalPct()`) — Cashier อ่านค่าเดียวกัน | Opus |
+| KDS: แตะรัว, รับออเดอร์ซ้ำทับเมนูที่เสร็จ, ปิดตั๋วแล้วเมนูที่ยกเลิกกลายเป็นเสร็จ | กันแตะเฉพาะตอนคำขอยังไม่กลับ + กัน poll พลิก 4 วิ · IN_PROGRESS ซ้ำ = no-op · `status != 'CANCELLED'` | Sonnet |
+| ส่วนลดรวมในสรุปกะนับแต้มด้วย | ใช้ส่วนลดในบิล − มูลค่าแต้มที่แลกหน้าเคาน์เตอร์ | Sonnet |
+| ฝั่งขาย: productId/ลูกค้า/ใบค้างส่ง ไม่เช็กว่าเป็นของ tenant | `findUnknownProductId` ใน `routes/sales/shared.ts` · ลูกค้าไม่พบ = 400 | Sonnet |
+| BOM calculator: ±% ปัด 2 ตำแหน่ง (ราคาต่อกรัมเพี้ยน) · แปลงหน่วยไม่ได้ใช้ตัวคูณ 1 เงียบ (ต้นทุนเพี้ยน 1000 เท่า) · สูตรย่อยไม่เช็กสต็อก · โหลดพังโชว์สูตรเก่า · วัตถุดิบซ้ำ | ปัด 4 ตำแหน่ง · เตือน + "?" + ไม่นับ · `/bom/explode` · ล้างสถานะ · รวมยอดต่อวัตถุดิบ — สูตรแยกเป็น `components/bom/productionCalc.ts` (+test) | agy Flash-high |
+| dead code | ลบ `CostSimulation.tsx`, `authenticateAgent` (fallback ไป JWT_SECRET), `sme-campus.ts` (ไม่มีใคร import), ตัวแปร/import ไม่ใช้ 7 จุด, i18n 2 key · สคริปต์นูเทลล่าย้ายไป `backend/scripts/one-off/` ต้องใส่ `--i-know-this-was-run` ถึงรัน · `vatInclusive` ของ PO ไม่อ่าน "false" เป็น true | agy Flash-medium |
+
+- เทสต์ก่อน deploy: backend 1082/1083 (ล้ม 1 เดิม encoding `unitConversion.service.ts`) · frontend 230/230 · tsc ผ่าน
+- deploy 24 ต.ค. 2026 ~01:40 UTC: สำรองที่ CT100 `/root/pre-salesfix-20261024/` (dev.db, dist.tgz, HEAD, wip.diff) · migration ใหม่ `company_settings.line_shift_expense_groups`, `approval_settings.max_discount_pct` ลงแล้ว
+- rollback: `git reset --hard 7078cb3` ไม่ได้ (จะทิ้งงานค้างที่ commit แล้ว) → ให้ `git revert 003f4c9 3595d66` แล้ว build ใหม่ หรือแตก `dist.tgz` กลับ + restart
