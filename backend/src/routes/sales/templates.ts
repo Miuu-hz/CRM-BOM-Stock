@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
+import { vatRateError } from '../../utils/vatSettings'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { findNonSellableLine, notSellableMessage } from './shared'
 
@@ -64,6 +65,14 @@ router.post('/', async (req: Request, res: Response) => {
     
     if (!name) {
       return res.status(400).json({ success: false, message: 'Template name is required' })
+    }
+
+    if (Array.isArray(items) && items.some((item: any) =>
+      (item.quantity !== undefined && !(Number(item.quantity) > 0)) ||
+      (item.unitPrice !== undefined && !(Number(item.unitPrice) >= 0)) ||
+      (item.discountPercent !== undefined && !(Number(item.discountPercent) >= 0 && Number(item.discountPercent) <= 100))
+    )) {
+      return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
     }
 
     const id = generateId()
@@ -197,6 +206,10 @@ router.post('/from-template', async (req: Request, res: Response) => {
     // บังคับ VAT แม้กิจการไม่จด) ตอนแก้เปลี่ยนเป็น req.body.taxRate || 0 ดิบๆ กลับไปอีกทาง
     // (กิจการจด VAT แล้วแต่ผู้เรียกไม่ส่ง taxRate มา กลับได้ 0 ทั้งที่ควร default 7 เหมือนเดิม)
     // ไม่ระบุ → จด VAT แล้ว default 7, ไม่จด default 0; ระบุมาเท่าไรก็ใช้ตามนั้นแล้วเช็คด่านข้างล่าง
+    const vatErr = vatRateError(tenantId, req.body.taxRate)
+    if (vatErr) {
+      return res.status(400).json({ success: false, message: vatErr })
+    }
     const registered = isVatRegistered(tenantId)
     const taxRate = req.body.taxRate !== undefined ? Number(req.body.taxRate) : (registered ? 7 : 0)
     if (taxRate > 0 && !registered) {

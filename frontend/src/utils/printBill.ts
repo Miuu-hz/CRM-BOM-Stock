@@ -139,7 +139,10 @@ export function toBillData(type: PrintDocType, d: any): BillData {
   const chargeRow = (name: string, amount: number) =>
     items.push({ id: name, no: items.length + 1, name, quantity: 1, unit: '', price: amount, discount: 0, vat: 0, total: amount })
   if (serviceAmt > 0) chargeRow(`ค่าบริการ ${n(d.service_charge_rate) || ''}%`.trim(), serviceAmt)
-  if (extraAmt > 0) chargeRow(String(d.extra_charge_label || d._extraChargeLabel || 'ค่าขนส่ง'), extraAmt)
+  // ใบแจ้งหนี้ที่ออกจาก SO มีบรรทัดค่าขนส่งอยู่ใน invoice_items แล้ว — ห้ามเติมซ้ำจนพิมพ์ออกมา 2 แถว
+  const extraName = String(d.extra_charge_label || d._extraChargeLabel || 'ค่าขนส่ง')
+  const extraAlreadyListed = items.some(x => x.name === extraName && x.quantity === 1 && Math.abs(x.total - extraAmt) < 0.005)
+  if (extraAmt > 0 && !extraAlreadyListed) chargeRow(extraName, extraAmt)
   const subtotal = (d.subtotal !== undefined ? n(d.subtotal) : 0) + serviceAmt + extraAmt
     || items.reduce((s, x) => s + x.total, 0)
   const total = n(d.total_amount ?? d.net_amount ?? d.amount ?? subtotal)

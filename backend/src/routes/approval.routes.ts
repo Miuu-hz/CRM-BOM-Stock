@@ -8,6 +8,8 @@ import { applyStockMovement, applyManualUnpack, StockMovementError } from '../se
 import { cancelPosBill } from '../services/posBillCancel.service'
 import { recalculateBillTotals } from './pos-bill.routes'
 import { applyPurchaseOrderUpdate } from '../services/purchaseOrderUpdate.service'
+import { cancelSalesOrderNow, cancelInvoiceNow, voidReceiptNow, SalesCancelError } from '../services/salesCancel.service'
+import { cancelCreditNoteNow } from './sales/creditNotes'
 
 const router = Router()
 
@@ -451,6 +453,12 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     if (decision === 'APPROVED' && request.reference_type === 'pos_running_bills' && request.module_type === 'pos_void') {
       const posPayload = request.payload ? JSON.parse(request.payload) : null
       if (posPayload) {
+        // ออกใบกำกับเต็มรูประหว่างรออนุมัติ → ห้าม void (เหมือนด่านใน pos.routes.ts) คำขอยัง PENDING
+        const invoice = db.prepare(`SELECT invoice_number FROM invoices WHERE pos_bill_id = ? AND tenant_id = ? AND status != 'CANCELLED'`)
+          .get(posPayload.billId, tenantId) as any
+        if (invoice) {
+          return res.status(409).json({ success: false, message: `อนุมัติไม่สำเร็จ: บิลนี้ออกใบกำกับภาษีแล้ว (${invoice.invoice_number}) ต้องยกเลิกใบกำกับภาษีก่อน` })
+        }
         await cancelPosBill(tenantId, request.requester_id, posPayload.billId,
           posPayload.reason, posPayload.finalStatus)
       }
@@ -501,6 +509,10 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     const updated = db.prepare('SELECT * FROM approval_requests WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: updated, message: `Request ${decision.toLowerCase()}` })
   } catch (error) {
+    if (error instanceof SalesCancelError) {
+      // ทรานแซกชัน rollback แล้ว คำขอยัง PENDING — ผู้อนุมัติเห็นเหตุผลแล้วปฏิเสธ/แก้ต้นเหตุได้
+      return res.status(error.status === 404 ? 404 : 409).json({ success: false, message: `อนุมัติไม่สำเร็จ: ${error.message}` })
+    }
     if (error instanceof StockMovementError) {
       // ทรานแซกชัน rollback ไปแล้ว คำขอจึงยังเป็น PENDING ให้ลองใหม่ได้
       return res.status(400).json({
@@ -523,7 +535,12 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
   `).run(executorId, executorName, now, request.id, request.tenant_id)
 
   // Execute based on reference type
-  if (request.reference_type === 'work_orders') {
+  // ยกเลิกเอกสารขาย (หมวด sales_cancel) — ต้องมาก่อน branch ตาม reference_type เพราะใช้ชื่อตารางเดียวกัน
+  // ('receipts'/'sales_orders' ด้านล่างคือคำขอคนละเรื่อง: ยืนยันใบเสร็จ/ยืนยัน SO)
+  // ยกเลิกไม่ผ่าน (เช่น มีใบแจ้งหนี้เกิดขึ้นระหว่างรอ) → SalesCancelError → rollback คำขอยัง PENDING
+  if (request.module_type === 'sales_cancel') {
+    executeSalesCancel(request, executorId)
+  } else if (request.reference_type === 'work_orders') {
     // Work order approved - can proceed to production
     db.prepare("UPDATE work_orders SET status = 'APPROVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(now, request.reference_id, request.tenant_id)
@@ -536,14 +553,15 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     db.prepare("UPDATE receipts SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND tenant_id = ?")
       .run(now, request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'sales_orders') {
-    db.prepare("UPDATE sales_orders SET status = 'CONFIRMED', approved_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+    // เฉพาะ SO ที่ยังรออนุมัติอยู่ — SO ที่ถูกยกเลิกระหว่างรอ ต้องไม่ถูกปลุกกลับมาเป็น CONFIRMED + ตัดสต็อก
+    const confirmed = db.prepare("UPDATE sales_orders SET status = 'CONFIRMED', approved_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING_APPROVAL'")
       .run(executorId, now, request.reference_id, request.tenant_id)
     // เดิมส่ง soNumber เป็น '' ทำให้ stock_movements บันทึก reference เป็น 'SO: ' เปล่าๆ —
     // soStockAlreadyDeducted() (เช็คก่อนตัดซ้ำ) และ restoreStockForSO ที่อื่นในระบบต่างก็ match
     // ด้วย 'SO: <เลขที่จริง>' ทั้งนั้น เลขว่างจึงทำให้กลไกกันตัดซ้ำ/คืนสต็อกใช้ไม่ได้กับ SO ที่ผ่านมาทางนี้
     const soRow = db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?')
       .get(request.reference_id, request.tenant_id) as any
-    if (soRow && !soStockAlreadyDeducted(request.tenant_id, soRow.so_number)) {
+    if (confirmed.changes > 0 && soRow && !soStockAlreadyDeducted(request.tenant_id, soRow.so_number)) {
       try { deductStockForSO(request.tenant_id, request.reference_id, soRow.so_number) } catch(e) { console.error('deductStock on approval:', e) }
     }
   } else if (request.reference_type === 'purchase_orders') {
@@ -585,8 +603,24 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     'Action executed after approval', now)
 }
 
+// อนุมัติคำขอยกเลิกเอกสารขาย → ยกเลิกจริงด้วย executor ตัวเดียวกับที่ ADMIN ใช้ตอนกดเอง
+function executeSalesCancel(request: any, executorId: string) {
+  const payload = request.payload ? JSON.parse(request.payload) : {}
+  const tenantId = request.tenant_id
+  const refId = request.reference_id
+  switch (payload.kind) {
+    case 'sales_order': cancelSalesOrderNow(tenantId, refId); break
+    case 'invoice': cancelInvoiceNow(tenantId, refId); break
+    case 'receipt': voidReceiptNow(tenantId, refId); break
+    case 'credit_note': cancelCreditNoteNow(tenantId, refId, executorId); break
+    default: throw new SalesCancelError(400, `ไม่รู้จักชนิดเอกสารที่ขอยกเลิก (${payload.kind})`)
+  }
+}
+
 // Helper function to revert reference status when rejected
 function revertReferenceStatus(request: any) {
+  // ปฏิเสธคำขอยกเลิกเอกสารขาย = เอกสารคงสถานะเดิม ไม่ต้องย้อนอะไร (ห้ามตก branch receipts/sales_orders ด้านล่าง)
+  if (request.module_type === 'sales_cancel') return
   if (request.reference_type === 'work_orders') {
     db.prepare("UPDATE work_orders SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'supplier_payments') {
@@ -594,7 +628,7 @@ function revertReferenceStatus(request: any) {
   } else if (request.reference_type === 'receipts') {
     db.prepare("UPDATE receipts SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'sales_orders') {
-    db.prepare("UPDATE sales_orders SET status = 'DRAFT', updated_at = ? WHERE id = ? AND tenant_id = ?")
+    db.prepare("UPDATE sales_orders SET status = 'DRAFT', updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING_APPROVAL'")
       .run(new Date().toISOString(), request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'pos_running_bills' && request.module_type === 'pos_discount') {
     db.prepare("UPDATE pos_running_bills SET discount_amount = 0 WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")

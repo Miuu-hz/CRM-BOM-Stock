@@ -29,6 +29,10 @@ export interface CompanySettings {
   loyalty_min_redeem?: number | null
   // QR สั่งที่โต๊ะ: static = QR ถาวรบนโต๊ะ (ค่าตั้งต้น), rotate = พิมพ์ใหม่ทุกครั้งที่เปิดโต๊ะ · pin = ขอ PIN ก่อนส่งออเดอร์แรก
   pos_qr_mode?: 'static' | 'rotate' | null
+  /** 1 = แจ้งค่าใช้จ่ายตอนปิดกะเข้ากลุ่ม LINE ด้วย */
+  line_shift_expense_groups?: number | boolean
+  /** มาจาก GET เท่านั้น — ผู้ใช้คนนี้แก้แท็บ บิล/VAT ได้ไหม (admin หรือได้สิทธิ์ settings:write) */
+  can_edit_billing?: boolean
   subscription_plan_code?: string  // read-only, attached by GET /settings/company from tenant_subscriptions
   subscription_plan_name?: string
   subscription_status?: string

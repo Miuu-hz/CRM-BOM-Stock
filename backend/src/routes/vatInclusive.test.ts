@@ -86,6 +86,7 @@ describe('โหมดราคารวม VAT', () => {
     const so = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(soRes.body.data.id) as any
     expect(so.vat_inclusive, 'ใบสั่งขายต้องตามใบเสนอราคา ไม่ใช่ค่าตั้งต้นใหม่').toBe(1)
 
+    db.prepare("UPDATE sales_orders SET status = 'CONFIRMED' WHERE id = ?").run(so.id) // ออกใบแจ้งหนี้ได้เฉพาะ SO ที่ยืนยันแล้ว
     const { invoice } = createInvoiceFromSO(s.tenantId, { salesOrderId: so.id }) as any
     expect(invoice.vat_inclusive, 'ใบแจ้งหนี้ต้องตามใบสั่งขาย').toBe(1)
     expect(invoice.total_amount).toBeCloseTo(so.total_amount, 2)
@@ -111,6 +112,7 @@ describe('โหมดราคารวม VAT', () => {
     const so = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(soRes.body.data.id) as any
     expect(so.extra_charge_amount).toBe(50)
 
+    db.prepare("UPDATE sales_orders SET status = 'CONFIRMED' WHERE id = ?").run(so.id) // ออกใบแจ้งหนี้ได้เฉพาะ SO ที่ยืนยันแล้ว
     const { invoice, items } = createInvoiceFromSO(s.tenantId, { salesOrderId: so.id }) as any
     expect(invoice.extra_charge_amount).toBe(50)
     const lineNames = (items as any[]).map(i => i.product_name)

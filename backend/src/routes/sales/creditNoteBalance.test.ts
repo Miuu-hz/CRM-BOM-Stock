@@ -66,10 +66,13 @@ describe('ใบลดหนี้กับยอดค้างใบแจ้�
     const jv = db.prepare("SELECT COUNT(*) n FROM journal_entries WHERE tenant_id = ? AND reference_type = 'CREDIT_NOTE'").get(t) as any
     expect(jv.n).toBe(1)
 
-    // ใบที่ออกแล้วยังไม่มีขั้นกลับรายการ journal/สต็อก → ห้ามยกเลิก ยอดค้างต้องไม่ขยับ
-    expect((await setStatus(token, cnId, 'CANCELLED')).status).toBe(409)
-    expect(balance(invoiceId), 'ยกเลิกใบที่ออกแล้วไม่ได้ ยอดคงเดิม').toBe(963)
+    // ถอยสถานะไม่ได้ · ยกเลิกใบที่ออกแล้ว (MASTER ทำได้เลย ผ่านประตู sales_cancel) → กลับ journal + คืนยอดค้าง
     expect((await setStatus(token, cnId, 'DRAFT')).status).toBe(409)
+    expect((await setStatus(token, cnId, 'CANCELLED')).status).toBe(200)
+    expect(balance(invoiceId), 'ยกเลิกใบที่ออกแล้ว คืนยอดค้าง').toBe(1070)
+    const rev = db.prepare("SELECT COUNT(*) n FROM journal_entries WHERE tenant_id = ? AND reference_type = 'CREDIT_NOTE_CANCEL'").get(t) as any
+    expect(rev.n).toBe(1)
+    expect((await setStatus(token, cnId, 'CANCELLED')).status, 'ยกเลิกซ้ำ').toBe(409)
   })
 
   it('ยกเลิก DRAFT (ทั้ง status และ DELETE) ไม่บวกยอด', async () => {

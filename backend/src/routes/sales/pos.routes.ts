@@ -10,6 +10,7 @@ import { gateOrCreate, recordAutoAction } from '../../services/approvalGate.serv
 import { buildShiftSummary } from '../../services/posShiftSummary.service'
 import posStockService from '../../services/pos-stock.service'
 import { buildShiftCloseJournal } from '../../services/posShiftRepair.service'
+import { lineBotService } from '../../services/line-bot.service'
 
 const router = Router()
 
@@ -507,6 +508,8 @@ router.get('/pos-shifts', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { limit = 20 } = req.query
+    const parsedLimit = parseInt(limit as string, 10)
+    const clampedLimit = !Number.isFinite(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(parsedLimit, 500)
     const shifts = db.prepare(`
       SELECT s.*, uo.name as opened_by_name, uc.name as closed_by_name
       FROM pos_shifts s
@@ -515,7 +518,7 @@ router.get('/pos-shifts', (req: Request, res: Response) => {
       WHERE s.tenant_id = ?
       ORDER BY s.opened_at DESC
       LIMIT ?
-    `).all(tenantId, parseInt(limit as string)) as any[]
+    `).all(tenantId, clampedLimit) as any[]
 
     res.json({ success: true, data: shifts })
   } catch (error) {
@@ -619,14 +622,33 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     }
 
     // รายการนำเงินไปใช้จ่ายก่อนปิดเก๊ะ (petty cash expenses / cash out)
+    // เจ้าของสั่ง 2026-10-22: แคชเชียร์ต้องลงค่าใช้จ่ายเงินสดที่ยังไม่ได้บันทึกในระบบตอนปิดกะ ไม่ต้องขออนุมัติ
+    // แต่ทุกรายการต้องขึ้นบันทึกความเคลื่อนไหว (/approvals) และส่ง LINE ถึง Admin/Manager
+    // เดิมรายการที่ข้อมูลไม่ครบถูกทิ้งเงียบ ๆ (เงินออกจากลิ้นชักโดยไม่มีบันทึก) — ตอนนี้ตอบ 400 ให้แก้ก่อน
+    if (req.body.cash_expenses != null && !Array.isArray(req.body.cash_expenses)) {
+      return res.status(400).json({ success: false, message: 'รายการค่าใช้จ่ายไม่ถูกต้อง' })
+    }
     const rawExpenses = Array.isArray(req.body.cash_expenses) ? req.body.cash_expenses : []
     const validExpenses: Array<{ reason: string; amount: number; account_id?: string }> = []
-    for (const exp of rawExpenses) {
-      const amt = Number(exp.amount)
-      const reason = typeof exp.reason === 'string' ? exp.reason.trim() : ''
-      if (amt > 0 && reason) {
-        validExpenses.push({ reason, amount: amt, account_id: exp.account_id })
+    for (const [i, exp] of rawExpenses.entries()) {
+      const amt = Math.round(Number(exp?.amount) * 100) / 100
+      const reason = typeof exp?.reason === 'string' ? exp.reason.trim() : ''
+      if (!reason) {
+        return res.status(400).json({ success: false, message: `ค่าใช้จ่ายรายการที่ ${i + 1}: กรุณาระบุรายละเอียด/เหตุผล` })
       }
+      if (!Number.isFinite(amt) || amt <= 0) {
+        return res.status(400).json({ success: false, message: `ค่าใช้จ่ายรายการที่ ${i + 1} (${reason}): จำนวนเงินต้องเป็นตัวเลขมากกว่า 0` })
+      }
+      let accountId: string | undefined
+      if (exp.account_id != null && exp.account_id !== '') {
+        // ตารางผังบัญชีจริงคือ accounts (เดิม query chart_of_accounts ที่ไม่มีอยู่ → ปิดกะพัง 500)
+        const acc = db.prepare('SELECT id FROM accounts WHERE id = ? AND tenant_id = ?').get(String(exp.account_id), tenantId)
+        if (!acc) {
+          return res.status(400).json({ success: false, message: `ค่าใช้จ่ายรายการที่ ${i + 1} (${reason}): ไม่พบบัญชีที่เลือกในกิจการนี้` })
+        }
+        accountId = String(exp.account_id)
+      }
+      validExpenses.push({ reason, amount: amt, account_id: accountId })
     }
 
     // ปัดเป็นสตางค์ก่อนใช้ทุกตัว — ยอดบิลบางใบมีเศษเกิน 2 ตำแหน่ง/เศษ floating point
@@ -636,6 +658,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     const today = thaiDateStr() // วันที่ลงบัญชีตามเวลาไทย (nowStr เป็น UTC → 00:00–06:59 ได้วันก่อน)
 
     let journalEntryId: string | null = null
+    const expenseMovementIds: string[] = []
     let sales: any
     let movements: { cashIn: number; paidOut: number } = { cashIn: 0, paidOut: 0 }
     let expectedCash = 0
@@ -650,11 +673,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         const cashAccountId = getOrCreateAccount(tenantId, ACC.CASH)
         for (const exp of validExpenses) {
           const movementId = generateId()
-          let accId = defaultExpenseAccountId
-          if (exp.account_id) {
-            const accCheck = db.prepare('SELECT id FROM chart_of_accounts WHERE id = ? AND tenant_id = ?').get(exp.account_id, tenantId)
-            if (accCheck) accId = exp.account_id
-          }
+          const accId = exp.account_id || defaultExpenseAccountId // ตรวจว่าเป็นบัญชีของกิจการนี้แล้วก่อนเข้าทรานแซกชัน
 
           db.prepare(`
             INSERT INTO pos_shift_cash_movements (id, tenant_id, shift_id, type, amount, reason, account_id, created_by, created_at)
@@ -662,6 +681,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
           `).run(movementId, tenantId, id, exp.amount, exp.reason, accId, userId, nowStr)
 
           console.log(`[SHIFT EXPENSE AUDIT] Shift: ${shift.shift_number}, User: ${userId}, Amount: ${exp.amount}, Reason: ${exp.reason}`)
+          expenseMovementIds.push(movementId)
 
           const desc = `จ่ายออกจากลิ้นชัก กะ ${shift.shift_number} - ${exp.reason}`
           postSimpleJournal(tenantId, userId, today, 'POS_CASH_MOVEMENT', movementId, desc, accId, cashAccountId, exp.amount)
@@ -760,6 +780,26 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         + (validExpenses.length ? ` · ใช้เงินก่อนปิด ${validExpenses.map(e => `${e.reason} ฿${e.amount.toLocaleString()}`).join(', ')}` : ''),
       payload: { severity: cashDifference < 0 ? 'high' : cashDifference > 0 ? 'medium' : 'info', difference: cashDifference },
     })
+
+    // ค่าใช้จ่ายเงินสดตอนปิดกะ: ไม่ต้องอนุมัติ แต่แจ้งเตือนทุกรายการ — บันทึกความเคลื่อนไหวรายการละแถว + LINE
+    // (บันทึก/LINE พังต้องไม่ทำให้การปิดกะที่สำเร็จแล้วล้ม — recordAutoAction ไม่ throw, LINE ยิงแบบไม่รอ)
+    validExpenses.forEach((exp, i) => {
+      recordAutoAction({
+        tenantId, user: req.user as any, category: 'pos_shift_expense', refType: 'pos_shift_cash_movements',
+        refId: expenseMovementIds[i] || id, amount: exp.amount,
+        description: `ค่าใช้จ่ายเงินสดตอนปิดกะ ${shift.shift_number} ฿${exp.amount.toLocaleString()} — ${exp.reason}`,
+        payload: { severity: 'medium', shiftId: id, shiftNumber: shift.shift_number, reason: exp.reason, accountId: exp.account_id || null },
+      })
+    })
+    if (validExpenses.length > 0) {
+      try {
+        lineBotService.notifyShiftExpenses(tenantId, {
+          shiftNumber: shift.shift_number, cashier: req.user!.email, expenses: validExpenses,
+        }).catch((err: any) => console.error('[ปิดกะ] ส่งแจ้งเตือนค่าใช้จ่ายเข้า LINE ไม่สำเร็จ:', err))
+      } catch (err) {
+        console.error('[ปิดกะ] แจ้งเตือนค่าใช้จ่ายเข้า LINE ไม่สำเร็จ (ปิดกะสำเร็จแล้ว):', err)
+      }
+    }
 
     try {
       const { lineBotService } = require('../../services/line-bot.service')
@@ -909,6 +949,14 @@ router.post('/pos-running-bills/:id/void', async (req: Request, res: Response) =
     `).get(id, tenantId)
     if (alreadyCleared) {
       return res.status(400).json({ success: false, message: 'บิลนี้นำเงินเข้าบัญชีแล้ว ไม่สามารถยกเลิกได้' })
+    }
+
+    // Invoice Guard (เหมือน pos-bill.routes.ts POST /bills/:id/cancel): ออกใบกำกับเต็มรูปแล้ว ต้องยกเลิกใบกำกับก่อน
+    const invoice = db.prepare(`
+      SELECT id, invoice_number FROM invoices WHERE pos_bill_id = ? AND tenant_id = ? AND status != 'CANCELLED'
+    `).get(id, tenantId) as any
+    if (invoice) {
+      return res.status(400).json({ success: false, message: `บิลนี้ออกใบกำกับภาษีแล้ว (${invoice.invoice_number}) ต้องยกเลิกใบกำกับภาษีก่อน` })
     }
 
     // ประตูอนุมัติ: หมวด "ปิดบิล POS / คืนเงิน"

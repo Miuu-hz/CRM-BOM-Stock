@@ -2,7 +2,9 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { ACC, ACC_META } from '../../config/accountCodes'
-import { getOrCreateAccount, issuedBasePerUnit } from './shared'
+import { getOrCreateAccount, issuedBasePerUnit, reverseSalesJournalByRef } from './shared'
+import { gateSalesCancel, pendingCancelBody, SalesCancelError } from '../../services/salesCancel.service'
+import { recordAutoAction } from '../../services/approvalGate.service'
 import { postJournal, JournalError } from '../../services/accounting.service'
 import { convertQuantityBidirectional, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
@@ -239,6 +241,60 @@ function restoreCreditNoteBalance(tenantId: string, cn: any, now: string) {
   db.prepare('UPDATE credit_notes SET balance_applied = 0 WHERE id = ? AND tenant_id = ?').run(cn.id, tenantId)
 }
 
+// ─── สิทธิ์ใบลดหนี้: ADMIN/MANAGER (+ MASTER/OWNER ที่อยู่เหนือกว่า) เท่านั้น — เจ้าของสั่ง 2026-10-22 ───
+// ใบลดหนี้ = ลดรายได้/คืนเงินลูกค้า เดิมใครล็อกอินได้ก็สร้าง/ออก/ยกเลิกได้
+const CREDIT_NOTE_ROLES = ['ADMIN', 'MANAGER', 'MASTER', 'OWNER']
+const canManageCreditNotes = (role: string) => CREDIT_NOTE_ROLES.includes(role)
+const CN_FORBIDDEN = { success: false, message: 'ไม่มีสิทธิ์จัดการใบลดหนี้ — ต้องเป็น ADMIN/MANAGER' }
+
+// ─── ยกเลิกใบลดหนี้ ─────────────────────────────────────────────────────────────
+// ใบที่ออกแล้ว (ISSUED/APPLIED): กลับ journal ลดหนี้ + journal รับคืนต้นทุน, เอาของที่รับคืนออกจากสต็อก
+// (movement OUT ผูกบรรทัด SO เดิม → ยอดสุทธิรายบรรทัด/ใบลดหนี้ใบถัดไปถูกต้อง) แล้วคืนยอดค้างใบแจ้งหนี้
+// ใบ DRAFT: แค่เปลี่ยนสถานะ (+ คืนยอดของใบเก่าที่หักไว้ตั้งแต่สร้าง) — เรียกจากประตูอนุมัติ (approval.routes.ts)
+export function cancelCreditNoteNow(tenantId: string, cnId: string, userId: string) {
+  const cn = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(cnId, tenantId) as any
+  if (!cn) throw new SalesCancelError(404, 'Credit note not found')
+  if (cn.status === 'CANCELLED') throw new SalesCancelError(409, `ใบลดหนี้ ${cn.cn_number} ถูกยกเลิกไปแล้ว`)
+  const now = new Date().toISOString()
+  db.transaction(() => {
+    if (cn.status !== 'DRAFT') {
+      reverseSalesJournalByRef(tenantId, 'CREDIT_NOTE', 'CREDIT_NOTE_CANCEL', cn.id, `กลับรายการ (ยกเลิกใบลดหนี้) - ${cn.cn_number}`)
+      reverseSalesJournalByRef(tenantId, 'CREDIT_NOTE_COGS', 'CREDIT_NOTE_COGS_CANCEL', cn.id, `กลับรายการรับคืนสินค้า (ยกเลิกใบลดหนี้) - ${cn.cn_number}`)
+      const setting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+      const returns = db.prepare("SELECT * FROM stock_movements WHERE tenant_id = ? AND type = 'RETURN' AND reference = ?")
+        .all(tenantId, `CN: ${cn.cn_number}`) as any[]
+      for (const m of returns) {
+        const si = db.prepare('SELECT name, quantity FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.stock_item_id, tenantId) as any
+        if (!si) continue
+        if (Number(si.quantity) < Number(m.quantity) - 1e-9 && setting?.allow_negative_stock !== 1) {
+          throw new SalesCancelError(409, `ยกเลิกใบลดหนี้ไม่ได้: สต็อก "${si.name}" เหลือ ${si.quantity} น้อยกว่าที่รับคืนไว้ ${m.quantity}`)
+        }
+        db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(m.quantity, now, m.stock_item_id, tenantId)
+        db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, source_line_id, reference, notes, created_at, created_by)
+          VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?, ?)`).run(generateId(), tenantId, m.stock_item_id, m.quantity, m.movement_unit,
+          m.movement_quantity, m.source_line_id, `CN-CANCEL: ${cn.cn_number}`, `ยกเลิกใบลดหนี้ ${cn.cn_number} - เอาของที่รับคืนออก`, now, userId)
+      }
+    }
+    db.prepare("UPDATE credit_notes SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?").run(now, cn.id, tenantId)
+    // ใบ DRAFT ใหม่ไม่เคยหักยอด (balance_applied = 0) → ไม่คืนอะไร · ใบที่ออกแล้ว/ใบเก่า (NULL) หักไปแล้ว → คืน
+    restoreCreditNoteBalance(tenantId, cn, now)
+  })()
+  return db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(cnId, tenantId) as any
+}
+
+function gateCreditNoteCancel(req: Request, res: Response, cn: any) {
+  const tenantId = req.user!.tenantId
+  const { pending, gateArgs } = gateSalesCancel({
+    tenantId, user: req.user! as any, kind: 'credit_note', refId: cn.id, docNumber: cn.cn_number,
+    docDate: cn.credit_date || cn.created_at, amount: cn.total_amount, reason: req.body?.reason,
+  })
+  if (pending) return res.status(202).json(pendingCancelBody(pending, cn.cn_number))
+  const creditNote = cancelCreditNoteNow(tenantId, cn.id, req.user!.userId)
+  recordAutoAction(gateArgs)
+  return res.json({ success: true, data: creditNote })
+}
+
 // GET all credit notes
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -269,6 +325,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     
     const creditNote = db.prepare(`
       SELECT cn.*, c.name as customer_name, c.code as customer_code,
+        c.tax_id as customer_tax_id, c.address as customer_address,
         i.invoice_number
       FROM credit_notes cn
       LEFT JOIN customers c ON cn.customer_id = c.id AND c.tenant_id = cn.tenant_id
@@ -304,22 +361,35 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { invoiceId, reason, notes, items, creditDate, amount } = req.body
+    if (!canManageCreditNotes(req.user!.role)) return res.status(403).json(CN_FORBIDDEN)
+    const { invoiceId, reason, notes, creditDate, amount } = req.body
+    let { items } = req.body
     
     if (!invoiceId || !reason) {
       return res.status(400).json({ success: false, message: 'Invoice and reason are required' })
     }
     // ลูกค้า/อัตรา VAT/โหมดรวม VAT ยึดตามใบแจ้งหนี้ต้นทาง — เดิมอ่าน customerId จาก body
     // ที่หน้าเว็บไม่เคยส่งมา (bind undefined → 500) และ taxRate 0 กลายเป็น 7 เพราะ `|| 7`
-    const srcInvoice = db.prepare('SELECT customer_id, tax_rate, vat_inclusive FROM invoices WHERE id = ? AND tenant_id = ?')
+    const srcInvoice = db.prepare('SELECT customer_id, tax_rate, vat_inclusive, status, pos_bill_id FROM invoices WHERE id = ? AND tenant_id = ?')
       .get(invoiceId, tenantId) as any
     if (!srcInvoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
     }
+    if (srcInvoice.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'ใบแจ้งหนี้นี้ถูกยกเลิกแล้ว ออกใบลดหนี้ไม่ได้' })
+    }
+    // ใบกำกับจากบิล POS เป็นเอกสารล้วน (ไม่มี journal/ลูกหนี้ของตัวเอง) — ลดหนี้ที่นี่จะกลับรายได้ที่ไม่เคยลงผ่านใบนี้
+    // คืนเงิน/คืนของของบิล POS ให้ยกเลิกที่บิล POS (ต้องยกเลิกใบกำกับก่อน)
+    if (srcInvoice.pos_bill_id != null) {
+      return res.status(400).json({ success: false, message: 'ใบกำกับภาษีที่ออกจากบิล POS ออกใบลดหนี้ไม่ได้ — ยกเลิกใบกำกับแล้วยกเลิก/คืนเงินที่บิล POS แทน' })
+    }
+    if (items != null && !Array.isArray(items)) {
+      return res.status(400).json({ success: false, message: 'ข้อมูลรายการสินค้าที่คืนไม่ถูกต้อง' })
+    }
     const hasItems = Array.isArray(items) && items.length > 0
     // โหมด "ลดราคา" ไม่มีรายการ → ต้องระบุยอด (ฐานเดียวกับราคาบนใบแจ้งหนี้) ไม่งั้นได้ใบลดหนี้ ฿0
     const discountBase = Math.round((Number(amount) || 0) * 100) / 100
-    if (!hasItems && !(discountBase > 0)) {
+    if (!hasItems && !(Number.isFinite(discountBase) && discountBase > 0)) {
       return res.status(400).json({ success: false, message: 'กรุณาระบุยอดลดหนี้' })
     }
 
@@ -328,16 +398,25 @@ router.post('/', async (req: Request, res: Response) => {
     // none. For each returned line, cap at (invoice_items.quantity − already credited
     // on this same invoice line across earlier non-CANCELLED credit notes) so a second
     // CN — or a retried request — can't return more than was ever sold.
-    if (items && items.length > 0) {
+    if (hasItems) {
+      // ราคาต่อหน่วยยึดตาม invoice_items.unit_price เสมอ — เดิมเชื่อ unitPrice จาก body ส่งราคาสูงกว่าที่ขายจริง
+      // ก็ลดหนี้ (คืนเงิน) เกินได้ · บรรทัดเดียวกันส่งมาหลายแถวรวมจำนวนกันก่อนเทียบกับที่คืนได้
+      const qtyByLine = new Map<string, number>()
       for (const item of items) {
-        if (!item.invoiceItemId || !(item.quantity > 0)) {
+        const q = Number(item?.quantity)
+        if (!item?.invoiceItemId || !Number.isFinite(q) || q <= 0) {
           return res.status(400).json({ success: false, message: 'ข้อมูลรายการสินค้าที่คืนไม่ถูกต้อง' })
         }
+        qtyByLine.set(item.invoiceItemId, (qtyByLine.get(item.invoiceItemId) || 0) + q)
+      }
+      const resolved: any[] = []
+      for (const item of items) {
         const invItem = db.prepare('SELECT * FROM invoice_items WHERE id = ? AND tenant_id = ? AND invoice_id = ?')
           .get(item.invoiceItemId, tenantId, invoiceId) as any
         if (!invItem) {
           return res.status(400).json({ success: false, message: 'ไม่พบรายการสินค้านี้ในใบแจ้งหนี้ที่เลือก' })
         }
+        resolved.push({ ...item, quantity: Number(item.quantity), unitPrice: Number(invItem.unit_price) || 0 })
         const alreadyCredited = db.prepare(`
           SELECT COALESCE(SUM(cni.quantity), 0) as qty
           FROM credit_note_items cni
@@ -345,13 +424,15 @@ router.post('/', async (req: Request, res: Response) => {
           WHERE cni.invoice_item_id = ? AND cni.tenant_id = ? AND cn.status != 'CANCELLED'
         `).get(item.invoiceItemId, tenantId) as any
         const remaining = Number(invItem.quantity) - Number(alreadyCredited?.qty || 0)
-        if (item.quantity > remaining + 1e-9) {
+        const requested = qtyByLine.get(item.invoiceItemId) || 0
+        if (requested > remaining + 1e-9) {
           return res.status(400).json({
             success: false,
-            message: `จำนวนที่คืน (${item.quantity}) เกินจำนวนที่ขายจริง — คืนได้อีกไม่เกิน ${remaining} หน่วย สำหรับ "${invItem.product_name || 'สินค้า'}"`,
+            message: `จำนวนที่คืน (${requested}) เกินจำนวนที่ขายจริง — คืนได้อีกไม่เกิน ${remaining} หน่วย สำหรับ "${invItem.product_name || 'สินค้า'}"`,
           })
         }
       }
+      items = resolved
     }
 
     // Calculate totals
@@ -361,6 +442,9 @@ router.post('/', async (req: Request, res: Response) => {
     const tax = Number(srcInvoice.tax_rate ?? 7)
     const { subtotal, taxAmount, totalAmount } = calcVat(lineTotal, { rate: tax, inclusive: srcInvoice.vat_inclusive === 1 })
     const customerId = srcInvoice.customer_id
+    if (!(totalAmount > 0)) {
+      return res.status(400).json({ success: false, message: 'ยอดลดหนี้ต้องมากกว่า 0' })
+    }
 
     // ยอดลดหนี้รวม (รวมใบนี้) ต้องไม่เกินมูลค่าใบแจ้งหนี้ — เช็คก่อนกันเลขเอกสาร (formatDocumentNumber
     // ต้องมาหลังการตรวจทุกอย่าง) ไม่ให้คำขอที่ถูกปฏิเสธเผาเลขทิ้ง ครอบคลุมทั้งโหมดลดราคาและคืนสินค้า
@@ -422,6 +506,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canManageCreditNotes(req.user!.role)) return res.status(403).json(CN_FORBIDDEN)
     const { status } = req.body
     const validStatuses = ['DRAFT', 'ISSUED', 'APPLIED', 'CANCELLED']
 
@@ -434,14 +519,23 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Credit note not found' })
     }
 
+    // ยกเลิกใบลดหนี้ (ทั้ง DRAFT ที่ได้เลขแล้ว และใบที่ออกแล้ว) ต้องขออนุมัติ — อนุมัติแล้วระบบเรียก cancelCreditNoteNow
+    if (status === 'CANCELLED') {
+      if (cn.status === 'CANCELLED') return res.status(409).json({ success: false, message: `ใบลดหนี้ ${cn.cn_number} ถูกยกเลิกไปแล้ว` })
+      return gateCreditNoteCancel(req, res, cn)
+    }
+
     // ออกใบได้จาก DRAFT เท่านั้น — กันออกซ้ำ (ลงบัญชี/คืนสต็อก/หักยอดค้างซ้ำ)
     if (status === 'ISSUED' && cn.status !== 'DRAFT') {
       return res.status(409).json({ success: false, message: `ออกใบลดหนี้ได้เฉพาะสถานะ DRAFT (ตอนนี้: ${cn.status})` })
     }
-    // ใบที่ออกแล้วลงบัญชี/คืนสต็อกไปแล้ว — ยังไม่มีขั้นกลับรายการ journal+สต็อก ถ้ายอมให้ยกเลิก/ถอยสถานะ
-    // ยอดค้างในใบแจ้งหนี้จะไม่ตรงกับบัญชีลูกหนี้ จึงยอมแค่ DRAFT → ISSUED / CANCELLED
-    if (cn.status !== 'DRAFT' || !['ISSUED', 'CANCELLED'].includes(status)) {
-      return res.status(409).json({ success: false, message: `เปลี่ยนสถานะใบลดหนี้จาก ${cn.status} เป็น ${status} ไม่ได้ (ใบที่ออกแล้วต้องออกใบเพิ่มหนี้แทนการยกเลิก)` })
+    // ทางเดียวที่เหลือคือ DRAFT → ISSUED (ยกเลิกแยกไปทางขออนุมัติด้านบน) — ห้ามถอยสถานะ/ข้ามไป APPLIED
+    if (cn.status !== 'DRAFT' || status !== 'ISSUED') {
+      return res.status(409).json({ success: false, message: `เปลี่ยนสถานะใบลดหนี้จาก ${cn.status} เป็น ${status} ไม่ได้` })
+    }
+    const srcInv = db.prepare('SELECT status FROM invoices WHERE id = ? AND tenant_id = ?').get(cn.invoice_id, tenantId) as any
+    if (!srcInv || srcInv.status === 'CANCELLED') {
+      return res.status(409).json({ success: false, message: 'ใบแจ้งหนี้ต้นทางถูกยกเลิกแล้ว ออกใบลดหนี้ไม่ได้' })
     }
     // อีกใบ DRAFT บนใบแจ้งหนี้เดียวกันอาจถูกออก (ISSUED) แซงไปก่อนระหว่างที่ใบนี้ยังเป็น DRAFT —
     // เช็คซ้ำด้วย helper เดียวกับตอนสร้าง ไม่ใช่เชื่อผลเช็คตอน POST เพียงครั้งเดียว
@@ -465,7 +559,6 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         restoreCreditNoteStock(tenantId, updated, req.user!.userId, now)
         refundDue = applyCreditNoteBalance(tenantId, updated, now)
       }
-      if (status === 'CANCELLED' && cn.status !== 'CANCELLED') restoreCreditNoteBalance(tenantId, cn, now)
     })()
 
     const creditNote = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
@@ -474,6 +567,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     if (error instanceof CreditNoteIssueError || error instanceof JournalError) {
       return res.status(422).json({ success: false, message: error.message })
     }
+    if (error instanceof SalesCancelError) return res.status(error.status).json({ success: false, message: error.message })
     console.error('Update credit note status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update credit note status' })
   }
@@ -483,19 +577,14 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
+    if (!canManageCreditNotes(req.user!.role)) return res.status(403).json(CN_FORBIDDEN)
     const cn = db.prepare('SELECT * FROM credit_notes WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!cn) return res.status(404).json({ success: false, message: 'Credit note not found' })
     if (cn.status !== 'DRAFT') return res.status(400).json({ success: false, message: 'ลบได้เฉพาะใบลดหนี้สถานะ DRAFT เท่านั้น' })
-    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ เก็บใบและรายการไว้ให้ตรวจย้อนได้ (เลขไม่ขาดช่วง)
-    db.transaction(() => {
-      const now = new Date().toISOString()
-      db.prepare("UPDATE credit_notes SET status = 'CANCELLED', updated_at = ? WHERE id = ? AND tenant_id = ?")
-        .run(now, req.params.id, tenantId)
-      // ใบ DRAFT ใหม่ไม่เคยหักยอด (balance_applied = 0) → ไม่คืนอะไร · ใบเก่า (NULL) หักไปแล้วตอนสร้าง → คืน
-      restoreCreditNoteBalance(tenantId, cn, now)
-    })()
-    res.json({ success: true })
+    // ได้เลขเอกสารไปแล้ว = ห้ามหาย → ยกเลิกแทนการลบ (cancelCreditNoteNow) และต้องขออนุมัติเหมือนการยกเลิก
+    return gateCreditNoteCancel(req, res, cn)
   } catch (error) {
+    if (error instanceof SalesCancelError) return res.status(error.status).json({ success: false, message: error.message })
     res.status(500).json({ success: false, message: 'Failed to delete credit note' })
   }
 })

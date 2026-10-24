@@ -1,6 +1,6 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
-import { createSalesJournal } from '../routes/sales/shared'
+import { createSalesJournal, STOCK_DEDUCTED_STATUSES } from '../routes/sales/shared'
 import { rememberContactVatMode } from './accounting.service'
 
 /**
@@ -20,6 +20,7 @@ export class SalesBillingError extends Error {
   constructor(
     public code:
       | 'SO_NOT_FOUND'
+      | 'SO_NOT_INVOICEABLE'
       | 'DUPLICATE_INVOICE'
       | 'CURRENCY_NOT_FOUND'
       | 'INVALID_EXCHANGE_RATE'
@@ -101,6 +102,12 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
     WHERE so.id = ? AND so.tenant_id = ?
   `).get(salesOrderId, tenantId) as any
   if (!salesOrder) throw new SalesBillingError('SO_NOT_FOUND', 'Sales order not found')
+  // ออกใบแจ้งหนี้ได้เฉพาะ SO ที่ยืนยัน (ตัดสต็อก + ลงต้นทุน) แล้ว — เดิม DRAFT/PENDING_APPROVAL/CANCELLED ก็ออกได้
+  // = รายได้ลงบัญชีทั้งที่ของยังไม่ออก/ยกเลิกไปแล้ว
+  if (!STOCK_DEDUCTED_STATUSES.includes(salesOrder.status)) {
+    throw new SalesBillingError('SO_NOT_INVOICEABLE',
+      `คำสั่งขาย ${salesOrder.so_number} สถานะ ${salesOrder.status} ออกใบแจ้งหนี้ไม่ได้ — ต้องยืนยันคำสั่งขายก่อน`)
+  }
 
   const id = generateId()
   let invoiceNumber = ''
@@ -314,8 +321,10 @@ export interface RecordPaymentPayload {
 
 /** รับชำระเงินจากลูกค้าเข้าใบแจ้งหนี้ — รับเต็มหรือบางส่วนได้ */
 export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPayload) {
-  const { invoiceId, receiptDate, paymentMethod, paymentReference, amount, notes, bankAccountId } = payload
-  if (!invoiceId || !amount || amount <= 0) {
+  const { invoiceId, receiptDate, paymentMethod, paymentReference, notes, bankAccountId } = payload
+  // body JSON อาจส่ง amount เป็น string ("100") — แปลงก่อนคิดเลขเสมอ ไม่งั้น paid_amount + amount กลายเป็นการต่อสตริง
+  const amount = Number(payload.amount)
+  if (!invoiceId || !Number.isFinite(amount) || amount <= 0) {
     throw new SalesBillingError('INVALID_AMOUNT', 'ต้องระบุใบแจ้งหนี้และจำนวนเงินที่มากกว่า 0')
   }
 

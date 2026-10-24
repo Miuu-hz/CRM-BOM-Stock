@@ -101,10 +101,10 @@ export function vatModeOf(rate: number | undefined | null, inclusive: boolean | 
 }
 
 /** แปลงโหมดกลับเป็น field ที่เอกสารส่งจริง */
-export function vatModeToFields(mode: VatMode): { rate: number; inclusive: boolean } {
+export function vatModeToFields(mode: VatMode, rate: number = VAT_RATE): { rate: number; inclusive: boolean } {
   if (mode === 'NONE') return { rate: 0, inclusive: false }
-  if (mode === 'INCLUSIVE') return { rate: VAT_RATE, inclusive: true }
-  return { rate: VAT_RATE, inclusive: false }
+  if (mode === 'INCLUSIVE') return { rate, inclusive: true }
+  return { rate, inclusive: false }
 }
 
 /**

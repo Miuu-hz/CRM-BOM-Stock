@@ -302,6 +302,37 @@ class LineBotService {
         }
     }
 
+    // ── ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ → LINE ส่วนตัวของ Admin/Master + Manager (ไม่เข้ากลุ่ม ตามสรุปปิดกะ) ──
+    // ไม่ต้องอนุมัติ แต่เจ้าของต้องรู้ทุกรายการ (เจ้าของสั่ง 2026-10-22)
+    public async notifyShiftExpenses(
+        tenantId: string,
+        info: { shiftNumber: string; cashier?: string; expenses: { reason: string; amount: number }[] }
+    ) {
+        const client = this.getClient(tenantId)
+        if (!client || !info?.expenses?.length) return
+        const total = info.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)
+        const lines = info.expenses.map(e => `• ${e.reason} ฿${Number(e.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`)
+        const msg = {
+            type: 'text',
+            text: `💸 ค่าใช้จ่ายเงินสดตอนปิดกะ ${info.shiftNumber}${info.cashier ? `\nโดย ${info.cashier}` : ''}\n${lines.join('\n')}`
+                + `\nรวม ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}\nดูที่หน้า อนุมัติ > บันทึกความเคลื่อนไหว`,
+        }
+        const db = getDb()
+        const managers = db.prepare(`
+            SELECT DISTINCT lum.line_user_id FROM line_user_mappings lum
+            LEFT JOIN users u ON lum.user_id = u.id
+            WHERE lum.tenant_id = ? AND (u.role = 'MANAGER' OR lum.role = 'MANAGER')
+        `).all(tenantId) as { line_user_id: string }[]
+        const targets = new Set<string>([...this.adminLineUsers(tenantId), ...managers].map(u => u.line_user_id))
+        for (const lineUserId of targets) {
+            try { await client.pushMessage(lineUserId, msg) } catch (err) {
+                console.error(`notifyShiftExpenses push failed → ${lineUserId}:`, err)
+            }
+        }
+        const cfg = db.prepare('SELECT line_shift_expense_groups FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+        if (cfg?.line_shift_expense_groups === 1) await this.pushToAllGroups(tenantId, msg)
+    }
+
     // ── Approval notifications (Samsung One UI 9 Flex Card) ───────────────────
     public async notifyApprovalRequest(tenantId: string, req: any) {
         const client = this.getClient(tenantId)

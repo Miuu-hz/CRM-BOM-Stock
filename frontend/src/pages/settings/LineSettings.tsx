@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { getLineConfig, updateLineConfig, testLineMessage, generateLinkToken, getLinkStatus, unlinkLine, getLinkedUsers, unlinkUserLine, LineConfig } from '../../services/lineBot'
 import { useAuth } from '../../contexts/AuthContext'
+import companySettingsService from '../../services/companySettings.service'
+import toast from 'react-hot-toast'
 
 export default function LineSettings() {
   const { t } = useTranslation()
@@ -364,6 +366,8 @@ export default function LineSettings() {
         </div>
       </div>
 
+      <ShiftExpenseGroupToggle />
+
       {/* Linked Users List (master only) */}
       {isMaster && (
         <div className="phopy-card p-6 border-l-4 border-phopy-indigo/50">
@@ -406,6 +410,42 @@ export default function LineSettings() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ค่าใช้จ่ายเงินสดตอนปิดกะ ส่ง LINE หา admin/manager รายคนเสมอ — ติ๊กนี้ให้ส่งเข้ากลุ่มที่ผูกไว้ด้วย
+function ShiftExpenseGroupToggle() {
+  const [on, setOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    companySettingsService.get().then(d => setOn(Number(d.line_shift_expense_groups) === 1)).catch(() => setOn(false))
+  }, [])
+  const toggle = async (v: boolean) => {
+    setOn(v)
+    try {
+      await companySettingsService.update({ line_shift_expense_groups: v })
+      toast.success('บันทึกแล้ว')
+    } catch (err: any) {
+      setOn(!v)
+      toast.error(err?.response?.data?.message || 'บันทึกไม่สำเร็จ')
+    }
+  }
+  if (on === null) return null
+  return (
+    <div className="phopy-card p-6">
+      <div className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="line_shift_expense_groups"
+          checked={on}
+          onChange={(e) => toggle(e.target.checked)}
+          className="rounded bg-[var(--bg)] border-[var(--border)] text-[var(--primary)] focus:ring-phopy-indigo"
+        />
+        <label htmlFor="line_shift_expense_groups" className="text-[var(--fg-2)]">
+          ส่งแจ้งเตือนค่าใช้จ่ายตอนปิดกะเข้ากลุ่ม LINE ด้วย
+          <span className="block text-xs text-[var(--fg-4)]">ปกติส่งหา Admin/Manager รายคนอยู่แล้ว</span>
+        </label>
+      </div>
     </div>
   )
 }

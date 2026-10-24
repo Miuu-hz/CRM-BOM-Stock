@@ -17,6 +17,10 @@ import { can, Role, Department } from './rbac.service'
 export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_order' | 'pos_invoice'
   // หมวดบันทึกความเคลื่อนไหว POS — pos_discount มีเพดานใน approval_settings, ที่เหลือเป็น log อย่างเดียว
   | 'pos_discount' | 'pos_item_void' | 'pos_cash_move' | 'pos_shift_close'
+  // ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ — log อย่างเดียว ไม่ต้องอนุมัติ แต่ต้องเห็นทุกรายการ (+ LINE)
+  | 'pos_shift_expense'
+  // ยกเลิก/void เอกสารขาย (SO, ใบแจ้งหนี้, ใบเสร็จ, ใบลดหนี้) — ต้องขออนุมัติเสมอ ไม่ขึ้นกับ approval_settings
+  | 'sales_cancel'
 
 /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
 export type Severity = 'high' | 'medium' | 'low' | 'info'
@@ -32,6 +36,13 @@ export interface GateUser {
 
 const APPROVER_ROLES = new Set(['ADMIN', 'MASTER', 'OWNER'])
 
+/**
+ * หมวดที่ "ต้องขออนุมัติเสมอ" — เจ้าของสั่ง: ห้ามยกเลิกใบขายนอกจากการขออนุญาต
+ * ไม่อ่าน approval_settings (ปิดไม่ได้) และไม่มี bypass รายคน/ตามแผนก — ข้ามได้เฉพาะ ADMIN/MASTER/OWNER
+ * (ผู้เรียกต้อง recordAutoAction เองหลังทำสำเร็จ เหมือนหมวดอื่น)
+ */
+const ALWAYS_REQUIRED = new Set<GateCategory>(['sales_cancel'])
+
 // หมวดอนุมัติ → resource ในระบบสิทธิ์เดิม (Settings > สิทธิ์การใช้งาน) ที่ถือว่า "ผูกกัน"
 const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   stock_adjust: 'stock',
@@ -43,6 +54,8 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   pos_item_void: 'orders',
   pos_cash_move: 'orders',
   pos_shift_close: 'orders',
+  pos_shift_expense: 'orders',
+  sales_cancel: 'orders',
 }
 
 /** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท */
@@ -72,6 +85,7 @@ export function isApprovalRequired(
   amount = 0
 ): boolean {
   if (APPROVER_ROLES.has(user.role)) return false
+  if (ALWAYS_REQUIRED.has(category)) return true
 
   const setting = db.prepare(
     'SELECT approval_required, auto_approve_threshold FROM approval_settings WHERE tenant_id = ? AND role = ? AND module_type = ?'
@@ -93,6 +107,7 @@ export function isApprovalRequired(
  */
 export function hasBypass(tenantId: string, user: GateUser, category: GateCategory): boolean {
   if (APPROVER_ROLES.has(user.role)) return true
+  if (ALWAYS_REQUIRED.has(category)) return false
 
   const perm = db.prepare(
     'SELECT 1 FROM user_approval_permissions WHERE tenant_id = ? AND user_id = ? AND module_type = ? AND can_bypass = 1 LIMIT 1'

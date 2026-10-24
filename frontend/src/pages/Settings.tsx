@@ -73,6 +73,11 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user, isMaster, children, loadChildren, deleteChildUser } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
+  // แท็บ บิล/VAT: admin หรือคนที่ admin มอบสิทธิ์ settings:write ให้ (backend ตัดสิน ส่งมาเป็น can_edit_billing)
+  const [canEditBilling, setCanEditBilling] = useState(false)
+  useEffect(() => {
+    import('../services/companySettings.service').then(m => m.default.get()).then(d => setCanEditBilling(!!d.can_edit_billing)).catch(() => {})
+  }, [])
   type SettingsTab = 'general' | 'subscription' | 'users' | 'security' | 'pos' | 'line' | 'billing' | 'loyalty' | 'units' | 'material-categories' | 'backup' | 'permissions' | 'approval' | 'doc-numbering' | 'documents' | 'currency' | 'bank-accounts' | 'mcp' | 'qr-marketing'
   const VALID_TABS: SettingsTab[] = ['general', 'subscription', 'users', 'security', 'pos', 'line', 'billing', 'loyalty', 'units', 'material-categories', 'backup', 'permissions', 'approval', 'doc-numbering', 'documents', 'currency', 'bank-accounts', 'mcp', 'qr-marketing']
   // รองรับลิงก์ตรงมาแท็บที่ต้องการ เช่น /settings?tab=units (จาก UnitPicker เมื่อเจอหน่วยที่แปลงไม่ถึง)
@@ -112,13 +117,14 @@ export default function SettingsPage() {
   // รายการนี้ต้องตรงกับ show: ของแต่ละแท็บในกลุ่มด้านล่าง
   useEffect(() => {
     const alwaysVisible: SettingsTab[] = ['general', 'units', 'security', 'mcp']
-    const adminOrMasterOnly: SettingsTab[] = ['subscription', 'material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'billing', 'loyalty', 'qr-marketing', 'line', 'bank-accounts']
+    const adminOrMasterOnly: SettingsTab[] = ['subscription', 'material-categories', 'doc-numbering', 'documents', 'currency', 'users', 'permissions', 'approval', 'pos', 'loyalty', 'qr-marketing', 'line', 'bank-accounts']
     const masterOnly: SettingsTab[] = ['backup']
     const visible = alwaysVisible.includes(activeTab)
       || (adminOrMasterOnly.includes(activeTab) && (isAdmin || isMaster))
       || (masterOnly.includes(activeTab) && isMaster)
+      || (activeTab === 'billing' && (isAdmin || isMaster || canEditBilling))
     if (!visible) setActiveTab('general')
-  }, [activeTab, isAdmin, isMaster])
+  }, [activeTab, isAdmin, isMaster, canEditBilling])
 
   return (
     <motion.div
@@ -165,7 +171,7 @@ export default function SettingsPage() {
             id: 'sales', label: t('settings.settingsPage.groups.sales'), icon: Store,
             tabs: [
               { id: 'pos' as const, icon: Store, label: t('settings.settingsPage.tabs.pos'), show: isAdmin || isMaster },
-              { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster },
+              { id: 'billing' as const, icon: Receipt, label: t('settings.settingsPage.tabs.billing'), show: isAdmin || isMaster || canEditBilling },
               { id: 'loyalty' as const, icon: Star, label: t('settings.settingsPage.tabs.loyalty'), show: isAdmin || isMaster },
               { id: 'qr-marketing' as const, icon: Gift, label: 'QR โปร / แลกแต้ม / โฆษณา', show: isAdmin || isMaster },
               { id: 'line' as const, icon: MessageSquare, label: t('settings.settingsPage.tabs.line'), show: isAdmin || isMaster, beta: true },
@@ -248,7 +254,7 @@ export default function SettingsPage() {
 
         {activeTab === 'bank-accounts' && (isAdmin || isMaster) && <BankAccountSettings />}
 
-        {activeTab === 'billing' && (isAdmin || isMaster) && <BillingSettings />}
+        {activeTab === 'billing' && (isAdmin || isMaster || canEditBilling) && <BillingSettings />}
 
         {activeTab === 'loyalty' && (isAdmin || isMaster) && <LoyaltySettings />}
 

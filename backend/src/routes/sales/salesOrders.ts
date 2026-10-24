@@ -3,10 +3,11 @@ import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
-import { soHasOut, deductStockForSO, restoreStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, STOCK_DEDUCTED_STATUSES, findNonSellableLine, notSellableMessage } from './shared'
+import { deductStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, findNonSellableLine, notSellableMessage } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
+import { gateSalesCancel, pendingCancelBody, assertSalesOrderCancellable, cancelSalesOrderNow, SalesCancelError } from '../../services/salesCancel.service'
 import { calcVat } from '../../utils/vat'
-import { resolveVatInclusive } from '../../utils/vatSettings'
+import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
 
 const router = Router()
 
@@ -107,6 +108,16 @@ router.post('/', async (req: Request, res: Response) => {
       if (!qt) {
         return res.status(400).json({ success: false, message: 'ใบเสนอราคาไม่ถูกต้องหรือไม่ได้อยู่ในกิจการนี้' })
       }
+      const dupSo = db.prepare("SELECT so_number FROM sales_orders WHERE quotation_id = ? AND tenant_id = ? AND status != 'CANCELLED' LIMIT 1")
+        .get(quotationId, tenantId) as { so_number: string } | undefined
+      if (dupSo) {
+        return res.status(409).json({ success: false, message: `ใบเสนอราคานี้ถูกแปลงเป็นใบสั่งขาย ${dupSo.so_number} แล้ว` })
+      }
+    }
+
+    const vatErr = vatRateError(tenantId, taxRate)
+    if (vatErr) {
+      return res.status(400).json({ success: false, message: vatErr })
     }
 
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
@@ -235,6 +246,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       }, 0)
     }
     const discount = discountAmount !== undefined ? (Number(discountAmount) || 0) : (existing.discount_amount || 0)
+    const vatErr = vatRateError(tenantId, taxRate)
+    if (vatErr) {
+      return res.status(400).json({ success: false, message: vatErr })
+    }
     const tax = taxRate ?? existing.tax_rate ?? 0
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) — หน้าเว็บล็อกปุ่มไว้แล้ว ตรงนี้กันทาง API/MCP
     if (tax > 0 && !isVatRegistered(tenantId)) {
@@ -342,15 +357,31 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       })
     }
 
-    // Snapshot the pre-transition status: needed after the UPDATE below to decide
-    // whether stock was already deducted (so CANCELLED must restore it).
-    const previousStatus = existing.status
     // ตั้งไว้เฉพาะตอนเข้าเงื่อนไข "ยืนยัน SO ที่ผ่านประตูอนุมัติแบบ bypass" — ใช้บันทึกประวัติ
     // (recordAutoAction) หลังตัดสต็อกสำเร็จด้านล่าง ไม่งั้นเป็น null คือไม่ต้องบันทึก
     let confirmGateArgs: CreateRequestArgs | null = null
 
-    if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
+    if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER', 'OWNER'].includes(req.user!.role)) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกคำสั่งขาย — ต้องเป็น ADMIN/MANAGER/MASTER' })
+    }
+
+    // ── ยกเลิก SO: ห้ามยกเลิกใบขายนอกจากการขออนุญาต (หมวด sales_cancel ต้องอนุมัติเสมอ) ──────────
+    // SO ที่ยังเป็น DRAFT ยังไม่ตัดสต็อก/ไม่มีผลบัญชี (ลบทิ้งได้อยู่แล้วด้วย DELETE) จึงยกเลิกได้เลย
+    // มีใบแจ้งหนี้ที่ยังไม่ยกเลิก → 409 (ยกเลิกใบแจ้งหนี้ก่อน) · เปลี่ยนสถานะ+คืนสต็อกอยู่ใน cancelSalesOrderNow
+    if (status === 'CANCELLED' && existing.status !== 'CANCELLED') {
+      assertSalesOrderCancellable(tenantId, existing)
+      let cancelGateArgs: CreateRequestArgs | null = null
+      if (existing.status !== 'DRAFT') {
+        const { pending, gateArgs } = gateSalesCancel({
+          tenantId, user: req.user! as any, kind: 'sales_order', refId: existing.id, docNumber: existing.so_number,
+          docDate: existing.order_date || existing.created_at, amount: existing.total_amount, reason: req.body.reason,
+        })
+        if (pending) return res.status(202).json(pendingCancelBody(pending, existing.so_number))
+        cancelGateArgs = gateArgs
+      }
+      const cancelled = cancelSalesOrderNow(tenantId, existing.id)
+      if (cancelGateArgs) recordAutoAction(cancelGateArgs)
+      return res.json({ success: true, data: cancelled })
     }
 
     // ── Approval gate: CONFIRMED transition ─────────────────────────────────
@@ -444,8 +475,25 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
 
     const now = new Date().toISOString()
-    db.prepare("UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
-      .run(status, now, req.params.id, tenantId)
+    // ตัด stock เมื่อยืนยัน SO — เดิมเช็คแค่ status === 'CONFIRMED' ไม่ดูว่าตัดไปแล้วหรือยัง
+    // ยิง PUT .../status ซ้ำ (ดับเบิลคลิก/เรียก API ซ้ำ) ตัดสต็อกซ้ำได้ทั้งที่สถานะไม่ได้
+    // เปลี่ยนจริง (เช่น ถูกยืนยันไปแล้วรอบก่อน) — เช็คจากหลักฐานจริงใน stock_movements แทน
+    // เปลี่ยนสถานะกับตัดสต็อกอยู่ในทรานแซกชันเดียว — เดิมตัดไม่ผ่าน (แปลงหน่วยไม่ได้/ของไม่พอ) แล้ว SO ค้าง
+    // CONFIRMED ทั้งที่สต็อกไม่ถูกตัด และกดยืนยันซ้ำไม่ได้เพราะสถานะไม่เปลี่ยน
+    let stockDeducted = false
+    try {
+      db.transaction(() => {
+        db.prepare("UPDATE sales_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+          .run(status, now, req.params.id, tenantId)
+        if (status === 'CONFIRMED' && !soStockAlreadyDeducted(tenantId, existing.so_number)) {
+          deductStockForSO(tenantId, existing.id, existing.so_number)
+          stockDeducted = true
+        }
+      })()
+    } catch (e: any) {
+      if (status !== 'CONFIRMED') throw e
+      return res.status(400).json({ success: false, message: `ยืนยันคำสั่งขายไม่สำเร็จ: ${e?.message || e}` })
+    }
 
     const salesOrder = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
 
@@ -465,11 +513,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       }
     }
 
-    // ตัด stock เมื่อยืนยัน SO — เดิมเช็คแค่ status === 'CONFIRMED' ไม่ดูว่าตัดไปแล้วหรือยัง
-    // ยิง PUT .../status ซ้ำ (ดับเบิลคลิก/เรียก API ซ้ำ) ตัดสต็อกซ้ำได้ทั้งที่สถานะไม่ได้
-    // เปลี่ยนจริง (เช่น ถูกยืนยันไปแล้วรอบก่อน) — เช็คจากหลักฐานจริงใน stock_movements แทน
-    if (status === 'CONFIRMED' && salesOrder && !soStockAlreadyDeducted(tenantId, salesOrder.so_number)) {
-      deductStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
+    if (stockDeducted) {
       if (confirmGateArgs) recordAutoAction(confirmGateArgs)
 
       // No accounting entry here on purpose: sales/invoices.ts's POST /
@@ -483,17 +527,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       // จะกลายเป็นลงบัญชีซ้ำสองรอบทันที)
     }
 
-    // คืน stock เมื่อยกเลิก SO ที่เคยตัดสต็อกไปแล้ว (previousStatus อยู่ใน STOCK_DEDUCTED_STATUSES).
-    // ถ้า SO ถูกยกเลิกไปแล้ว (previousStatus === 'CANCELLED') จะไม่อยู่ในลิสต์นี้ — ป้องกันคืนสต็อกซ้ำ
-    // DRAFT/PENDING_APPROVAL ที่มีใบส่งของ DELIVERED แล้ว (ตัดสต็อก+SO_COGS ผ่าน DO) ก็ต้องคืน — เช็คจาก OUT จริง
-    // ไม่ทิ้ง gate: restoreStockForSO มีทางสำรองแบบเดาที่จะคืนของที่ไม่เคยตัด
-    if (status === 'CANCELLED' && salesOrder
-      && (STOCK_DEDUCTED_STATUSES.includes(previousStatus) || soHasOut(tenantId, salesOrder.id, salesOrder.so_number))) {
-      restoreStockForSO(tenantId, salesOrder.id, salesOrder.so_number)
-    }
+    // คืน stock ตอนยกเลิก SO ย้ายไป cancelSalesOrderNow (services/salesCancel.service.ts) — ยกเลิกออกจาก handler
+    // ตั้งแต่ด้านบนแล้ว (ผ่านประตูอนุมัติ sales_cancel) เงื่อนไข STOCK_DEDUCTED_STATUSES/soHasOut ตามเดิม
 
     res.json({ success: true, data: salesOrder })
   } catch (error) {
+    if (error instanceof SalesCancelError) return res.status(error.status).json({ success: false, message: error.message })
     console.error('Update sales order status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update status' })
   }

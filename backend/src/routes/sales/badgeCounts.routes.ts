@@ -25,7 +25,7 @@ router.get('/badge-counts', async (req: Request, res: Response) => {
     ).get(tenantId) as any).cnt as number
 
     const invoices = (db.prepare(
-      `SELECT COUNT(*) as cnt FROM invoices WHERE tenant_id = ? AND payment_status IN ('UNPAID', 'OVERDUE')`
+      `SELECT COUNT(*) as cnt FROM invoices WHERE tenant_id = ? AND payment_status IN ('UNPAID', 'OVERDUE') AND status != 'CANCELLED'`
     ).get(tenantId) as any).cnt as number
 
     const backorders = (db.prepare(

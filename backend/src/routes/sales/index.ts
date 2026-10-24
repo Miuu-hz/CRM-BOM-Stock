@@ -23,10 +23,8 @@ import templatesRouter from './templates'
 
 // Kept as-is sibling routers
 import backordersRouter from './backorders.routes'
-import productVariantsRouter from './productVariants.routes'
 import posRouter from './pos.routes'
 import summaryRouter from './summary.routes'
-import invoiceAttachmentsRouter from './invoiceAttachments.routes'
 import badgeCountsRouter from './badgeCounts.routes'
 
 const router = Router()
@@ -40,11 +38,9 @@ router.use('/backorders', backordersRouter)
 router.use('/invoices', invoicesRouter)
 router.use('/credit-notes', creditNotesRouter)
 router.use('/receipts', receiptsRouter)
-router.use('/product-variants', productVariantsRouter)
 router.use('/quotation-templates', templatesRouter)
 router.use('/', posRouter)
 router.use('/summary', summaryRouter)
-router.use('/invoices', invoiceAttachmentsRouter)
 router.use('/', badgeCountsRouter)
 
 export default router

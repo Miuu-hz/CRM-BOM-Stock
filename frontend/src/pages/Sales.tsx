@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp, Package, RotateCcw, LayoutTemplate, LayoutList, LayoutGrid, ChevronRight, ArrowRight, X, Store, ShoppingBag, Ban, ChevronDown, ChevronUp, Banknote, QrCode, Printer, Trash2, Pencil, AlertTriangle, Check} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
 import salesService, { type Customer, type Product } from '../services/sales.service'
-import { stockService } from '../services/stock'
 import { printBill } from '../utils/printBill'
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
@@ -258,6 +257,12 @@ const TAB_STATUSES: Record<string, string[]> = {
 /** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — เทียบวันหมดอายุ/วันส่งแบบรายวัน ไม่ใช่รายมิลลิวินาที */
 const todayStr = () => new Date().toLocaleDateString('sv-SE')
 
+/** อัตรา VAT ที่กิจการตั้งไว้ (Settings > บิล/VAT) — backend รับแค่ 0 หรือค่านี้ */
+const tenantVatRate = () => {
+  const r = Number(getCachedCompanySettings()?.pos_vat_rate)
+  return Number.isFinite(r) && r > 0 ? r : undefined
+}
+
 const StatusBadge = ({ status, payment }: { status: string; payment?: boolean }) => {
   const { t } = useTranslation()
   const cfg = (payment && status === 'PARTIAL' ? STATUS_CONFIG.PARTIAL_PAID : STATUS_CONFIG[status]) || { labelKey: status, bg: 'bg-gray-500/15', text: 'text-[var(--fg-3)]' }
@@ -388,9 +393,14 @@ const OpenShiftModal = ({ onClose, onOpened }: { onClose: () => void; onOpened?:
   }, [])
 
   const handleOpen = async () => {
+    const opening = openingCash.trim() === '' ? NaN : Number(openingCash)
+    if (!Number.isFinite(opening) || opening < 0) {
+      toast.error(t('sales.validation.cashAmount', { defaultValue: 'กรุณากรอกยอดเงินสดเป็นตัวเลขตั้งแต่ 0 ขึ้นไป' }))
+      return
+    }
     setSaving(true)
     try {
-      const { data } = await api.post('/sales/pos-shifts/open', { opening_cash: parseFloat(openingCash) || 0 })
+      const { data } = await api.post('/sales/pos-shifts/open', { opening_cash: opening })
       if (data.success) {
         toast.success(`${t('sales.toast.shiftOpened')}: ${data.data.shift_number}`)
         onOpened?.()
@@ -436,12 +446,19 @@ const OpenShiftModal = ({ onClose, onOpened }: { onClose: () => void; onOpened?:
 const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClose: () => void; onClosed?: () => void }) => {
   const { t } = useTranslation()
   useModalClose(onClose)
-  const live = shift.live
+  // snapshot ที่ส่งมากับ prop เก่าได้ (โหลดตอนเปิดแท็บ) — ดึงกะปัจจุบันใหม่ทุกครั้งที่เปิดโมดัล แล้วคิดยอดจากข้อมูลสดนี้เท่านั้น
+  const [fresh, setFresh] = useState<POSShift | null>(null)
+  const [freshError, setFreshError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  const cur = fresh
+  const live = cur?.live
   const cashRevenue = live?.cash_revenue || 0
   const cashIn = live?.cash_in || 0
   const paidOut = live?.paid_out || 0
-  const expectedCash = expectedShiftCash(shift)
-  const [closingCash, setClosingCash] = useState(expectedCash.toFixed(2))
+  const expectedCash = expectedShiftCash(cur)
+  // null = ผู้ใช้ยังไม่ได้พิมพ์ → ใช้ยอดที่ควรมีเป็นค่าเริ่มต้น
+  const [closingCashInput, setClosingCash] = useState<string | null>(null)
+  const closingCash = closingCashInput ?? expectedCash.toFixed(2)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [openBillsError, setOpenBillsError] = useState<{ message: string; bills: string[] } | null>(null)
@@ -450,7 +467,21 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
 
   const totalNewExpenses = expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
   const adjustedExpectedCash = Math.round((expectedCash - totalNewExpenses) * 100) / 100
-  const diff = (parseFloat(closingCash) || 0) - adjustedExpectedCash
+  const closingValue = closingCash.trim() === '' ? NaN : Number(closingCash)
+  const diff = (Number.isFinite(closingValue) ? closingValue : 0) - adjustedExpectedCash
+
+  useEffect(() => {
+    let alive = true
+    setFreshError(false)
+    api.get('/sales/pos-shifts/current')
+      .then(({ data }) => {
+        if (!alive) return
+        if (data.success && data.data && data.data.id === shift.id) setFresh(data.data)
+        else setFreshError(true)
+      })
+      .catch(() => { if (alive) setFreshError(true) })
+    return () => { alive = false }
+  }, [shift.id, reloadKey])
 
   useEffect(() => {
     api.get(`/sales/pos-shifts/${shift.id}/cash-movements`)
@@ -459,6 +490,11 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
   }, [shift.id])
 
   const handleClose = async () => {
+    if (!cur) return
+    if (!Number.isFinite(closingValue) || closingValue < 0) {
+      toast.error(t('sales.validation.cashAmount', { defaultValue: 'กรุณากรอกยอดเงินสดเป็นตัวเลขตั้งแต่ 0 ขึ้นไป' }))
+      return
+    }
     setSaving(true)
     try {
       const validExpenses = expenses
@@ -466,7 +502,7 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
         .map(e => ({ reason: e.reason.trim(), amount: parseFloat(e.amount) || 0 }))
 
       const { data } = await api.post(`/sales/pos-shifts/${shift.id}/close`, {
-        closing_cash_counted: parseFloat(closingCash) || 0,
+        closing_cash_counted: closingValue,
         notes,
         cash_expenses: validExpenses.length > 0 ? validExpenses : undefined
       })
@@ -494,6 +530,21 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="overflow-y-auto p-5 space-y-4">
+          {!cur ? (
+            <div className="py-10 flex flex-col items-center gap-3 text-sm text-[var(--fg-3)]">
+              {freshError ? (
+                <>
+                  <p className="text-danger">{t('sales.pos.loadShiftFailed', { defaultValue: 'โหลดยอดกะล่าสุดไม่สำเร็จ' })}</p>
+                  <button onClick={() => setReloadKey(k => k + 1)} className="px-3 py-1.5 rounded-lg border border-[var(--border)] hover:bg-[var(--bg)]">{t('common.retry', { defaultValue: 'ลองใหม่' })}</button>
+                </>
+              ) : (
+                <>
+                  <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <p>{t('sales.pos.loadingShift', { defaultValue: 'กำลังโหลดยอดกะล่าสุด...' })}</p>
+                </>
+              )}
+            </div>
+          ) : (<>
           {openBillsError && (
             <div className="p-3 rounded-lg bg-[var(--danger-soft)] border border-danger/30 text-sm text-danger">
               <p className="font-semibold">{openBillsError.message}</p>
@@ -516,7 +567,7 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
           </div>
           <div className="p-4 bg-[var(--bg)] rounded-lg space-y-1 text-sm">
             <div className="flex justify-between text-[var(--fg-3)]">
-              <span>{t('sales.pos.openingCash')}</span><span>{fmt(shift.opening_cash)}</span>
+              <span>{t('sales.pos.openingCash')}</span><span>{fmt(cur.opening_cash)}</span>
             </div>
             <div className="flex justify-between text-[var(--fg-3)]">
               <span>{t('sales.pos.cashSales')}</span><span>{fmt(cashRevenue)}</span>
@@ -652,10 +703,11 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none"
               placeholder={t('sales.pos.notePlaceholder')} />
           </Field>
+          </>)}
         </div>
         <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
-          <button onClick={handleClose} disabled={saving}
+          <button onClick={handleClose} disabled={saving || !cur}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 disabled:opacity-50">
             {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
             {t('sales.pos.confirmCloseShift')}
@@ -785,6 +837,15 @@ const Sales = () => {
     return map
   }, [salesOrders])
 
+  // ใบเสนอราคาที่มีใบสั่งขาย (ไม่ยกเลิก) แล้ว — แปลงซ้ำไม่ได้ (backend ก็บล็อก 409)
+  const convertedQtNumbers = useMemo(() => {
+    const set = new Set<string>()
+    for (const so of salesOrders) {
+      if (so.quotation_number && so.status !== 'CANCELLED') set.add(so.quotation_number)
+    }
+    return set
+  }, [salesOrders])
+
   // POS shift modals
   const [showOpenShift, setShowOpenShift] = useState(false)
   const [showCloseShift, setShowCloseShift] = useState(false)
@@ -823,6 +884,7 @@ const Sales = () => {
       fetchSummary()
     } else if (activeTab === 'quotations') {
       fetchQuotations()
+      fetchSalesOrders(true)   // ใช้ซ่อนปุ่ม → SO ของใบเสนอราคาที่แปลงไปแล้ว
     } else if (activeTab === 'orders') {
       fetchSalesOrders()
       fetchDeliveryOrders(true)
@@ -1034,7 +1096,7 @@ const Sales = () => {
       await salesService.updateQuotationStatus(id, status)
       toast.success(t('sales.toast.statusUpdated'))
       fetchQuotations()
-    } catch { toast.error(t('sales.toast.statusUpdateFailed')) }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) }
   }
   const handleUpdateSOStatus = async (id: string, status: string) => {
     try {
@@ -1104,7 +1166,7 @@ const Sales = () => {
       fetchDeliveryOrders()
       // รับของแล้ว = backend เขียน delivered_qty/สถานะกลับไปที่ SO ต้องโหลดใหม่ ไม่งั้นหน้าคำสั่งขายค้างของเก่า
       if (status === 'DELIVERED') fetchSalesOrders()
-    } catch { toast.error(t('sales.toast.statusUpdateFailed')) }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) }
   }
 
   // Formatters
@@ -1125,11 +1187,18 @@ const Sales = () => {
   useEffect(() => { setCurrentPage(1) }, [searchQuery, dateFrom, dateTo, filterStatus])
 
   // คำค้น + ช่วงวันที่ (ยังไม่กรองสถานะ) — ชิปสถานะนับจากชุดนี้ ตัวเลขบนชิปจะตรงกับที่กดแล้วเห็น
+  // timestamp (UTC ISO / 'YYYY-MM-DD HH:MM:SS' จาก SQLite) → วันที่ตามเครื่องผู้ใช้ · ค่าที่เป็นวันที่ล้วนใช้ตามเดิม
+  const localDateOf = (v: unknown) => {
+    const str = String(v || '')
+    if (str.length <= 10) return str
+    const d = new Date(/(Z|[+-]\d\d:?\d\d)$/.test(str) ? str : str.replace(' ', 'T') + 'Z')
+    return Number.isNaN(d.getTime()) ? str.slice(0, 10) : d.toLocaleDateString('sv-SE')
+  }
   const searchItems = <T extends Record<string, any>>(items: T[], keys: (keyof T)[], dateKey?: keyof T) => {
     let result = items.filter(item => !searchQuery || keys.some(k => String(item[k] || '').toLowerCase().includes(searchQuery.toLowerCase())))
     if (dateKey) {
-      if (dateFrom) result = result.filter(it => String(it[dateKey] || '').slice(0, 10) >= dateFrom)
-      if (dateTo)   result = result.filter(it => String(it[dateKey] || '').slice(0, 10) <= dateTo)
+      if (dateFrom) result = result.filter(it => localDateOf(it[dateKey]) >= dateFrom)
+      if (dateTo)   result = result.filter(it => localDateOf(it[dateKey]) <= dateTo)
     }
     return result
   }
@@ -1442,7 +1511,7 @@ const Sales = () => {
                             <CheckCircle className="w-3 h-3" /> {next.label}
                           </button>
                         )}
-                        {q.status === 'ACCEPTED' && (
+                        {q.status === 'ACCEPTED' && !convertedQtNumbers.has(q.quotation_number) && (
                           <button onClick={() => handleConvertQtToSO(q)}
                             className="px-2.5 py-1 text-xs text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] flex items-center gap-1">
                             <ArrowRight className="w-3 h-3" /> SO
@@ -1508,7 +1577,7 @@ const Sales = () => {
                         <CheckCircle className="w-3 h-3" /> {next.label}
                       </button>
                     )}
-                    {q.status === 'ACCEPTED' && (
+                    {q.status === 'ACCEPTED' && !convertedQtNumbers.has(q.quotation_number) && (
                       <button onClick={() => handleConvertQtToSO(q)}
                         className="flex-1 py-1.5 text-xs font-medium text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] flex items-center justify-center gap-1">
                         <ArrowRight className="w-3 h-3" /> {t('sales.actions.convertToSO')}
@@ -1852,8 +1921,8 @@ const Sales = () => {
                       <td className="px-4 py-3 text-center"><StatusBadge payment status={inv.status === 'CANCELLED' ? 'CANCELLED' : inv.payment_status} /></td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(inv.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`text-xs font-semibold ${inv.balance_amount > 0 ? 'text-danger' : 'text-success'}`}>
-                          {formatCurrency(inv.balance_amount)}
+                        <span className={`text-xs font-semibold ${inv.status !== 'CANCELLED' && inv.balance_amount > 0 ? 'text-danger' : 'text-success'}`}>
+                          {formatCurrency(inv.status === 'CANCELLED' ? 0 : inv.balance_amount)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -1910,8 +1979,8 @@ const Sales = () => {
                     <span>{t('sales.common.dueDate')} <span className={isOverdue ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(inv.due_date)}</span></span>
                     <span>{t('sales.common.total')} <span className="text-[var(--fg-1)] font-medium">{formatCurrency(inv.total_amount)}</span></span>
                     <span className="text-right">
-                      {t('sales.common.balance')} <span className={inv.balance_amount > 0 ? 'text-danger font-semibold' : 'text-success font-semibold'}>
-                        {formatCurrency(inv.balance_amount)}
+                      {t('sales.common.balance')} <span className={inv.status !== 'CANCELLED' && inv.balance_amount > 0 ? 'text-danger font-semibold' : 'text-success font-semibold'}>
+                        {formatCurrency(inv.status === 'CANCELLED' ? 0 : inv.balance_amount)}
                       </span>
                     </span>
                   </div>
@@ -2552,6 +2621,7 @@ const Sales = () => {
           onClose={() => setDetailQT(null)}
           onRefresh={() => fetchQuotations()}
           onConvert={(q) => { setDetailQT(null); setConvertQT(q) }}
+          alreadyConverted={convertedQtNumbers.has(detailQT.quotation_number)}
           companyName={tenant?.name}
         />
       )}
@@ -2820,7 +2890,12 @@ interface LineItem {
   quotationItemId?: string
   /** true เมื่อผู้ใช้พิมพ์ราคาเองในแถวนี้ — กันไม่ให้การเปลี่ยนหน่วยทับราคาที่ตั้งใจพิมพ์ */
   priceEdited?: boolean
+  /** id คงที่ของแถวใน editor (ใช้เป็น React key) — ไม่ส่งขึ้น backend */
+  _key?: string
 }
+
+let lineKeySeq = 0
+const newLineKey = () => `ln_${Date.now().toString(36)}_${++lineKeySeq}`
 
 function ProductSearch({ value, products, onSelect, onClear }: {
   value: { id?: string; name: string } | null
@@ -2912,7 +2987,11 @@ function LineItemsEditor({
   products: Product[]
 }) {
   const { t } = useTranslation()
-  const add = () => onChange([...items, { productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
+  const add = () => onChange([...items, { _key: newLineKey(), productName: '', quantity: 1, unit: '', unitPrice: 0, discountPercent: 0 }])
+  // แถวที่มาจากข้อมูลเดิม/ใบอื่น (ไม่ผ่าน add) ยังไม่มี _key → เติมให้ครั้งเดียว
+  useEffect(() => {
+    if (items.some(it => !it._key)) onChange(items.map(it => it._key ? it : { ...it, _key: newLineKey() }))
+  })
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i))
   const update = (i: number, patch: Partial<LineItem>) => {
     const next = [...items]
@@ -2950,7 +3029,7 @@ function LineItemsEditor({
       {items.map((item, i) => {
         const selectedProduct = products.find(p => p.id === item.productId)
         return (
-        <div key={i} className="bg-[var(--surface-2)] p-3 rounded-lg space-y-2">
+        <div key={item._key ?? `i${i}`} className="bg-[var(--surface-2)] p-3 rounded-lg space-y-2">
           <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-5">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.product')}</label>
@@ -3069,7 +3148,7 @@ function TotalsSummary({ items, mode, discountAmount, setDiscountAmount, extraCh
   onEditVat: () => void
 }) {
   const { t } = useTranslation()
-  const { rate, inclusive } = vatModeToFields(mode)
+  const { rate, inclusive } = vatModeToFields(mode, tenantVatRate())
   const { subtotal, taxAmount: tax, totalAmount: total } =
     calcDocTotals(items.map(it => ({ quantity: it.quantity, unitPrice: it.unitPrice, discountPercent: it.discountPercent })),
       { rate, discountAmount, inclusive, extraCharge: extraCharge.amount })
@@ -3107,7 +3186,7 @@ function TotalsSummary({ items, mode, discountAmount, setDiscountAmount, extraCh
       </div>
       {mode !== 'NONE' && (
         <div className="flex justify-between text-warning">
-          <span>{mode === 'INCLUSIVE' ? 'แยก VAT 7%' : 'VAT 7%'}</span>
+          <span>{mode === 'INCLUSIVE' ? `แยก VAT ${rate}%` : `VAT ${rate}%`}</span>
           <span>{mode === 'INCLUSIVE' ? `(฿${tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })})` : `+฿${tax.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`}</span>
         </div>
       )}
@@ -3186,7 +3265,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
     if (invalidLineValues(items, discountAmount, extraCharge.amount)) { toast.error(t('sales.validation.itemValues', { defaultValue: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })); return }
     setSaving(true)
     try {
-      const { rate, inclusive } = vatModeToFields(effectiveVatMode)
+      const { rate, inclusive } = vatModeToFields(effectiveVatMode, tenantVatRate())
       const payload = {
         customerId: customer.id,
         expiryDate: expiryDate || undefined,
@@ -3297,8 +3376,8 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
 }
 
 // ─── Quotation Detail Modal ───────────────────────────────────────────────────
-function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, companyName }: {
-  quotation: Quotation; onClose: () => void; onRefresh: () => void; onConvert: (q: Quotation) => void; companyName?: string
+function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, companyName, alreadyConverted }: {
+  quotation: Quotation; onClose: () => void; onRefresh: () => void; onConvert: (q: Quotation) => void; companyName?: string; alreadyConverted?: boolean
 }) {
   const { t } = useTranslation()
   useModalClose(onClose)
@@ -3324,8 +3403,8 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
       toast.success(t('sales.toast.statusUpdated'))
       onRefresh()
       onClose()
-    } catch {
-      toast.error(t('sales.toast.statusUpdateFailed'))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed'))
     } finally { setUpdating(false) }
   }
 
@@ -3426,7 +3505,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
               {t('sales.status.approved')}
             </button>
           )}
-          {quotation.status === 'ACCEPTED' && (
+          {quotation.status === 'ACCEPTED' && !alreadyConverted && (
             <button onClick={() => onConvert(quotation)} disabled={updating}
               className="flex-1 py-2 bg-phopy-indigo text-white rounded-lg text-sm font-semibold hover:bg-phopy-indigo/80">
               <ArrowRight className="w-4 h-4 inline mr-1" />{t('sales.actions.convertToSOFull')}
@@ -3517,6 +3596,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
                   unitPrice: it.unit_price,
                   discountPercent: it.discount_percent || 0,
                   quotationItemId: it.id,
+                  priceEdited: true,
                 }
               }))
             }
@@ -3536,7 +3616,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
     if (invalidLineValues(items, discountAmount, extraCharge.amount)) { toast.error(t('sales.validation.itemValues', { defaultValue: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })); return }
     setSaving(true)
     try {
-      const { rate, inclusive } = vatModeToFields(effectiveVatMode)
+      const { rate, inclusive } = vatModeToFields(effectiveVatMode, tenantVatRate())
       const payload = {
         customerId: customer.id,
         quotationId: sourceQuotation?.id,
@@ -3565,8 +3645,8 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         toast.success(t('sales.toast.orderCreated'))
       }
       onSaved()
-    } catch {
-      toast.error(isEdit ? t('sales.toast.orderSaveFailed') : t('sales.toast.orderSaveFailed'))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || (isEdit ? t('sales.toast.orderSaveFailed') : t('sales.toast.orderSaveFailed')))
     } finally {
       setSaving(false)
     }
@@ -3717,6 +3797,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     try {
       const result = await salesService.updateSOStatus(salesOrder.id, status)
       if (result?.pending_approval) {
+        // ยืนยัน SO ที่ต้องอนุมัติ หรือยกเลิก SO (ต้องขออนุมัติเสมอ) — ยังไม่เปลี่ยนสถานะจนกว่าผู้อนุมัติยืนยัน
         toast.success(result.message || 'ส่งคำขออนุมัติแล้ว กรุณารอ Approver ยืนยัน')
       } else {
         toast.success(t('sales.toast.statusUpdated'))
@@ -3899,7 +3980,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const [showPayment, setShowPayment] = useState(false)
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState('CASH')
-  const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
+  const [payDate, setPayDate] = useState(todayStr())
   const [payRef, setPayRef] = useState('')
   const [payNote, setPayNote] = useState('')
   const [saving, setSaving] = useState(false)
@@ -3910,7 +3991,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   }
   useEffect(() => { loadDetail() }, [invoice.id])
   // ยอด/สถานะล่าสุดจาก detail (โหลดใหม่หลังยกเลิกใบเสร็จ) — props เป็นแค่ snapshot จากตาราง
-  const balance: number = detail?.balance_amount ?? invoice.balance_amount
+  const balance: number = (detail?.status ?? invoice.status) === 'CANCELLED' ? 0 : (detail?.balance_amount ?? invoice.balance_amount)
   const payStatus: string = detail?.payment_status ?? invoice.payment_status
 
   const handlePrintInv = (format: 'a4' | 'thermal') => {
@@ -3956,7 +4037,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
       toast.success(t('sales.toast.paymentRecorded'))
       onRefresh()
       onClose()
-    } catch { toast.error(t('sales.toast.paymentRecordFailed')) }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.paymentRecordFailed')) }
     finally { setSaving(false) }
   }
 
@@ -3967,7 +4048,12 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     setSaving(true)
     try {
       const { data } = await api.put(`/sales/invoices/${invoice.id}/status`, { status: 'CANCELLED' })
-      if (data.success) {
+      // 202 = ยกเลิกใบขายต้องขออนุมัติ — ยังไม่ถูกยกเลิกจนกว่าผู้อนุมัติยืนยัน
+      if (data.pending_approval) {
+        toast.success(data.message || 'ส่งคำขออนุมัติแล้ว')
+        onRefresh()
+        onClose()
+      } else if (data.success) {
         toast.success(t('sales.toast.invoiceCancelled'))
         onRefresh()
         onClose()
@@ -3980,8 +4066,10 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const handleVoidReceipt = async (receiptId: string) => {
     if (!confirm(t('sales.confirm.voidReceipt'))) return
     try {
-      await api.delete(`/sales/receipts/${receiptId}`)
-      toast.success(t('sales.toast.receiptVoided'))
+      const { data } = await api.delete(`/sales/receipts/${receiptId}`)
+      // 202 = ส่งคำขออนุมัติแล้ว ใบเสร็จยังไม่ถูกยกเลิก
+      if (data?.pending_approval) toast.success(data.message || 'ส่งคำขออนุมัติแล้ว')
+      else toast.success(t('sales.toast.receiptVoided'))
       loadDetail()
       onRefresh()
     } catch (error: any) { toast.error(error.response?.data?.message || t('sales.toast.receiptVoidFailed')) }
@@ -4278,7 +4366,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceId, setInvoiceId] = useState('')
   const [reason, setReason] = useState('')
-  const [creditDate, setCreditDate] = useState(new Date().toISOString().split('T')[0])
+  const [creditDate, setCreditDate] = useState(todayStr())
   const [saving, setSaving] = useState(false)
   // ponytail: two modes share one modal instead of two components — the only
   // difference is whether line items are collected/sent, so a boolean + the
@@ -4296,7 +4384,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
 
   useEffect(() => {
     api.get('/sales/invoices').then(({ data }) => {
-      const list = (data.data || []).filter((inv: any) => ['ISSUED', 'PARTIAL', 'PAID', 'OVERDUE'].includes(inv.status))
+      const list = (data.data || []).filter((inv: any) => ['DRAFT', 'ISSUED', 'PARTIAL', 'PAID', 'OVERDUE'].includes(inv.status))
       setInvoices(list)
     }).catch(() => {})
   }, [])
@@ -4305,17 +4393,23 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   // ที่มีอยู่แล้ว แทนที่จะสร้าง endpoint ใหม่) จำนวนสูงสุดที่คืนได้ผูกกับ quantity ที่ขายจริง
   // ส่วนกันคืนเกินยอดที่เคยออกใบลดหนี้ไปแล้ว backend เป็นผู้ตัดสินสุดท้าย (มี alreadyCredited อยู่แล้ว)
   useEffect(() => {
-    if (!invoiceId) { setReturnLines([]); setCreditableRemaining(null); return }
+    // ล้างของใบเก่าทันทีที่เปลี่ยนใบ + กันคำตอบเก่าที่มาช้ากว่าทับของใบใหม่ (alive guard ใน cleanup)
+    let alive = true
+    setReturnLines([])
+    setCreditableRemaining(null)
+    if (!invoiceId) return
     if (mode !== 'RETURN') {
-      setReturnLines([])
+      setLoadingLines(false)
       salesService.getInvoice(invoiceId).then(r => {
+        if (!alive) return
         setInvVat({ rate: Number(r.data?.tax_rate ?? 7), inclusive: r.data?.vat_inclusive === 1 })
         setCreditableRemaining(r.data?.creditable_remaining != null ? Number(r.data.creditable_remaining) : null)
       }).catch(() => {})
-      return
+      return () => { alive = false }
     }
     setLoadingLines(true)
     salesService.getInvoice(invoiceId).then(r => {
+      if (!alive) return
       setInvVat({ rate: Number(r.data?.tax_rate ?? 7), inclusive: r.data?.vat_inclusive === 1 })
       setCreditableRemaining(r.data?.creditable_remaining != null ? Number(r.data.creditable_remaining) : null)
       const items = (r.data?.items || []) as any[]
@@ -4330,7 +4424,8 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
         checked: false,
         qty: Number(it.quantity) || 0,
       })))
-    }).catch(() => setReturnLines([])).finally(() => setLoadingLines(false))
+    }).catch(() => { if (alive) setReturnLines([]) }).finally(() => { if (alive) setLoadingLines(false) })
+    return () => { alive = false }
   }, [mode, invoiceId])
 
   const toggleLine = (idx: number) => {
@@ -4552,8 +4647,8 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
       if (data?.refundDue > 0) toast(t('sales.toast.creditNoteRefundDue', { amount: fmt(data.refundDue) }), { icon: '⚠️', duration: 6000 })
       onRefresh()
       onClose()
-    } catch {
-      toast.error(t('sales.toast.creditNoteIssueFailed'))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.creditNoteIssueFailed'))
     } finally {
       setSaving(false)
     }
@@ -4662,8 +4757,8 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
       toast.success(t('sales.toast.statusUpdated'))
       onRefresh()
       onClose()
-    } catch {
-      toast.error(t('sales.toast.statusUpdateFailed'))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed'))
     } finally {
       setSaving(false)
     }
@@ -4759,7 +4854,7 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
       toast.success(t('sales.toast.statusUpdated'))
       onRefresh()
       onClose()
-    } catch { toast.error(t('sales.toast.statusUpdateFailed')) } finally { setSaving(false) }
+    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) } finally { setSaving(false) }
   }
 
   const items: any[] = detail?.items || []

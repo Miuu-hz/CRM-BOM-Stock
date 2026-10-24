@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
-import { voidReceipt } from './shared'
+import { gateSalesCancel, pendingCancelBody, voidReceiptNow, SalesCancelError } from '../../services/salesCancel.service'
+import { recordAutoAction } from '../../services/approvalGate.service'
 import { recordCustomerPayment, SalesBillingError } from '../../services/salesBilling.service'
 import { canHandleBilling } from '../../services/rbac.service'
 
@@ -46,17 +47,25 @@ router.post('/', async (req: Request, res: Response) => {
 // DELETE /:id — reverse (void) a receipt: reverses its journal + restores the invoice
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    if (!['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
+    if (!['ADMIN', 'MANAGER', 'MASTER', 'OWNER'].includes(req.user!.role)) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบเสร็จรับเงิน — ต้องเป็น ADMIN/MANAGER/MASTER' })
     }
     const tenantId = req.user!.tenantId
     const receipt = db.prepare('SELECT * FROM receipts WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!receipt) return res.status(404).json({ success: false, message: 'Receipt not found' })
-    db.transaction(() => { voidReceipt(tenantId, receipt) })()
+    // ห้ามยกเลิกใบขายนอกจากการขออนุญาต — ไม่ใช่ผู้อนุมัติได้ 202 + คำขอ, อนุมัติแล้วระบบ void ให้ (voidReceiptNow)
+    const { pending, gateArgs } = gateSalesCancel({
+      tenantId, user: req.user! as any, kind: 'receipt', refId: receipt.id, docNumber: receipt.receipt_number,
+      docDate: receipt.receipt_date || receipt.created_at, amount: receipt.amount, reason: req.body?.reason,
+    })
+    if (pending) return res.status(202).json(pendingCancelBody(pending, receipt.receipt_number))
+    voidReceiptNow(tenantId, receipt.id)
+    recordAutoAction(gateArgs)
     res.json({ success: true, message: 'Receipt reversed' })
   } catch (error: any) {
+    if (error instanceof SalesCancelError) return res.status(error.status).json({ success: false, message: error.message })
     console.error('Void receipt error:', error)
-    res.status(500).json({ success: false, message: error?.message || 'Failed to reverse receipt' })
+    res.status(500).json({ success: false, message: 'Failed to reverse receipt' })
   }
 })
 

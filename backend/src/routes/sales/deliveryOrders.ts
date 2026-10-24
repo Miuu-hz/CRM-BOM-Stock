@@ -8,6 +8,9 @@ import { soStockAlreadyDeducted, lineNetMovements, blendIssuedUnitCost, postSoCo
 
 const router = Router()
 
+// สถานะ SO ที่ออกใบส่งของ (POST /) ได้ — ยืนยันแล้ว (ตัดสต็อกแล้ว) และยังส่งไม่ครบ
+const DO_ALLOWED_SO_STATUSES = ['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL']
+
 // GET all delivery orders
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -75,22 +78,44 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Get customer from sales order
-    const salesOrder = db.prepare('SELECT customer_id FROM sales_orders WHERE id = ? AND tenant_id = ?').get(salesOrderId, tenantId) as any
+    const salesOrder = db.prepare('SELECT customer_id, status, so_number FROM sales_orders WHERE id = ? AND tenant_id = ?').get(salesOrderId, tenantId) as any
     if (!salesOrder) {
       return res.status(404).json({ success: false, message: 'Sales order not found' })
     }
+    // ออกใบส่งของ (และดัน SO เป็น PARTIAL) ได้เฉพาะ SO ที่ยืนยันแล้วและยังส่งไม่ครบ — เดิม DRAFT/CANCELLED ก็ได้
+    // isPartial เคยปลุก SO ที่ยกเลิก/ยังไม่ยืนยันให้กลายเป็น PARTIAL (สถานะ "ตัดสต็อกแล้ว") ทั้งที่ไม่เคยตัด
+    if (!DO_ALLOWED_SO_STATUSES.includes(salesOrder.status)) {
+      return res.status(400).json({ success: false, message: `ออกใบส่งของไม่ได้ — คำสั่งขาย ${salesOrder.so_number} สถานะ ${salesOrder.status} (ต้องยืนยันแล้วและยังส่งไม่ครบ)` })
+    }
 
+    if (items != null && !Array.isArray(items)) {
+      return res.status(400).json({ success: false, message: 'รายการส่งมอบไม่ถูกต้อง' })
+    }
     if (items && items.length > 0) {
+      // ทุกบรรทัดต้องผูกบรรทัด SO และรวมกันไม่เกินที่ยังค้างส่ง (สั่ง − ส่งแล้ว − อยู่ในใบส่งของอื่นที่ยังไม่ส่ง/ไม่ยกเลิก)
+      const qtyByLine = new Map<string, number>()
       for (const item of items) {
-        if (!(Number(item.quantity) > 0)) {
+        const q = Number(item?.quantity)
+        if (!Number.isFinite(q) || q <= 0) {
           return res.status(400).json({ success: false, message: 'จำนวนส่งมอบต้องมากกว่า 0' })
         }
-        if (item.salesOrderItemId) {
-          const soi = db.prepare('SELECT id FROM sales_order_items WHERE id = ? AND sales_order_id = ? AND tenant_id = ?')
-            .get(item.salesOrderItemId, salesOrderId, tenantId)
-          if (!soi) {
-            return res.status(400).json({ success: false, message: 'รายการในคำสั่งขายไม่ถูกต้องหรือไม่ได้อยู่ในกิจการนี้' })
-          }
+        if (!item.salesOrderItemId) {
+          return res.status(400).json({ success: false, message: 'ทุกรายการต้องระบุบรรทัดคำสั่งขาย (salesOrderItemId)' })
+        }
+        qtyByLine.set(item.salesOrderItemId, (qtyByLine.get(item.salesOrderItemId) || 0) + q)
+      }
+      for (const [soItemId, q] of qtyByLine) {
+        const soi = db.prepare('SELECT id, quantity, delivered_qty, product_name FROM sales_order_items WHERE id = ? AND sales_order_id = ? AND tenant_id = ?')
+          .get(soItemId, salesOrderId, tenantId) as any
+        if (!soi) {
+          return res.status(400).json({ success: false, message: 'รายการในคำสั่งขายไม่ถูกต้องหรือไม่ได้อยู่ในกิจการนี้' })
+        }
+        const pending = db.prepare(`SELECT COALESCE(SUM(doi.quantity), 0) AS q FROM delivery_order_items doi
+          JOIN delivery_orders d ON d.id = doi.delivery_order_id AND d.tenant_id = doi.tenant_id
+          WHERE doi.sales_order_item_id = ? AND doi.tenant_id = ? AND d.status NOT IN ('DELIVERED', 'CANCELLED')`).get(soItemId, tenantId) as any
+        const remaining = Math.round((Number(soi.quantity) - Number(soi.delivered_qty || 0) - Number(pending?.q || 0)) * 10000) / 10000
+        if (q > remaining + 1e-9) {
+          return res.status(400).json({ success: false, message: `จำนวนส่งมอบ "${soi.product_name || 'สินค้า'}" (${q}) เกินที่ค้างส่ง — ส่งได้อีกไม่เกิน ${Math.max(0, remaining)}` })
         }
       }
     }

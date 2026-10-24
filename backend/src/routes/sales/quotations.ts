@@ -3,7 +3,7 @@ import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
-import { resolveVatInclusive } from '../../utils/vatSettings'
+import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
 import { findNonSellableLine, notSellableMessage } from './shared'
 
 const router = Router()
@@ -93,6 +93,11 @@ router.post('/', async (req: Request, res: Response) => {
       }
     } else if (Number(discountAmount || 0) < 0 || Number(req.body.extraChargeAmount || 0) < 0) {
       return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
+    }
+
+    const vatErr = vatRateError(tenantId, taxRate)
+    if (vatErr) {
+      return res.status(400).json({ success: false, message: vatErr })
     }
 
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) · เช็คก่อนออกเลขเอกสาร ไม่งั้นโดนปฏิเสธแล้วเลขที่จองไว้หาย
@@ -212,6 +217,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       }, 0)
     }
     const discount = discountAmount !== undefined ? (Number(discountAmount) || 0) : (existing.discount_amount || 0)
+    const vatErr = vatRateError(tenantId, taxRate)
+    if (vatErr) {
+      return res.status(400).json({ success: false, message: vatErr })
+    }
     const tax = taxRate ?? existing.tax_rate ?? 0
     // ยังไม่จด VAT = ห้ามเก็บ VAT จากลูกค้า (ม.85) — หน้าเว็บล็อกปุ่มไว้แล้ว ตรงนี้กันทาง API/MCP
     if (tax > 0 && !isVatRegistered(tenantId)) {

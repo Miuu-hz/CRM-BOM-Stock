@@ -85,6 +85,13 @@ export function calcDocTotals(
 export const VAT_RATE = 7
 export type VatMode = 'NONE' | 'INCLUSIVE' | 'EXCLUSIVE'
 
+/** อัตรา VAT ที่ระบบรับ: 0 หรืออัตราที่กิจการตั้ง (allowed, ตั้งต้น VAT_RATE) · ไม่ส่งมา = ไม่ตรวจ ให้ผู้เรียกใช้ค่าตั้งต้นเอง */
+export function isValidVatRate(rate: unknown, allowed: number = VAT_RATE): boolean {
+  if (rate === undefined || rate === null || rate === '') return true
+  const n = Number(rate)
+  return n === 0 || n === allowed
+}
+
 /** อ่านโหมดจาก field ที่เก็บจริง — ใช้ ?? เสมอ ห้าม || (0 ต้องเป็น NONE ไม่ใช่ถูกแทนด้วย 7) */
 export function vatModeOf(rate: number | undefined | null, inclusive: boolean | undefined | null): VatMode {
   return (rate ?? 0) <= 0 ? 'NONE' : inclusive ? 'INCLUSIVE' : 'EXCLUSIVE'

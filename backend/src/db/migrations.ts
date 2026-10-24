@@ -666,6 +666,12 @@ export function runMigrations(db: any): void {
     console.log('✅ Migration: company_settings.pos_vat_rate added')
   } catch { /* column already exists */ }
 
+  // แจ้งค่าใช้จ่ายตอนปิดกะเข้ากลุ่ม LINE ด้วย (ค่าตั้งต้นปิด = ส่งเฉพาะ admin/manager รายคน)
+  try {
+    db.exec(`ALTER TABLE company_settings ADD COLUMN line_shift_expense_groups INTEGER DEFAULT 0`)
+    console.log('✅ Migration: company_settings.line_shift_expense_groups added')
+  } catch { /* column already exists */ }
+
   try {
     db.exec(`ALTER TABLE company_settings ADD COLUMN pos_service_enabled INTEGER`)
     console.log('✅ Migration: company_settings.pos_service_enabled added')

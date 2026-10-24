@@ -294,7 +294,7 @@ function soOutRefs(tenantId: string, soId: string, soNumber: string): string[] {
 /** คืนแล้วเท่าไร: ยกเลิก SO ครั้งก่อน (SO: x) + ใบลดหนี้รับคืนของจากใบแจ้งหนี้ของ SO นี้ (CN: z) */
 function soReturnRefs(tenantId: string, soId: string, soNumber: string): string[] {
   const cns = db.prepare(`SELECT cn.cn_number FROM credit_notes cn JOIN invoices i ON i.id = cn.invoice_id AND i.tenant_id = cn.tenant_id
-    WHERE i.sales_order_id = ? AND cn.tenant_id = ?`).all(soId, tenantId) as any[]
+    WHERE i.sales_order_id = ? AND cn.tenant_id = ? AND cn.status != 'CANCELLED'`).all(soId, tenantId) as any[] // ใบที่ยกเลิกแล้ว เอาของที่รับคืนออกไปแล้ว (CN-CANCEL)
   return [`SO: ${soNumber}`, ...cns.map(c => `CN: ${c.cn_number}`)]
 }
 
@@ -362,7 +362,7 @@ function creditNoteCogsForSO(tenantId: string, soId: string): number {
   const row = db.prepare(`SELECT COALESCE(SUM(je.total_debit), 0) AS amt FROM journal_entries je
     JOIN credit_notes cn ON cn.id = je.reference_id AND cn.tenant_id = je.tenant_id
     JOIN invoices i ON i.id = cn.invoice_id AND i.tenant_id = cn.tenant_id
-    WHERE je.tenant_id = ? AND je.reference_type = 'CREDIT_NOTE_COGS' AND i.sales_order_id = ?`).get(tenantId, soId) as any
+    WHERE je.tenant_id = ? AND je.reference_type = 'CREDIT_NOTE_COGS' AND i.sales_order_id = ? AND cn.status != 'CANCELLED'`).get(tenantId, soId) as any
   return Math.round((Number(row?.amt) || 0) * 100) / 100
 }
 

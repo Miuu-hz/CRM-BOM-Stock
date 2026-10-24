@@ -59,6 +59,8 @@ describe('REST POST /api/invoices — กันออกใบแจ้งหน
     const line = { productId: s.stockId, productName: 'สินค้าทดสอบ', quantity: 5, unit: 'pcs', unitPrice: 100 }
     const so = await s.auth(request(app).post('/api/sales-orders')).send({ customerId: s.customerId, items: [line], taxRate: 0 })
     const soId = so.body.data.id
+    // ออกใบแจ้งหนี้ได้เฉพาะ SO ที่ยืนยัน (ตัดสต็อก) แล้ว
+    expect((await s.auth(request(app).put(`/api/sales-orders/${soId}/status`)).send({ status: 'CONFIRMED' })).status).toBe(200)
 
     const first = await s.auth(request(app).post('/api/invoices')).send({ salesOrderId: soId })
     expect(first.status).toBe(201)
@@ -80,6 +82,8 @@ describe('REST POST /api/receipts — กันรับชำระกับใ
     const line = { productId: s.stockId, productName: 'สินค้าทดสอบ', quantity: 5, unit: 'pcs', unitPrice: 100 }
     const so = await s.auth(request(app).post('/api/sales-orders')).send({ customerId: s.customerId, items: [line], taxRate: 0 })
     const soId = so.body.data.id
+    // ออกใบแจ้งหนี้ได้เฉพาะ SO ที่ยืนยัน (ตัดสต็อก) แล้ว
+    expect((await s.auth(request(app).put(`/api/sales-orders/${soId}/status`)).send({ status: 'CONFIRMED' })).status).toBe(200)
 
     const inv = await s.auth(request(app).post('/api/invoices')).send({ salesOrderId: soId })
     const invoiceId = inv.body.data.id

@@ -54,3 +54,26 @@ describe('สลิป 80mm', () => {
     expect(html).not.toContain('โต๊ะ 5')
   })
 })
+
+describe('ค่าขนส่งบนใบแจ้งหนี้ไม่ซ้ำ', () => {
+  const base = { invoice_number: 'INV-1', subtotal: 500, extra_charge_amount: 50, extra_charge_label: 'ค่าขนส่ง', tax_amount: 0, total_amount: 550 }
+  const goods = { id: 'a', product_name: 'สินค้า', quantity: 5, unit_price: 100, total_price: 500 }
+
+  it('invoice_items มีบรรทัดค่าขนส่งอยู่แล้ว → ไม่เติมแถวซ้ำ และยอดรวมย่อย = สินค้า + ค่าขนส่ง', () => {
+    const bill = toBillData('inv', { ...base, items: [goods, { id: 'b', product_name: 'ค่าขนส่ง', quantity: 1, unit_price: 50, total_price: 50 }] })
+    expect(bill.items.filter(i => i.name === 'ค่าขนส่ง')).toHaveLength(1)
+    expect(bill.items).toHaveLength(2)
+    expect(bill.subtotal).toBe(550)
+  })
+
+  it('ใบสั่งขาย/ใบเสนอราคาที่ items ไม่มีบรรทัดค่าขนส่ง → ยังเติมแถวให้ครั้งเดียว', () => {
+    const bill = toBillData('so', { ...base, items: [goods] })
+    expect(bill.items.filter(i => i.name === 'ค่าขนส่ง')).toHaveLength(1)
+    expect(bill.items).toHaveLength(2)
+  })
+
+  it('ป้ายกำกับที่ตั้งเอง (เช่น ค่าส่งด่วน) ก็ตรวจซ้ำได้', () => {
+    const bill = toBillData('inv', { ...base, extra_charge_label: 'ค่าส่งด่วน', items: [goods, { id: 'b', product_name: 'ค่าส่งด่วน', quantity: 1, unit_price: 50, total_price: 50 }] })
+    expect(bill.items).toHaveLength(2)
+  })
+})

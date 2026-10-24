@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
-import { createSalesJournal, reverseSalesJournal, voidReceipt } from './shared'
+import { gateSalesCancel, pendingCancelBody, assertInvoiceCancellable, cancelInvoiceNow, SalesCancelError } from '../../services/salesCancel.service'
+import { recordAutoAction } from '../../services/approvalGate.service'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../../utils/receiptToken'
 import { createInvoiceFromSO, SalesBillingError } from '../../services/salesBilling.service'
 import { canHandleBilling } from '../../services/rbac.service'
@@ -142,11 +143,27 @@ router.post('/', async (req: Request, res: Response) => {
 })
 
 // PUT update invoice status
+// PAID/PARTIAL ตั้งได้จากการรับชำระ (receipts) เท่านั้น · PAID และ CANCELLED เป็นสถานะสุดท้าย
+// CANCELLED ต้องผ่านประตูอนุมัติ 'sales_cancel' (services/salesCancel.service.ts)
+const INVOICE_NEXT_STATUS: Record<string, string[]> = {
+  DRAFT: ['ISSUED', 'CANCELLED'],
+  ISSUED: ['OVERDUE', 'CANCELLED'],
+  OVERDUE: ['ISSUED', 'CANCELLED'],
+  PARTIAL: ['OVERDUE', 'CANCELLED'],
+  // ใบกำกับจากบิล POS เกิดมาเป็น PAID (เอกสารล้วน) — ยกเลิกได้ ที่เหลือ assertInvoiceCancellable ตัดสิน
+  PAID: ['CANCELLED'],
+  CANCELLED: [],
+}
+
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { status } = req.body
     const validStatuses = ['DRAFT', 'ISSUED', 'PAID', 'PARTIAL', 'OVERDUE', 'CANCELLED']
+
+    if (!canHandleBilling(req.user!, 'sales')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายขาย/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+    }
 
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status' })
@@ -157,32 +174,35 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
     }
 
-    if (status === 'CANCELLED' && !['ADMIN', 'MANAGER', 'MASTER'].includes(req.user!.role)) {
-      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบแจ้งหนี้ — ต้องเป็น ADMIN/MANAGER/MASTER' })
+    // ยิงสถานะเดิมซ้ำ = no-op
+    if (status === existing.status) {
+      return res.json({ success: true, data: existing })
+    }
+    if (!(INVOICE_NEXT_STATUS[existing.status] || []).includes(status)) {
+      return res.status(400).json({
+        success: false, code: 'INVALID_STATUS_TRANSITION',
+        message: ['PAID', 'PARTIAL'].includes(status)
+          ? 'สถานะชำระเงินเปลี่ยนได้จากการรับชำระ (ใบเสร็จรับเงิน) เท่านั้น'
+          : `เปลี่ยนสถานะใบแจ้งหนี้จาก ${existing.status} เป็น ${status} ไม่ได้`,
+      })
     }
 
-    // ── Cancellation: reverse the posted sales journal (swap Dr/Cr of every line) ──
-    // so AR/revenue/COGS/inventory are backed out. reverseSalesJournal() is a no-op
-    // if this invoice never had a journal posted, or if it was already reversed
-    // (guards against double-reversal from repeated CANCELLED calls).
-    //
-    // ⚠️ ใบที่ออกจากบิล POS (pos_bill_id ไม่เป็น null) เป็น "เอกสารล้วน" ไม่มี journal/vat_entries/
-    // การตัดสต็อกของตัวเองเลย — ตอนปิดบิล POS ลงบัญชีไปครบแล้ว (Dr 1180 พัก POS / Cr รายได้ขาย /
-    // Cr ภาษีขาย + Dr ต้นทุนขาย / Cr สินค้าคงคลัง ดู createInvoiceFromPosBill() ใน
-    // services/salesBilling.service.ts) วันนี้การ reverse ตรงนี้เป็น no-op เปล่า ๆ (ไม่มี journal ให้
-    // กลับ) แต่ถ้าอนาคตมีใครเผลอไปเพิ่ม journal ให้สายนี้ จะกลับรายการผิดตัวทันที รายได้หายจากงบ
-    // จึง reverse เฉพาะใบที่ไม่ได้มาจากบิล POS เท่านั้น ถ้าลูกค้าต้องคืนเงินจริงสำหรับบิล POS
-    // ให้ไปยกเลิกที่บิล POS เอง (POST /api/pos/bills/:id/cancel → cancelPosBill() คืนสต็อก +
-    // กลับ journal ครบอยู่แล้ว) ไม่ใช่มายกเลิกที่ใบกำกับภาษีตรงนี้
-    if (status === 'CANCELLED' && existing.status !== 'CANCELLED' && existing.pos_bill_id == null) {
-      const so = existing.sales_order_id
-        ? (db.prepare('SELECT so_number FROM sales_orders WHERE id = ? AND tenant_id = ?').get(existing.sales_order_id, tenantId) as any)
-        : null
-      const receiptRows = db.prepare('SELECT * FROM receipts WHERE invoice_id = ? AND tenant_id = ?').all(req.params.id, tenantId) as any[]
-      db.transaction(() => {
-        for (const rc of receiptRows) voidReceipt(tenantId, rc)  // reverse customer payments first (end-to-end cancel)
-        reverseSalesJournal(tenantId, req.params.id, existing.invoice_number, so?.so_number)
-      })()
+    if (status === 'CANCELLED') {
+      if (!['ADMIN', 'MANAGER', 'MASTER', 'OWNER'].includes(req.user!.role)) {
+        return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกใบแจ้งหนี้ — ต้องเป็น ADMIN/MANAGER/MASTER' })
+      }
+      // ยกเลิกไม่ได้อยู่แล้ว (มีใบลดหนี้ที่ออกแล้ว ฯลฯ) → บอกเลย ไม่สร้างคำขอที่อนุมัติไม่ผ่าน
+      assertInvoiceCancellable(tenantId, existing)
+      // การยกเลิกจริง (void ใบเสร็จ + กลับ journal เฉพาะใบที่ไม่ได้มาจากบิล POS) อยู่ใน cancelInvoiceNow
+      // ใช้ตัวเดียวกันทั้งตอนผู้อนุมัติทำเองและตอนอนุมัติคำขอ (routes/approval.routes.ts)
+      const { pending, gateArgs } = gateSalesCancel({
+        tenantId, user: req.user! as any, kind: 'invoice', refId: existing.id, docNumber: existing.invoice_number,
+        docDate: existing.invoice_date || existing.created_at, amount: existing.total_amount, reason: req.body.reason,
+      })
+      if (pending) return res.status(202).json(pendingCancelBody(pending, existing.invoice_number))
+      const invoice = cancelInvoiceNow(tenantId, existing.id)
+      recordAutoAction(gateArgs)
+      return res.json({ success: true, data: invoice })
     }
 
     const now = new Date().toISOString()
@@ -192,6 +212,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
     res.json({ success: true, data: invoice })
   } catch (error) {
+    if (error instanceof SalesCancelError) {
+      return res.status(error.status).json({ success: false, message: error.message })
+    }
     console.error('Update invoice status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update status' })
   }
@@ -201,15 +224,34 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 router.post('/:id/withholding-tax', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { taxType, taxRate, taxBase, description } = req.body
+    if (!canHandleBilling(req.user!, 'sales')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายขาย/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
+    }
+    const { taxType, description } = req.body
+    // เดิมรับค่าดิบจาก body — base/rate ติดลบ/ไม่ใช่ตัวเลข/อัตรา 100% ก็ลงได้ ยอดสุทธิใบแจ้งหนี้เพี้ยน
+    const taxBase = Math.round(Number(req.body.taxBase) * 100) / 100
+    const taxRate = Number(req.body.taxRate)
+    if (!Number.isFinite(taxBase) || taxBase <= 0) {
+      return res.status(400).json({ success: false, message: 'ฐานภาษีหัก ณ ที่จ่ายต้องเป็นตัวเลขมากกว่า 0' })
+    }
+    // อัตราตามกฎหมาย 1/1.5/2/3/5/10/15% — รับช่วง 0 < อัตรา ≤ 15
+    if (!Number.isFinite(taxRate) || taxRate <= 0 || taxRate > 15) {
+      return res.status(400).json({ success: false, message: 'อัตราภาษีหัก ณ ที่จ่ายต้องมากกว่า 0 และไม่เกิน 15%' })
+    }
 
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!invoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
     }
+    if (invoice.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'ใบแจ้งหนี้นี้ถูกยกเลิกแล้ว' })
+    }
+    if (taxBase > Number(invoice.total_amount || 0) + 0.005) {
+      return res.status(400).json({ success: false, message: 'ฐานภาษีหัก ณ ที่จ่ายเกินยอดใบแจ้งหนี้' })
+    }
 
     const id = generateId()
-    const taxAmount = taxBase * (taxRate / 100)
+    const taxAmount = Math.round(taxBase * taxRate) / 100
     const now = new Date().toISOString()
 
     db.prepare(`

@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response) => {
         SUM(CASE WHEN status IN ('DELIVERED', 'COMPLETED') THEN 1 ELSE 0 END) as completed_orders,
         COALESCE(SUM(total_amount), 0) as total_sales
       FROM sales_orders
-      WHERE tenant_id = ?
+      WHERE tenant_id = ? AND status != 'CANCELLED'
     `).get(tenantId) as any
 
     // Invoice stats
@@ -32,7 +32,7 @@ router.get('/', async (req: Request, res: Response) => {
         COALESCE(SUM(total_amount), 0) as total_invoiced,
         COALESCE(SUM(balance_amount), 0) as outstanding_balance
       FROM invoices
-      WHERE tenant_id = ?
+      WHERE tenant_id = ? AND status != 'CANCELLED'
     `).get(tenantId) as any
 
     // Today's receipts — "วันนี้" ตามเวลาไทย (เดิม DATE('now') = UTC → 00:00–06:59 นับผิดวัน)
