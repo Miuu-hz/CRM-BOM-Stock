@@ -528,6 +528,7 @@ export const flexTemplates = {
         const moduleConfig: Record<string, { label: string; icon: string; bg: string; color: string }> = {
             stock_adjust:      { label: 'ปรับ/เปลี่ยนสต็อก',  icon: '📦', bg: '#EEF2FF', color: '#4F46E5' },
             pos_void:          { label: 'ยกเลิกบิล POS',     icon: '🧾', bg: '#FFF7ED', color: '#EA580C' },
+            pos_discount:      { label: 'ส่วนลดหน้าร้าน POS', icon: '🏷️', bg: '#FEF3C7', color: '#D97706' },
             doc_edit:          { label: 'แก้ไขเอกสาร',       icon: '✏️', bg: '#FAF5FF', color: '#9333EA' },
             sales_order:       { label: 'คำสั่งขาย',         icon: '🛒', bg: '#ECFEFF', color: '#0891B2' },
             purchase_order:    { label: 'ใบสั่งซื้อ',         icon: '🛍️', bg: '#F0FDF4', color: '#16A34A' },
@@ -937,7 +938,7 @@ export const flexTemplates = {
 
         return {
             type: 'flex',
-            altText: `🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล) · ${drawer.text}`,
+            altText: `🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล) · ส่วนลดรวม ${baht(s.alerts.discountTotal)} · ${drawer.text}`,
             contents: {
                 type: 'bubble', size: 'mega',
                 header: {
@@ -967,6 +968,10 @@ export const flexTemplates = {
                                     { type: 'text', text: '📱 โอน / QR', size: 'xxs', color: C.ink500 },
                                     { type: 'text', text: baht(s.bankRevenue), size: 'md', weight: 'bold', color: C.ink900 },
                                 ] },
+                            ] },
+                            { type: 'box', layout: 'horizontal', backgroundColor: '#FFFFFF', cornerRadius: '14px', ...pad('8px'), margin: 'sm', alignItems: 'center', contents: [
+                                { type: 'text', text: '🏷️ ส่วนลดรวมทั้งกะ', size: 'xs', color: C.ink500, flex: 1 },
+                                { type: 'text', text: baht(s.alerts.discountTotal), size: 'sm', weight: 'bold', color: s.alerts.discountTotal > 0 ? C.mango600 : C.ink900, flex: 0 },
                             ] },
                         ] },
                         { type: 'box', layout: 'vertical', backgroundColor: drawer.bg, cornerRadius: '18px', ...pad('12px'), margin: 'md', contents: [

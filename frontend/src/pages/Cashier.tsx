@@ -465,8 +465,11 @@ export default function Cashier() {
       if (res.success) {
         setCurrentBill(res.data)
         // ล้างส่วนลดและค่าบริการเสริมที่ค้างจากบิลก่อนหน้าทุกครั้งที่สลับบิล ป้องกันส่วนลดรั่วไหลข้ามบิล
-        setDiscount({ type: 'pct', value: 0 })
-        setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 })
+        // ยกเว้นบิลที่เปิดอยู่และบันทึกส่วนลดไว้แล้ว (เช่น รออนุมัติ/อนุมัติแล้ว) ให้ดึงค่าที่บันทึกไว้ขึ้นมาแสดง
+        const savedDiscount = Number(res.data?.discount_amount) || 0
+        const savedExtra = Number(res.data?.extra_charge_amount) || 0
+        setDiscount(savedDiscount > 0 ? { type: 'fixed', value: savedDiscount } : { type: 'pct', value: 0 })
+        setExtraCharge({ label: res.data?.extra_charge_label || 'ค่าบริการอื่น', amount: savedExtra })
         setExpandedRow(null)
         setView('menu')
       }
@@ -546,12 +549,22 @@ export default function Cashier() {
     }
   }
 
+  // เกณฑ์ส่วนลดที่ต้องแจ้งเตือนขออนุมัติ (> 40%)
+  const APPROVAL_DISCOUNT_PCT = 40
   // ส่วนลดเป็น % คิดจากยอดที่เรียกเก็บก่อนภาษี (สินค้า + ค่าบริการ + ค่าขนส่ง)
   const billDiscountAmount = (bill: any) => {
     if (discount.value <= 0) return 0
     if (discount.type !== 'pct') return discount.value
+    const pct = Math.min(100, Math.max(0, discount.value))
     const t = billTotals(bill, billing, { extraCharge: extraCharge.amount })
-    return Math.round((t.subtotal + t.serviceChargeAmount + t.extraCharge) * discount.value / 100)
+    return Math.round((t.subtotal + t.serviceChargeAmount + t.extraCharge) * pct / 100)
+  }
+  const billDiscountPct = (bill: any) => {
+    if (!bill || discount.value <= 0) return 0
+    if (discount.type === 'pct') return Math.min(100, Math.max(0, discount.value))
+    const t = billTotals(bill, billing, { extraCharge: extraCharge.amount })
+    const base = t.subtotal + t.serviceChargeAmount + t.extraCharge
+    return base > 0 ? Math.round((discount.value / base) * 1000) / 10 : 0
   }
 
   // Build receipt data for printing
@@ -605,6 +618,12 @@ export default function Cashier() {
         extra_charge_amount: extraCharge.amount,
         extra_charge_label: extraCharge.label,
       })
+
+      // ติดด่านอนุมัติ (เช่น ส่วนลดเกิน 40%): ส่งคำขออนุมัติ + แจ้ง LINE แล้ว ยังไม่ตัดจ่ายบิล
+      if (approvalGate.handleResponse(res)) {
+        setShowPaymentModal(false)
+        return
+      }
 
       // ── Actionable response: cannot pay due to stock/conversion issues ──
       if (res.data?.canPay === false && res.data?.needsAction) {
@@ -1221,7 +1240,7 @@ export default function Cashier() {
                           <div className="mt-1 flex gap-2 items-center">
                             <div className="flex rounded-lg overflow-hidden border border-[var(--border)] text-xs">
                               <button
-                                onClick={() => setDiscount(d => ({ ...d, type: 'pct' }))}
+                                onClick={() => setDiscount(d => ({ type: 'pct', value: Math.min(100, Math.max(0, d.value)) }))}
                                 className={`px-2 py-1 transition-colors ${discount.type === 'pct' ? 'bg-[var(--warning-soft)] text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
                               >%</button>
                               <button
@@ -1230,31 +1249,32 @@ export default function Cashier() {
                               >฿</button>
                             </div>
                             <div className="flex gap-1 flex-1">
-                              {discount.type === 'pct'
-                                ? [5, 10, 15, 20].map(p => (
-                                    <button key={p}
-                                      onClick={() => { setDiscount({ type: 'pct', value: p }); setExpandedRow(null) }}
-                                      className={`flex-1 py-1 rounded text-xs transition-colors ${discount.value === p ? 'bg-warning/20 text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)] hover:text-warning'}`}
-                                    >{p}%</button>
-                                  ))
-                                : (
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    placeholder="จำนวน ฿"
-                                    value={discount.value || ''}
-                                    onChange={e => setDiscount(d => ({ ...d, value: Number(e.target.value) || 0 }))}
-                                    onKeyDown={e => e.key === 'Enter' && setExpandedRow(null)}
-                                    autoFocus
-                                    className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-warning"
-                                  />
-                                )
-                              }
+                              <input
+                                type="number"
+                                min={0}
+                                max={discount.type === 'pct' ? 100 : undefined}
+                                placeholder={discount.type === 'pct' ? 'จำนวน %' : 'จำนวน ฿'}
+                                value={discount.value || ''}
+                                onChange={e => {
+                                  const raw = Number(e.target.value) || 0
+                                  const next = Math.max(0, discount.type === 'pct' ? Math.min(100, raw) : raw)
+                                  setDiscount(d => ({ ...d, value: next }))
+                                }}
+                                onKeyDown={e => e.key === 'Enter' && setExpandedRow(null)}
+                                autoFocus
+                                className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-warning"
+                              />
                             </div>
                             {discount.value > 0 && (
                               <button onClick={() => { setDiscount({ type: 'pct', value: 0 }); setExpandedRow(null) }}
                                 className="text-[var(--fg-4)] hover:text-danger text-xs">ล้าง</button>
                             )}
+                          </div>
+                        )}
+                        {billDiscountPct(currentBill) > APPROVAL_DISCOUNT_PCT && (
+                          <div className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--warning-soft)]/80 border border-warning/40 text-warning text-xs">
+                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>ส่วนลดเกิน {APPROVAL_DISCOUNT_PCT}% ({billDiscountPct(currentBill)}%) — ต้องขออนุมัติก่อนชำระเงิน</span>
                           </div>
                         )}
                       </div>

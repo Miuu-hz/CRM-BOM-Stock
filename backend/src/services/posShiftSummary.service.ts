@@ -76,6 +76,14 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
       AND module_type IN ('pos_void', 'pos_item_void', 'pos_discount') AND status IN ('AUTO', 'APPROVED', 'EXECUTED')
   `).all(tenantId, s.opened_at, s.closed_at) as any[]
 
+  const billDiscountRow = db.prepare(`
+    SELECT COALESCE(SUM(discount_amount), 0) AS total
+    FROM pos_running_bills
+    WHERE tenant_id = ? AND status = 'PAID'
+      AND (shift_id = ? OR (shift_id IS NULL AND closed_at BETWEEN ? AND ?))
+  `).get(tenantId, shiftId, s.opened_at, s.closed_at) as any
+  const logDiscountTotal = logs.filter(l => l.module_type === 'pos_discount').reduce((t, l) => t + (l.amount || 0), 0)
+
   return {
     shiftNumber: s.shift_number,
     shopName: shop?.name || '',
@@ -94,7 +102,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     alerts: {
       voids: logs.filter(l => l.module_type === 'pos_void').length,
       itemVoids: logs.filter(l => l.module_type === 'pos_item_void').length,
-      discountTotal: r2(logs.filter(l => l.module_type === 'pos_discount').reduce((t, l) => t + (l.amount || 0), 0)),
+      discountTotal: r2(Math.max(Number(billDiscountRow?.total) || 0, logDiscountTotal)),
     },
   }
 }
