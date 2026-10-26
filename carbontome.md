@@ -1131,7 +1131,7 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 - ข้อมูลย้อนหลัง: `scripts/classifyNonStockLines.js` จัดหมวด 62 บรรทัด + `scripts/reclassSkipStockInvoices.js` JV `PURCHASE_INVOICE_RECLASS` 19 ใบ ฿7,992.43 (tenant_bb_pillow) ลงแล้ว
 - ค้าง: 7 บรรทัดหมวดไม่ชัด (ถุงเท้า ELLE, DIY, ลูกบอลตกแต่ง) อยู่ 5403 รอเจ้าของยืนยัน · GL 1107 (48,787) ต่ำกว่ามูลค่าสต็อกจริง (49,514) ฿726 ยังไม่กระทบยอด — เริ่มดูจาก 5 ใบที่ย้ายได้ไม่เต็มเพราะส่วนต่างค้างใน 2109
 
-### 📌 แผน: MCP `instructions` + `get_erp_guide` (ยังไม่ทำ — เลื่อนไว้ มีงานใหญ่กว่า)
+### 📌 แผน: MCP `instructions` + `get_erp_guide` (✅ ทำแล้ว 26 ต.ค. 2026 — ดู Session Log 26 ต.ค.)
 สภาพตอนนี้: `mcp/server.ts` สร้าง `new McpServer({ name, version })` เฉย ๆ ไม่มี `instructions` และไม่มี resources · มี 44 tools ซึ่งคำอธิบาย tool ทั้งหมดถูกส่งให้ agent ทุก request อยู่แล้ว
 
 เทียบทางเลือก:
@@ -1821,3 +1821,46 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
   - เพดาน สปส. ปี 2569
   - OT กับเบี้ยขยันนับรวมในฐาน สปส. หรือไม่
   - เบิกค่าจ้างล่วงหน้านับในเพดาน ม.76 หรือไม่
+
+---
+
+## 📅 Session Log — 26 ต.ค. 2026 (MCP `instructions` + `get_erp_guide` ครบ 9 หมวด) — ✅ deploy แล้ว
+ทำตามแผน 12 ต.ค. ("แผน: MCP `instructions` + `get_erp_guide`") · สำรวจ 45 tool จากโค้ดจริงด้วย agy 2 ตัวขนานกัน แล้วสุ่มเทียบกับโค้ดก่อนใช้
+
+```
+agent ต่อ MCP ──► ชั้น 1  instructions (~400 token, client ใส่ system prompt ให้เอง)
+                       กฎกลาง 8 ข้อ + "ก่อนทำงานหลายขั้นให้เรียก get_erp_guide(topic)"
+              └─► ชั้น 2  get_erp_guide(topic)  (อ่านอย่างเดียว, โมเดลเรียกเองเมื่อจะทำงานในหมวดนั้น)
+```
+
+### หมวดที่ทำแล้ว (ทุกหมวดมี: tool ในหมวด · ลำดับการเรียก · ด่านที่ server บล็อก + ข้อความ error ไทย · กับดัก + วิธีแก้)
+| topic | ครอบคลุม tool | สถานะ |
+|---|---|---|
+| `overview` | แผนที่ tool ทุกหมวด, สิทธิ์ cashier/basic/readonly/MASTER-ADMIN, วิธีใช้ `search` | ✅ |
+| `purchase` | PR → PO → GR, `bind_document_item`, กันบิลซ้ำ 3 ชั้น, ของไม่นับสต็อก + **รายการบัญชีค่าใช้จ่ายจริงของ tenant** (ใช้เป็น `expenseAccountCode`) | ✅ |
+| `purchase_billing` | PI จาก GR, `pay_supplier` (amount รวม WHT แล้ว), `complete_purchase_bill`, งวดปิด + รายการบัญชีค่าใช้จ่าย | ✅ |
+| `stock_units` | ปรับยอด (ยอดหลังปรับ ไม่ใช่ส่วนต่าง, IN/OUT ปิด), กฎหน่วย 3 ชั้น ซื้อ/เก็บ/ใช้, `manage_unit_conversion`, รูปสินค้า | ✅ |
+| `sales` | ออกได้แค่ใบเสนอราคา, VAT/ของขายไม่ได้/ต้องใส่ unitPrice, ที่เหลือทำในเว็บ | ✅ |
+| `production_bom` | BOM + WO DRAFT→PLANNED→IN_PROGRESS→COMPLETED, ตัดวัตถุดิบ, QC gate, สิทธิ์ปิด/ยกเลิก | ✅ |
+| `finance` | aging AR/AP, สรุปการเงิน (cash basis), งบทดลอง/แยกประเภทเฉพาะ MASTER/ADMIN | ✅ |
+| `crm` | insights dormant/profile (ambiguous → ถามผู้ใช้), ใบเสนอราคา, lead source | ✅ |
+| `platform_month` | รอบเดือน 6 ไฟล์, สถานะ/สมการ, เสนอจับคู่ SKU, `list_marketing_shops` | ✅ |
+
+### ไฟล์ (backend/src)
+- `mcp/tools/guide.ts` ใหม่ — `ERP_INSTRUCTIONS`, `GUIDE_TOPICS` (9 หมวด), `registerGuideTool` (enum หัวข้อดึงจาก key ของ GUIDE_TOPICS)
+- `mcp/server.ts` ส่ง `{ instructions }` เข้า `new McpServer` · `mcp/sdk-compat.ts` เปิดรับ options · `mcp/tools.ts` ลงทะเบียน + ใส่ `get_erp_guide` ใน READ_ONLY_TOOLS
+- `mcp/tools/guide.test.ts` ใหม่ — instructions ≤ 2000 ตัวอักษร, ทุกหัวข้อตอบได้, **ชื่อ tool ใน guide/instructions ต้องมีจริง** (กันคู่มือเก่าเมื่อลบ/เปลี่ยนชื่อ tool)
+- `routes/mcpSettings.scope.test.ts` เพิ่ม `get_erp_guide` ใน allowlist สำเนา
+- แถม: `services/unitConversion.service.ts:65` คอมเมนต์ไทยพังเป็น `????` ตั้งแต่ `3e850da` (18 ต.ค.) ทำให้ `textEncoding.guard.test` ล้ม — กู้ข้อความแล้ว (คอมเมนต์อย่างเดียว)
+
+### ตัดสินใจ
+- instructions เขียน**ภาษาอังกฤษ** เพราะส่งทุก session: ภาษาไทยชุดเดียวกันยาว 3,123 ตัวอักษร (~1,500–2,400 token) เกินงบ 300–500 · คงคำไทยที่ตรงกับ error ของระบบไว้ ("ตัวเลือก", "ไม่พบการแปลงหน่วย", "ส่งคำขออนุมัติแล้ว")
+- ไม่ทำ MCP resources ตามแผนเดิม · context ช่วยลดการเรียกผิด แต่ด่านฝั่ง server ยังเป็นตัวกันจริง
+
+### ตรวจแล้ว
+- tsc ผ่าน · เทสต์ทั้งชุด 166 ไฟล์ผ่าน · build + `pm2 restart crm-backend` · log ขึ้นปกติ
+- MCP client ต่อ server ในโปรเซส (dist จริง, in-memory transport, ไม่ใช้ key): ได้ instructions ครบ 1,632 ตัวอักษร · tool 46 ตัว (เดิม 45 + guide) · หัวข้อผิดถูกปฏิเสธ · tenant_bb_pillow ได้รายการบัญชีค่าใช้จ่ายจริง
+
+### ค้าง
+- ทดสอบกับ Claude client จริงด้วย key ของผู้ใช้ ว่า instructions โผล่ใน system prompt (ต้องให้เจ้าของต่อ connector เอง)
+- เพิ่ม tool ใหม่เมื่อไร: ใส่ชื่อในหัวข้อ guide ที่ตรงหมวด · ถ้าเป็น tool อ่านอย่างเดียวให้เพิ่มทั้ง `READ_ONLY_TOOLS` และสำเนาใน `mcpSettings.scope.test.ts`

@@ -7,6 +7,7 @@ import { Request, Response, Router } from 'express'
 import db from '../db/sqlite'
 import { McpServer, SSEServerTransport, StreamableHTTPServerTransport, ISSETransport, IStreamableHTTPTransport } from './sdk-compat'
 import { registerTools } from './tools'
+import { ERP_INSTRUCTIONS } from './tools/guide'
 import { getSubscription } from '../services/subscription.service'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ function keyMatchesSession(req: Request, session: StreamableSession): boolean {
 // ── MCP server factory ────────────────────────────────────────────────────────
 
 function buildServer(tenantId: string, userId: string) {
-  const server = new McpServer({ name: 'mini-erp', version: '1.0.0' })
+  const server = new McpServer({ name: 'mini-erp', version: '1.0.0' }, { instructions: ERP_INSTRUCTIONS })
   registerTools(server, tenantId, userId)
   return server
 }

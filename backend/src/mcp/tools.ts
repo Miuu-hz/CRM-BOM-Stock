@@ -8,6 +8,7 @@
 import db from '../db/sqlite'
 import { IMcpServer } from './sdk-compat'
 import { registerSearchTool } from './tools/search'
+import { registerGuideTool } from './tools/guide'
 import { registerSummaryTools } from './tools/summary'
 import { registerPurchaseTools } from './tools/purchase'
 import { registerSalesTools } from './tools/sales'
@@ -28,7 +29,7 @@ import { isCashierOnly } from '../middleware/cashierScope'
 // allowlist (ไม่ใช่ denylist) เพื่อให้ tool เขียนข้อมูลตัวใหม่ในอนาคตถูกบล็อกโดยปริยาย
 // ต้องเช็คโค้ด handler จริงแล้วว่าไม่มี INSERT/UPDATE/DELETE ก่อนเพิ่มชื่อเข้ามาที่นี่
 const READ_ONLY_TOOLS = new Set([
-  'search', 'get_summary', 'get_sales', 'get_orders',
+  'search', 'get_erp_guide', 'get_summary', 'get_sales', 'get_orders',
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
   'get_stock_movements', 'explode_bom',
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
@@ -64,6 +65,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
     : server
 
   registerSearchTool(target, tenantId)
+  registerGuideTool(target, tenantId)
   registerSummaryTools(target, tenantId)
   registerPurchaseTools(target, tenantId, userId, callerName, callerRole)
   registerSalesTools(target, tenantId, userId, callerName, callerRole)

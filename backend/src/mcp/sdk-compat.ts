@@ -30,7 +30,7 @@ export interface IStreamableHTTPTransport {
   onerror?: (err: Error) => void
 }
 
-type McpServerConstructor = new (info: { name: string; version: string }) => IMcpServer
+type McpServerConstructor = new (info: { name: string; version: string }, options?: { instructions?: string }) => IMcpServer
 type SSETransportConstructor = new (endpoint: string, res: unknown) => ISSETransport
 type StreamableHTTPConstructor = new (options?: { sessionIdGenerator?: () => string; enableJsonResponse?: boolean }) => IStreamableHTTPTransport
 

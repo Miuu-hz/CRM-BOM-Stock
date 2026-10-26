@@ -16,7 +16,7 @@ app.use(express.json())
 app.use('/api/mcp-settings', mcpSettingsRouter)
 
 const READ_ONLY_ALLOWLIST = new Set([
-  'search', 'get_summary', 'get_sales', 'get_orders',
+  'search', 'get_erp_guide', 'get_summary', 'get_sales', 'get_orders',
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
   'get_stock_movements', 'explode_bom',
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
