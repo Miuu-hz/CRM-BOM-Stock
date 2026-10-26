@@ -5511,6 +5511,11 @@ const Purchase = () => {
     const selectedInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
     const wht         = effWht(paymentForm)
     const netPay      = round2(paymentForm.amount - wht)
+    const isNonCash = paymentForm.payment_method !== 'CASH' && paymentForm.payment_method !== 'POS_CASH'
+    const activeBankAccounts = bankAccounts.filter(b => Boolean(b.is_active))
+    const defaultBankAccount = activeBankAccounts.find(b => Boolean(b.is_default))
+    const autoBankAccount = defaultBankAccount || (activeBankAccounts.length === 1 ? activeBankAccounts[0] : null)
+    const bankChoiceRequired = isNonCash && !paymentForm.bank_account_id && activeBankAccounts.length >= 2 && !defaultBankAccount
     return (
     <div className="fixed inset-0 bg-[var(--fg-1)]/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
@@ -5748,14 +5753,25 @@ const Purchase = () => {
                 {t('purchase.paymentModal.noBankAccount')}
               </div>
             ) : (
-              <select value={paymentForm.bank_account_id}
-                onChange={e => setPaymentForm(p => ({ ...p, bank_account_id: e.target.value }))}
-                className={inputCls()}>
-                <option value="">{t('purchase.paymentModal.payFromAuto')}</option>
-                {bankAccounts.filter(b => b.is_active).map(b => (
-                  <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number} ({b.account_name})</option>
-                ))}
-              </select>
+              <>
+                <select value={paymentForm.bank_account_id}
+                  onChange={e => setPaymentForm(p => ({ ...p, bank_account_id: e.target.value }))}
+                  className={inputCls()}>
+                  <option value="">{t('purchase.paymentModal.payFromAuto')}</option>
+                  {bankAccounts.filter(b => b.is_active).map(b => (
+                    <option key={b.id} value={b.id}>{b.bank_name} · {b.account_number} ({b.account_name})</option>
+                  ))}
+                </select>
+                {isNonCash && !paymentForm.bank_account_id && (
+                  bankChoiceRequired ? (
+                    <p className="text-xs text-danger mt-1">เลือกบัญชีธนาคารที่จ่ายออก</p>
+                  ) : autoBankAccount ? (
+                    <p className="text-xs text-[var(--fg-4)] mt-1">
+                      จะใช้บัญชี: {autoBankAccount.bank_name} · {autoBankAccount.account_number} ({autoBankAccount.account_name})
+                    </p>
+                  ) : null
+                )}
+              </>
             )}
           </Field>}
 
@@ -5800,7 +5816,7 @@ const Purchase = () => {
         </div>
         <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
           <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
-          <button onClick={handleCreatePayment} disabled={formLoading || !paymentForm.supplier_id || !paymentForm.amount}
+          <button onClick={handleCreatePayment} disabled={formLoading || !paymentForm.supplier_id || !paymentForm.amount || bankChoiceRequired}
             className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
             {formLoading && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
             <Check className="w-4 h-4" /> {t('purchase.paymentModal.confirmPayment')}

@@ -1,11 +1,16 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { HEALTH } from '../config/thresholds'
+import { closeChecklist } from '../services/closeChecklist.service'
+import { previousPeriod } from '../services/monthClose.service'
 import { totalStockValue } from '../services/stockValue.service'
 import {
   NON_CLOSING, THAI_DATE, r2, thaiToday, monthRange,
+  addDaysStr, diffDaysStr, firstPostedDate, cashBalanceAt, cashOutflow,
   ledgerRevenue, ledgerCogs, ledgerOpex, ledgerLabour, accountBalances,
   businessUnitPL, cogsAnalysis, apAging, arAging, posSales, cashDrawer, AgingResult,
+  trendSeries, TrendGrain,
 } from '../services/phopyBoard.service'
 
 const router = Router()
@@ -564,6 +569,264 @@ router.get('/extended', (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Extended board error:', err)
     res.status(500).json({ success: false, message: 'Failed to load extended data' })
+  }
+})
+
+// ── C2: GET /phopy-board/trend & GET /phopy-board/cfo-summary ──────────────
+
+const VALID_GRAINS = new Set<TrendGrain>(['week', 'month', 'quarter', 'year'])
+
+function isValidIsoDate(s: string): boolean {
+  if (!DATE_RE.test(s)) return false
+  const [y, m, d] = s.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+}
+
+router.get('/trend', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const rawGrain = (req.query.grain as string) || 'month'
+    if (!VALID_GRAINS.has(rawGrain as TrendGrain)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ขนาดแท่ง (grain) ไม่ถูกต้อง กรุณาเลือก week, month, quarter หรือ year',
+      })
+    }
+    const grain = rawGrain as TrendGrain
+    const from = (req.query.from as string) || undefined
+    const to = (req.query.to as string) || undefined
+    if ((from && !isValidIsoDate(from)) || (to && !isValidIsoDate(to))) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบวันที่ไม่ถูกต้อง กรุณาใช้ YYYY-MM-DD เช่น 2026-10-01',
+      })
+    }
+    const effTo = to || thaiToday()
+    if (from && from > effTo) {
+      return res.status(400).json({
+        success: false,
+        message: 'วันเริ่มต้น (from) ต้องไม่เกินวันสิ้นสุด (to)',
+      })
+    }
+
+    let warmup: number | undefined
+    if (req.query.warmup !== undefined && req.query.warmup !== '') {
+      const rawWarmup = String(req.query.warmup)
+      if (!/^\d+$/.test(rawWarmup)) {
+        return res.status(400).json({
+          success: false,
+          message: 'ค่า warmup ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป',
+        })
+      }
+      warmup = Number(rawWarmup)
+    }
+
+    res.json({
+      success: true,
+      data: trendSeries(tenantId, grain, from, effTo, warmup),
+    })
+  } catch (err: any) {
+    console.error('Phopy Board trend error:', err)
+    res.status(500).json({ success: false, message: 'ไม่สามารถโหลดข้อมูลแนวโน้มได้ กรุณาลองใหม่อีกครั้ง' })
+  }
+})
+
+// เกณฑ์กฎสำหรับบทสรุป CFO (C2) — อ้างอิงร่วมกับ HEALTH สำหรับเงินพอใช้และลูกหนี้เกินกำหนด
+const CFO_RULES = {
+  revGrowthPct: 5,
+  gmDropPoints: 2,
+  gmStablePoints: 1,
+  runwayLowDays: HEALTH.runwayDays.yellow, // 21
+  runwayExcessDays: 90,
+  excessReserveDays: 60,
+  arOverdueRatio: HEALTH.arOverdueRatio.yellow, // 0.25
+} as const
+
+const fmtBaht = (v: number) => `${v < 0 ? '-' : ''}฿${Math.round(Math.abs(v)).toLocaleString('th-TH')}`
+
+function shiftYearMinus1(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const maxD = new Date(Date.UTC(y - 1, m, 0)).getUTCDate()
+  return `${y - 1}-${String(m).padStart(2, '0')}-${String(Math.min(d, maxD)).padStart(2, '0')}`
+}
+
+router.get('/cfo-summary', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const today = thaiToday()
+    const startDate = (req.query.startDate as string) || `${today.slice(0, 7)}-01`
+    const endDate = (req.query.endDate as string) || today
+    if (!isValidIsoDate(startDate) || !isValidIsoDate(endDate) || startDate > endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'ช่วงวันที่ไม่ถูกต้อง กรุณาระบุ startDate/endDate เป็น YYYY-MM-DD และ startDate ≤ endDate',
+      })
+    }
+
+    const compareMode = (req.query.compare as string) || 'yoy'
+    if (compareMode !== 'yoy' && compareMode !== 'prev') {
+      return res.status(400).json({
+        success: false,
+        message: 'ตัวเลือกเปรียบเทียบ (compare) ไม่ถูกต้อง กรุณาเลือก yoy หรือ prev',
+      })
+    }
+
+    const lenDays = diffDaysStr(startDate, endDate) + 1
+    const cmpStart = compareMode === 'yoy' ? shiftYearMinus1(startDate) : addDaysStr(startDate, -lenDays)
+    const cmpEnd = compareMode === 'yoy' ? shiftYearMinus1(endDate) : addDaysStr(startDate, -1)
+    const cmpLabel = compareMode === 'yoy' ? 'ช่วงเดียวกันปีก่อน' : 'งวดก่อนหน้า'
+
+    const hasCmpData = !!db.prepare(`
+      SELECT 1 FROM journal_entries je
+      WHERE je.tenant_id = ? AND je.is_posted = 1 ${NON_CLOSING}
+        AND date(je.date) BETWEEN ? AND ?
+      LIMIT 1
+    `).get(tenantId, cmpStart, cmpEnd)
+
+    const revenue = r2(ledgerRevenue(tenantId, startDate, endDate))
+    const cogs = r2(ledgerCogs(tenantId, startDate, endDate))
+    const opex = r2(ledgerOpex(tenantId, startDate, endDate))
+    const netProfit = r2(revenue - cogs - opex)
+    const grossMarginPct = revenue > 0 ? r2(((revenue - cogs) / revenue) * 100) : 0
+    const cashEnd = cashBalanceAt(tenantId, endDate)
+    const outflow = cashOutflow(tenantId, startDate, endDate)
+    const runwayDays = outflow.avgPerDay > 0 ? r2(cashEnd / outflow.avgPerDay) : null
+    const cashNote = runwayDays !== null ? `พอใช้ ${Math.round(runwayDays)} วัน` : 'ยังไม่มีรายการเงินออก'
+
+    let prevRev: number | null = null
+    let prevNet: number | null = null
+    let prevGmPct: number | null = null
+    let prevCash: number | null = null
+    let revDeltaPct: number | null = null
+    let netDeltaPct: number | null = null
+    let gmDeltaPct: number | null = null
+    let cashDeltaPct: number | null = null
+
+    if (hasCmpData) {
+      prevRev = r2(ledgerRevenue(tenantId, cmpStart, cmpEnd))
+      const prevCogs = r2(ledgerCogs(tenantId, cmpStart, cmpEnd))
+      const prevOpex = r2(ledgerOpex(tenantId, cmpStart, cmpEnd))
+      prevNet = r2(prevRev - prevCogs - prevOpex)
+      prevGmPct = prevRev > 0 ? r2(((prevRev - prevCogs) / prevRev) * 100) : 0
+      prevCash = cashBalanceAt(tenantId, cmpEnd)
+
+      revDeltaPct = prevRev > 0 ? r2(((revenue - prevRev) / prevRev) * 100) : null
+      netDeltaPct = prevNet !== 0 ? r2(((netProfit - prevNet) / Math.abs(prevNet)) * 100) : null
+      gmDeltaPct = prevRev > 0 && revenue > 0 ? r2(grossMarginPct - prevGmPct) : null
+      cashDeltaPct = prevCash !== 0 ? r2(((cashEnd - prevCash) / Math.abs(prevCash)) * 100) : null
+    }
+
+    const kpis = [
+      { key: 'revenue', label: 'ยอดขาย', value: revenue, prev: prevRev, deltaPct: revDeltaPct, format: 'baht' },
+      { key: 'netProfit', label: 'กำไรสุทธิ (ก่อนภาษี)', value: netProfit, prev: prevNet, deltaPct: netDeltaPct, format: 'baht' },
+      { key: 'grossMarginPct', label: '% กำไรขั้นต้น', value: grossMarginPct, prev: prevGmPct, deltaPct: gmDeltaPct, format: 'pct' },
+      { key: 'cashEnd', label: 'เงินสดสิ้นงวด', value: cashEnd, prev: prevCash, deltaPct: cashDeltaPct, format: 'baht', note: cashNote },
+    ]
+
+    const strengths: Array<{ text: string; from: string }> = []
+    const cautions: Array<{ text: string; from: string }> = []
+    const decisions: Array<{ text: string; from: string }> = []
+
+    // 1. Revenue growth vs compare period (only when compare has data)
+    if (hasCmpData && revDeltaPct !== null) {
+      if (revDeltaPct >= CFO_RULES.revGrowthPct) {
+        strengths.push({ text: `ยอดขายโต ${revDeltaPct.toFixed(1)}% เทียบ${cmpLabel}`, from: 'ยอดขาย · บท 3' })
+      } else if (revDeltaPct <= -CFO_RULES.revGrowthPct) {
+        cautions.push({ text: `ยอดขายลดลง ${Math.abs(revDeltaPct).toFixed(1)}% เทียบ${cmpLabel}`, from: 'ยอดขาย · บท 3' })
+      }
+    }
+
+    // 2. Gross margin change vs compare period
+    if (hasCmpData && gmDeltaPct !== null && prevGmPct !== null) {
+      if (gmDeltaPct < -CFO_RULES.gmDropPoints) {
+        cautions.push({
+          text: `% กำไรขั้นต้นลดลง ${Math.abs(gmDeltaPct).toFixed(1)} จุด (${grossMarginPct.toFixed(1)}% จาก ${prevGmPct.toFixed(1)}%)`,
+          from: 'ต้นทุนขาย ÷ รายได้ · บท 3',
+        })
+      } else if (Math.abs(gmDeltaPct) <= CFO_RULES.gmStablePoints) {
+        strengths.push({
+          text: `% กำไรขั้นต้น ${grossMarginPct.toFixed(1)}% ทรงตัวใกล้เคียงงวดเทียบ (${prevGmPct.toFixed(1)}%)`,
+          from: 'ต้นทุนขาย ÷ รายได้ · บท 3',
+        })
+      }
+    }
+
+    // 3. Net profit < 0
+    if (netProfit < 0) {
+      cautions.push({ text: `ขาดทุนสุทธิ ${fmtBaht(Math.abs(netProfit))}`, from: 'งบกำไรขาดทุน · บท 3' })
+    }
+
+    // 4. Runway (< 21 days → caution; ≥ 90 days → decision)
+    if (runwayDays !== null) {
+      if (runwayDays < CFO_RULES.runwayLowDays) {
+        cautions.push({
+          text: `เงินสดสิ้นงวดพอใช้เพียง ${Math.round(runwayDays)} วัน (ต่ำกว่าเกณฑ์ ${CFO_RULES.runwayLowDays} วัน)`,
+          from: 'เงินสดและสภาพคล่อง · บท 2',
+        })
+      } else if (runwayDays >= CFO_RULES.runwayExcessDays) {
+        const excess = Math.round((cashEnd - CFO_RULES.excessReserveDays * outflow.avgPerDay) / 1000) * 1000
+        decisions.push({
+          text: `เงินสดเกินความต้องการ 60 วันราว ${fmtBaht(excess)} จะฝากประจำ ลดหนี้ หรือเก็บไว้ลงทุน`,
+          from: 'เงินสดสิ้นงวด − เงินใช้ 60 วัน · บท 2',
+        })
+      }
+    }
+
+    // 5. AR overdue ratio > 25%
+    const ar = arAging(tenantId, endDate)
+    if (ar.total > 0 && (ar.overdue / ar.total) > CFO_RULES.arOverdueRatio) {
+      cautions.push({
+        text: `ลูกหนี้เกินกำหนด ${((ar.overdue / ar.total) * 100).toFixed(1)}% (${fmtBaht(ar.overdue)} จาก ${fmtBaht(ar.total)})`,
+        from: 'อายุลูกหนี้ · บท 2',
+      })
+    }
+
+    // 6. Budgets table has no rows for tenant/year of endDate
+    const endYear = Number(endDate.slice(0, 4))
+    const hasBudget = !!db.prepare('SELECT 1 FROM budgets WHERE tenant_id = ? AND year = ? LIMIT 1').get(tenantId, endYear)
+    if (!hasBudget) {
+      decisions.push({
+        text: `ตั้งงบประมาณปี ${endYear + 1} เพื่อให้บท 7 มีตัวเทียบ`,
+        from: 'ตาราง budgets ยังว่าง · บท 7',
+      })
+    }
+
+    // 7. Previous-period checklist has blocks
+    const checkPeriod = endDate.slice(0, 7) >= today.slice(0, 7) ? previousPeriod(today.slice(0, 7)) : endDate.slice(0, 7)
+    const ck = closeChecklist(tenantId, checkPeriod)
+    if (ck.blocks > 0) {
+      cautions.push({
+        text: `ตัวเลขยังเชื่อได้ไม่เต็มที่: ด่านตรวจไม่ผ่าน ${ck.blocks} ข้อ`,
+        from: 'ด่านตรวจปิดงวด · บท 6',
+      })
+    }
+
+    // 8. Data shorter than the compare window
+    const dataSince = firstPostedDate(tenantId)
+    const dataDays = dataSince && dataSince <= endDate ? diffDaysStr(dataSince, endDate) + 1 : 0
+    if (!dataSince || dataSince > cmpStart) {
+      cautions.push({
+        text: `ข้อมูลมี ${dataDays} วัน การเทียบยังไม่สมบูรณ์`,
+        from: 'วันที่มีข้อมูลวันแรก · บท 6',
+      })
+    }
+
+    res.json({
+      success: true,
+      data: {
+        period: { start: startDate, end: endDate },
+        compare: { mode: compareMode, start: cmpStart, end: cmpEnd, label: cmpLabel, hasData: hasCmpData },
+        kpis,
+        strengths,
+        cautions,
+        decisions,
+        confidence: { period: ck.period, label: ck.label, passed: ck.passed, total: ck.total },
+      },
+    })
+  } catch (err: any) {
+    console.error('Phopy Board CFO summary error:', err)
+    res.status(500).json({ success: false, message: 'ไม่สามารถโหลดบทสรุป CFO ได้ กรุณาลองใหม่อีกครั้ง' })
   }
 })
 

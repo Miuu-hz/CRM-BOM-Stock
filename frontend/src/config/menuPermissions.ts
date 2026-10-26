@@ -31,6 +31,7 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/marketing': ALL_ROLES,
   '/tax': ALL_ROLES,
   '/accounting': ALL_ROLES,
+  '/accounting/books': ALL_ROLES,
   '/accounting/chart-of-accounts': ALL_ROLES,
   '/accounting/journal-entries': ALL_ROLES,
   '/accounting/period-closing': ALL_ROLES, // page is viewable by all; the close/reopen/year-end actions are gated server-side to ADMIN/MASTER + password
@@ -96,6 +97,7 @@ export const MENU_REQUIRED_FEATURES: Record<string, string> = {
   '/calculator': 'bom',
   '/tax': 'tax',
   '/accounting': 'accounting',
+  '/accounting/books': 'accounting',
   '/accounting/chart-of-accounts': 'accounting',
   '/accounting/journal-entries': 'accounting',
   '/accounting/period-closing': 'accounting',

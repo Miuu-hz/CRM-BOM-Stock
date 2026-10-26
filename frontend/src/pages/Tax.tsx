@@ -9,7 +9,6 @@ import {
   Calendar,
   CheckCircle,
   AlertTriangle,
-  Download,
   RefreshCw,
   Building2,
   Percent,
@@ -337,12 +336,6 @@ function Tax() {
                 description="ดึงข้อมูล WHT จากการจ่ายเงิน"
                 onClick={syncTaxData}
               />
-              <QuickActionButton
-                icon={Download}
-                title="ส่งออกรายงาน"
-                description="ดาวน์โหลดไฟล์ภ.พ.30, ภ.ง.ด."
-                onClick={() => {}}
-              />
             </div>
           </div>
 
@@ -614,25 +607,21 @@ function Tax() {
                 title="ค่าอบรมสัมมนา"
                 description="หักค่าใช้จ่ายได้ 200% ตามมาตรการส่งเสริมการพัฒนาทักษะ"
                 potentialSaving="สูงสุด 200,000 บาท/ปี"
-                action="บันทึกค่าอบรม"
               />
               <OptimizationCard
                 title="ระบบ Automation"
                 description="ลงทุนในเครื่องจักร/ระบบอัตโนมัติ หักได้ 2-3 เท่า"
                 potentialSaving="ตามมูลค่าการลงทุน"
-                action="ดูรายละเอียด BOI"
               />
               <OptimizationCard
                 title="จ้างงานผู้สูงอายุ"
                 description="จ้างงานผู้สูงอายุ 60+ ปี หักค่าใช้จ่ายได้เพิ่ม"
                 potentialSaving="100% ของค่าจ้าง"
-                action="บันทึกค่าจ้าง"
               />
               <OptimizationCard
                 title="ค่าเสื่อมราคาเร่งด่วน (SME)"
                 description="คอมพิวเตอร์หัก 40% ในปีแรกที่ได้มา"
                 potentialSaving="ลดกำไรปีแรก"
-                action="ตั้งค่าสินทรัพย์"
               />
             </div>
           </div>
@@ -650,35 +639,30 @@ function Tax() {
                 formName="แบบแสดงรายการภาษีมูลค่าเพิ่ม"
                 dueDate="15 ของเดือนถัดไป"
                 status="pending"
-                onGenerate={() => {}}
               />
               <FilingCard
                 formCode="ภ.ง.ด.3"
                 formName="แบบแสดงรายการภาษีหัก ณ ที่จ่าย (เงินได้ส่วนบุคคล)"
                 dueDate="7 ของเดือนถัดไป"
                 status="pending"
-                onGenerate={() => {}}
               />
               <FilingCard
                 formCode="ภ.ง.ด.53"
                 formName="แบบแสดงรายการภาษีหัก ณ ที่จ่าย (นิติบุคคล)"
                 dueDate="7 ของเดือนถัดไป"
                 status="pending"
-                onGenerate={() => {}}
               />
               <FilingCard
                 formCode="ภ.ง.ด.50"
                 formName="แบบแสดงรายการภาษีเงินได้นิติบุคคล"
                 dueDate="สิ้นเดือนพฤษภาคม (รอบปี)"
                 status="pending"
-                onGenerate={() => {}}
               />
               <FilingCard
                 formCode="ภ.ง.ด.51"
                 formName="แบบแสดงรายการภาษีเงินได้นิติบุคคล (ครึ่งปี)"
                 dueDate="สิ้นเดือนสิงหาคม"
                 status="pending"
-                onGenerate={() => {}}
               />
             </div>
           </div>
@@ -747,21 +731,20 @@ function QuickActionButton({ icon: Icon, title, description, onClick }: { icon: 
 }
 
 // Component: Optimization Card
-function OptimizationCard({ title, description, potentialSaving, action }: { title: string; description: string; potentialSaving: string; action: string }) {
+function OptimizationCard({ title, description, potentialSaving }: { title: string; description: string; potentialSaving: string }) {
   return (
     <div className="p-4 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg">
       <h4 className="text-[var(--primary)] font-semibold mb-2">{title}</h4>
       <p className="text-[var(--fg-3)] text-sm mb-3">{description}</p>
-      <div className="flex items-center justify-between">
+      <div>
         <span className="text-success text-sm font-medium">{potentialSaving}</span>
-        <button className="text-[var(--primary)] text-sm hover:underline">{action} →</button>
       </div>
     </div>
   )
 }
 
 // Component: Filing Card
-function FilingCard({ formCode, formName, dueDate, status, onGenerate }: { formCode: string; formName: string; dueDate: string; status: string; onGenerate: () => void }) {
+function FilingCard({ formCode, formName, dueDate, status }: { formCode: string; formName: string; dueDate: string; status: string }) {
   const statusColors: Record<string, string> = {
     pending: 'bg-[var(--warning-soft)] text-warning',
     ready: 'bg-[var(--info-soft)] text-blue-400',
@@ -780,14 +763,7 @@ function FilingCard({ formCode, formName, dueDate, status, onGenerate }: { formC
       </div>
       <h4 className="text-[var(--fg-2)] font-medium mb-2">{formName}</h4>
       <p className="text-[var(--fg-4)] text-sm mb-4">กำหนดยื่น: {dueDate}</p>
-      <motion.button
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={onGenerate}
-        className="w-full py-2 bg-[var(--primary-soft)] text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/30 transition-colors"
-      >
-        สร้างแบบฟอร์ม
-      </motion.button>
+      <p className="text-xs text-[var(--fg-4)]">ยังไม่รองรับการสร้างแบบยื่นอัตโนมัติ — ยื่นผ่าน e-Filing กรมสรรพากร</p>
     </div>
   )
 }

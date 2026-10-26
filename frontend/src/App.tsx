@@ -1,4 +1,4 @@
-﻿import { ReactNode } from 'react'
+import { ReactNode } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Clock } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -19,7 +19,7 @@ import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import QC from './pages/QC'
 import Settings from './pages/Settings'
-import { ChartOfAccounts, JournalEntries, FinancialReports, PhopyBoard, PeriodClosing, BudgetVsActual, ClearingReconcile, PlatformSettlement } from './pages/Accounting'
+import { AccountingBooks, AccountingReconcile, AccountingReports, PhopyBoard, PeriodClosing } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
 import PermissionsHelp from './pages/help/PermissionsHelp'
@@ -37,6 +37,16 @@ function Guard({ path, children }: { path: string; children: ReactNode }) {
   const { user } = useAuth()
   if (!canViewMenu(user?.role, path, user?.departments)) return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+function RedirectWithTab({ to, tab }: { to: string; tab?: string }) {
+  const location = useLocation()
+  const searchParams = new URLSearchParams(location.search)
+  if (tab) {
+    searchParams.set('tab', tab)
+  }
+  const search = searchParams.toString()
+  return <Navigate to={`${to}${search ? `?${search}` : ''}`} replace />
 }
 
 // บัญชีแคชเชียร์พิมพ์ URL หน้าอื่นเอง → พากลับหน้าร้าน (backend ตอบ 403 อยู่แล้ว ตรงนี้กันจอว่าง/error)
@@ -90,12 +100,13 @@ function AppContent() {
         <Route path="/billing" element={<Navigate to={`/settings?tab=subscription${location.search.replace(/^\?/, '&')}`} replace />} />
 
         {/* Accounting Routes */}
-        <Route path="/accounting" element={<Navigate to="/accounting/chart-of-accounts" replace />} />
-        <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
-        <Route path="/accounting/journal-entries" element={<JournalEntries />} />
+        <Route path="/accounting" element={<RedirectWithTab to="/accounting/books" />} />
+        <Route path="/accounting/books" element={<AccountingBooks />} />
+        <Route path="/accounting/chart-of-accounts" element={<RedirectWithTab to="/accounting/books" tab="chart" />} />
+        <Route path="/accounting/journal-entries" element={<RedirectWithTab to="/accounting/books" tab="journal" />} />
         <Route path="/accounting/period-closing" element={<PeriodClosing />} />
-        <Route path="/accounting/budget-vs-actual" element={<BudgetVsActual />} />
-        <Route path="/accounting/reports" element={<FinancialReports />} />
+        <Route path="/accounting/budget-vs-actual" element={<RedirectWithTab to="/accounting/reports" tab="budget" />} />
+        <Route path="/accounting/reports" element={<AccountingReports />} />
 
         {/* Tax Route */}
         <Route path="/tax" element={<Tax />} />
@@ -105,10 +116,11 @@ function AppContent() {
         <Route path="/kds" element={<KDS />} />
         <Route path="/help/permissions" element={<PermissionsHelp />} />
 
-        {/* POS Clearing Route */}
+        {/* Reconcile & Phopy Board */}
+        {/* เลิกจากเมนูแล้ว (ยอด 1180 อยู่ในแท็บบัญชีพัก) แต่ยังเป็นหน้าประวัติบิล POS ที่แคชเชียร์ลิงก์มาเปิดบิลย้อนหลัง/ออกใบกำกับ */}
         <Route path="/accounting/pos-clearing" element={<POSClearing />} />
-        <Route path="/accounting/reconcile" element={<ClearingReconcile />} />
-        <Route path="/accounting/platform-settlement" element={<PlatformSettlement />} />
+        <Route path="/accounting/reconcile" element={<AccountingReconcile />} />
+        <Route path="/accounting/platform-settlement" element={<RedirectWithTab to="/accounting/reconcile" tab="platform" />} />
         <Route path="/accounting/phopy-board" element={<PhopyBoard />} />
 
         <Route path="/users" element={<Guard path="/users"><UserManagement /></Guard>} />

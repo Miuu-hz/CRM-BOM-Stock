@@ -20,7 +20,16 @@ describe('menuPermissions — แคชเชียร์', () => {
 // ผู้ใช้พื้นฐาน (USER ไม่มีแผนก) — ต้องตรงกับ backend cashierScope.basicUserDenied
 describe('menuPermissions — ผู้ใช้พื้นฐาน', () => {
   it('ไม่เห็นบัญชี/ภาษี/รายงาน/ลูกหนี้ แต่ยังเห็นแคชเชียร์และจัดซื้อ', () => {
-    for (const p of ['/accounting', '/accounting/reports', '/accounting/journal-entries', '/tax', '/receivables']) {
+    for (const p of [
+      '/accounting',
+      '/accounting/reports',
+      '/accounting/journal-entries',
+      '/accounting/books',
+      '/accounting/reconcile',
+      '/accounting/phopy-board',
+      '/tax',
+      '/receivables',
+    ]) {
       expect(canViewMenu('USER', p, [])).toBe(false)
     }
     expect(canViewMenu('USER', '/cashier', [])).toBe(true)
@@ -28,6 +37,9 @@ describe('menuPermissions — ผู้ใช้พื้นฐาน', () => {
   })
   it('USER ที่มีแผนกบัญชี ยังเห็นเมนูบัญชีตามเดิม', () => {
     expect(canViewMenu('USER', '/accounting', ['ACCOUNTING'])).toBe(true)
+    expect(canViewMenu('USER', '/accounting/books', ['ACCOUNTING'])).toBe(true)
+    expect(canViewMenu('USER', '/accounting/reconcile', ['ACCOUNTING'])).toBe(true)
+    expect(canViewMenu('USER', '/accounting/phopy-board', ['ACCOUNTING'])).toBe(true)
     expect(canViewMenu('MANAGER', '/tax', [])).toBe(true)
   })
 })
@@ -55,6 +67,10 @@ describe('menuPermissions — isMenuLocked (Phase 3)', () => {
     // บัญชี ต้องการ 'accounting'
     expect(isMenuLocked('/accounting', [])).toBe(true)
     expect(isMenuLocked('/accounting', ['accounting'])).toBe(false)
+    expect(isMenuLocked('/accounting/books', [])).toBe(true)
+    expect(isMenuLocked('/accounting/books', ['accounting'])).toBe(false)
+    expect(isMenuLocked('/accounting/reconcile', [])).toBe(true)
+    expect(isMenuLocked('/accounting/reconcile', ['accounting'])).toBe(false)
 
     // KDS ต้องการ 'kds'
     expect(isMenuLocked('/kds', [])).toBe(true)

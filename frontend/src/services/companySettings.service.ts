@@ -7,6 +7,7 @@ export interface CompanySettings {
   phone?: string
   email?: string
   tax_id?: string
+  entity_type?: 'INDIVIDUAL' | 'PARTNERSHIP' | 'COMPANY' | null
   vat_inclusive?: number | boolean  // ค่าตั้งต้นทั้งกิจการ: ราคาที่กรอกรวม VAT แล้วหรือยัง
   vat_registered?: number | boolean  // 0 = ยังไม่จด VAT: ภาษีซื้อรวมเป็นต้นทุน และห้ามเก็บ VAT ที่ POS
   tax_branch?: string  // สาขาของผู้ขายบนใบกำกับภาษี (ยังไม่มีระบบสาขา → 'สำนักงานใหญ่')

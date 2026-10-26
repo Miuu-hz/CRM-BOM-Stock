@@ -819,7 +819,7 @@ function GeneralSettings() {
   const { t } = useTranslation()
   const { tenant, isMaster, user } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
-  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', tax_branch: 'สำนักงานใหญ่', vat_registered: true, vat_inclusive: false, logo_base64: '' })
+  const [co, setCo] = useState({ name: '', address: '', phone: '', email: '', tax_id: '', tax_branch: 'สำนักงานใหญ่', vat_registered: true, vat_inclusive: false, logo_base64: '', entity_type: null as 'INDIVIDUAL' | 'PARTNERSHIP' | 'COMPANY' | null })
   const [qcGateEnabled, setQcGateEnabled] = useState(false)
   const [showSubconStockWidget, setShowSubconStockWidget] = useState(true)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
@@ -841,7 +841,7 @@ function GeneralSettings() {
   useEffect(() => {
     import('../services/companySettings.service').then(m => {
       m.default.get().then(d => {
-        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', tax_branch: d.tax_branch || 'สำนักงานใหญ่', vat_registered: d.vat_registered !== 0 && d.vat_registered !== false, vat_inclusive: d.vat_inclusive === 1 || d.vat_inclusive === true, logo_base64: d.logo_base64 || '' })
+        setCo({ name: d.name || '', address: d.address || '', phone: d.phone || '', email: d.email || '', tax_id: d.tax_id || '', tax_branch: d.tax_branch || 'สำนักงานใหญ่', vat_registered: d.vat_registered !== 0 && d.vat_registered !== false, vat_inclusive: d.vat_inclusive === 1 || d.vat_inclusive === true, logo_base64: d.logo_base64 || '', entity_type: (d.entity_type as any) || null })
         setQcGateEnabled(Number(d.qc_gate_enabled) === 1)
         setShowSubconStockWidget(Number(d.show_subcon_stock_widget) !== 0)
         setAllowNegativeStock(Number(d.allow_negative_stock) === 1)
@@ -1016,6 +1016,22 @@ function GeneralSettings() {
             <label className="block text-sm text-[var(--fg-3)] mb-1">{t('settings.settingsPage.general.taxBranch')}</label>
             <input type="text" value={co.tax_branch} onChange={e => setCo(p => ({ ...p, tax_branch: e.target.value }))} className="phopy-input w-full" placeholder={t('settings.settingsPage.general.taxBranchPlaceholder')} />
             <p className="text-xs text-[var(--fg-4)] mt-1">{t('settings.settingsPage.general.taxBranchHint')}</p>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-[var(--fg-3)] mb-1">รูปแบบกิจการ</label>
+            <select
+              value={co.entity_type || ''}
+              onChange={e => setCo(p => ({ ...p, entity_type: (e.target.value as any) || null }))}
+              className="phopy-input w-full"
+            >
+              <option value="">ยังไม่ระบุ</option>
+              <option value="INDIVIDUAL">บุคคลธรรมดา</option>
+              <option value="PARTNERSHIP">ห้างหุ้นส่วน (หจก.)</option>
+              <option value="COMPANY">บริษัทจำกัด (บจก.)</option>
+            </select>
+            <p className="text-xs text-[var(--fg-4)] mt-1">
+              ใช้เลือกบัญชีเมื่อเจ้าของใช้เงินร้าน: บุคคลธรรมดา → ถอนใช้ส่วนตัว (3106) · หจก./บจก. → เงินให้กู้ยืมแก่กรรมการ (1114) ซึ่งสรรพากรประเมินดอกเบี้ยได้ (ม.65 ทวิ (4)) · ยังไม่ระบุ = ระบบไม่รับรายการปรับปรุงประเภทเงินเจ้าของ
+            </p>
           </div>
           <div className="md:col-span-2">
             <button type="button"

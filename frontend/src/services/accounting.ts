@@ -284,7 +284,11 @@ export const journalApi = {
   post: (id: string) => api.post(`/journal/${id}/post`),
   
   // Unpost entry (admin only)
-  unpost: (id: string) => api.post(`/journal/${id}/unpost`),
+  unpost: (id: string, reason: string) => api.post(`/journal/${id}/unpost`, { reason }),
+  
+  // Reverse entry
+  reverse: (id: string, data: { reason: string; date?: string }) =>
+    api.post<{ success: boolean; message: string; data: { id: string; entryNumber: string } }>(`/journal/${id}/reverse`, data),
   
   // Delete entry
   delete: (id: string) => api.delete(`/journal/${id}`),

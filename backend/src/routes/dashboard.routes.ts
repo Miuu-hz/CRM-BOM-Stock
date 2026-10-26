@@ -2,6 +2,16 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { convertQuantityBidirectional, normalizeUnit } from '../services/unitConversion.service'
+import { HEALTH } from '../config/thresholds'
+import { closeChecklist } from '../services/closeChecklist.service'
+import { previousPeriod } from '../services/monthClose.service'
+import {
+  r2, addDaysStr, diffDaysStr, gradeHigh, gradeLow,
+  firstPostedDate, cashBalanceAt, cashOutflow,
+  ledgerRevenue, ledgerCogs, arAging, weekKey, trendSeries,
+} from '../services/phopyBoard.service'
+
+export { gradeHigh, gradeLow }
 
 const router = Router()
 
@@ -183,51 +193,387 @@ export function getOpexSummary(tenantId: string, now: Date = thaiNow()) {
   }
 }
 
+export function getLowStockItems(tenantId: string) {
+  const rows = db.prepare(`
+    SELECT id, name, sku, quantity, min_stock, unit, base_unit, display_unit, sealed_qty
+    FROM stock_items
+    WHERE tenant_id = ? AND quantity <= min_stock AND min_stock > 0
+  `).all(tenantId) as any[]
+
+  // An unopened pack is still stock. Items whose loose quantity is low but
+  // that still hold sealed packs are not actually short, so drop them here
+  // instead of nagging the owner to reorder what is already on the shelf.
+  // Preload conversions for tenant to prevent N+1 queries
+  const conversions = db.prepare(`
+    SELECT from_unit, to_unit, conversion_factor, material_id
+    FROM unit_conversions
+    WHERE tenant_id = ? OR is_global = 1
+  `).all(tenantId) as any[]
+  const convMap = new Map<string, number>()
+  for (const c of conversions) {
+    convMap.set(`${c.material_id || '*'}:${normalizeUnit(c.from_unit)}->${normalizeUnit(c.to_unit)}`, Number(c.conversion_factor))
+  }
+
+  return rows
+    .map((r: any) => {
+      const baseUnit = r.base_unit || r.unit
+      const displayUnit = r.display_unit || r.unit
+      let packFactor: number | null = null
+      if (baseUnit && displayUnit && normalizeUnit(baseUnit) !== normalizeUnit(displayUnit)) {
+        const normFrom = normalizeUnit(displayUnit)
+        const normTo = normalizeUnit(baseUnit)
+        const matFactor = convMap.get(`${r.id}:${normFrom}->${normTo}`)
+        const globFactor = convMap.get(`*:${normFrom}->${normTo}`)
+        packFactor = matFactor ?? globFactor ?? null
+        if (!packFactor) {
+          const c = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, r.id)
+          if (c && c.factor > 0) packFactor = c.factor
+        }
+      }
+      const available = r.quantity + (packFactor ? (r.sealed_qty || 0) * packFactor : 0)
+      return { ...r, minStock: r.min_stock, available, pack_factor: packFactor }
+    })
+    .filter((r: any) => r.available <= r.min_stock)
+    .sort((a: any, b: any) => (a.available / (a.min_stock || 1)) - (b.available / (b.min_stock || 1)))
+}
+
+const TH_DOW = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+const fmtBaht = (v: number) => `${v < 0 ? '-' : ''}฿${Math.round(Math.abs(v)).toLocaleString('th-TH')}`
+
+export function getDashboardHealth(tenantId: string, financial: boolean, now: Date = thaiNow()) {
+  const today = ymd(now)
+  const asOf = addDaysStr(today, -1)
+  const due7Str = addDaysStr(today, HEALTH.forecastHorizonDays)
+
+  const lowStock = getLowStockItems(tenantId).length
+  const pendingDelivery = Number((db.prepare(`
+    SELECT COUNT(*) as c FROM sales_orders
+    WHERE tenant_id = ? AND status IN ('CONFIRMED','PROCESSING','READY','PARTIAL')
+  `).get(tenantId) as { c: number }).c)
+  const pendingApprovals = Number((db.prepare(`
+    SELECT COUNT(*) as c FROM approval_requests
+    WHERE tenant_id = ? AND status = 'PENDING'
+  `).get(tenantId) as { c: number }).c)
+  const arDue7Row = db.prepare(`
+    SELECT COUNT(*) as count, COALESCE(SUM(balance_amount), 0) as amount
+    FROM invoices
+    WHERE tenant_id = ?
+      AND status NOT IN ('CANCELLED', 'DRAFT')
+      AND COALESCE(payment_status, '') <> 'PAID'
+      AND balance_amount > 0
+      AND (due_date IS NULL OR due_date = '' OR date(due_date) <= ?)
+  `).get(tenantId, due7Str) as { count: number; amount: number }
+
+  const ops = {
+    lowStock,
+    pendingDelivery,
+    pendingApprovals,
+    arDue7: {
+      count: Number(arDue7Row.count),
+      amount: financial ? r2(arDue7Row.amount) : null,
+    },
+  }
+
+  if (!financial) {
+    return {
+      financial: false,
+      asOf,
+      today,
+      dataSince: null,
+      dataDays: 0,
+      overall: null,
+      confidence: null,
+      signals: [],
+      chart: null,
+      ops,
+    }
+  }
+
+  const dataSince = firstPostedDate(tenantId)
+  const dataDays = dataSince && dataSince <= asOf ? diffDaysStr(dataSince, asOf) + 1 : 0
+  const cashAsOf = cashBalanceAt(tenantId, asOf)
+
+  // 1. runway ("เงินพอใช้")
+  const outflowFrom = addDaysStr(asOf, -(HEALTH.runwayLookbackDays - 1))
+  const outflow = cashOutflow(tenantId, outflowFrom, asOf)
+  const dataDaysNote = outflow.days > 0 && outflow.days < HEALTH.runwayLookbackDays ? ` (ข้อมูล ${outflow.days} วัน)` : ''
+  const runwayDays = outflow.avgPerDay > 0 ? r2(cashAsOf / outflow.avgPerDay) : null
+  const runwaySignal = runwayDays !== null ? {
+    id: 'runway' as const,
+    label: 'เงินพอใช้',
+    status: gradeHigh(runwayDays, HEALTH.runwayDays.green, HEALTH.runwayDays.yellow),
+    value: runwayDays,
+    display: `${Math.round(runwayDays)} วัน`,
+    compare: `เงินคงเหลือ ${fmtBaht(cashAsOf)} · ใช้เฉลี่ยวันละ ${fmtBaht(outflow.avgPerDay)}${dataDaysNote}`,
+    rule: `เขียว ≥ ${HEALTH.runwayDays.green} วัน · เหลือง ${HEALTH.runwayDays.yellow}–${HEALTH.runwayDays.green - 1} · แดง < ${HEALTH.runwayDays.yellow}`,
+    source: `บัญชีเงินสด + เงินฝาก + 1180 · เงินออกเฉลี่ย ${HEALTH.runwayLookbackDays} วัน`,
+    action: 'ดูรายจ่ายก้อนใหญ่ที่จะถึงรอบ และเร่งเก็บลูกหนี้',
+    link: '/accounting/phopy-board?chapter=2',
+  } : {
+    id: 'runway' as const,
+    label: 'เงินพอใช้',
+    status: 'NA' as const,
+    value: null,
+    display: 'ไม่มีข้อมูล',
+    compare: outflow.days === 0 ? 'ยังไม่มีรายการบัญชีที่บันทึกแล้ว' : `เงินคงเหลือ ${fmtBaht(cashAsOf)} · ยังไม่มีรายการเงินออก${dataDaysNote}`,
+    rule: `เขียว ≥ ${HEALTH.runwayDays.green} วัน · เหลือง ${HEALTH.runwayDays.yellow}–${HEALTH.runwayDays.green - 1} · แดง < ${HEALTH.runwayDays.yellow}`,
+    source: `บัญชีเงินสด + เงินฝาก + 1180 · เงินออกเฉลี่ย ${HEALTH.runwayLookbackDays} วัน`,
+    action: 'ดูรายจ่ายก้อนใหญ่ที่จะถึงรอบ และเร่งเก็บลูกหนี้',
+    link: '/accounting/phopy-board?chapter=2',
+  }
+
+  // 2. salesYesterday ("ยอดขายเมื่อวาน")
+  const revYesterday = r2(ledgerRevenue(tenantId, asOf, asOf))
+  const dow = new Date(`${asOf}T00:00:00Z`).getUTCDay()
+  const dowName = TH_DOW[dow]
+  const sameDowDates: string[] = []
+  if (dataSince) {
+    for (let k = 1; k <= HEALTH.salesSameWeekdayWeeks; k++) {
+      const d = addDaysStr(asOf, -7 * k)
+      if (d >= dataSince) sameDowDates.push(d)
+    }
+  }
+  const sameDowAvg = sameDowDates.length > 0
+    ? sameDowDates.reduce((s, d) => s + ledgerRevenue(tenantId, d, d), 0) / sameDowDates.length
+    : 0
+  const salesRatio = sameDowAvg > 0 ? revYesterday / sameDowAvg : null
+  const salesSignal = salesRatio !== null ? {
+    id: 'salesYesterday' as const,
+    label: 'ยอดขายเมื่อวาน',
+    status: gradeHigh(salesRatio, HEALTH.salesVsSameWeekday.green, HEALTH.salesVsSameWeekday.yellow),
+    value: revYesterday,
+    display: fmtBaht(revYesterday),
+    compare: `${Math.round(salesRatio * 100)}% ของวัน${dowName}ปกติ (${fmtBaht(sameDowAvg)})`,
+    rule: `เทียบวันเดียวกัน ${HEALTH.salesSameWeekdayWeeks} สัปดาห์ก่อน · เขียว ≥ ${Math.round(HEALTH.salesVsSameWeekday.green * 100)}% · แดง < ${Math.round(HEALTH.salesVsSameWeekday.yellow * 100)}%`,
+    source: 'บิล POS ที่จ่ายแล้ว + ใบแจ้งหนี้ขาย',
+    action: 'ตรวจจำนวนบิลและค่าเฉลี่ยต่อบิลเมื่อวานเทียบสัปดาห์ก่อน',
+    link: '/accounting/phopy-board?chapter=3',
+  } : {
+    id: 'salesYesterday' as const,
+    label: 'ยอดขายเมื่อวาน',
+    status: 'NA' as const,
+    value: null,
+    display: 'ไม่มีข้อมูล',
+    compare: `ยังไม่มีฐานยอดขายวัน${dowName}ของสัปดาห์ก่อนหน้า`,
+    rule: `เทียบวันเดียวกัน ${HEALTH.salesSameWeekdayWeeks} สัปดาห์ก่อน · เขียว ≥ ${Math.round(HEALTH.salesVsSameWeekday.green * 100)}% · แดง < ${Math.round(HEALTH.salesVsSameWeekday.yellow * 100)}%`,
+    source: 'บิล POS ที่จ่ายแล้ว + ใบแจ้งหนี้ขาย',
+    action: 'ตรวจจำนวนบิลและค่าเฉลี่ยต่อบิลเมื่อวานเทียบสัปดาห์ก่อน',
+    link: '/accounting/phopy-board?chapter=3',
+  }
+
+  // 3. cogs7 ("ต้นทุนวัตถุดิบ 7 วัน")
+  const cogs7Start = addDaysStr(asOf, -(HEALTH.cogsShortDays - 1))
+  const cogs90Start = addDaysStr(asOf, -(HEALTH.cogsLongDays - 1))
+  const rev7 = ledgerRevenue(tenantId, cogs7Start, asOf)
+  const rev90 = ledgerRevenue(tenantId, cogs90Start, asOf)
+  const cogs7Val = ledgerCogs(tenantId, cogs7Start, asOf)
+  const cogs90Val = ledgerCogs(tenantId, cogs90Start, asOf)
+  const cogsSignal = rev7 > 0 && rev90 > 0 ? (() => {
+    const pct7 = (cogs7Val / rev7) * 100
+    const pct90 = (cogs90Val / rev90) * 100
+    const drift = r2(pct7 - pct90)
+    return {
+      id: 'cogs7' as const,
+      label: 'ต้นทุนวัตถุดิบ 7 วัน',
+      status: gradeLow(drift, HEALTH.cogsDriftPoints.green, HEALTH.cogsDriftPoints.yellow),
+      value: drift,
+      display: `${pct7.toFixed(1)}%`,
+      compare: `${drift >= 0 ? 'สูงกว่า' : 'ต่ำกว่า'}ค่าเฉลี่ย ${HEALTH.cogsLongDays} วัน ${Math.abs(drift).toFixed(1)} จุด`,
+      rule: `เขียว ≤ +${HEALTH.cogsDriftPoints.green} จุด · เหลือง +${HEALTH.cogsDriftPoints.green} ถึง +${HEALTH.cogsDriftPoints.yellow} · แดง > +${HEALTH.cogsDriftPoints.yellow}`,
+      source: 'ต้นทุนขาย (บัญชีหมวด COGS) ÷ รายได้',
+      action: 'ดูราคาซื้อวัตถุดิบหลัก 7 วันล่าสุด และของเสียจากการปรับสต็อก',
+      link: '/accounting/phopy-board?chapter=4',
+    }
+  })() : {
+    id: 'cogs7' as const,
+    label: 'ต้นทุนวัตถุดิบ 7 วัน',
+    status: 'NA' as const,
+    value: null,
+    display: 'ไม่มีข้อมูล',
+    compare: `ยังไม่มีรายได้ในช่วง ${HEALTH.cogsShortDays} หรือ ${HEALTH.cogsLongDays} วันที่ผ่านมา`,
+    rule: `เขียว ≤ +${HEALTH.cogsDriftPoints.green} จุด · เหลือง +${HEALTH.cogsDriftPoints.green} ถึง +${HEALTH.cogsDriftPoints.yellow} · แดง > +${HEALTH.cogsDriftPoints.yellow}`,
+    source: 'ต้นทุนขาย (บัญชีหมวด COGS) ÷ รายได้',
+    action: 'ดูราคาซื้อวัตถุดิบหลัก 7 วันล่าสุด และของเสียจากการปรับสต็อก',
+    link: '/accounting/phopy-board?chapter=4',
+  }
+
+  // 4. forecast7 ("เงินคาดการณ์อีก 7 วัน")
+  const rev28RawStart = addDaysStr(asOf, -(HEALTH.salesAvgLookbackDays - 1))
+  const rev28Start = dataSince ? (rev28RawStart > dataSince ? rev28RawStart : dataSince) : null
+  const rev28Days = rev28Start && rev28Start <= asOf ? diffDaysStr(rev28Start, asOf) + 1 : 0
+  const avgDailyRev28 = rev28Days > 0 ? ledgerRevenue(tenantId, rev28Start!, asOf) / rev28Days : 0
+  const apDue7 = Number((db.prepare(`
+    SELECT COALESCE(SUM(balance_amount), 0) as v
+    FROM purchase_invoices
+    WHERE tenant_id = ?
+      AND status NOT IN ('CANCELLED', 'DRAFT')
+      AND COALESCE(payment_status, '') <> 'PAID'
+      AND balance_amount > 0
+      AND (due_date IS NULL OR due_date = '' OR date(due_date) <= ?)
+  `).get(tenantId, due7Str) as { v: number }).v)
+  const opex7 = getOpexSummary(tenantId, now).monthlyRecurringAvg * HEALTH.forecastHorizonDays / 30
+  const forecastBaht = r2(cashAsOf + avgDailyRev28 * HEALTH.forecastHorizonDays - apDue7 - opex7)
+  const forecastDays = outflow.avgPerDay > 0 ? r2(forecastBaht / outflow.avgPerDay) : null
+  const forecastSignal = forecastDays !== null ? {
+    id: 'forecast7' as const,
+    label: 'เงินคาดการณ์อีก 7 วัน',
+    status: gradeHigh(forecastDays, HEALTH.forecastDays.green, HEALTH.forecastDays.yellow),
+    value: forecastBaht,
+    display: fmtBaht(forecastBaht),
+    compare: `พอใช้ ${Math.round(forecastDays)} วัน หลังจ่ายเจ้าหนี้ครบกำหนด ${fmtBaht(apDue7)} และรายจ่ายประจำ ${fmtBaht(opex7)}`,
+    rule: `เขียว ≥ ${HEALTH.forecastDays.green} วัน · เหลือง ${HEALTH.forecastDays.yellow}–${HEALTH.forecastDays.green - 1} · แดง < ${HEALTH.forecastDays.yellow}`,
+    source: 'เงินคงเหลือ + ยอดขายเฉลี่ย − ใบแจ้งหนี้ซื้อครบกำหนด − รายจ่ายประจำที่ถึงรอบ',
+    action: 'เลื่อนจ่ายผู้ขายที่ยังไม่ครบกำหนด หรือเร่งเก็บลูกหนี้ที่ถึงกำหนด',
+    link: '/accounting/phopy-board?chapter=2',
+  } : {
+    id: 'forecast7' as const,
+    label: 'เงินคาดการณ์อีก 7 วัน',
+    status: 'NA' as const,
+    value: null,
+    display: 'ไม่มีข้อมูล',
+    compare: `คาดการณ์ ${fmtBaht(forecastBaht)} · ยังไม่มีฐานเงินออกเฉลี่ย`,
+    rule: `เขียว ≥ ${HEALTH.forecastDays.green} วัน · เหลือง ${HEALTH.forecastDays.yellow}–${HEALTH.forecastDays.green - 1} · แดง < ${HEALTH.forecastDays.yellow}`,
+    source: 'เงินคงเหลือ + ยอดขายเฉลี่ย − ใบแจ้งหนี้ซื้อครบกำหนด − รายจ่ายประจำที่ถึงรอบ',
+    action: 'เลื่อนจ่ายผู้ขายที่ยังไม่ครบกำหนด หรือเร่งเก็บลูกหนี้ที่ถึงกำหนด',
+    link: '/accounting/phopy-board?chapter=2',
+  }
+
+  // 5. arOverdue ("ลูกหนี้เกินกำหนด")
+  const ar = arAging(tenantId, asOf)
+  const arSignal = ar.total > 0 ? (() => {
+    const ratio = ar.overdue / ar.total
+    return {
+      id: 'arOverdue' as const,
+      label: 'ลูกหนี้เกินกำหนด',
+      status: gradeLow(ratio, HEALTH.arOverdueRatio.green, HEALTH.arOverdueRatio.yellow, true),
+      value: r2(ratio * 100),
+      display: `${(ratio * 100).toFixed(1)}%`,
+      compare: `${fmtBaht(ar.overdue)} จากลูกหนี้ทั้งหมด ${fmtBaht(ar.total)}`,
+      rule: `เขียว < ${Math.round(HEALTH.arOverdueRatio.green * 100)}% · เหลือง ${Math.round(HEALTH.arOverdueRatio.green * 100)}–${Math.round(HEALTH.arOverdueRatio.yellow * 100)}% · แดง > ${Math.round(HEALTH.arOverdueRatio.yellow * 100)}% · ไม่มีลูกหนี้ = ไม่นับ`,
+      source: 'ใบแจ้งหนี้ขายที่ค้างรับ',
+      action: 'ติดตามลูกหนี้ที่เกินกำหนดชำระก่อนให้เครดิตเพิ่ม',
+      link: '/accounting/phopy-board?chapter=2',
+    }
+  })() : {
+    id: 'arOverdue' as const,
+    label: 'ลูกหนี้เกินกำหนด',
+    status: 'NA' as const,
+    value: null,
+    display: 'ไม่มีข้อมูล',
+    compare: 'ไม่มีลูกหนี้คงค้าง',
+    rule: `เขียว < ${Math.round(HEALTH.arOverdueRatio.green * 100)}% · เหลือง ${Math.round(HEALTH.arOverdueRatio.green * 100)}–${Math.round(HEALTH.arOverdueRatio.yellow * 100)}% · แดง > ${Math.round(HEALTH.arOverdueRatio.yellow * 100)}% · ไม่มีลูกหนี้ = ไม่นับ`,
+    source: 'ใบแจ้งหนี้ขายที่ค้างรับ',
+    action: 'ติดตามลูกหนี้ที่เกินกำหนดชำระก่อนให้เครดิตเพิ่ม',
+    link: '/accounting/phopy-board?chapter=2',
+  }
+
+  // 6. control ("การควบคุม")
+  const currentMonth = today.slice(0, 7)
+  const prevMonth = previousPeriod(currentMonth)
+  const curCheck = closeChecklist(tenantId, currentMonth)
+  const dailyItems = curCheck.items.filter(i => i.daily)
+  const failedDaily = dailyItems.filter(i => i.status !== 'pass' && i.status !== 'na')
+  const item1Or6Block = dailyItems.some(i => (i.id === 1 || i.id === 6) && i.status === 'block')
+
+  const drawerDiff = r2((db.prepare(`
+    SELECT COALESCE(SUM(ABS(cash_difference)), 0) as v
+    FROM pos_shifts
+    WHERE tenant_id = ? AND status = 'CLOSED' AND date(closed_at, '+7 hours') = ?
+  `).get(tenantId, asOf) as { v: number }).v)
+
+  const [prevY, prevM] = prevMonth.split('-').map(Number)
+  const dayOfMonth = Number(today.slice(8, 10))
+  const prevTaxRow = db.prepare(`
+    SELECT status FROM tax_periods
+    WHERE tenant_id = ? AND year = ? AND month = ?
+    ORDER BY CASE WHEN period_type = 'MONTHLY' THEN 0 ELSE 1 END LIMIT 1
+  `).get(tenantId, prevY, prevM) as { status: string } | undefined
+  const prevMonthLate = dayOfMonth > 15 && prevTaxRow?.status !== 'CLOSED'
+
+  const controlIssues: string[] = []
+  if (drawerDiff > HEALTH.drawerDiffBaht.green) controlIssues.push(`เงินลิ้นชักต่าง ${fmtBaht(drawerDiff)}`)
+  for (const it of failedDaily) controlIssues.push(it.title || it.detail || `ด่านข้อ ${it.id}`)
+  if (prevMonthLate) controlIssues.push(`งวด ${prevMonth} ยังไม่ปิด`)
+
+  const controlStatus: 'G' | 'Y' | 'R' =
+    (drawerDiff > HEALTH.drawerDiffBaht.red || item1Or6Block) ? 'R'
+      : (drawerDiff <= HEALTH.drawerDiffBaht.green && failedDaily.length === 0 && !prevMonthLate) ? 'G'
+      : 'Y'
+
+  const controlSignal = {
+    id: 'control' as const,
+    label: 'การควบคุม',
+    status: controlStatus,
+    value: controlIssues.length,
+    display: `${controlIssues.length} เรื่อง`,
+    compare: controlIssues.length > 0 ? controlIssues.join(' · ') : `เงินลิ้นชักต่าง ${fmtBaht(drawerDiff)} · ไม่พบรายการค้าง`,
+    rule: `เขียว: ขาด/เกิน ≤ ฿${HEALTH.drawerDiffBaht.green} และไม่มีรายการค้าง · แดง: ขาด/เกิน > ฿${HEALTH.drawerDiffBaht.red} หรือด่าน 1/6 บล็อก`,
+    source: 'ปิดกะเมื่อวาน · สมุดรายวัน · ด่านตรวจปิดงวด',
+    action: 'ตรวจรายการค้างในสมุดรายวันและปิดงวดบัญชีที่ครบกำหนด',
+    link: '/accounting/period-closing',
+  }
+
+  const signals = [runwaySignal, salesSignal, cogsSignal, forecastSignal, arSignal, controlSignal]
+
+  const red = signals.filter(s => s.status === 'R').length
+  const yellow = signals.filter(s => s.status === 'Y').length
+  const na = signals.filter(s => s.status === 'NA').length
+  const overallStatus: 'G' | 'Y' | 'R' = red > 0 ? 'R' : yellow > 0 ? 'Y' : 'G'
+  const overallHeadline = overallStatus === 'R'
+    ? `แดง · ต้องสั่งการ ${red} เรื่อง`
+    : overallStatus === 'Y'
+      ? `เหลือง · ไปต่อได้ เฝ้าดู ${red + yellow} เรื่อง`
+      : 'เขียว · ไปต่อได้'
+
+  const prevCheck = closeChecklist(tenantId, prevMonth)
+  const confidence = {
+    period: prevCheck.period,
+    label: prevCheck.label,
+    passed: prevCheck.passed,
+    total: prevCheck.total,
+    blocks: prevCheck.blocks,
+  }
+
+  const chartFrom = addDaysStr(weekKey(today), -51 * 7)
+  const trend = trendSeries(tenantId, 'week', chartFrom, today, 12)
+  const chart = {
+    grain: 'week' as const,
+    ma: trend.ma,
+    warmup: trend.warmup,
+    periods: trend.periods,
+  }
+
+  return {
+    financial: true,
+    asOf,
+    today,
+    dataSince,
+    dataDays,
+    overall: { status: overallStatus, headline: overallHeadline, red, yellow, na },
+    confidence,
+    signals,
+    chart,
+    ops,
+  }
+}
+
+// GET /dashboard/health — ชีพจรเช้านี้ (6 สัญญาณ + กราฟแท่งเทียนรายสัปดาห์ + แถบงานปฏิบัติการ)
+router.get('/health', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const financial = isFinancialAllowed(req.user)
+    res.json({ success: true, data: getDashboardHealth(tenantId, financial) })
+  } catch (error) {
+    console.error('Dashboard health error:', error)
+    res.status(500).json({ success: false, message: 'ไม่สามารถโหลดข้อมูลสุขภาพธุรกิจได้ กรุณาลองใหม่อีกครั้ง' })
+  }
+})
+
 // Get low stock items
 router.get('/low-stock', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const rows = db.prepare(`
-      SELECT id, name, sku, quantity, min_stock, unit, base_unit, display_unit, sealed_qty
-      FROM stock_items
-      WHERE tenant_id = ? AND quantity <= min_stock AND min_stock > 0
-    `).all(tenantId) as any[]
-
-    // An unopened pack is still stock. Items whose loose quantity is low but
-    // that still hold sealed packs are not actually short, so drop them here
-    // instead of nagging the owner to reorder what is already on the shelf.
-    // Preload conversions for tenant to prevent N+1 queries
-    const conversions = db.prepare(`
-      SELECT from_unit, to_unit, conversion_factor, material_id
-      FROM unit_conversions
-      WHERE tenant_id = ? OR is_global = 1
-    `).all(tenantId) as any[]
-    const convMap = new Map<string, number>()
-    for (const c of conversions) {
-      convMap.set(`${c.material_id || '*'}:${normalizeUnit(c.from_unit)}->${normalizeUnit(c.to_unit)}`, Number(c.conversion_factor))
-    }
-
-    const items = rows
-      .map((r: any) => {
-        const baseUnit = r.base_unit || r.unit
-        const displayUnit = r.display_unit || r.unit
-        let packFactor: number | null = null
-        if (baseUnit && displayUnit && normalizeUnit(baseUnit) !== normalizeUnit(displayUnit)) {
-          const normFrom = normalizeUnit(displayUnit)
-          const normTo = normalizeUnit(baseUnit)
-          const matFactor = convMap.get(`${r.id}:${normFrom}->${normTo}`)
-          const globFactor = convMap.get(`*:${normFrom}->${normTo}`)
-          packFactor = matFactor ?? globFactor ?? null
-          if (!packFactor) {
-            const c = convertQuantityBidirectional(1, displayUnit, baseUnit, tenantId, r.id)
-            if (c && c.factor > 0) packFactor = c.factor
-          }
-        }
-        const available = r.quantity + (packFactor ? (r.sealed_qty || 0) * packFactor : 0)
-        return { ...r, minStock: r.min_stock, available, pack_factor: packFactor }
-      })
-      .filter((r: any) => r.available <= r.min_stock)
-      .sort((a: any, b: any) => (a.available / (a.min_stock || 1)) - (b.available / (b.min_stock || 1)))
+    const items = getLowStockItems(tenantId)
 
     // total = จำนวนจริงทั้งหมด (เดิมการ์ดโชว์ length ของรายการที่ตัดเหลือ 8 → ขึ้น "8 รายการ" ตลอดทั้งที่ขาด 363)
     res.json({ success: true, data: items.slice(0, 8), total: items.length })

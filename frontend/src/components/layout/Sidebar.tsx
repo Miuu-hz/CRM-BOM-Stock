@@ -58,6 +58,7 @@ const KANBAN_SSO_PATH = 'https://kanban.phopy.net'
 
 const menuItems: MenuItem[] = [
   { path: '/', tKey: 'sidebar.dashboard', icon: LayoutDashboard },
+  { path: '/accounting/phopy-board', tKey: 'sidebar.phopyBoard', icon: LayoutDashboard },
   { path: '/digital-twin', tKey: 'sidebar.digitalTwin', icon: Box, descriptionKey: 'sidebar.digitalTwinDesc', beta: true },
   { path: '/crm', tKey: 'sidebar.crm', icon: Users, descriptionKey: 'sidebar.crmDesc' },
   {
@@ -88,7 +89,6 @@ const menuItems: MenuItem[] = [
   { path: '/calculator', tKey: 'sidebar.calculator', icon: Calculator, descriptionKey: 'sidebar.calculatorDesc' },
   { path: '/sales', tKey: 'sidebar.sales', icon: TrendingUp, descriptionKey: 'sidebar.salesDesc' },
   { path: '/marketing', tKey: 'sidebar.marketing', icon: Megaphone, descriptionKey: 'sidebar.marketingDesc' },
-  { path: '/tax', tKey: 'sidebar.tax', icon: Percent, descriptionKey: 'sidebar.taxDesc', beta: true },
   {
     path: '/accounting',
     tKey: 'sidebar.accounting',
@@ -96,15 +96,11 @@ const menuItems: MenuItem[] = [
     descriptionKey: 'sidebar.accountingDesc',
     isParent: true,
     subMenu: [
-      { path: '/accounting/chart-of-accounts', tKey: 'sidebar.chartOfAccounts', icon: BookOpen },
-      { path: '/accounting/journal-entries', tKey: 'sidebar.journalEntries', icon: FileText },
+      { path: '/accounting/books', tKey: 'sidebar.books', icon: BookOpen },
+      { path: '/accounting/reconcile', tKey: 'sidebar.reconcile', icon: ClipboardCheck },
       { path: '/accounting/period-closing', tKey: 'sidebar.periodClosing', icon: Lock },
-      { path: '/accounting/budget-vs-actual', tKey: 'sidebar.budgetVsActual', icon: Wallet },
-      { path: '/accounting/pos-clearing', tKey: 'sidebar.posClearing', icon: Store },
-      { path: '/accounting/reconcile', tKey: 'sidebar.clearingReconcile', icon: ClipboardCheck },
-      { path: '/accounting/platform-settlement', tKey: 'sidebar.platformSettlement', icon: Globe },
-      { path: '/accounting/reports', tKey: 'sidebar.financialReports', icon: BarChart3 },
-      { path: '/accounting/phopy-board', tKey: 'sidebar.phopyBoard', icon: LayoutDashboard },
+      { path: '/accounting/reports', tKey: 'sidebar.reports', icon: BarChart3 },
+      { path: '/tax', tKey: 'sidebar.tax', icon: Percent, beta: true },
     ],
   },
   { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },
@@ -457,7 +453,7 @@ function Sidebar({ mode }: SidebarProps) {
                           }
                         >
                           <sub.icon className="w-4 h-4" />
-                          <span className="flex-1">{t(sub.tKey)}</span>
+                          <span className="flex-1">{t(sub.tKey)}{sub.beta && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none align-middle bg-[var(--warning-soft)] text-warning">Beta</span>}</span>
                           {subLocked && (
                             <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                           )}

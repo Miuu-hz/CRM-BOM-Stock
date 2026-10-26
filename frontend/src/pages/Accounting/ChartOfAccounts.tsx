@@ -360,7 +360,7 @@ const AccountLedgerPanel = ({ accountId, onClose }: AccountLedgerPanelProps) => 
 
             <div className="p-4 border-t border-[var(--border)]">
               <button
-                onClick={() => navigate('/accounting/journal-entries')}
+                onClick={() => navigate('/accounting/books?tab=journal')}
                 className="phopy-btn-secondary w-full flex items-center justify-center gap-2"
               >
                 ดูสมุดรายวันทั้งหมด

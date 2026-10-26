@@ -1,4 +1,6 @@
 import db from '../db/sqlite'
+import { ACC } from '../config/accountCodes'
+import { moneyAccounts } from './monthClose.service'
 import { totalStockValue } from './stockValue.service'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -401,4 +403,366 @@ export function cashDrawer(tenantId: string, start: string, end: string): CashDr
 function thaiDateOf(ts: string): string {
   const ms = Date.parse(ts.includes('T') || ts.endsWith('Z') ? ts : ts.replace(' ', 'T') + 'Z')
   return Number.isNaN(ms) ? String(ts).substring(0, 10) : thaiToday(new Date(ms))
+}
+
+// ── Shared helpers for Dashboard "ชีพจรเช้านี้" & Phopy Board Trend / CFO ──
+
+const p2 = (n: number) => String(n).padStart(2, '0')
+
+export function fmtUtcDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`
+}
+
+/** บวก/ลบวันบนสตริง YYYY-MM-DD แบบปฏิทินล้วน ไม่เพี้ยนตาม timezone */
+export function addDaysStr(iso: string, delta: number): string {
+  const [y, m, d] = iso.substring(0, 10).split('-').map(Number)
+  return fmtUtcDate(new Date(Date.UTC(y, m - 1, d + delta)))
+}
+
+/** จำนวนวันจาก from ถึง to (to − from) */
+export function diffDaysStr(from: string, to: string): number {
+  return Math.round((Date.parse(`${to.substring(0, 10)}T00:00:00Z`) - Date.parse(`${from.substring(0, 10)}T00:00:00Z`)) / 86400000)
+}
+
+/** ยิ่งสูงยิ่งดี: v ≥ green → G, v ≥ yellow → Y, else R */
+export function gradeHigh(v: number, green: number, yellow: number): 'G' | 'Y' | 'R' {
+  if (!Number.isFinite(v)) return 'R'
+  return v >= green ? 'G' : v >= yellow ? 'Y' : 'R'
+}
+
+/** ยิ่งต่ำยิ่งดี: v ≤ green (หรือ < green เมื่อ strictGreen=true เช่น AR < 10%) → G, v ≤ yellow → Y, else R */
+export function gradeLow(v: number, green: number, yellow: number, strictGreen = false): 'G' | 'Y' | 'R' {
+  if (!Number.isFinite(v)) return 'R'
+  return (strictGreen ? v < green : v <= green) ? 'G' : v <= yellow ? 'Y' : 'R'
+}
+
+/** วันแรกที่มีรายการบัญชี post แล้ว (ไม่นับปิดงวด) — ไม่มี = null */
+export function firstPostedDate(tenantId: string): string | null {
+  const row = db.prepare(`SELECT MIN(date(je.date)) as d FROM journal_entries je WHERE ${POSTED}`).get(tenantId) as { d: string | null }
+  return row?.d ?? null
+}
+
+/** ชุดบัญชีเงินสด/ธนาคาร (moneyAccounts) + บัญชีพักรับ POS (1180) */
+export function cashAccountIds(tenantId: string): string[] {
+  const ids = new Set(moneyAccounts(tenantId).map(a => a.id))
+  const pos = db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').all(tenantId, ACC.POS_CLEARING) as { id: string }[]
+  for (const r of pos) ids.add(r.id)
+  return [...ids]
+}
+
+/** ยอดคงเหลือชุดเงินสด (เดบิต − เครดิต) ณ สิ้นวัน asOf (หรือก่อนวัน asOf เมื่อ before=true) */
+export function cashBalanceAt(tenantId: string, asOf: string, before = false): number {
+  const ids = cashAccountIds(tenantId)
+  if (ids.length === 0) return 0
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(jl.debit - jl.credit), 0) as v
+    FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id
+    WHERE ${POSTED} AND date(je.date) ${before ? '<' : '<='} ? AND jl.account_id IN (${ids.map(() => '?').join(',')})
+  `).get(tenantId, asOf, ...ids) as { v: number }
+  return r2(row.v)
+}
+
+/**
+ * เงินออกรายวัน = Σ ต่อ journal entry ของ max(0, −netCashEffect(entry))
+ * โอนภายในชุดเงินสด (เช่น ปิดกะย้าย 1180 → ธนาคาร/เงินสด) สุทธิเป็น 0 จึงไม่นับเป็นเงินออก
+ */
+export function cashOutflow(tenantId: string, from: string, to: string): {
+  total: number; days: number; avgPerDay: number; dataSince: string | null; byDay: Record<string, number>
+} {
+  const dataSince = firstPostedDate(tenantId)
+  if (!dataSince || from > to || dataSince > to) {
+    return { total: 0, days: 0, avgPerDay: 0, dataSince, byDay: {} }
+  }
+  const effFrom = from > dataSince ? from : dataSince
+  const days = diffDaysStr(effFrom, to) + 1
+  const ids = cashAccountIds(tenantId)
+  if (ids.length === 0) return { total: 0, days, avgPerDay: 0, dataSince, byDay: {} }
+
+  const rows = db.prepare(`
+    SELECT je.id, date(je.date) as d, COALESCE(SUM(jl.debit - jl.credit), 0) as net
+    FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id
+    WHERE ${POSTED} AND date(je.date) BETWEEN ? AND ? AND jl.account_id IN (${ids.map(() => '?').join(',')})
+    GROUP BY je.id, date(je.date)
+  `).all(tenantId, effFrom, to, ...ids) as Array<{ id: string; d: string; net: number }>
+
+  const byDay: Record<string, number> = {}
+  let total = 0
+  for (const r of rows) {
+    const out = Math.max(0, -Number(r.net))
+    if (out > 0) {
+      byDay[r.d] = r2((byDay[r.d] || 0) + out)
+      total += out
+    }
+  }
+  total = r2(total)
+  return { total, days, avgPerDay: days > 0 ? r2(total / days) : 0, dataSince, byDay }
+}
+
+export interface DailyPoint {
+  date: string
+  rev: number
+  exp: number
+  cashOpen: number
+  cashClose: number
+  cashHi: number
+  cashLo: number
+}
+
+/**
+ * ซีรีส์รายวันตั้งแต่ max(from, dataSince) ถึง to
+ * เงินคงเหลือสูงสุด/ต่ำสุดระหว่างวันไล่ตามลำดับ journal_entries.created_at แล้วตาม jl.id เริ่มจากยอดก่อนวันแรก
+ */
+export function dailySeries(tenantId: string, from: string, to: string): DailyPoint[] {
+  const dataSince = firstPostedDate(tenantId)
+  if (!dataSince || from > to || dataSince > to) return []
+  const start = from > dataSince ? from : dataSince
+
+  const plRows = db.prepare(`
+    SELECT date(je.date) as d,
+      COALESCE(SUM(CASE WHEN a.type = 'REVENUE' THEN jl.credit - jl.debit ELSE 0 END), 0) as rev,
+      COALESCE(SUM(CASE WHEN a.type = 'EXPENSE' THEN jl.debit - jl.credit ELSE 0 END), 0) as exp
+    ${LEDGER_FROM}
+    WHERE ${POSTED} AND date(je.date) BETWEEN ? AND ? AND a.type IN ('REVENUE', 'EXPENSE')
+    GROUP BY d
+  `).all(tenantId, start, to) as Array<{ d: string; rev: number; exp: number }>
+  const revByDay = new Map(plRows.map(r => [r.d, r2(r.rev)]))
+  const expByDay = new Map(plRows.map(r => [r.d, r2(r.exp)]))
+
+  const cashIds = cashAccountIds(tenantId)
+  const cashDeltasByDay = new Map<string, number[]>()
+  if (cashIds.length > 0) {
+    const lineRows = db.prepare(`
+      SELECT date(je.date) as d, (jl.debit - jl.credit) as delta
+      FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id
+      WHERE ${POSTED} AND date(je.date) BETWEEN ? AND ? AND jl.account_id IN (${cashIds.map(() => '?').join(',')})
+      ORDER BY date(je.date) ASC, je.created_at ASC, jl.id ASC
+    `).all(tenantId, start, to, ...cashIds) as Array<{ d: string; delta: number }>
+    for (const r of lineRows) {
+      let arr = cashDeltasByDay.get(r.d)
+      if (!arr) { arr = []; cashDeltasByDay.set(r.d, arr) }
+      arr.push(Number(r.delta) || 0)
+    }
+  }
+
+  let cash = cashBalanceAt(tenantId, start, true)
+  const out: DailyPoint[] = []
+  for (let cur = start; cur <= to; cur = addDaysStr(cur, 1)) {
+    const cashOpen = r2(cash)
+    let run = cashOpen, hi = cashOpen, lo = cashOpen
+    const deltas = cashDeltasByDay.get(cur)
+    if (deltas) {
+      for (const delta of deltas) {
+        run = r2(run + delta)
+        if (run > hi) hi = run
+        if (run < lo) lo = run
+      }
+    }
+    cash = run
+    out.push({
+      date: cur,
+      rev: revByDay.get(cur) ?? 0,
+      exp: expByDay.get(cur) ?? 0,
+      cashOpen,
+      cashClose: run,
+      cashHi: hi,
+      cashLo: lo,
+    })
+  }
+  return out
+}
+
+export interface Candle {
+  o: number
+  c: number
+  h: number
+  l: number
+  tot: number
+}
+
+export interface TrendPeriod {
+  key: string
+  from: string
+  to: string
+  days: number
+  partial?: boolean
+  rev: Candle
+  exp: Candle
+  cash: { c: number; hi: number; lo: number } | null
+}
+
+/** วันจันทร์ของสัปดาห์ ISO (จันทร์–อาทิตย์) */
+export function weekKey(iso: string): string {
+  const [y, m, d] = iso.substring(0, 10).split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7))
+  return fmtUtcDate(dt)
+}
+
+export const monthKey = (iso: string): string => iso.substring(0, 7)
+export const quarterKey = (iso: string): string => `${iso.substring(0, 4)}-Q${Math.floor((Number(iso.substring(5, 7)) - 1) / 3) + 1}`
+export const yearKey = (iso: string): string => iso.substring(0, 4)
+
+function fullPeriodDays(key: string): number {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(key)) return 7
+  if (/^\d{4}-\d{2}$/.test(key)) {
+    const [y, m] = key.split('-').map(Number)
+    return new Date(Date.UTC(y, m, 0)).getUTCDate()
+  }
+  if (/^\d{4}-Q[1-4]$/.test(key)) {
+    const y = Number(key.slice(0, 4)), q = Number(key.slice(-1))
+    const m0 = (q - 1) * 3 + 1
+    return new Date(Date.UTC(y, m0, 0)).getUTCDate()
+      + new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate()
+      + new Date(Date.UTC(y, m0 + 2, 0)).getUTCDate()
+  }
+  if (/^\d{4}$/.test(key)) {
+    const y = Number(key)
+    return (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 366 : 365
+  }
+  return 7
+}
+
+/** pure — รวมรายวันตาม key เป็นแท่งเทียนอัตราต่อวัน (O = C งวดก่อน, งวดแรก O = C ตัวเอง, H/L คลุม O และ C เสมอ) */
+export function buildCandles(
+  days: Array<{ date: string; rev: number; exp: number; cashOpen?: number; cashClose?: number; cashHi?: number; cashLo?: number }>,
+  keyOf: (date: string) => string,
+): TrendPeriod[] {
+  const groups: Array<{
+    key: string; from: string; to: string; revs: number[]; exps: number[]
+    cashHi: number; cashLo: number; cashClose: number; hasCash: boolean
+  }> = []
+
+  for (const d of days) {
+    const key = keyOf(d.date)
+    const hasCash = d.cashClose !== undefined
+    const cClose = Number(d.cashClose ?? 0)
+    const cHi = Number(d.cashHi ?? cClose)
+    const cLo = Number(d.cashLo ?? cClose)
+    let g = groups[groups.length - 1]
+    if (!g || g.key !== key) {
+      g = { key, from: d.date, to: d.date, revs: [], exps: [], cashHi: cHi, cashLo: cLo, cashClose: cClose, hasCash }
+      groups.push(g)
+    }
+    g.to = d.date
+    g.revs.push(Number(d.rev) || 0)
+    g.exps.push(Number(d.exp) || 0)
+    if (hasCash) {
+      g.hasCash = true
+      g.cashHi = Math.max(g.cashHi, cHi)
+      g.cashLo = Math.min(g.cashLo, cLo)
+      g.cashClose = cClose
+    }
+  }
+
+  const makeCandle = (vals: number[], prevC: number | null): Candle => {
+    const tot = r2(vals.reduce((a, b) => a + b, 0))
+    const c = r2(tot / vals.length)
+    const o = prevC ?? c
+    const h = r2(Math.max(o, c, ...vals))
+    const l = r2(Math.min(o, c, ...vals))
+    return { o, c, h, l, tot }
+  }
+
+  let prevRev: number | null = null
+  let prevExp: number | null = null
+  return groups.map(g => {
+    const rev = makeCandle(g.revs, prevRev)
+    const exp = makeCandle(g.exps, prevExp)
+    prevRev = rev.c
+    prevExp = exp.c
+    const n = g.revs.length
+    return {
+      key: g.key,
+      from: g.from,
+      to: g.to,
+      days: n,
+      partial: n < fullPeriodDays(g.key),
+      rev,
+      exp,
+      cash: g.hasCash ? { c: r2(g.cashClose), hi: r2(g.cashHi), lo: r2(g.cashLo) } : null,
+    }
+  })
+}
+
+export type TrendGrain = 'week' | 'month' | 'quarter' | 'year'
+
+export const GRAIN_MA: Record<TrendGrain, [number, number]> = {
+  week: [4, 13],
+  month: [3, 12],
+  quarter: [2, 4],
+  year: [2, 3],
+}
+
+export interface TrendSeriesResult {
+  grain: TrendGrain
+  requestedGrain: TrendGrain
+  note?: string
+  ma: [number, number]
+  warmup: number
+  dataSince: string | null
+  periods: TrendPeriod[]
+}
+
+function defaultFromForGrain(grain: TrendGrain, to: string): string {
+  const y = Number(to.slice(0, 4)), m0 = Number(to.slice(5, 7)) - 1
+  if (grain === 'week') return addDaysStr(weekKey(to), -51 * 7)
+  if (grain === 'month') return monthRange(y, m0 - 11).start
+  if (grain === 'quarter') {
+    const qStartMonth = Math.floor(m0 / 3) * 3
+    return monthRange(y, qStartMonth - 7 * 3).start
+  }
+  return `${y - 4}-01-01`
+}
+
+function stepBackPeriods(grain: TrendGrain, from: string, count: number): string {
+  const y = Number(from.slice(0, 4)), m0 = Number(from.slice(5, 7)) - 1
+  if (grain === 'week') return addDaysStr(weekKey(from), -count * 7)
+  if (grain === 'month') return monthRange(y, m0 - count).start
+  if (grain === 'quarter') {
+    const qStartMonth = Math.floor(m0 / 3) * 3
+    return monthRange(y, qStartMonth - count * 3).start
+  }
+  return `${y - count}-01-01`
+}
+
+/**
+ * ซีรีส์แท่งเทียนสำหรับทั้ง Dashboard และ Phopy Board (ใช้ฟังก์ชันเดียวร่วมกัน)
+ * ถ้าระบุ grain = 'year' แต่ข้อมูลตั้งแต่วันแรกถึง to ยังไม่ถึง 3 ปี จะลดเป็น 'quarter' พร้อม note
+ */
+export function trendSeries(
+  tenantId: string,
+  grain: TrendGrain = 'month',
+  from?: string,
+  to?: string,
+  warmup?: number,
+): TrendSeriesResult {
+  const end = to || thaiToday()
+  const dataSince = firstPostedDate(tenantId)
+  const spanDays = dataSince && dataSince <= end ? diffDaysStr(dataSince, end) + 1 : 0
+  const fallback = grain === 'year' && spanDays < 365 * 3
+  const effGrain: TrendGrain = fallback ? 'quarter' : grain
+  const ma = GRAIN_MA[effGrain]
+  const effWarmup = warmup !== undefined ? warmup : ma[1] - 1
+  const start = from || defaultFromForGrain(effGrain, end)
+  const warmupFrom = stepBackPeriods(effGrain, start, effWarmup)
+  const keyOf = effGrain === 'week' ? weekKey : effGrain === 'month' ? monthKey : effGrain === 'quarter' ? quarterKey : yearKey
+
+  const days = dailySeries(tenantId, warmupFrom, end)
+  const allPeriods = buildCandles(days, keyOf)
+  const targetKey = keyOf(start)
+  const firstIdx = allPeriods.findIndex(p => p.key >= targetKey)
+  const periods = firstIdx > effWarmup ? allPeriods.slice(firstIdx - effWarmup) : allPeriods
+  // จำนวนงวด warm-up ที่มีอยู่จริง (ข้อมูลเริ่มทีหลังก็มีน้อยกว่าที่ขอ) — หน้าเว็บใช้เป็น visibleFrom ห้ามเกินของจริง
+  const actualWarmup = periods.filter(p => p.key < targetKey).length
+
+  const result: TrendSeriesResult = {
+    grain: effGrain,
+    requestedGrain: grain,
+    ma,
+    warmup: actualWarmup,
+    dataSince,
+    periods,
+  }
+  if (fallback) result.note = 'ข้อมูลยังไม่ถึง 3 ปี แสดงเป็นรายไตรมาส'
+  return result
 }
