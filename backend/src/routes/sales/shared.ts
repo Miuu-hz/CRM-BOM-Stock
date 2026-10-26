@@ -88,11 +88,14 @@ export const notSellableMessage = (name: string, category: string): string =>
 export function createSalesJournal(
   tenantId: string, referenceType: string, referenceId: string,
   description: string, totalAmount: number, taxAmount: number,
-  paymentMethod?: string, sourceNumber?: string, soNumber?: string, bankAccountId?: string | null
+  paymentMethod?: string, sourceNumber?: string, soNumber?: string, bankAccountId?: string | null,
+  /** วันที่ของเอกสาร (YYYY-MM-DD ไทย) — ใบเสร็จรับเงินต้องลงบัญชีวันที่เงินเข้าจริง ไม่ใช่วันที่กดบันทึก
+   *  (กระทบยอดกับ statement รายเดือนไม่ได้ถ้าวันที่เพี้ยน) · ไม่ส่ง = วันนี้แบบเดิม */
+  docDate?: string
 ) {
     const now = new Date().toISOString()
-    const dateStr = now.split('T')[0]
-    const yr = new Date().getFullYear()
+    const dateStr = docDate ? docDate.substring(0, 10) : now.split('T')[0]
+    const yr = Number(dateStr.substring(0, 4))
     const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', yr, 5, dateStr)
 
     // Accounts — using standardized codes from ACC constants

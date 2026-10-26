@@ -13,6 +13,7 @@ const RECEIPT_ERROR_STATUS: Record<string, number> = {
   INVOICE_CANCELLED: 400,
   INVALID_AMOUNT: 400,
   OVER_BALANCE: 400,
+  PERIOD_CLOSED: 400,
 }
 
 // POST create receipt (payment)

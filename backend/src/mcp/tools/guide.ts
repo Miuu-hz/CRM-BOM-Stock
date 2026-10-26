@@ -27,6 +27,7 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - crm: get_customer_insights(...), get_quotations(...), get_lead_source_performance(...)
 - marketing: list_marketing_shops(...)
 - platform_month: platform_submit_file(...), platform_month_status(...), platform_propose_sku_mapping(...)
+- month_close: get_close_checklist(...), get_close_pack(...), submit_close_adjustments(...)
 - guide: get_erp_guide(...)
 (b) Role & scope gating:
 - Cashiers: cashier-only roles use POS; MCP registers zero tools.
@@ -197,7 +198,26 @@ export const GUIDE_TOPICS: Record<string, string> = {
 (d) Pitfalls & fixes:
 - Reversing fee signs: keep Shopee fees negative as reported to balance equations.
 - Order row limits: pre-aggregate order rows per variant before calling platform_submit_file(...).
-- Deprecated tools: do not look for CSV uploaders; use platform_submit_file(...).`
+- Deprecated tools: do not look for CSV uploaders; use platform_submit_file(...).`,
+
+  month_close: `(a) Area tools:
+- get_close_checklist(...): 11-gate audit before locking a month (pass/warn/block/na per gate, label "ผ่าน N/11", canClose).
+- get_close_pack(...): close pack for one month — instructions for you (read first), every cash/bank line with lineId, opening/closing per account, header-account balances, usable chart, contacts, open invoices, the 13 accepted adjustment types with allowed accounts, and the submit form.
+- submit_close_adjustments(...): send the adjustments for ONE cash/bank account (max 200 lines per call) with the statement closing balance; stored as DRAFT only.
+(b) Call-order recipe (the server never reads statements and never calls an AI — you do the matching):
+- get_close_pack(...) -> ask the user for each bank statement (PDF/CSV) and the physical cash count -> match statement lines to pack lines (same amount, date within 1-3 days; masked payer names like "นาย ส... ส..." = ask the user) -> classify every unmatched line into one of the 13 types -> submit_close_adjustments(...) per account (lines: [] if nothing to adjust) -> repeat until summary.difference = 0 -> get_close_checklist(...) -> tell the user to review and approve at บัญชี > ปิดงวด.
+(c) Server guards & Thai errors:
+- Permission: MASTER/ADMIN or accounting:write only ("ไม่มีสิทธิ์ส่งรายการปรับปรุง ...").
+- Closed period rejected; every line date must be inside the period; amount > 0 with at most 2 decimals; type must be one of the 13; the account must be allowed for the type and must not be a header account ("บัญชีหัว ... เลือกบัญชีย่อยแทน").
+- ref_line_id must exist in this business and be posted; total corrections may not exceed the original line.
+- OWNER_* types need the business entity type set ("ตั้งรูปแบบกิจการที่ ตั้งค่า > ข้อมูลบริษัท ก่อน").
+- Resubmitting the same statement line returns status duplicate (no new entry).
+- Equation: book closing + pending adjustments + timing items = statement closing; otherwise the drafts are kept but the month cannot be closed, and summary.difference tells you what is left.
+(d) Pitfalls & fixes:
+- Receipts that match a sales invoice: send UNRECORDED_RECEIPT with invoice_id (the normal receive-payment service runs on approval), not an income account.
+- Lines posted to a header account (e.g. 1102 while 1102-01 exists): WRONG_ACCOUNT with ref_line_id and the sub-account as account_code.
+- In-transit deposits / payments the bank has not cleared yet: TIMING with ref_line_id (not posted, only explains the difference).
+- Never invent statement figures; if a statement is missing, ask the user.`
 }
 
 const TOPICS = Object.keys(GUIDE_TOPICS) as [string, ...string[]]

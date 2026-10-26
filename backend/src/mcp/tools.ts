@@ -22,6 +22,7 @@ import { registerPlatformMonthTools } from './tools/platformMonth'
 import { registerBindingTools } from './tools/binding'
 import { registerPurchaseBillingTools } from './tools/purchaseBilling'
 import { registerSalesBillingTools } from './tools/salesBilling'
+import { registerMonthCloseTools } from './tools/monthClose'
 import { loadPermUser, isBasicUser } from '../services/rbac.service'
 import { isCashierOnly } from '../middleware/cashierScope'
 
@@ -35,6 +36,7 @@ const READ_ONLY_TOOLS = new Set([
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
   'list_marketing_shops', 'get_customer_insights', 'get_quotations', 'platform_month_status',
   'check_unit_issues', 'get_lead_source_performance',
+  'get_close_checklist', 'get_close_pack',
 ])
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
@@ -76,6 +78,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerCrmTools(target, tenantId)
   registerMarketingTools(target, tenantId)
   if (!basic) registerPlatformMonthTools(target, tenantId, userId)
+  if (!basic) registerMonthCloseTools(target, tenantId, userId, callerName, callerRole)
   registerBindingTools(target, tenantId)
   registerPurchaseBillingTools(target, tenantId, userId, callerName, callerRole)
   registerSalesBillingTools(target, tenantId, userId, callerName, callerRole)

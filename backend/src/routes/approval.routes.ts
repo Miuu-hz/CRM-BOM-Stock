@@ -13,6 +13,8 @@ import { cancelGoodsReceiptNow, cancelPurchaseInvoiceNow, voidSupplierPaymentNow
 import { cancelPurchaseOrderNow } from './purchaseOrder.routes'
 import { cancelSalesOrderNow, cancelInvoiceNow, voidReceiptNow, SalesCancelError } from '../services/salesCancel.service'
 import { cancelCreditNoteNow } from './sales/creditNotes'
+import { postCloseRecords, revertCloseApproval } from '../services/closeAdjustments.service'
+import { MonthCloseError } from '../services/monthClose.service'
 
 const router = Router()
 
@@ -537,6 +539,9 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
       // ทรานแซกชัน rollback แล้ว คำขอยัง PENDING — ผู้อนุมัติเห็นเหตุผลแล้วปฏิเสธ/แก้ต้นเหตุได้
       return res.status((error as any).status === 404 ? 404 : 409).json({ success: false, message: `อนุมัติไม่สำเร็จ: ${error.message}` })
     }
+    if (error instanceof MonthCloseError) {
+      return res.status(409).json({ success: false, message: `อนุมัติไม่สำเร็จ: ${error.message}` })
+    }
     if (error instanceof StockMovementError) {
       // ทรานแซกชัน rollback ไปแล้ว คำขอจึงยังเป็น PENDING ให้ลองใหม่ได้
       return res.status(400).json({
@@ -566,6 +571,10 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     executeSalesCancel(request, executorId)
   } else if (request.module_type === 'purchase_cancel') {
     executePurchaseCancel(request, executorId, executorName)
+  } else if (request.module_type === 'close_adjust') {
+    // รายการปรับปรุงปิดเดือน: post ด้วย service ตัวเดียวกับที่ GM กดอนุมัติเอง (ร่าง JV / รับชำระ / ยกเลิกใบจ่ายเงินที่ลงซ้ำ)
+    const payload = request.payload ? JSON.parse(request.payload) : {}
+    postCloseRecords(request.tenant_id, Array.isArray(payload.recordIds) ? payload.recordIds : [], executorName)
   } else if (request.reference_type === 'work_orders') {
     // Work order approved - can proceed to production
     db.prepare("UPDATE work_orders SET status = 'APPROVED', updated_at = ? WHERE id = ? AND tenant_id = ?")
@@ -663,6 +672,7 @@ function executePurchaseCancel(request: any, executorId: string, executorName: s
 function revertReferenceStatus(request: any) {
   // ปฏิเสธคำขอยกเลิกเอกสารขาย/ซื้อ = เอกสารคงสถานะเดิม ไม่ต้องย้อนอะไร (ห้ามตก branch supplier_payments/receipts ด้านล่าง)
   if (request.module_type === 'sales_cancel' || request.module_type === 'purchase_cancel') return
+  if (request.module_type === 'close_adjust') return revertCloseApproval(request.tenant_id, request.id)
   if (request.reference_type === 'work_orders') {
     db.prepare("UPDATE work_orders SET status = 'DRAFT' WHERE id = ? AND tenant_id = ?").run(request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'supplier_payments') {

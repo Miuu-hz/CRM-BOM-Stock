@@ -36,6 +36,7 @@ describe('mcp/tools/guide', () => {
       'finance',
       'crm',
       'platform_month',
+      'month_close',
     ] as const
 
     for (const topic of topics) {

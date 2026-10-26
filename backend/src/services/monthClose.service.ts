@@ -105,6 +105,8 @@ export function hasActivity(tenantId: string, accountId: string, asOf: string): 
 
 /** สถานะของรายการปรับปรุงที่ยังไม่อยู่ในยอดตามบัญชี (รอ post) */
 export const PENDING_STATUSES = ['DRAFT', 'PENDING_APPROVAL'] as const
+/** รายการกระทบยอดที่ไม่ลงบัญชี (เงินฝากระหว่างทาง / รายการจ่ายที่ธนาคารยังไม่ตัด) — อธิบายผลต่างอย่างเดียว */
+export const TIMING_STATUS = 'NOTED'
 
 export interface ReconStatus {
   accountId: string
@@ -117,16 +119,18 @@ export interface ReconStatus {
   book: number
   /** ผลรวมผลกระทบต่อบัญชีนี้ของรายการปรับปรุงที่ยังรอ post */
   pending: number
+  /** รายการระหว่างทาง (ลงบัญชีแล้วแต่ statement ยังไม่มี ณ สิ้นงวด) — ไม่ลงบัญชี ใช้อธิบายผลต่าง */
+  timing: number
   /** ยอดตาม statement / เงินที่นับได้ ที่ส่งมาครั้งล่าสุด (null = ยังไม่เคยส่ง) */
   statement: number | null
   statementHash: string | null
-  /** statement − (book + pending) · null = ยังไม่เคยส่ง */
+  /** statement − (book + pending + timing) · null = ยังไม่เคยส่ง */
   difference: number | null
   reconciled: boolean
   reconciliationId: string | null
   submittedAt: string | null
   submittedBy: string | null
-  counts: { draft: number; pendingApproval: number; posted: number; discarded: number }
+  counts: { draft: number; pendingApproval: number; posted: number; discarded: number; noted: number }
 }
 
 /**
@@ -142,8 +146,9 @@ export function reconciliationStatus(tenantId: string, period: string): ReconSta
     const recon = reconByAcc.get(acc.id)
     if (!recon && !hasActivity(tenantId, acc.id, end)) continue
     const book = postedBalance(tenantId, acc.id, end)
-    const counts = { draft: 0, pendingApproval: 0, posted: 0, discarded: 0 }
+    const counts = { draft: 0, pendingApproval: 0, posted: 0, discarded: 0, noted: 0 }
     let pending = 0
+    let timing = 0
     if (recon) {
       const rows = db.prepare(`SELECT status, COUNT(*) AS n, COALESCE(SUM(effect), 0) AS eff FROM bank_reconciliation_records
         WHERE tenant_id = ? AND reconciliation_id = ? GROUP BY status`).all(tenantId, recon.id) as { status: string; n: number; eff: number }[]
@@ -152,15 +157,17 @@ export function reconciliationStatus(tenantId: string, period: string): ReconSta
         else if (r.status === 'PENDING_APPROVAL') counts.pendingApproval = r.n
         else if (r.status === 'POSTED') counts.posted = r.n
         else if (r.status === 'DISCARDED') counts.discarded = r.n
+        else if (r.status === TIMING_STATUS) { counts.noted = r.n; timing += Number(r.eff) }
         if ((PENDING_STATUSES as readonly string[]).includes(r.status)) pending += Number(r.eff)
       }
     }
     pending = r2(pending)
+    timing = r2(timing)
     const statement = recon ? r2(recon.statement_closing_balance) : null
-    const difference = statement === null ? null : r2(statement - (book + pending))
+    const difference = statement === null ? null : r2(statement - (book + pending + timing))
     out.push({
       accountId: acc.id, code: acc.code, name: acc.name, kind: acc.kind, bankName: acc.bankName, accountNumber: acc.accountNumber,
-      book, pending, statement, statementHash: recon?.statement_hash ?? null, difference,
+      book, pending, timing, statement, statementHash: recon?.statement_hash ?? null, difference,
       reconciled: difference !== null && Math.abs(difference) <= ZERO,
       reconciliationId: recon?.id ?? null, submittedAt: recon?.updated_at ?? null, submittedBy: recon?.submitted_by_name ?? recon?.submitted_by ?? null,
       counts,

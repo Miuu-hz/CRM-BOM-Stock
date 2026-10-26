@@ -2926,6 +2926,8 @@ export function runMonthCloseMigrations(db: any): void {
         approval_request_id TEXT,
         posted_by TEXT,
         posted_at TEXT,
+        discarded_by TEXT,
+        discard_reason TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );

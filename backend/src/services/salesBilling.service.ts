@@ -1,5 +1,6 @@
 import db from '../db/sqlite'
-import { generateId, formatDocumentNumber } from '../utils/id'
+import { generateId, formatDocumentNumber, thaiDateStr } from '../utils/id'
+import { closedPeriodLabel } from '../routes/journal.routes'
 import { createSalesJournal, STOCK_DEDUCTED_STATUSES } from '../routes/sales/shared'
 import { rememberContactVatMode } from './accounting.service'
 
@@ -33,6 +34,7 @@ export class SalesBillingError extends Error {
       | 'POS_BILL_CANCELLED'
       | 'CUSTOMER_REQUIRED'
       | 'CUSTOMER_NOT_FOUND'
+      | 'PERIOD_CLOSED'
   | 'SELLER_TAX_ID_REQUIRED',
     message: string
   ) {
@@ -350,6 +352,10 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
   let receiptNumber = ''
   const now = new Date().toISOString()
   const date = receiptDate || now
+  // บัญชีลงวันที่รับเงินจริง (receiptDate) — งวดนั้นต้องยังไม่ปิด (เช็คก่อนออกเลข)
+  const bookDate = thaiDateStr(date)
+  const closedLabel = closedPeriodLabel(tenantId, bookDate)
+  if (closedLabel) throw new SalesBillingError('PERIOD_CLOSED', `งวด ${closedLabel} ปิดแล้ว บันทึกรับชำระวันที่นี้ไม่ได้ — เลือกวันที่ในงวดที่ยังเปิด`)
 
   // ปัดเป็นสตางค์ + ตัดจาก balance_amount (ไม่ใช่ total − paid) เพราะใบลดหนี้ลด balance ไปแล้ว
   // เดิม total − paid ทำให้ยอดลดหนี้เด้งกลับมาเป็นหนี้ และเศษทศนิยมทำให้ค้าง PARTIAL ตลอด
@@ -385,7 +391,7 @@ export function recordCustomerPayment(tenantId: string, payload: RecordPaymentPa
     // ทรานแซกชันเดียวกับการสร้างใบเสร็จ ด้วยเหตุผลเดียวกับตอนออกใบแจ้งหนี้ข้างบน
     createSalesJournal(tenantId, 'RECEIPT', id,
       `รับชำระเงิน ${receiptNumber} (${paymentMethod || 'CASH'})`,
-      amount, 0, paymentMethod, receiptNumber, invoice.so_number, bankAccountId || null)
+      amount, 0, paymentMethod, receiptNumber, invoice.so_number, bankAccountId || null, bookDate)
   })()
 
   const receipt = db.prepare('SELECT * FROM receipts WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
