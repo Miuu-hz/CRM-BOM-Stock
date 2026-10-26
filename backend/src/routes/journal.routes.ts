@@ -3,7 +3,8 @@ import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import type { JournalEntry, JournalLineWithAccount } from '../types'
-import { getAccountIdByCode, getOrCreateAccount } from '../services/accounting.service'
+import { getAccountIdByCode, getOrCreateAccount, isHeaderAccountError } from '../services/accounting.service'
+import { thaiDateStr } from '../utils/id'
 import { ACC } from '../config/accountCodes'
 
 const router = Router()
@@ -54,10 +55,12 @@ interface NewJournalEntry {
 // บันทึก JE แบบร่าง (is_posted = 0) — ใช้ร่วมกันระหว่างบันทึกเองกับบันทึกเงินเดือน
 function insertJournalEntry(tenantId: string, userName: string, e: NewJournalEntry): { id: string; entryNumber: string } {
   const id = generateId()
-  const entryNumber = generateEntryNumber(tenantId, e.date)
   const now = new Date().toISOString()
+  let entryNumber = ''
 
+  // ออกเลขในทรานแซกชันเดียวกับบรรทัด — บรรทัดไหนไม่ผ่าน (บัญชีไม่มี / บัญชีหัว) เลขถูก rollback ไม่ขาดช่วง
   db.transaction(() => {
+    entryNumber = generateEntryNumber(tenantId, e.date)
     db.prepare(`
       INSERT INTO journal_entries
       (id, tenant_id, entry_number, date, reference_type, reference_id, description,
@@ -601,6 +604,7 @@ router.post('/', async (req: Request, res: Response) => {
       data: { id, entryNumber }
     })
   } catch (error) {
+    if (isHeaderAccountError(error)) return res.status(400).json({ success: false, message: (error as Error).message })
     console.error('Create journal entry error:', error)
     res.status(500).json({ success: false, message: (error as Error).message || 'Failed to create journal entry' })
   }
@@ -619,6 +623,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     
     if (entry.is_posted) {
       return res.status(400).json({ success: false, message: 'Cannot edit posted journal entry' })
+    }
+    if (entry.reference_type === CLOSE_ADJ_REF) {
+      return res.status(400).json({ success: false, message: CLOSE_ADJ_LOCKED })
     }
     
     const now = new Date().toISOString()
@@ -679,6 +686,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     
     res.json({ success: true, message: 'Journal entry updated successfully' })
   } catch (error) {
+    if (isHeaderAccountError(error)) return res.status(400).json({ success: false, message: (error as Error).message })
     console.error('Update journal entry error:', error)
     res.status(500).json({ success: false, message: (error as Error).message || 'Failed to update journal entry' })
   }
@@ -697,6 +705,9 @@ router.post('/:id/post', async (req: Request, res: Response) => {
     
     if (entry.is_posted) {
       return res.status(400).json({ success: false, message: 'Journal entry already posted' })
+    }
+    if (entry.reference_type === CLOSE_ADJ_REF) {
+      return res.status(400).json({ success: false, message: CLOSE_ADJ_LOCKED })
     }
 
     const closedLabel = closedPeriodLabel(tenantId, entry.date)
@@ -719,38 +730,137 @@ router.post('/:id/post', async (req: Request, res: Response) => {
   }
 })
 
-// Unpost journal entry (admin only - for corrections)
+// ============================================
+// ถอยรายการ (unpost) / กลับรายการ (reverse) — A8 ร่องรอยการตรวจสอบ
+// ============================================
+// หลักปฏิบัติ: รายการที่ลงแล้วห้ามแก้หรือลบทิ้ง ให้ลงรายการกลับ — ถอย (unpost) ยอมเฉพาะวันเดียวกับที่ยืนยัน
+// (แก้พิมพ์ผิดก่อนปิดวัน) และต้องมีเหตุผล + เก็บประวัติ (ใคร เมื่อไร ยอดเดิม) ไว้ใน journal_unposts
+// รายการที่ระบบสร้างจากเอกสาร (is_auto_generated) แก้ที่เอกสารต้นทาง ไม่ใช่ถอย/กลับรายการบัญชีตรง ๆ
+// ไม่งั้นเอกสารยังอยู่แต่บัญชีหาย (เช่นบิล POS ยังชำระแล้วแต่รายได้หาย)
+export const CLOSE_ADJ_REF = 'CLOSE_ADJUSTMENT'
+export const REVERSAL_REF = 'REVERSAL'
+const CLOSE_ADJ_LOCKED = 'รายการนี้เป็นรายการปรับปรุงปิดเดือน — ทบทวน อนุมัติ หรือทิ้งที่หน้า บัญชี > ปิดงวด'
+const AUTO_LOCKED = (e: JournalEntry) =>
+  `รายการ ${e.entry_number} ระบบสร้างจากเอกสาร (${e.reference_type || '-'}) — แก้ที่เอกสารต้นทาง (ยกเลิกเอกสาร/ออกใบลดหนี้) ไม่ใช่ถอยหรือกลับรายการบัญชีตรง`
+
+function requireReason(body: any): string | null {
+  const reason = typeof body?.reason === 'string' ? body.reason.trim() : ''
+  return reason.length >= 5 ? reason : null
+}
+
 router.post('/:id/unpost', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const userRole = req.user!.role
-    
-    // Only admin can unpost
-    if (userRole !== 'ADMIN') {
-      return res.status(403).json({ success: false, message: 'Only admin can unpost journal entries' })
+
+    if (userRole !== 'ADMIN' && userRole !== 'MASTER') {
+      return res.status(403).json({ success: false, message: 'ถอยรายการได้เฉพาะผู้ดูแลระบบ (Admin)' })
     }
-    
+    const reason = requireReason(req.body)
+    if (!reason) return res.status(400).json({ success: false, message: 'กรุณาระบุเหตุผลที่ถอยรายการ (อย่างน้อย 5 ตัวอักษร)' })
+
     const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as JournalEntry | undefined
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Journal entry not found' })
     }
-    
     if (!entry.is_posted) {
       return res.status(400).json({ success: false, message: 'Journal entry is not posted' })
     }
-    
+    if (entry.reference_type === CLOSE_ADJ_REF) return res.status(400).json({ success: false, message: CLOSE_ADJ_LOCKED })
+    if ((entry as any).is_auto_generated) return res.status(400).json({ success: false, message: AUTO_LOCKED(entry) })
+    const closedLabel = closedPeriodLabel(tenantId, entry.date)
+    if (closedLabel) return res.status(400).json({ success: false, message: `งวด ${closedLabel} ปิดแล้ว ถอยรายการไม่ได้` })
+    // วันที่ยืนยัน (เวลาไทย) ต้องเป็นวันนี้ — เกินวันแล้วให้ใช้กลับรายการ ร่องรอยจะได้อยู่ในสมุดรายวันเอง
+    const postedDay = entry.posted_at ? thaiDateStr(entry.posted_at) : null
+    if (postedDay !== thaiDateStr()) {
+      return res.status(400).json({
+        success: false,
+        message: `ถอยรายการได้เฉพาะวันเดียวกับที่ยืนยัน (${entry.entry_number} ยืนยันเมื่อ ${postedDay ?? 'ไม่ทราบ'}) — ใช้ "กลับรายการ" แทน`,
+      })
+    }
+
     const now = new Date().toISOString()
-    
-    db.prepare(`
-      UPDATE journal_entries 
-      SET is_posted = 0, posted_at = NULL, posted_by = NULL, updated_at = ?
-      WHERE id = ? AND tenant_id = ?
-    `).run(now, req.params.id, tenantId)
-    
+    const lines = db.prepare(`
+      SELECT a.code, a.name, jl.debit, jl.credit, jl.description FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+      WHERE jl.journal_entry_id = ? AND jl.tenant_id = ? ORDER BY jl.line_number
+    `).all(entry.id, tenantId)
+
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO journal_unposts (id, tenant_id, journal_entry_id, entry_number, entry_date, total_debit, total_credit,
+          posted_at, posted_by, lines_json, reason, unposted_by, unposted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(generateId(), tenantId, entry.id, entry.entry_number, entry.date, entry.total_debit, entry.total_credit,
+        entry.posted_at ?? null, entry.posted_by ?? null, JSON.stringify(lines), reason, req.user!.email, now)
+      db.prepare(`
+        UPDATE journal_entries
+        SET is_posted = 0, posted_at = NULL, posted_by = NULL, updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(now, req.params.id, tenantId)
+    })()
+
     res.json({ success: true, message: 'Journal entry unposted successfully' })
   } catch (error) {
     console.error('Unpost journal entry error:', error)
     res.status(500).json({ success: false, message: (error as Error).message || 'Failed to unpost journal entry' })
+  }
+})
+
+/**
+ * กลับรายการ: สร้าง JV ใหม่ที่สลับเดบิต/เครดิตของรายการเดิมทุกบรรทัด ลงวันที่ในงวดที่ยังเปิด แล้วยืนยันทันที
+ * รายการเดิมไม่ถูกแตะ (ร่องรอยครบ) · กลับได้ครั้งเดียว · ใช้แทน unpost เมื่อเกินวันที่ยืนยัน
+ */
+export class ReverseError extends Error {
+  constructor(public status: number, message: string) { super(message) }
+}
+
+export function reverseJournalEntry(tenantId: string, actor: string, entryId: string, reason: string, date?: string) {
+  const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?').get(entryId, tenantId) as JournalEntry | undefined
+  if (!entry) throw new ReverseError(404, 'ไม่พบรายการบัญชีนี้')
+  if (!entry.is_posted) throw new ReverseError(400, `${entry.entry_number} ยังเป็นร่าง — แก้หรือลบร่างได้เลย ไม่ต้องกลับรายการ`)
+  if ((entry as any).is_auto_generated) throw new ReverseError(400, AUTO_LOCKED(entry))
+  if (entry.reference_type === REVERSAL_REF) throw new ReverseError(400, `${entry.entry_number} เป็นรายการกลับอยู่แล้ว — ถ้าต้องการให้มีผลอีกครั้ง ให้บันทึกรายการใหม่`)
+  const done = db.prepare(`SELECT entry_number FROM journal_entries WHERE tenant_id = ? AND reference_type = ? AND reference_id = ?`)
+    .get(tenantId, REVERSAL_REF, entryId) as { entry_number: string } | undefined
+  if (done) throw new ReverseError(400, `${entry.entry_number} ถูกกลับรายการไปแล้วด้วย ${done.entry_number}`)
+  const day = date || thaiDateStr()
+  if (!DATE_RE.test(day)) throw new ReverseError(400, 'วันที่กลับรายการต้องเป็น YYYY-MM-DD')
+  if (day < String(entry.date).substring(0, 10)) throw new ReverseError(400, 'วันที่กลับรายการต้องไม่ก่อนวันที่ของรายการเดิม')
+  const closedLabel = closedPeriodLabel(tenantId, day)
+  if (closedLabel) throw new ReverseError(400, `งวด ${closedLabel} ปิดแล้ว — เลือกวันที่ในงวดที่ยังเปิด`)
+
+  const lines = db.prepare('SELECT * FROM journal_lines WHERE journal_entry_id = ? AND tenant_id = ? ORDER BY line_number')
+    .all(entryId, tenantId) as Array<{ account_id: string; description: string | null; debit: number; credit: number }>
+  const now = new Date().toISOString()
+  const id = generateId()
+  let entryNumber = ''
+  db.transaction(() => {
+    entryNumber = generateEntryNumber(tenantId, day)
+    db.prepare(`
+      INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description,
+        total_debit, total_credit, is_auto_generated, is_posted, posted_at, posted_by, notes, created_by, created_at, updated_at, business_unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, tenantId, entryNumber, day, REVERSAL_REF, entryId, `กลับรายการ ${entry.entry_number}: ${reason}`,
+      entry.total_credit, entry.total_debit, now, actor, reason, actor, now, now, (entry as any).business_unit ?? null)
+    const ins = db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    lines.forEach((l, i) => ins.run(generateId(), tenantId, id, l.account_id, i + 1, `กลับรายการ: ${l.description || ''}`, l.credit, l.debit))
+  })()
+  return { id, entryNumber }
+}
+
+router.post('/:id/reverse', async (req: Request, res: Response) => {
+  try {
+    const reason = requireReason(req.body)
+    if (!reason) return res.status(400).json({ success: false, message: 'กรุณาระบุเหตุผลที่กลับรายการ (อย่างน้อย 5 ตัวอักษร)' })
+    const date = typeof req.body?.date === 'string' && req.body.date ? req.body.date : undefined
+    const result = reverseJournalEntry(req.user!.tenantId, req.user!.email, req.params.id, reason, date)
+    res.json({ success: true, message: `กลับรายการแล้ว (${result.entryNumber})`, data: result })
+  } catch (error) {
+    if (error instanceof ReverseError) return res.status(error.status).json({ success: false, message: error.message })
+    if (isHeaderAccountError(error)) return res.status(400).json({ success: false, message: (error as Error).message })
+    console.error('Reverse journal entry error:', error)
+    res.status(500).json({ success: false, message: (error as Error).message || 'กลับรายการไม่สำเร็จ' })
   }
 })
 
@@ -766,6 +876,9 @@ router.delete('/:id', async (req: Request, res: Response) => {
     
     if (entry.is_posted) {
       return res.status(400).json({ success: false, message: 'Cannot delete posted journal entry' })
+    }
+    if (entry.reference_type === CLOSE_ADJ_REF) {
+      return res.status(400).json({ success: false, message: CLOSE_ADJ_LOCKED })
     }
     
     const deleteTransaction = db.transaction(() => {

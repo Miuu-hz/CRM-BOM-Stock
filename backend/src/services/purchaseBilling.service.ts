@@ -1,7 +1,7 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber, docYear } from '../utils/id'
-import { ACC, ACC_META, resolveBankAccountGL } from '../config/accountCodes'
-import { getOrCreateAccount, isVatRegistered, rememberContactVatMode, postJournal, type JournalLineInput } from './accounting.service'
+import { ACC, ACC_META, resolveBankAccountGL, defaultBankAccountGL } from '../config/accountCodes'
+import { getOrCreateAccount, isVatRegistered, rememberContactVatMode, postJournal, isHeaderAccountError, type JournalLineInput } from './accounting.service'
 import { calcVat, vatModeOf } from '../utils/vat'
 import { closedPeriodLabel } from '../routes/journal.routes'
 
@@ -24,6 +24,7 @@ import { closedPeriodLabel } from '../routes/journal.routes'
 export class PurchaseBillingError extends Error {
   constructor(
     public code:
+      | 'HEADER_ACCOUNT'
       | 'PO_REQUIRED'
       | 'GR_NOT_FOUND'
       | 'GR_NOT_CONFIRMED'
@@ -961,8 +962,6 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   }
 
   const id = generateId()
-  // prefix 'SP' ใช้เฉพาะตอนยังไม่เปิดรูปแบบใน Settings (ถ้าเปิด จะใช้ prefix ที่ตั้งไว้ เช่น PAY)
-  const paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', docYear(paymentDate), 5, paymentDate)
   const now = new Date().toISOString()
   const netAmount = r2(amount - wht)
 
@@ -973,16 +972,21 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
     : null
   const payableAccId = invoiceCrAccId || getOrCreateAccount(tenantId, ACC.AP, ACC_META[ACC.AP]!.name, ACC_META[ACC.AP]!.type, ACC_META[ACC.AP]!.category, ACC_META[ACC.AP]!.normalBalance)
   // Dr/Cr บัญชีธนาคารที่เลือกโดยตรงถ้ามี ไม่งั้น fallback ตาม paymentMethod (CASH -> 1101, อื่นๆ -> 1102)
-  const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId)
   // MCP เก็บวิธีจ่ายเป็นข้อความไทยจากบิล ("เงินสด") — เดิมเทียบแค่ === 'CASH' บิลเงินสดเลยไปลงธนาคาร
   const cashCode = isCashMethod(paymentMethod) ? ACC.CASH : ACC.BANK
+  // โอนแต่ไม่ได้เลือกบัญชีธนาคาร → บัญชีธนาคารค่าเริ่มต้น/บัญชีเดียวที่มี (เดิมลง 1102 หัว — Kids House 4 ครั้ง)
+  const linkedAccountId = resolveBankAccountGL(tenantId, bankAccountId) || (cashCode === ACC.BANK ? defaultBankAccountGL(tenantId) : null)
   // เงินจาก POS: เงินสดถูกตัดไปแล้วตอนเอาออกจากลิ้นชัก (Dr 1182 / Cr เงินสด) ขานี้จึงปิด 1182 แทนเงินสด
   const cashAccId = posCashAccId || linkedAccountId || getOrCreateAccount(
     tenantId, cashCode, ACC_META[cashCode]!.name, ACC_META[cashCode]!.type, ACC_META[cashCode]!.category, ACC_META[cashCode]!.normalBalance
   )
   const whtAccId = wht > 0 ? getOrCreateAccount(tenantId, ACC.WHT_PAYABLE, ACC_META[ACC.WHT_PAYABLE]!.name, ACC_META[ACC.WHT_PAYABLE]!.type, ACC_META[ACC.WHT_PAYABLE]!.category, ACC_META[ACC.WHT_PAYABLE]!.normalBalance) : null
 
+  // ออกเลขในทรานแซกชันเดียวกับการลงบัญชี — ถ้าลงบัญชีไม่ผ่าน (เช่นบัญชีหัว) เลขถูก rollback ไม่ขาดช่วง
+  let paymentNumber = ''
   const transaction = db.transaction(() => {
+    // prefix 'SP' ใช้เฉพาะตอนยังไม่เปิดรูปแบบใน Settings (ถ้าเปิด จะใช้ prefix ที่ตั้งไว้ เช่น PAY)
+    paymentNumber = formatDocumentNumber('SP', tenantId, 'SUPPLIER_PAYMENT', docYear(paymentDate), 5, paymentDate)
     db.prepare(`
       INSERT INTO supplier_payments (id, tenant_id, payment_number, supplier_id, purchase_invoice_id,
         payment_date, payment_method, payment_reference, amount, withholding_tax, net_amount, notes, bank_account_id, pos_cash_movement_id, created_at, updated_at)
@@ -1013,7 +1017,12 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
     })
   })
 
-  transaction()
+  try {
+    transaction()
+  } catch (e) {
+    if (isHeaderAccountError(e)) throw new PurchaseBillingError('HEADER_ACCOUNT', (e as Error).message)
+    throw e
+  }
 
   const payment = db.prepare('SELECT * FROM supplier_payments WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
   const updatedInvoice = purchaseInvoiceId

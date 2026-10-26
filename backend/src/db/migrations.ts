@@ -2817,7 +2817,156 @@ export function runMigrations(db: any): void {
       CREATE INDEX IF NOT EXISTS idx_payroll_lines_je ON payroll_lines(journal_entry_id);
     `)
   } catch (e) { console.error('⚠️ payroll_lines migration error:', e) }
+
+  runMonthCloseMigrations(db)
 }
+
+/**
+ * ปิดบัญชีรายเดือน + audit ในตัว (2026-10-26) — รันซ้ำได้ทุกครั้งที่ server start
+ * แยกฟังก์ชันไว้ให้เทสต์เรียกตรงได้
+ */
+export function runMonthCloseMigrations(db: any): void {
+  // ── รูปแบบกิจการ: NULL = ยังไม่ระบุ (รายการปรับปรุงประเภท OWNER_* ถูกปฏิเสธจนกว่าจะตั้ง) ──
+  try {
+    const cols = db.prepare('PRAGMA table_info(company_settings)').all() as any[]
+    if (cols.length > 0 && !cols.some((c: any) => c.name === 'entity_type')) {
+      db.exec(`ALTER TABLE company_settings ADD COLUMN entity_type TEXT CHECK (entity_type IN ('INDIVIDUAL', 'PARTNERSHIP', 'COMPANY'))`)
+      console.log('✅ Migration: company_settings.entity_type')
+    }
+  } catch (e) { console.error('⚠️ entity_type migration error:', e) }
+
+  // ── ห้ามลงบัญชีหัว (บัญชีที่มีบัญชีย่อย) ──
+  // INSERT INTO journal_lines กระจายอยู่ ~30 จุดใน 12 ไฟล์ (REST, MCP, service อัตโนมัติ) ไม่มีฟังก์ชันกลางที่ทุกทางผ่าน
+  // trigger จึงเป็นจุดเดียวที่กันได้ครบ · ยอมให้ลงได้เฉพาะรายการที่ "ย้ายยอดเดิมออก" (ทิศตรงข้ามยอดคงเหลือและไม่เกินยอด)
+  // เพื่อให้กลับรายการเก่า / ย้าย 1102 → 1102-01 / ปิดบัญชีสิ้นปีของบัญชีหัวที่มียอดค้างจากก่อนมีกฎนี้ ยังทำได้
+  // ponytail: กันแค่ INSERT — ไม่มีโค้ดไหน UPDATE journal_lines.account_id (grep แล้ว 2026-10-26) ถ้าเพิ่มเมื่อไรต้องเพิ่ม trigger UPDATE
+  try {
+    db.exec(`DROP TRIGGER IF EXISTS trg_journal_lines_no_header`)
+    db.exec(`
+      CREATE TRIGGER trg_journal_lines_no_header
+      BEFORE INSERT ON journal_lines
+      WHEN (COALESCE(NEW.debit, 0) <> 0 OR COALESCE(NEW.credit, 0) <> 0)
+        AND EXISTS (SELECT 1 FROM accounts c WHERE c.parent_id = NEW.account_id)
+        AND NOT (
+          (SELECT COALESCE(SUM(debit - credit), 0) FROM journal_lines WHERE account_id = NEW.account_id)
+            * (COALESCE(NEW.debit, 0) - COALESCE(NEW.credit, 0)) < 0
+          AND ABS(COALESCE(NEW.debit, 0) - COALESCE(NEW.credit, 0))
+            <= ABS((SELECT COALESCE(SUM(debit - credit), 0) FROM journal_lines WHERE account_id = NEW.account_id)) + 0.005
+        )
+      BEGIN
+        SELECT RAISE(ABORT, '${HEADER_ACCOUNT_ERROR}');
+      END
+    `)
+  } catch (e) { console.error('⚠️ no-header trigger migration error:', e) }
+
+  // ── ประวัติการถอยรายการ (unpost) — ไม่ผูก FK กับ journal_entries เพราะหลังถอยแล้วลบ JE ได้ ประวัติต้องอยู่ต่อ ──
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS journal_unposts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        journal_entry_id TEXT NOT NULL,
+        entry_number TEXT,
+        entry_date TEXT,
+        total_debit REAL,
+        total_credit REAL,
+        posted_at TEXT,
+        posted_by TEXT,
+        lines_json TEXT,
+        reason TEXT NOT NULL,
+        unposted_by TEXT NOT NULL,
+        unposted_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_journal_unposts_tenant ON journal_unposts(tenant_id, entry_date);
+    `)
+  } catch (e) { console.error('⚠️ journal_unposts migration error:', e) }
+
+  // ── รอบกระทบยอดเงินสด/ธนาคารกับ statement (1 แถว / บัญชี / งวด) + รายการปรับปรุงรายบรรทัดที่ AI ส่งมา ──
+  // กันซ้ำด้วย dedupe_key (บัญชี + วันที่ + ยอด + เลขอ้างอิง + ลำดับบรรทัดใน statement) เฉพาะแถวที่ยังไม่ถูกทิ้ง
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bank_reconciliations (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        period TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        statement_closing_balance REAL NOT NULL,
+        statement_hash TEXT,
+        submitted_by TEXT,
+        submitted_by_name TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (tenant_id, period, account_id)
+      );
+      CREATE TABLE IF NOT EXISTS bank_reconciliation_records (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        reconciliation_id TEXT NOT NULL REFERENCES bank_reconciliations(id),
+        dedupe_key TEXT NOT NULL,
+        type TEXT NOT NULL,
+        line_date TEXT NOT NULL,
+        amount REAL NOT NULL,
+        effect REAL NOT NULL DEFAULT 0,
+        direction TEXT,
+        statement_ref TEXT,
+        statement_line_no INTEGER,
+        description TEXT,
+        account_code TEXT,
+        counter_account_code TEXT,
+        ref_line_id TEXT,
+        source_doc_type TEXT,
+        source_doc_id TEXT,
+        reason TEXT,
+        confidence REAL,
+        statement_hash TEXT,
+        journal_entry_id TEXT,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        submitted_by TEXT,
+        submitted_by_name TEXT,
+        approval_request_id TEXT,
+        posted_by TEXT,
+        posted_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_bank_recon_records_key
+        ON bank_reconciliation_records(tenant_id, dedupe_key) WHERE status <> 'DISCARDED';
+      CREATE INDEX IF NOT EXISTS idx_bank_recon_records_recon ON bank_reconciliation_records(reconciliation_id, status);
+      CREATE INDEX IF NOT EXISTS idx_bank_recon_records_ref ON bank_reconciliation_records(tenant_id, ref_line_id);
+    `)
+  } catch (e) { console.error('⚠️ bank_reconciliations migration error:', e) }
+
+  // ── แนบไฟล์กับรายการบัญชี (JOURNAL_ENTRY) และงวด (TAX_PERIOD: statement / ชุดปิดเดือน) ──
+  // SQLite แก้ CHECK ตรง ๆ ไม่ได้ → rebuild ตาราง (สูตรเดียวกับรอบ STOCK_ADJUSTMENT ด้านบน)
+  try {
+    const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='payment_attachments'").get() as any)?.sql || ''
+    if (cur && !cur.includes('TAX_PERIOD')) {
+      const cols = (db.prepare('PRAGMA table_info(payment_attachments)').all() as any[]).map((c: any) => c.name).join(', ')
+      const ddl = cur
+        .replace(/CREATE TABLE\s+"?payment_attachments"?/i, 'CREATE TABLE payment_attachments_new')
+        .replace(/CHECK\s*\(\s*ref_type\s+IN\s*\([^)]*\)\s*\)/i,
+          "CHECK(ref_type IN ('RECEIPT','SUPPLIER_PAYMENT','POS_PAYMENT','INVOICE','PURCHASE_REQUEST','PURCHASE_ORDER','GOODS_RECEIPT','PURCHASE_INVOICE','STOCK_ADJUSTMENT','JOURNAL_ENTRY','TAX_PERIOD'))")
+      const idx = (db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='payment_attachments' AND sql IS NOT NULL").all() as any[]).map((r: any) => r.sql)
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(ddl)
+        db.exec(`INSERT INTO payment_attachments_new (${cols}) SELECT ${cols} FROM payment_attachments`)
+        db.exec('DROP TABLE payment_attachments')
+        db.exec('ALTER TABLE payment_attachments_new RENAME TO payment_attachments')
+        for (const sql of idx) db.exec(sql)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+      console.log('✅ Migration: payment_attachments รองรับรายการบัญชีและงวดแล้ว')
+    }
+  } catch (e) {
+    console.error('⚠️ payment_attachments JOURNAL_ENTRY/TAX_PERIOD migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
+}
+
+/** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
+export const HEADER_ACCOUNT_ERROR =
+  'ลงบัญชีหัวไม่ได้: บัญชีที่เลือกมีบัญชีย่อยอยู่ (เช่น 1102 เงินฝากธนาคาร มีบัญชีของแต่ละธนาคารอยู่ข้างใต้) กรุณาเลือกบัญชีย่อยแทน · บัญชีหัวรับได้เฉพาะรายการที่ย้ายยอดเดิมออกจากบัญชีหัว'
 
 /**
  * สร้าง purchase_orders ใหม่ให้ supplier_id เป็น NULL ได้ (PO ร่างจาก AI ยังไม่รู้ผู้ขาย) — ทำเฉพาะตอนยังเป็น NOT NULL

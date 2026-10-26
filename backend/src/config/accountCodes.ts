@@ -75,6 +75,16 @@ export const ACC = {
   // ตัวแรกคือของหายไปจริงและกันไม่ได้ทั้งหมด ตัวหลังคือตัวเลขเคยผิดเฉย ๆ ของไม่เคยหาย
   STOCK_WASTE:       '5903',  // ผลขาดทุนของเสีย (ของเสีย/หมดอายุ/แตก/ชำรุด)
   STOCK_SHRINKAGE:   '5904',  // ผลขาดทุนสินค้าสูญหาย (ของหาย หาไม่เจอ)
+
+  // ปิดบัญชีรายเดือน / รูปแบบกิจการ (2026-10-26) — รหัสที่ว่างในทุก tenant ณ วันที่เพิ่ม (ตรวจ dev.db จริงแล้ว)
+  PETTY_CASH:        '1113',  // เงินสดย่อย (imprest) — ของเล็กน้อยที่ไม่ผ่านลิ้นชัก POS
+  DIRECTOR_LOAN:     '1114',  // เงินให้กู้ยืมแก่กรรมการ/หุ้นส่วน (หจก./บจก.) — ม.65 ทวิ (4) ประเมินดอกเบี้ยได้
+  SUSPENSE:          '1190',  // บัญชีพักรอตรวจสอบ — เงินเข้า/ออกที่หาที่มาไม่ได้ ต้องล้างภายในเดือนถัดไป
+  OWNER_ADVANCE:     '2110',  // เงินทดรองจ่าย/เงินกู้ยืมจากเจ้าของ-กรรมการ (ร้านค้างเจ้าของ)
+  OWNER_DRAWINGS:    '3106',  // ถอนใช้ส่วนตัว (บุคคลธรรมดา) — ม.65 ตรี (3) ห้ามเป็นรายจ่ายของกิจการ
+  PRIOR_PERIOD_ADJ:  '3107',  // ปรับปรุงกำไรสะสมงวดก่อน (ข้อผิดพลาดของงวดที่ปิดแล้ว — TFRS for NPAEs)
+  INTEREST_INCOME:   '4202',  // รายได้ดอกเบี้ย (มีในผังอยู่แล้ว)
+  BANK_CHARGE:       '5309',  // ค่าธรรมเนียมธนาคาร (มีในผังอยู่แล้ว)
 } as const
 
 import type { AccountType, NormalBalance } from '../types'
@@ -126,6 +136,15 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.STOCK_WASTE]:      { name: 'ผลขาดทุนของเสีย', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
   [ACC.STOCK_SHRINKAGE]:  { name: 'ผลขาดทุนสินค้าสูญหาย', type: 'EXPENSE', category: 'OTHER_EXPENSE', normalBalance: 'DEBIT' },
   [ACC.OTHER_EXPENSE]:    { name: 'ค่าใช้จ่ายอื่น', type: 'EXPENSE', category: 'OTHER', normalBalance: 'DEBIT' },
+
+  [ACC.PETTY_CASH]:       { name: 'เงินสดย่อย', type: 'ASSET', category: 'CASH', normalBalance: 'DEBIT' },
+  [ACC.DIRECTOR_LOAN]:    { name: 'เงินให้กู้ยืมแก่กรรมการ/หุ้นส่วน', type: 'ASSET', category: 'DIRECTOR_LOAN', normalBalance: 'DEBIT' },
+  [ACC.SUSPENSE]:         { name: 'บัญชีพักรอตรวจสอบ', type: 'ASSET', category: 'SUSPENSE', normalBalance: 'DEBIT' },
+  [ACC.OWNER_ADVANCE]:    { name: 'เงินทดรองจ่าย/เงินกู้ยืมจากเจ้าของ-กรรมการ', type: 'LIABILITY', category: 'OWNER_ADVANCE', normalBalance: 'CREDIT' },
+  [ACC.OWNER_DRAWINGS]:   { name: 'ถอนใช้ส่วนตัว', type: 'EQUITY', category: 'DRAWINGS', normalBalance: 'DEBIT' },
+  [ACC.PRIOR_PERIOD_ADJ]: { name: 'ปรับปรุงกำไรสะสมงวดก่อน', type: 'EQUITY', category: 'RETAINED_EARNINGS', normalBalance: 'CREDIT' },
+  [ACC.INTEREST_INCOME]:  { name: 'รายได้ดอกเบี้ย', type: 'REVENUE', category: 'INTEREST', normalBalance: 'CREDIT' },
+  [ACC.BANK_CHARGE]:      { name: 'ค่าธรรมเนียมธนาคาร', type: 'EXPENSE', category: 'BANK_CHARGE', normalBalance: 'DEBIT' },
 }
 
 // ============================================================
@@ -144,6 +163,18 @@ export function resolveBankAccountGL(tenantId: string, bankAccountId?: string | 
     'SELECT account_id FROM bank_accounts WHERE id = ? AND tenant_id = ? AND is_active = 1'
   ).get(bankAccountId, tenantId) as { account_id: string } | undefined
   return row?.account_id ?? null
+}
+
+/**
+ * บัญชีธนาคารที่ใช้แทน 1102 เมื่อรายการไม่ได้ระบุบัญชีธนาคาร: บัญชีที่ตั้งเป็นค่าเริ่มต้น หรือบัญชีเดียวที่มี
+ * ไม่มีบัญชีธนาคาร/มีหลายบัญชีแต่ไม่ได้ตั้งค่าเริ่มต้น = null (ผู้เรียกใช้ 1102 ซึ่งถ้ามีบัญชีย่อยจะโดน trigger ห้ามลงบัญชีหัว)
+ * เหตุผล: 1102 มีบัญชีย่อยแล้วต้องไม่ถูกลงตรง (Kids House ลง 1102 หัวไป 4 ครั้ง ยอดแตกสองก้อนเทียบ statement ไม่ได้)
+ */
+export function defaultBankAccountGL(tenantId: string): string | null {
+  const rows = db.prepare(
+    'SELECT account_id, is_default FROM bank_accounts WHERE tenant_id = ? AND is_active = 1 ORDER BY is_default DESC, created_at'
+  ).all(tenantId) as { account_id: string; is_default: number }[]
+  return rows.length > 0 && (rows[0].is_default === 1 || rows.length === 1) ? rows[0].account_id : null
 }
 
 export default ACC

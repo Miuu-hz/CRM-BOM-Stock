@@ -9,6 +9,7 @@ import { can } from '../services/rbac.service'
 // หรือแผนก CEO/IT/CTO) · คนที่ได้สิทธิ์นี้แก้ได้เฉพาะช่องในแท็บนี้ ช่องอื่นของบริษัทยังเป็นของ ADMIN/MASTER
 const BILLING_FIELDS = ['pos_vat_enabled', 'pos_vat_rate', 'pos_vat_inclusive', 'pos_service_enabled', 'pos_service_rate']
 const isAdminRole = (user: any) => ['ADMIN', 'MASTER'].includes(user.role)
+const ENTITY_TYPES = ['INDIVIDUAL', 'PARTNERSHIP', 'COMPANY']
 const canEditBilling = (user: any) =>
   isAdminRole(user) || can(user.role, user.departments || [], 'settings', 'write', user.customPermissions)
 
@@ -60,8 +61,14 @@ router.put('/company', (req, res) => {
       pos_vat_enabled, pos_vat_rate, pos_vat_inclusive, pos_service_enabled, pos_service_rate,
       qc_gate_enabled, show_subcon_stock_widget, allow_negative_stock, require_pos_shift, vat_registered,
       stock_alias_enabled, loyalty_enabled, loyalty_earn_rate, loyalty_redeem_rate, loyalty_min_redeem,
-      loyalty_retro_cap, pos_qr_mode, line_shift_expense_groups
+      loyalty_retro_cap, pos_qr_mode, line_shift_expense_groups, entity_type
     } = req.body
+
+    // รูปแบบกิจการ — กำหนดบัญชีเงินส่วนตัวของเจ้าของ (บุคคลธรรมดา = ถอนใช้ส่วนตัว · หจก./บจก. = เงินให้กู้ยืมกรรมการ)
+    // ค่าว่าง/null = ยังไม่ระบุ (ช่องนี้ไม่อยู่ใน BILLING_FIELDS จึงแก้ได้เฉพาะ ADMIN/MASTER ตามด่านด้านบน)
+    if (entity_type !== undefined && entity_type !== null && entity_type !== '' && !ENTITY_TYPES.includes(entity_type)) {
+      return res.status(400).json({ success: false, message: 'รูปแบบกิจการต้องเป็น INDIVIDUAL (บุคคลธรรมดา), PARTNERSHIP (หจก.) หรือ COMPANY (บจก.)' })
+    }
 
     const pctOk = (v: unknown, min: number, max: number) =>
       v === undefined || v === null || (v !== '' && Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max)
@@ -178,6 +185,7 @@ router.put('/company', (req, res) => {
     if (loyalty_min_redeem !== undefined) db.prepare('UPDATE company_settings SET loyalty_min_redeem = ? WHERE tenant_id = ?').run(Number(loyalty_min_redeem), tenantId)
     if (loyalty_retro_cap !== undefined) db.prepare('UPDATE company_settings SET loyalty_retro_cap = ? WHERE tenant_id = ?').run(Number(loyalty_retro_cap), tenantId)
     if (pos_qr_mode !== undefined) db.prepare('UPDATE company_settings SET pos_qr_mode = ? WHERE tenant_id = ?').run(pos_qr_mode, tenantId)
+    if (entity_type !== undefined) db.prepare('UPDATE company_settings SET entity_type = ? WHERE tenant_id = ?').run(entity_type || null, tenantId)
     if (line_shift_expense_groups !== undefined) db.prepare('UPDATE company_settings SET line_shift_expense_groups = ? WHERE tenant_id = ?').run(line_shift_expense_groups ? 1 : 0, tenantId)
 
     const updated = db.prepare(`SELECT * FROM company_settings WHERE tenant_id = ?`).get(tenantId)

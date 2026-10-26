@@ -23,6 +23,8 @@ export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_ord
   | 'sales_cancel'
   // ยกเลิก/void เอกสารซื้อ (PO, ใบรับสินค้า, ใบแจ้งหนี้ซื้อ, ใบจ่ายเงิน, ใบคืนสินค้า) โดยคนที่ไม่มีสิทธิ์แผนก — ต้องขออนุมัติเสมอ
   | 'purchase_cancel'
+  // รายการปรับปรุงปิดเดือน (AI ส่งมาเป็นร่างทาง MCP) — post ได้หลังคนอนุมัติเท่านั้น ไม่ขึ้นกับ approval_settings
+  | 'close_adjust'
 
 /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
 export type Severity = 'high' | 'medium' | 'low' | 'info'
@@ -43,7 +45,7 @@ const APPROVER_ROLES = new Set(['ADMIN', 'MASTER', 'OWNER'])
  * ไม่อ่าน approval_settings (ปิดไม่ได้) และไม่มี bypass รายคน/ตามแผนก — ข้ามได้เฉพาะ ADMIN/MASTER/OWNER
  * (ผู้เรียกต้อง recordAutoAction เองหลังทำสำเร็จ เหมือนหมวดอื่น)
  */
-const ALWAYS_REQUIRED = new Set<GateCategory>(['sales_cancel', 'purchase_cancel'])
+const ALWAYS_REQUIRED = new Set<GateCategory>(['sales_cancel', 'purchase_cancel', 'close_adjust'])
 
 // หมวดอนุมัติ → resource ในระบบสิทธิ์เดิม (Settings > สิทธิ์การใช้งาน) ที่ถือว่า "ผูกกัน"
 const CATEGORY_RESOURCE: Record<GateCategory, string> = {
@@ -59,6 +61,7 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   pos_shift_expense: 'orders',
   sales_cancel: 'orders',
   purchase_cancel: 'purchase',
+  close_adjust: 'accounting',
 }
 
 /** GM ตามที่เจ้าของกำหนด (2026-10-24) = ADMIN/MASTER/OWNER หรือแผนก CEO */

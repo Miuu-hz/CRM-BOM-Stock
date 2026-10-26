@@ -48,7 +48,7 @@ db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
 
 // ตัวจริงอยู่ที่ services/accounting.service — re-export ไว้เพราะ sales/index.ts
 // กับ sales/creditNotes.ts import ผ่าน './shared' อยู่เดิม
-import { getOrCreateAccount, postJournal } from '../../services/accounting.service'
+import { getOrCreateAccount, postJournal, postingAccountId } from '../../services/accounting.service'
 import { isServiceItem, isSellableItem, normName, rememberAlias } from '../../services/stockItem.service'
 export { getOrCreateAccount }
 
@@ -100,13 +100,13 @@ export function createSalesJournal(
     const revMeta = ACC_META[ACC.REVENUE_PRODUCT]!
     const vatMeta = ACC_META[ACC.OUTPUT_VAT]!
     const cashMeta = ACC_META[ACC.CASH]!
-    const bankMeta = ACC_META[ACC.BANK]!
 
     const arId   = getOrCreateAccount(tenantId, ACC.AR, arMeta.name, arMeta.type, arMeta.category, arMeta.normalBalance)
     const revId  = getOrCreateAccount(tenantId, ACC.REVENUE_PRODUCT, revMeta.name, revMeta.type, revMeta.category, revMeta.normalBalance)
     const vatId  = getOrCreateAccount(tenantId, ACC.OUTPUT_VAT, vatMeta.name, vatMeta.type, vatMeta.category, vatMeta.normalBalance)
     const cashId = getOrCreateAccount(tenantId, ACC.CASH, cashMeta.name, cashMeta.type, cashMeta.category, cashMeta.normalBalance)
-    const bankId = getOrCreateAccount(tenantId, ACC.BANK, bankMeta.name, bankMeta.type, bankMeta.category, bankMeta.normalBalance)
+    // ไม่ได้เลือกบัญชีธนาคาร → บัญชีธนาคารค่าเริ่มต้น/บัญชีเดียวที่มี ไม่ลง 1102 หัว (postingAccountId)
+    const bankId = postingAccountId(tenantId, ACC.BANK)
 
     const entryId = generateId()
     const netRevenue = totalAmount - taxAmount

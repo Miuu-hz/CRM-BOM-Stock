@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC, ACC_META } from '../config/accountCodes'
-import { getOrCreateAccount } from '../services/accounting.service'
+import { getOrCreateAccount, postingAccountId } from '../services/accounting.service'
 import { SubcontractError, sumQtyByStockItem, getOutstandingMaterialQty } from '../services/subcontract.service'
 
 const router = Router()
@@ -745,11 +745,7 @@ router.post('/:id/pay', (req: Request, res: Response) => {
       ACC_META[ACC.ACCRUED]!.category, ACC_META[ACC.ACCRUED]!.normalBalance
     )
     const cashBankCode = payment_method === 'CASH' ? ACC.CASH : ACC.BANK
-    const cashBankAccId = getOrCreateAccount(
-      tenantId, cashBankCode,
-      ACC_META[cashBankCode]!.name, ACC_META[cashBankCode]!.type,
-      ACC_META[cashBankCode]!.category, ACC_META[cashBankCode]!.normalBalance
-    )
+    const cashBankAccId = postingAccountId(tenantId, cashBankCode)
     const now = new Date().toISOString()
     const journalId = generateId()
     const journalNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date(now).getFullYear(), 5, now)

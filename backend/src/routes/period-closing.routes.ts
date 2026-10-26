@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
 import { ACC } from '../config/accountCodes'
+import { closeChecklist } from '../services/closeChecklist.service'
 
 const router = Router()
 router.use(authenticate)
@@ -141,6 +142,17 @@ router.post('/close/:periodId', requireAdminPassword, async (req: Request, res: 
     if (!period) return res.status(404).json({ success: false, message: 'ไม่พบงวดบัญชีที่ต้องการ' })
     if (period.status !== 'OPEN') {
       return res.status(400).json({ success: false, message: `งวด ${monthLabel(period.year, period.month)} ไม่ได้อยู่ในสถานะเปิด` })
+    }
+
+    // ด่านตรวจ 11 ข้อ (A3) — ข้อที่ระดับ "บล็อก" ไม่ผ่านข้อเดียว = ปิดงวดไม่ได้ (เดิมเปลี่ยนสถานะเฉย ๆ ไม่ตรวจอะไร)
+    const check = closeChecklist(tenantId, `${period.year}-${String(period.month).padStart(2, '0')}`)
+    if (!check.canClose) {
+      const failed = check.items.filter(i => i.status === 'block').map(i => `${i.id}. ${i.title}`)
+      return res.status(400).json({
+        success: false,
+        message: `ปิดงวด ${monthLabel(period.year, period.month)} ไม่ได้ — ด่านตรวจไม่ผ่าน ${failed.length} ข้อ: ${failed.join(' · ')}`,
+        data: check,
+      })
     }
 
     db.prepare(`UPDATE tax_periods SET status = 'CLOSED', updated_at = datetime('now') WHERE id = ?`).run(period.id)

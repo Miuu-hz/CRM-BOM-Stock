@@ -29,6 +29,10 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '1110', name: 'ภาษีซื้อ', type: 'ASSET', category: 'TAX', level: 2, parent_code: '11', normal_balance: 'DEBIT', tax_related: 1 },
   { code: '1111', name: 'เงินประกัน', type: 'ASSET', category: 'DEPOSIT', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
   { code: '1112', name: 'วัตถุดิบที่ผู้รับจ้างช่วง', type: 'ASSET', category: 'INVENTORY', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+  // ปิดบัญชีรายเดือน (2026-10-26) — รหัสต้องตรงกับ ACC ใน accountCodes.ts
+  { code: '1113', name: 'เงินสดย่อย', type: 'ASSET', category: 'CASH', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+  { code: '1114', name: 'เงินให้กู้ยืมแก่กรรมการ/หุ้นส่วน', type: 'ASSET', category: 'DIRECTOR_LOAN', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+  { code: '1190', name: 'บัญชีพักรอตรวจสอบ', type: 'ASSET', category: 'SUSPENSE', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
 
   { code: '12', name: 'สินทรัพย์ไม่หมุนเวียน', type: 'ASSET', category: 'FIXED_ASSET', level: 1, parent_code: '1', normal_balance: 'DEBIT' },
   { code: '1201', name: 'ที่ดิน', type: 'ASSET', category: 'PROPERTY', level: 2, parent_code: '12', normal_balance: 'DEBIT' },
@@ -55,6 +59,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '2106', name: 'ประกันสังคม', type: 'LIABILITY', category: 'PAYABLE', level: 2, parent_code: '21', normal_balance: 'CREDIT' },
   { code: '2107', name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'ACCRUED', level: 2, parent_code: '21', normal_balance: 'CREDIT' },
   { code: '2108', name: 'รายได้รับล่วงหน้า', type: 'LIABILITY', category: 'DEFERRED', level: 2, parent_code: '21', normal_balance: 'CREDIT' },
+  { code: '2110', name: 'เงินทดรองจ่าย/เงินกู้ยืมจากเจ้าของ-กรรมการ', type: 'LIABILITY', category: 'OWNER_ADVANCE', level: 2, parent_code: '21', normal_balance: 'CREDIT' },
   
   { code: '22', name: 'หนี้สินไม่หมุนเวียน', type: 'LIABILITY', category: 'LONG_TERM_LIABILITY', level: 1, parent_code: '2', normal_balance: 'CREDIT' },
   { code: '2201', name: 'เงินกู้ระยะยาว', type: 'LIABILITY', category: 'LOAN', level: 2, parent_code: '22', normal_balance: 'CREDIT' },
@@ -67,6 +72,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: '3103', name: 'กำไรสะสม', type: 'EQUITY', category: 'RETAINED_EARNINGS', level: 1, parent_code: '3', normal_balance: 'CREDIT' },
   { code: '3104', name: 'ขาดทุนสะสม', type: 'EQUITY', category: 'RETAINED_EARNINGS', level: 1, parent_code: '3', normal_balance: 'DEBIT' },
   { code: '3105', name: 'รายได้สะสมอื่น', type: 'EQUITY', category: 'OTHER_COMPREHENSIVE', level: 1, parent_code: '3', normal_balance: 'CREDIT' },
+  { code: '3106', name: 'ถอนใช้ส่วนตัว', type: 'EQUITY', category: 'DRAWINGS', level: 1, parent_code: '3', normal_balance: 'DEBIT' },
+  { code: '3107', name: 'ปรับปรุงกำไรสะสมงวดก่อน', type: 'EQUITY', category: 'RETAINED_EARNINGS', level: 1, parent_code: '3', normal_balance: 'CREDIT' },
   
   // ========== REVENUE (4xxxx) ==========
   { code: '4', name: 'รายได้', type: 'REVENUE', category: 'ROOT', level: 0, normal_balance: 'CREDIT' },

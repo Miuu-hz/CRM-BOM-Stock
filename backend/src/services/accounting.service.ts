@@ -1,6 +1,6 @@
 import db from '../db/sqlite'
 import { generateId, formatDocumentNumber } from '../utils/id'
-import { ACC_META } from '../config/accountCodes'
+import { ACC, ACC_META, defaultBankAccountGL } from '../config/accountCodes'
 import type { Account, AccountType, NormalBalance } from '../types'
 import { normalizeVatFields, vatModeOf } from '../utils/vat'
 
@@ -99,6 +99,12 @@ export interface PostJournalInput {
 
 export class JournalError extends Error {}
 
+/** error จาก trigger ห้ามลงบัญชีหัว (runMonthCloseMigrations) — ให้ route ตอบ 400 พร้อมข้อความไทยแทน 500 */
+export function isHeaderAccountError(e: unknown): boolean {
+  const err = e as { code?: string; message?: string } | null
+  return err?.code === 'SQLITE_CONSTRAINT_TRIGGER' && String(err.message).startsWith('ลงบัญชีหัวไม่ได้')
+}
+
 /**
  * กิจการจดทะเบียน VAT แล้วหรือยัง (company_settings.vat_registered, ไม่มีแถว/คอลัมน์ = จดแล้ว ตามพฤติกรรมเดิม)
  * ยังไม่จด = ภาษีซื้อขอคืนไม่ได้ → เป็นต้นทุนของที่ซื้อ ไม่ใช่สินทรัพย์ 1110 และไม่เข้าทะเบียนภาษีซื้อ
@@ -129,6 +135,14 @@ export function rememberContactVatMode(
 
 /** ปัดทศนิยม 2 ตำแหน่งก่อนเทียบเสมอ ไม่งั้นเศษ floating point ทำให้ดุลหลุดเอง */
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+
+/**
+ * รหัสบัญชี → id ที่ลงรายการได้จริง · 1102 (ธนาคาร) ที่ไม่ระบุบัญชีธนาคาร = บัญชีธนาคารค่าเริ่มต้น/บัญชีเดียวที่มี
+ * (1102 ที่มีบัญชีย่อยเป็นบัญชีหัว ลงตรงไม่ได้ — ดู trigger ใน runMonthCloseMigrations)
+ */
+export function postingAccountId(tenantId: string, code: string): string {
+  return (code === ACC.BANK && defaultBankAccountGL(tenantId)) || getOrCreateAccount(tenantId, code)
+}
 
 export function postJournal(input: PostJournalInput): string {
   const { tenantId, date, referenceType, referenceId, description, createdBy } = input
@@ -178,7 +192,7 @@ export function postJournal(input: PostJournalInput): string {
   `)
   let lineNo = 1
   for (const l of lines) {
-    const accountId = l.accountId || getOrCreateAccount(tenantId, l.code!)
+    const accountId = l.accountId || postingAccountId(tenantId, l.code!)
     insertLine.run(generateId(), tenantId, entryId, accountId, lineNo++, l.description || description, l.debit, l.credit)
   }
 
