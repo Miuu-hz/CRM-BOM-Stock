@@ -153,6 +153,10 @@ interface Ctx {
   vatRegistered: boolean
   /** ยอดที่บรรทัดก่อนหน้าในชุดเดียวกันใช้แก้ ref line ไปแล้ว */
   batchRefUse: Map<string, number>
+  /** ref_line_id ที่บรรทัดก่อนหน้าในชุดเดียวกันระบุเป็น TIMING ไปแล้ว */
+  batchTimingRefs: Set<string>
+  /** ยอดรับชำระใบแจ้งหนี้ขายที่บรรทัดก่อนหน้าในชุดเดียวกันจองไว้แล้ว */
+  batchInvUse: Map<string, number>
 }
 
 const ENTITY_REQUIRED = 'ตั้งรูปแบบกิจการที่ ตั้งค่า > ข้อมูลบริษัท ก่อน (บุคคลธรรมดา / หจก. / บจก.) — ระบบต้องรู้ว่าจะลงเงินของเจ้าของเข้าบัญชีไหน'
@@ -265,7 +269,7 @@ function planLine(ctx: Ctx, line: SubmitLine): { plan?: Plan; errors: string[] }
       const ref = checkRef(ctx, line, amt, errors, { capped: true })
       if (!ref) break
       if (!isHeaderAccount(ref.account_id)) { errors.push(`รายการเดิมลงบัญชี ${ref.code} ซึ่งไม่ใช่บัญชีหัว — ถ้าลงผิดช่องทางให้ใช้ WRONG_CHANNEL`); break }
-      const to = needAccount(line.account_code, 'account_code (บัญชีย่อยที่ถูก)')
+      const to = line.account_code ? needAccount(line.account_code, 'account_code (บัญชีย่อยที่ถูก)') : accById(ctx.t, B)!
       if (!to) break
       if (to.parent_id !== ref.account_id) { errors.push(`บัญชี ${to.code} ไม่ใช่บัญชีย่อยของ ${ref.code}`); break }
       if (to.id !== B) { errors.push(`ย้ายยอดเข้า ${to.code} ให้ส่งในรอบกระทบยอดของบัญชี ${to.code} (ตอนนี้กำลังกระทบยอด ${ctx.bank.code})`); break }
@@ -310,11 +314,18 @@ function planLine(ctx: Ctx, line: SubmitLine): { plan?: Plan; errors: string[] }
           .get(ctx.t, line.invoice_id, line.invoice_id) as any
         if (!inv) { errors.push(`ไม่พบใบแจ้งหนี้ขาย ${line.invoice_id} — ใช้ id/เลขที่จาก openInvoices.sales ใน get_close_pack`); break }
         if (inv.status === 'CANCELLED' || inv.status === 'DRAFT') { errors.push(`ใบแจ้งหนี้ ${inv.invoice_number} สถานะ ${inv.status} รับชำระไม่ได้`); break }
-        if (amt > Number(inv.balance_amount) + ZERO) { errors.push(`ยอด ${amt} เกินยอดค้างของ ${inv.invoice_number} (฿${Number(inv.balance_amount).toLocaleString()})`); break }
+        const usedInv = r2(((db.prepare(`SELECT COALESCE(SUM(amount), 0) AS v FROM bank_reconciliation_records
+          WHERE tenant_id = ? AND source_doc_type = 'INVOICE' AND source_doc_id = ? AND status IN ('DRAFT', 'PENDING_APPROVAL')`).get(ctx.t, inv.id) as { v: number })?.v || 0)
+          + (ctx.batchInvUse.get(inv.id) || 0))
+        if (amt > Number(inv.balance_amount) - usedInv + ZERO) {
+          errors.push(`ยอด ${amt} เกินยอดค้างของ ${inv.invoice_number} (฿${Number(inv.balance_amount).toLocaleString()}${usedInv > 0 ? ` รอรับชำระในร่างอีก ฿${usedInv.toLocaleString()}` : ''})`)
+          break
+        }
         if (!receiptChannel(ctx.t, ctx.bank)) { errors.push(`บัญชี ${ctx.bank.code} รับชำระใบแจ้งหนี้ผ่านระบบไม่ได้ — ผูกบัญชีนี้ใน ตั้งค่า > บัญชีธนาคาร ก่อน`); break }
         sourceDocType = 'INVOICE'
         sourceDocId = inv.id
         effect = amt
+        ctx.batchInvUse.set(inv.id, (ctx.batchInvUse.get(inv.id) || 0) + amt)
       } else {
         const a = needAccount(line.account_code, 'invoice_id (ถ้ามีใบแจ้งหนี้) หรือ account_code (บัญชีรายได้)')
         if (a && !isAllowedRevenue(a)) { errors.push(`บัญชี ${a.code} ใช้ไม่ได้ — เลือกบัญชีรายได้ 4xxx (ไม่ใช่ส่วนลด/รับคืน)`); break }
@@ -346,6 +357,7 @@ function planLine(ctx: Ctx, line: SubmitLine): { plan?: Plan; errors: string[] }
       } else {
         errors.push(`รายการ ${ref.entry_number} มาจากเอกสาร (${refType}) — ยกเลิกเอกสารนั้นที่หน้าเว็บ ระบบจะกลับรายการบัญชีให้เอง (ไม่ใช้ DUPLICATE)`)
       }
+      if (!errors.length) ctx.batchRefUse.set(ref.id, (ctx.batchRefUse.get(ref.id) || 0) + amt)
       break
     }
     case 'CASH_COUNT_DIFF': {
@@ -374,7 +386,8 @@ function planLine(ctx: Ctx, line: SubmitLine): { plan?: Plan; errors: string[] }
       if (Math.abs(amt - Math.abs(d)) > ZERO) { errors.push('amount ต้องเท่ากับยอดของ line เดิม'); break }
       const noted = db.prepare(`SELECT 1 FROM bank_reconciliation_records r JOIN bank_reconciliations b ON b.id = r.reconciliation_id
         WHERE r.tenant_id = ? AND r.ref_line_id = ? AND r.type = 'TIMING' AND r.status = ? AND b.period = ?`).get(ctx.t, ref.id, TIMING_STATUS, ctx.period)
-      if (noted) { errors.push(`${ref.entry_number} ถูกระบุเป็นรายการระหว่างทางของงวดนี้ไปแล้ว`); break }
+      if (noted || ctx.batchTimingRefs.has(ref.id)) { errors.push(`${ref.entry_number} ถูกระบุเป็นรายการระหว่างทางของงวดนี้ไปแล้ว`); break }
+      ctx.batchTimingRefs.add(ref.id)
       status = TIMING_STATUS
       effect = -d
       break
@@ -452,6 +465,8 @@ export function submitCloseAdjustments(tenantId: string, actor: Actor, input: Su
     entityType: (company?.entity_type as Ctx['entityType']) ?? null,
     vatRegistered: isVatRegistered(tenantId),
     batchRefUse: new Map(),
+    batchTimingRefs: new Set(),
+    batchInvUse: new Map(),
   }
 
   const results: LineResult[] = []
@@ -636,7 +651,7 @@ export function approveCloseGroup(tenantId: string, period: string, type: string
   const now = new Date().toISOString()
   const upd = db.prepare(`UPDATE bank_reconciliation_records SET status = 'PENDING_APPROVAL', approval_request_id = ?, updated_at = ? WHERE id = ? AND status = 'DRAFT'`)
   db.transaction(() => { for (const id of ids) upd.run(pending.id, now, id) })()
-  return { mode: 'requested' as const, posted: 0, requestNumber: pending.request_number as string }
+  return { mode: 'requested' as const, posted: 0, requestId: pending.id as string, requestNumber: pending.request_number as string }
 }
 
 /** ผู้อนุมัติปฏิเสธคำขอ → รายการกลับเป็นร่าง (แก้/ทิ้ง/ขอใหม่ได้) */
