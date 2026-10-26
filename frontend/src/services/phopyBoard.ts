@@ -1,4 +1,5 @@
 import api from './api'
+import type { TrendPeriod } from '../components/charts/CandleChart'
 
 export type AgingBuckets = { current: number; days30: number; days60: number; days90: number; over90: number }
 export interface AgingDetail { buckets: AgingBuckets; total: number; overdue: number; count: number; ledger: Record<string, number> }
@@ -119,9 +120,58 @@ export interface PhopyBoardExtendedData {
   }
 }
 
+// ── บท 1/6/เทรนด์ — เพิ่มสำหรับ Phopy Board 7 บท (CONTRACTS.md C2/A3) ──────
+
+export type TrendGrain = 'week' | 'month' | 'quarter' | 'year'
+
+export interface TrendResponse {
+  grain: TrendGrain
+  requestedGrain?: TrendGrain
+  note?: string
+  ma: [number, number]
+  warmup: number
+  dataSince: string | null
+  periods: TrendPeriod[]
+}
+
+export interface CfoKpi {
+  key: string; label: string; value: number; prev: number | null; deltaPct: number | null
+  format: 'baht' | 'pct'; note?: string
+}
+export interface CfoSummaryLine { text: string; from: string }
+export interface CfoSummaryData {
+  period: { start: string; end: string }
+  compare: { mode: 'yoy' | 'prev'; start: string; end: string; label: string; hasData: boolean }
+  kpis: CfoKpi[]
+  strengths: CfoSummaryLine[]
+  cautions: CfoSummaryLine[]
+  decisions: CfoSummaryLine[]
+  confidence: { period: string; label: string; passed: number; total: number }
+}
+
+export type ChecklistStatus = 'pass' | 'warn' | 'block' | 'na'
+export interface ChecklistItem {
+  id: number; key: string; title: string; severity: 'block' | 'warn'; status: ChecklistStatus
+  detail: string; count?: number; amount?: number; link?: string; daily: boolean; rows?: Record<string, unknown>[]
+}
+export interface ChecklistResult {
+  period: string; start: string; end: string; periodStatus: 'OPEN' | 'CLOSED' | 'FILING' | 'NONE'
+  items: ChecklistItem[]; passed: number; total: number; blocks: number; warns: number; label: string; canClose: boolean
+}
+
 export const phopyBoardApi = {
   getSummary: (params: { startDate: string; endDate: string }) =>
     api.get<{ success: boolean; data: PhopyBoardData }>('/phopy-board/summary', { params }),
   getExtended: (params: { startDate: string; endDate: string }) =>
     api.get<{ success: boolean; data: PhopyBoardExtendedData }>('/phopy-board/extended', { params }),
+  getTrend: (params: { grain: TrendGrain; from?: string; to: string; warmup?: number }) =>
+    api.get<{ success: boolean; data: TrendResponse }>('/phopy-board/trend', { params }),
+  getCfoSummary: (params: { startDate: string; endDate: string; compare: 'yoy' | 'prev' }) =>
+    api.get<{ success: boolean; data: CfoSummaryData }>('/phopy-board/cfo-summary', { params }),
+  getChecklist: (period: string) =>
+    api.get<{ success: boolean; data: ChecklistResult }>(`/month-close/${period}/checklist`),
+  getBudgets: (year: number) =>
+    api.get<{ success: boolean; data: any[] }>(`/budgets/${year}`),
+  getBudgetVsActual: (year: number) =>
+    api.get<{ success: boolean; data: any }>(`/budgets/${year}/vs-actual`),
 }

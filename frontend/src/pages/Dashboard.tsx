@@ -1,727 +1,466 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, useCallback } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import {
-  TrendingUp, TrendingDown, RefreshCw, DollarSign, BarChart2,
-  ArrowDownCircle, ArrowUpCircle, Package, Truck, Users, AlertTriangle,
-  FileText, ChevronRight, Wallet, Receipt,
+  RefreshCw, Package, Truck, CheckSquare, AlertCircle, ChevronRight,
 } from 'lucide-react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-} from 'recharts'
 import api from '../services/api'
+import CandleChart, { TrendPeriod } from '../components/charts/CandleChart'
 
 // ---- Types ----
-type Period = 'day' | 'week' | 'month' | 'year'
-type CFTab = 'overdue' | 'today' | 'week' | 'month'
-
-interface RevenueData {
-  period: Period
-  current: { revenue: number; grossProfit: number; cost: number }
-  previous: { revenue: number; grossProfit: number; cost: number }
-  revenueChangePercent: number | null
-  grossChangePercent: number | null
-  grossMargin: number
-}
-interface CFItem { id: string; party_name: string; doc_number: string; amount: number; due_date: string; dueUnspecified?: boolean }
-interface CFGroup { overdue: CFItem[]; today: CFItem[]; week: CFItem[]; month: CFItem[]; later: CFItem[]; total: number; weekTotal: number; monthTotal: number; laterTotal: number }
-interface Cashflow { ar: CFGroup; ap: CFGroup; recurringOpex?: { monthlyAvg: number; week: number; month: number; estimated: boolean }; netCashflow: { week: number; month: number } }
-interface OpexMonth { total: number; recurring: number; revenue: number; cogs: number; netProfit: number }
-interface OpexAccount { code: string; name: string; current: number; previous: number; isRecurring: boolean | null }
-interface OpexData {
-  month: string; prevMonth: string; hasEnoughHistory: boolean
-  current: OpexMonth; previous: OpexMonth
-  accounts: OpexAccount[]; others: { count: number; current: number; previous: number }
-  monthlyRecurringAvg: number
-}
-interface Funnel { quotations: { count: number; value: number }; salesOrders: { count: number; value: number }; invoices: { count: number; value: number }; pendingDelivery: { count: number; value: number } }
-interface Stage { count: number; value: number }
-interface Pipeline {
-  stages: { quoting: Stage; awaiting: Stage; won: Stage; lost: Stage }
-  winRate: number | null
-  openPipelineValue: number
-  linkage: { soTotal: number; soFromQuotation: number; soDirect: number; linkedPercent: number }
-  waterfall: { ordered: number; invoiced: number; collected: number; outstanding: number }
-  monthly: { month: string; ordered: number; invoiced: number }[]
-}
-interface TopCustomer { id: string; name: string; revenue: number; invoice_count: number }
-interface LowStock { id: string; name: string; quantity: number; available?: number; min_stock: number; minStock?: number; unit: string }
-
-// ---- Helpers ----
-const fmt = (n: number | null | undefined) => {
-  if (n === null || n === undefined || isNaN(n)) return '฿0'
-  const sign = n < 0 ? '-' : ''
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `${sign}฿${(abs / 1_000_000).toFixed(2)}M`
-  if (abs >= 1_000) return `${sign}฿${(abs / 1_000).toFixed(1)}K`
-  return `${sign}฿${abs.toLocaleString()}`
+export interface SignalItem {
+  id: string
+  label: string
+  status: 'G' | 'Y' | 'R' | 'NA'
+  value: number | null
+  display: string
+  compare: string
+  rule: string
+  source: string
+  action: string
+  link: string
 }
 
-const fmtShort = (n: number | null | undefined) => {
-  if (n === null || n === undefined || isNaN(n)) return '0'
-  const sign = n < 0 ? '-' : ''
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(0)}K`
-  return `${sign}${abs.toLocaleString()}`
-}
-
-const daysLeft = (dateStr: string) => {
-  if (!dateStr) return null
-  const parts = dateStr.slice(0, 10).split('-').map(Number)
-  let targetTime: number
-  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-    targetTime = new Date(parts[0], parts[1] - 1, parts[2]).getTime()
-  } else {
-    const d = new Date(dateStr)
-    if (isNaN(d.getTime())) return null
-    targetTime = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+export interface DashboardHealthData {
+  financial: boolean
+  asOf: string
+  today: string
+  dataSince: string | null
+  dataDays: number
+  overall: {
+    status: 'G' | 'Y' | 'R'
+    headline: string
+    red: number
+    yellow: number
+    na: number
+  } | null
+  confidence: {
+    period: string
+    label: string
+    passed: number
+    total: number
+    blocks: number
+  } | null
+  signals: SignalItem[]
+  chart: {
+    grain: 'week'
+    ma: [number, number]
+    warmup: number
+    periods: TrendPeriod[]
+  } | null
+  ops: {
+    lowStock: number
+    pendingDelivery: number
+    pendingApprovals: number
+    arDue7: {
+      count: number
+      amount: number | null
+    }
   }
-  const now = new Date()
-  const todayTime = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  return Math.round((targetTime - todayTime) / 86_400_000)
 }
 
-const PERIOD_KEYS: Record<Period, string> = { day: 'dashboard.today', week: 'dashboard.7days', month: 'dashboard.30days', year: 'dashboard.year' }
+// ---- Thai Date Helpers ----
+const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+const yy = (y: number) => String((y + 543) % 100).padStart(2, '0')
 
-// ---- Sub-components ----
-function ChangeChip({ pct, t }: { pct: number | null; t: (key: string) => string }) {
-  if (pct === null) return <span className="text-xs text-[var(--fg-4)]">{t('dashboard.noPrevData')}</span>
-  const up = pct >= 0
-  return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]'}`}>
-      {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-      {up ? '+' : ''}{pct.toFixed(1)}%
-    </span>
-  )
+export const thDay = (iso: string) => {
+  if (!iso) return ''
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return `${d} ${TH_M[m - 1]} ${yy(y)}`
+}
+
+const fmtBaht = (n: number | null | undefined) => {
+  if (n === null || n === undefined || isNaN(n)) return '฿0'
+  const sign = n < 0 ? '−' : ''
+  return `${sign}฿${Math.round(Math.abs(n)).toLocaleString('th-TH')}`
 }
 
 function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`bg-[var(--border)]/30 rounded animate-pulse ${className}`} />
 }
 
-function CFPanel({ titleKey, icon: Icon, items, counts, tab, setTab, total, color, t }: {
-  titleKey: string; icon: any; items: CFItem[]; counts: Record<CFTab, number>; tab: CFTab; setTab: (t: CFTab) => void; total: number; color: string; t: (key: string, options?: any) => string
-}) {
-  const tabs: { key: CFTab; labelKey: string }[] = [
-    { key: 'overdue', labelKey: 'dashboard.overdue' },
-    { key: 'today', labelKey: 'dashboard.today' },
-    { key: 'week', labelKey: 'dashboard.7days' },
-    { key: 'month', labelKey: 'dashboard.30days' },
-  ]
-
-  return (
-    <div className="phopy-card p-5 flex flex-col">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Icon className={`w-5 h-5 ${color}`} />
-          <h3 className="font-bold text-[var(--fg-1)]">{t(titleKey)}</h3>
-        </div>
-        <span className={`text-sm font-bold ${color}`}>{fmt(total)}</span>
-      </div>
-      {/* Tabs */}
-      <div className="flex gap-1 mb-3" role="tablist">
-        {tabs.map(tabItem => (
-          <button
-            key={tabItem.key}
-            role="tab"
-            aria-selected={tab === tabItem.key}
-            onClick={() => setTab(tabItem.key)}
-            className={`flex-1 py-1.5 text-xs rounded transition-all cursor-pointer min-h-[44px] font-medium ${
-              tab === tabItem.key
-                ? `bg-[var(--surface)] border border-[var(--border-strong)] shadow-1 ${color} font-semibold`
-                : 'text-[var(--fg-4)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
-            }`}
-          >
-            {t(tabItem.labelKey)}
-            {counts[tabItem.key] > 0 && (
-              <span className={`ml-1 rounded-full px-1 text-[10px] ${
-                tabItem.key === 'overdue'
-                  ? 'bg-[var(--danger)] text-white'
-                  : 'bg-[var(--danger)]/10 text-[var(--danger)]'
-              }`}>{counts[tabItem.key]}</span>
-            )}
-          </button>
-        ))}
-      </div>
-      {/* List */}
-      <div className="flex-1 overflow-y-auto max-h-52 phopy-scrollbar space-y-2">
-        {items.length === 0 ? (
-          <p className="text-[var(--fg-4)] text-xs text-center py-6">{t('dashboard.noItems')}</p>
-        ) : items.map(item => (
-          <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-[var(--fg-2)] truncate font-medium">{item.party_name}</p>
-              <p className="text-xs text-[var(--fg-4)] font-mono">{item.doc_number}</p>
-            </div>
-            <div className="text-right flex-shrink-0">
-              <p className={`text-sm font-bold ${color}`}>{fmt(item.amount)}</p>
-              {(item.due_date || item.dueUnspecified) && <DueDateBadge dateStr={item.due_date} dueUnspecified={item.dueUnspecified} t={t} />}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function DueDateBadge({ dateStr, dueUnspecified, t }: { dateStr: string; dueUnspecified?: boolean; t: (key: string, options?: any) => string }) {
-  if (dueUnspecified) return <span className="text-[var(--fg-4)] text-xs font-semibold">{t('dashboard.dueUnknown')}</span>
-  const d = daysLeft(dateStr)
-  if (d === null) return <span className="text-[var(--fg-4)] text-xs">{t('dashboard.dueUnknown')}</span>
-  if (d < 0) return <span className="text-xs text-danger font-bold">{t('dashboard.overdueDays', { days: Math.abs(d) })}</span>
-  if (d === 0) return <span className="text-xs text-warning font-bold">{t('dashboard.today')}</span>
-  return <span className="text-xs text-[var(--fg-3)]">{t('dashboard.inDays', { days: d })}</span>
-}
-
-// รายจ่ายประจำ (ค่าใช้จ่ายดำเนินงาน) เดือนนี้ vs เดือนก่อน — ไม่ขึ้นกับแท็บช่วงเวลา เพราะเป็นรอบรายเดือน
-function OpexSection({ data, loading, error, t }: {
-  data: OpexData | null; loading: boolean; error: boolean; t: (key: string, options?: any) => string
-}) {
-  const maxAmt = Math.max(1, ...(data?.accounts ?? []).map(a => Math.max(a.current, a.previous)))
-  const net = data?.current.netProfit ?? 0
-  return (
-    <div className="phopy-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Receipt className="w-4 h-4 text-[var(--danger)]" />
-        <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.opex.title')}</h3>
-        <span className="text-xs text-[var(--fg-4)] ml-auto">{t('dashboard.opex.monthLabel')}{data ? ` · ${data.month}` : ''}</span>
-      </div>
-      {error && !data ? (
-        <p className="text-[var(--fg-4)] text-sm text-center py-6">{t('dashboard.opex.loadError')}</p>
-      ) : loading || !data ? (
-        <div className="space-y-3"><Skeleton className="h-16" />{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
-              <p className="text-xs text-[var(--fg-4)]">{t('dashboard.opex.total')}</p>
-              <p className="text-2xl font-bold text-danger tabular-nums mt-0.5">{fmt(data.current.total)}</p>
-              <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('dashboard.opex.prevMonth', { amount: fmt(data.previous.total) })}</p>
-            </div>
-            <div>
-              <p className="text-xs text-[var(--fg-4)]">{t('dashboard.opex.recurring')}</p>
-              <p className="text-2xl font-bold text-[var(--fg-1)] tabular-nums mt-0.5">{data.hasEnoughHistory ? fmt(data.current.recurring) : '—'}</p>
-              {data.hasEnoughHistory && <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('dashboard.opex.recurringPrev', { amount: fmt(data.previous.recurring) })}</p>}
-            </div>
-            <div>
-              <p className="text-xs text-[var(--fg-4)]">{t('dashboard.opex.netProfit')}</p>
-              <p className={`text-2xl font-bold tabular-nums mt-0.5 ${net >= 0 ? 'text-success' : 'text-danger'}`}>{fmt(net)}</p>
-              <p className="text-[11px] text-[var(--fg-4)] mt-0.5">{t('dashboard.opex.formula', { revenue: fmt(data.current.revenue), cogs: fmt(data.current.cogs), opex: fmt(data.current.total) })}</p>
-            </div>
-          </div>
-
-          {!data.hasEnoughHistory && (
-            <div className="flex items-start gap-2 mb-3 p-2.5 rounded-lg bg-[var(--warning-soft)] border border-warning/20">
-              <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
-              <p className="text-[11px] text-warning leading-relaxed">{t('dashboard.opex.notEnoughHistory')}</p>
-            </div>
-          )}
-
-          {data.accounts.length === 0 ? (
-            <p className="text-[var(--fg-4)] text-sm text-center py-4">{t('dashboard.opex.empty')}</p>
-          ) : (
-            <div className="space-y-2">
-              {data.accounts.map(a => (
-                <div key={a.code} className="flex items-center gap-3">
-                  <div className="w-36 sm:w-44 flex-shrink-0 min-w-0">
-                    <p className="text-xs text-[var(--fg-2)] truncate" title={`${a.code} ${a.name}`}>{a.name}</p>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-[var(--fg-4)] font-mono">{a.code}</span>
-                      {a.isRecurring !== null && (
-                        <span className={`text-[10px] px-1.5 rounded-full ${a.isRecurring ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'}`}>
-                          {t(a.isRecurring ? 'dashboard.opex.badgeRecurring' : 'dashboard.opex.badgeOneOff')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-1 h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                    <div className="h-full rounded-full bg-[var(--danger)]" style={{ width: `${Math.max(0, Math.min(100, (a.current / maxAmt) * 100))}%` }} />
-                  </div>
-                  <div className="w-24 text-right flex-shrink-0">
-                    <p className="text-sm font-bold tabular-nums text-[var(--fg-1)]">{fmt(a.current)}</p>
-                    <p className="text-[10px] text-[var(--fg-4)] tabular-nums">{t('dashboard.opex.colPrev')} {fmt(a.previous)}</p>
-                  </div>
-                </div>
-              ))}
-              {data.others.count > 0 && (
-                <div className="flex items-center justify-between text-xs text-[var(--fg-4)] pt-1">
-                  <span>{t('dashboard.opex.others', { count: data.others.count })}</span>
-                  <span className="tabular-nums">{fmt(data.others.current)} · {t('dashboard.opex.colPrev')} {fmt(data.others.previous)}</span>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-// ---- Main Dashboard ----
 export default function Dashboard() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [period, setPeriod] = useState<Period>('month')
-  const [arTab, setArTab] = useState<CFTab>('week')
-  const [apTab, setApTab] = useState<CFTab>('week')
 
-  const [revenue, setRevenue] = useState<RevenueData | null>(null)
-  const [cashflow, setCashflow] = useState<Cashflow | null>(null)
-  const [opex, setOpex] = useState<OpexData | null>(null)
-  const [opexError, setOpexError] = useState(false)
-  const [funnel, setFunnel] = useState<Funnel | null>(null)
-  const [pipeline, setPipeline] = useState<Pipeline | null>(null)
-  const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([])
-  const [lowStock, setLowStock] = useState<LowStock[]>([])
-  const [lowStockTotal, setLowStockTotal] = useState(0)
+  const [health, setHealth] = useState<DashboardHealthData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [revLoading, setRevLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
-  const periodRef = useRef(period)
-  useEffect(() => {
-    periodRef.current = period
-  }, [period])
+  // Range options: 13, 26, 52 weeks (default 26)
+  const [chartWeeks, setChartWeeks] = useState<13 | 26 | 52>(26)
 
-  const [revError, setRevError] = useState<string | null>(null)
-
-  const loadRevenue = useCallback(async (p: Period) => {
-    setRevLoading(true)
-    setRevError(null)
+  const loadHealth = useCallback(async () => {
+    setLoading(true)
+    setError(null)
     try {
-      const [revRes, topRes] = await Promise.allSettled([
-        api.get(`/dashboard/revenue?period=${p}`),
-        api.get(`/dashboard/top-customers?period=${p}`),
-      ])
-      if (revRes.status === 'fulfilled' && revRes.value.data?.success) {
-        setRevenue(revRes.value.data.data)
+      const res = await api.get('/dashboard/health')
+      if (res.data?.success) {
+        setHealth(res.data.data)
       } else {
-        setRevError('ไม่สามารถโหลดข้อมูลงบรายได้ได้')
-      }
-      if (topRes.status === 'fulfilled' && topRes.value.data?.success) {
-        setTopCustomers(topRes.value.data.data)
+        setError(res.data?.message || 'ไม่สามารถโหลดข้อมูลสุขภาพธุรกิจได้')
       }
     } catch {
-      setRevError('เกิดข้อผิดพลาดในการโหลดข้อมูล')
-    }
-    setRevLoading(false)
-  }, [])
-
-  const loadAll = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [cfRes, fnRes, plRes, lsRes, opRes] = await Promise.allSettled([
-        api.get('/dashboard/cashflow-forecast'),
-        api.get('/dashboard/funnel'),
-        api.get('/dashboard/pipeline'),
-        api.get('/dashboard/low-stock'),
-        api.get('/dashboard/opex'),
-      ])
-      if (cfRes.status === 'fulfilled') setCashflow(cfRes.value.data.data)
-      const opexOk = opRes.status === 'fulfilled' && opRes.value.data?.success
-      if (opexOk) setOpex(opRes.value.data.data)
-      setOpexError(!opexOk)
-      if (fnRes.status === 'fulfilled') setFunnel(fnRes.value.data.data)
-      if (plRes.status === 'fulfilled') setPipeline(plRes.value.data.data)
-      if (lsRes.status === 'fulfilled') {
-        setLowStock(lsRes.value.data.data)
-        setLowStockTotal(lsRes.value.data.total ?? lsRes.value.data.data.length)
-      }
+      setError('เกิดข้อผิดพลาดในการโหลดข้อมูล')
+    } finally {
+      setLoading(false)
       setLastUpdated(new Date())
-    } catch {}
-    setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
-    loadAll()
-    const timer = setInterval(() => {
-      loadAll()
-      loadRevenue(periodRef.current)
-    }, 5 * 60 * 1000)
+    loadHealth()
+    const timer = setInterval(loadHealth, 5 * 60 * 1000)
     return () => clearInterval(timer)
-  }, [loadAll, loadRevenue])
+  }, [loadHealth])
 
-  useEffect(() => {
-    loadRevenue(period)
-  }, [period, loadRevenue])
+  const container = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } }
+  const item = { hidden: { y: 10, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: 'spring', damping: 20 } } }
 
-  const cf = cashflow
-  // แท็บช่วงเวลาเป็นแบบสะสม ให้ตรงกับป้าย ("7 วัน" = ภายใน 7 วัน รวมวันนี้)
-  // และตรงกับ weekTotal/monthTotal ที่ backend คิดแบบสะสมอยู่แล้ว
-  // เกินกำหนดเป็นสถานะเฉพาะ ไม่สะสม
-  // แท็บ 30 วันครอบคลุมหนี้ภายใน 30 วัน โดยไม่ปนหนี้ที่เกิน 30 วัน (later)
-  const cfItems = (g: CFGroup | undefined, tab: CFTab): CFItem[] => {
-    if (!g) return []
-    if (tab === 'overdue') return g.overdue
-    if (tab === 'today') return g.today
-    if (tab === 'week') return [...g.today, ...g.week]
-    if (tab === 'month') return [...g.today, ...g.week, ...g.month]
-    return []
+  // Signal chips mapping
+  const statusChips = {
+    G: { text: t('dashboard.health.statusNormal', 'ปกติ'), cls: 'bg-[var(--success-soft)] text-[var(--success)]', bar: 'var(--success)' },
+    Y: { text: t('dashboard.health.statusWatch', 'เฝ้าดู'), cls: 'bg-[var(--warning-soft)] text-[var(--warning)]', bar: 'var(--warning)' },
+    R: { text: t('dashboard.health.statusAction', 'ต้องสั่งการ'), cls: 'bg-[var(--danger-soft)] text-[var(--danger)]', bar: 'var(--danger)' },
+    NA: { text: t('dashboard.health.statusNoData', 'ไม่มีข้อมูล'), cls: 'bg-[var(--surface-2)] text-[var(--fg-4)]', bar: 'var(--border-strong)' },
   }
-  const cfCounts = (g: CFGroup | undefined): Record<CFTab, number> => ({
-    overdue: g?.overdue.length ?? 0,
-    today:   g?.today.length ?? 0,
-    week:    (g?.today.length ?? 0) + (g?.week.length ?? 0),
-    month:   (g?.today.length ?? 0) + (g?.week.length ?? 0) + (g?.month.length ?? 0),
-  })
-  const arItems = cfItems(cf?.ar, arTab)
-  const apItems = cfItems(cf?.ap, apTab)
-  const arCounts = cfCounts(cf?.ar)
-  const apCounts = cfCounts(cf?.ap)
 
-  const container = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.06 } } }
-  const item = { hidden: { y: 12, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: 'spring', damping: 20 } } }
+  const isFinancial = health?.financial ?? true
 
-  const periodLabel = t(PERIOD_KEYS[period])
+  // Signals count & items
+  const signals = health?.signals ?? []
+  const normalSignalsCount = signals.filter(s => s.status === 'G').length
+  const flaggedSignals = signals.filter(s => s.status === 'Y' || s.status === 'R')
 
-  // ขั้นของใบเสนอราคา เรียงตามลำดับที่ดีลเดินจริง — แพ้ไว้ท้ายสุดเพราะเป็นปลายทาง
-  const pipelineRows = pipeline ? [
-    { key: 'quoting',  labelKey: 'dashboard.stageQuoting',  data: pipeline.stages.quoting,  color: 'var(--info)' },
-    { key: 'awaiting', labelKey: 'dashboard.stageAwaiting', data: pipeline.stages.awaiting, color: 'var(--warning)' },
-    { key: 'won',      labelKey: 'dashboard.stageWon',      data: pipeline.stages.won,      color: 'var(--success)' },
-    { key: 'lost',     labelKey: 'dashboard.stageLost',     data: pipeline.stages.lost,     color: 'var(--fg-4)' },
-  ] : []
-  const pipelineMaxCount = Math.max(1, ...pipelineRows.map(r => r.data.count))
+  // Chart periods & visibleFrom
+  const chartPeriods = health?.chart?.periods ?? []
+  const visibleFrom = Math.max(0, chartPeriods.length - chartWeeks)
 
-  const waterfallRows = pipeline ? [
-    { labelKey: 'dashboard.wfOrdered',     value: pipeline.waterfall.ordered,     color: 'var(--primary)' },
-    { labelKey: 'dashboard.wfInvoiced',    value: pipeline.waterfall.invoiced,    color: 'var(--info)' },
-    { labelKey: 'dashboard.wfCollected',   value: pipeline.waterfall.collected,   color: 'var(--success)' },
-    { labelKey: 'dashboard.wfOutstanding', value: pipeline.waterfall.outstanding, color: 'var(--danger)' },
-  ] : []
-  const waterfallMax = Math.max(1, ...waterfallRows.map(r => r.value))
+  const labelOfPeriod = (p: TrendPeriod) => `สัปดาห์ ${thDay(p.from)}–${thDay(p.to)}`
 
   return (
     <motion.div variants={container} initial="hidden" animate="visible" className="space-y-5">
-
-      {/* Header */}
-      <motion.div variants={item} className="relative flex items-center justify-between">
-        <div className="relative">
-          <h1 className="text-2xl font-bold text-[var(--fg-1)]">{t('dashboard.title')}</h1>
-          <p className="text-[var(--fg-4)] text-xs mt-1">{t('dashboard.updated', { time: lastUpdated.toLocaleTimeString('th-TH') })}</p>
+      {/* 0. Header */}
+      <motion.div variants={item} className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--fg-1)]">
+            {t('dashboard.health.title', 'ชีพจรเช้านี้')}
+          </h1>
+          <p className="text-[var(--fg-4)] text-xs mt-1">
+            {t('dashboard.updated', { time: lastUpdated.toLocaleTimeString('th-TH') })}
+          </p>
         </div>
-        <div className="relative flex items-center gap-2">
-          {/* Period Toggle */}
-          <div className="flex bg-[var(--surface-2)] border border-[var(--border)] rounded-lg overflow-hidden" role="group" aria-label={t('dashboard.periodGroup')}>
-            {(Object.keys(PERIOD_KEYS) as Period[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                aria-pressed={period === p}
-                className={`px-3 py-1.5 text-xs transition-all cursor-pointer min-h-[44px] ${period === p ? 'bg-[var(--primary-soft)] text-[var(--primary)] font-semibold' : 'font-medium text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--surface-2)]'}`}
-              >
-                {t(PERIOD_KEYS[p])}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => { loadAll(); loadRevenue(period) }}
-            aria-label={t('dashboard.refresh')}
-            className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading || revLoading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </motion.div>
-
-      {/* Section 1: Revenue + Gross Profit */}
-      <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Revenue */}
-        <div className="phopy-card phopy-tile-peach p-5">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
-              <DollarSign className="w-4 h-4 text-[var(--primary)]" />
-              {t('dashboard.revenue', { period: periodLabel })}
-            </div>
-            {!revLoading && revenue && <ChangeChip pct={revenue.revenueChangePercent} t={t} />}
-          </div>
-          {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
-            <>
-              <p className="text-3xl font-bold text-[var(--fg-1)] mt-1 tabular-nums">{fmt(revenue.current.revenue)}</p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.previous', { amount: fmt(revenue.previous.revenue) })}</p>
-            </>
-          )}
-        </div>
-
-        {/* Gross Profit */}
-        <div className="phopy-card phopy-tile-sky p-5">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2 text-[var(--fg-3)] text-sm">
-              <TrendingUp className="w-4 h-4 text-success" />
-              {t('dashboard.grossProfit', { period: periodLabel })}
-            </div>
-            {!revLoading && revenue && <ChangeChip pct={revenue.grossChangePercent} t={t} />}
-          </div>
-          {revLoading || !revenue ? <Skeleton className="h-9 w-40 mt-2" /> : (
-            <>
-              <p className={`text-3xl font-bold mt-1 ${revenue.current.grossProfit >= 0 ? 'text-success' : 'text-danger'}`}>
-                {fmt(revenue.current.grossProfit)}
-              </p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.marginCost', { margin: (revenue.grossMargin ?? 0).toFixed(1), cost: fmt(revenue.current.cost) })}</p>
-            </>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Section 1b: รายจ่ายประจำ */}
-      <motion.div variants={item}>
-        <OpexSection data={opex} loading={loading} error={opexError} t={t} />
-      </motion.div>
-
-      {/* Section 2: Cash Flow Forecast */}
-      <motion.div variants={item}>
-        <div className="flex items-center gap-2 mb-3">
-          <BarChart2 className="w-4 h-4 text-[var(--primary)]" />
-          <h2 className="text-sm font-bold text-[var(--fg-2)] uppercase tracking-wider">{t('dashboard.cashflowForecast')}</h2>
-          {cf?.netCashflow && (
-            <div className="ml-auto flex items-center gap-3 text-xs flex-wrap justify-end">
-              {/* ยอดสุทธิด้านขวาหักรายจ่ายประจำคาดการณ์แล้ว (คิดฝั่ง backend) */}
-              {cf.recurringOpex && cf.recurringOpex.monthlyAvg !== 0 && (
-                <span className="text-[var(--fg-3)]">{t('dashboard.opex.forecast')}:
-                  <span className="ml-1 font-bold text-[var(--danger)]">-{fmt(cf.recurringOpex.monthlyAvg)}{t('dashboard.opex.perMonth')}</span>
-                  {cf.recurringOpex.estimated && <span className="ml-1 text-[var(--fg-4)]">{t('dashboard.opex.forecastEstimated')}</span>}
-                </span>
-              )}
-              <span className="text-[var(--fg-3)]">{t('dashboard.net7Days')}:
-                <span className={`ml-1 font-bold ${(cf.netCashflow.week ?? 0) >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
-                  {(cf.netCashflow.week ?? 0) >= 0 ? '+' : ''}{fmt(cf.netCashflow.week ?? 0)}
-                </span>
-              </span>
-              <span className="text-[var(--fg-3)]">{t('dashboard.net30Days')}:
-                <span className={`ml-1 font-bold ${(cf.netCashflow.month ?? 0) >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
-                  {(cf.netCashflow.month ?? 0) >= 0 ? '+' : ''}{fmt(cf.netCashflow.month ?? 0)}
-                </span>
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {loading ? (
-            <>
-              <Skeleton className="h-64" />
-              <Skeleton className="h-64" />
-            </>
-          ) : (
-            <>
-              <CFPanel
-                titleKey="dashboard.cashIn"
-                icon={ArrowDownCircle}
-                items={arItems}
-                counts={arCounts}
-                tab={arTab}
-                setTab={setArTab}
-                total={cf?.ar.total ?? 0}
-                color="text-success"
-                t={t}
-              />
-              <CFPanel
-                titleKey="dashboard.cashOut"
-                icon={ArrowUpCircle}
-                items={apItems}
-                counts={apCounts}
-                tab={apTab}
-                setTab={setApTab}
-                total={cf?.ap.total ?? 0}
-                color="text-danger"
-                t={t}
-              />
-            </>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Section 2b: เงินไหลถึงไหนแล้ว — รับออเดอร์แล้วยังไม่ใช่เก็บเงินได้ */}
-      <motion.div variants={item}>
         <button
-          onClick={() => navigate('/receivables')}
-          className="phopy-card p-5 w-full text-left cursor-pointer hover:border-[var(--primary)]/40 border border-transparent transition-colors group"
+          onClick={loadHealth}
+          aria-label={t('dashboard.refresh', 'รีเฟรชข้อมูล')}
+          className="p-2 rounded-lg border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo/50 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
         >
-          <div className="flex items-center gap-2 mb-4">
-            <Wallet className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.cashJourney')}</h3>
-            <ChevronRight className="w-4 h-4 text-[var(--fg-4)] ml-auto group-hover:text-[var(--primary)] transition-colors" />
-          </div>
-          {loading || !pipeline ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-16" />)}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
-              {waterfallRows.map(({ labelKey, value, color }) => (
-                <div key={labelKey}>
-                  <p className="text-xs text-[var(--fg-4)]">{t(labelKey)}</p>
-                  <p className="text-2xl font-bold tabular-nums mt-0.5" style={{ color }}>{fmt(value)}</p>
-                  <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden mt-2">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(0, Math.min(100, (value / waterfallMax) * 100))}%`, background: color }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </motion.div>
 
-      {/* Section 3: Sales Funnel + Top Customers */}
-      <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Quotation pipeline — ไล่ตาม quotation_id จริง ไม่ใช่กรวยที่นับแยกกัน */}
-        <div className="phopy-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <FileText className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.salesPipeline')}</h3>
-            {pipeline && typeof pipeline.winRate === 'number' && (
-              <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
-                {t('dashboard.winRate', { percent: pipeline.winRate.toFixed(0) })}
-              </span>
-            )}
-          </div>
-          {loading || !pipeline ? (
-            <div className="space-y-3">{Array(4).fill(0).map((_,i) => <Skeleton key={i} className="h-10" />)}</div>
-          ) : (
-            <>
-              <div className="space-y-3">
-                {pipelineRows.map(({ key, labelKey, data, color }) => (
-                  <div key={key} className="flex items-center gap-3">
-                    <div className="w-28 flex-shrink-0">
-                      <p className="text-xs text-[var(--fg-3)]">{t(labelKey)}</p>
-                      <p className="text-sm font-bold tabular-nums" style={{ color }}>{fmt(data.value)}</p>
+      {error && (
+        <div className="p-4 rounded-xl bg-[var(--danger-soft)] text-[var(--danger)] text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Financial Users View */}
+      {isFinancial && health && (
+        <>
+          {/* 1. Banner */}
+          {health.overall && (
+            <motion.div
+              variants={item}
+              className="phopy-card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-[var(--border)]"
+            >
+              <div className="flex items-center gap-4">
+                {/* Big light indicator with pulse ring */}
+                <span
+                  role="img"
+                  aria-label={statusChips[health.overall.status].text}
+                  className={`w-11 h-11 rounded-full relative flex-shrink-0 flex items-center justify-center after:absolute after:-inset-1.5 after:rounded-full after:border-2 after:border-current after:opacity-25 ${
+                    health.overall.status === 'G'
+                      ? 'bg-[var(--success)] text-[var(--success)]'
+                      : health.overall.status === 'Y'
+                      ? 'bg-[var(--warning)] text-[var(--warning)]'
+                      : 'bg-[var(--danger)] text-[var(--danger)]'
+                  }`}
+                />
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-[var(--fg-1)] leading-snug">
+                    {health.overall.headline}
+                  </h2>
+                  <div className="text-xs sm:text-sm text-[var(--fg-3)] mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <span>
+                      {normalSignalsCount} จาก 6 สัญญาณปกติ · ข้อมูลถึงสิ้นวัน {thDay(health.asOf)}
+                    </span>
+                    {health.dataDays < 90 && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--surface-2)] text-[var(--fg-3)] border border-[var(--border)]">
+                        ข้อมูล {health.dataDays} วัน
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right side: Data confidence */}
+              {health.confidence && (
+                <Link
+                  to="/accounting/period-closing"
+                  className="sm:text-right block hover:opacity-80 transition-opacity ml-auto sm:ml-0 flex-shrink-0"
+                >
+                  <span className="text-xs text-[var(--fg-3)] block">
+                    {t('dashboard.health.confidence', 'ความน่าเชื่อถือข้อมูล')}
+                  </span>
+                  <b className="text-sm sm:text-base font-bold text-[var(--success)] block mt-0.5">
+                    {health.confidence.label}
+                  </b>
+                </Link>
+              )}
+            </motion.div>
+          )}
+
+          {/* 2. Six Signal Tiles */}
+          <motion.div variants={item} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {signals.map(s => {
+              const chip = statusChips[s.status] || statusChips.NA
+              return (
+                <div
+                  key={s.id}
+                  className="phopy-card p-4 relative flex flex-col justify-between overflow-hidden border border-[var(--border)]"
+                >
+                  {/* Left accent bar */}
+                  <div
+                    className="absolute left-0 top-3.5 bottom-3.5 w-1 rounded-r"
+                    style={{ background: chip.bar }}
+                  />
+
+                  <div>
+                    {/* Label + status chip */}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-xs sm:text-sm font-semibold text-[var(--fg-2)] truncate">
+                        {s.label}
+                      </span>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${chip.cls}`}>
+                        {chip.text}
+                      </span>
                     </div>
-                    <div className="flex-1 h-6 bg-[var(--surface-2)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full flex items-center justify-end pr-2 transition-all"
-                        style={{
-                          width: `${(data.count / pipelineMaxCount) * 100}%`,
-                          minWidth: data.count > 0 ? '2rem' : '0',
-                          background: color,
-                        }}
-                      >
-                        {data.count > 0 && <span className="text-white text-xs font-bold tabular-nums">{data.count}</span>}
+
+                    {/* Big display */}
+                    <div className="text-2xl font-bold font-mono text-[var(--fg-1)] tabular-nums mt-0.5">
+                      {s.display}
+                    </div>
+
+                    {/* Compare */}
+                    <p className="text-xs sm:text-sm text-[var(--fg-2)] mt-1 leading-snug">
+                      {s.compare}
+                    </p>
+                  </div>
+
+                  <div>
+                    {/* Rule line */}
+                    <div className="border-t border-dashed border-[var(--border)] pt-1.5 mt-2.5 text-xs text-[var(--fg-3)]">
+                      {s.rule}
+                    </div>
+
+                    {/* Source */}
+                    <div className="text-[11px] text-[var(--fg-4)] mt-1">
+                      ที่มา: {s.source}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </motion.div>
+
+          {/* 3. Chart Card */}
+          {health.chart && (
+            <motion.div variants={item} className="phopy-card p-5 border border-[var(--border)] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-[var(--fg-1)] text-base">
+                    {t('dashboard.health.chartTitle', 'รายรับ · รายจ่าย · เงินคงเหลือ')}
+                  </h3>
+                  <p className="text-xs text-[var(--fg-3)] mt-0.5">
+                    {t('dashboard.health.chartSubtitle', 'แท่งละ 1 สัปดาห์ (จันทร์–อาทิตย์) หน่วยเป็นบาทต่อวัน · ชี้ที่กราฟเพื่อดูตัวเลข')}
+                  </p>
+                </div>
+
+                {/* Range buttons: 13 / 26 / 52 สัปดาห์ */}
+                <div
+                  className="inline-flex rounded-lg border border-[var(--border)] p-0.5 bg-[var(--surface-2)]"
+                  role="group"
+                  aria-label="ช่วงเวลา"
+                >
+                  {([13, 26, 52] as const).map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setChartWeeks(n)}
+                      aria-pressed={chartWeeks === n}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                        chartWeeks === n
+                          ? 'bg-[var(--surface)] text-[var(--primary)] shadow-sm'
+                          : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+                      }`}
+                    >
+                      {n} สัปดาห์
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shared CandleChart Component */}
+              <CandleChart
+                periods={health.chart.periods}
+                visibleFrom={visibleFrom}
+                ma={health.chart.ma || [4, 13]}
+                labelOf={labelOfPeriod}
+              />
+            </motion.div>
+          )}
+
+          {/* 4. เรื่องที่ต้องดูวันนี้ */}
+          <motion.div variants={item} className="phopy-card p-5 border border-[var(--border)]">
+            <h3 className="font-bold text-[var(--fg-1)] text-sm mb-3">
+              {t('dashboard.health.todoTitle', 'เรื่องที่ต้องดูวันนี้')}
+            </h3>
+
+            {flaggedSignals.length === 0 ? (
+              <p className="text-xs text-[var(--fg-4)]">
+                {t('dashboard.health.noTodo', 'ไม่มี')}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {flaggedSignals.map(s => (
+                  <div key={s.id} className="flex items-start gap-3 text-xs sm:text-sm">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${
+                        s.status === 'R' ? 'bg-[var(--danger)]' : 'bg-[var(--warning)]'
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div>
+                        <b className="text-[var(--fg-1)] font-semibold">{s.label} {s.display}</b>
+                        <span className="text-[var(--fg-3)] ml-1">· {s.compare}</span>
+                      </div>
+                      <div className="text-xs text-[var(--fg-3)] mt-0.5">
+                        {s.action}
+                        {s.link && (
+                          <>
+                            <span className="mx-1.5 text-[var(--fg-4)]">·</span>
+                            <Link to={s.link} className="text-[var(--primary)] font-semibold hover:underline">
+                              ดูรายละเอียด
+                            </Link>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+            )}
+          </motion.div>
+        </>
+      )}
 
-              {/* ออเดอร์ที่เปิดตรงไม่ผ่านใบเสนอราคา ทำให้ไปป์ไลน์ข้างบนอ่านต่ำกว่าความจริง */}
-              {(pipeline?.linkage?.soDirect ?? 0) > 0 && (
-                <div className="flex items-start gap-2 mt-4 p-2.5 rounded-lg bg-[var(--warning-soft)] border border-warning/20">
-                  <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-warning leading-relaxed">
-                    {t('dashboard.pipelineUnlinked', {
-                      direct: pipeline?.linkage?.soDirect ?? 0,
-                      total: pipeline?.linkage?.soTotal ?? 0,
-                    })}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
+      {/* Loading Skeleton if no health yet */}
+      {loading && !health && (
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-32 w-full" />)}
+          </div>
+          <Skeleton className="h-64 w-full" />
         </div>
+      )}
 
-        {/* Top 5 Customers */}
-        <div className="phopy-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Users className="w-4 h-4 text-[var(--primary)]" />
-            <h3 className="font-bold text-[var(--fg-1)]">{t('dashboard.top5Customers')}</h3>
-            <span className="text-xs text-[var(--fg-4)] ml-auto">{periodLabel}</span>
-          </div>
-          {revLoading || topCustomers.length === 0 ? (
-            topCustomers.length === 0 && !revLoading
-              ? <p className="text-[var(--fg-4)] text-sm text-center py-8">{t('dashboard.noInvoiceData', { period: periodLabel })}</p>
-              : <div className="space-y-2">{Array(5).fill(0).map((_,i) => <Skeleton key={i} className="h-10" />)}</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={topCustomers} layout="vertical" barSize={16}>
-                <XAxis type="number" tick={{ fill: 'var(--fg-3)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
-                <YAxis type="category" dataKey="name" tick={{ fill: 'var(--fg-2)', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
-                <Tooltip
-                  formatter={(v: number) => [fmt(v), t('dashboard.revenueTooltip')]}
-                  cursor={{ fill: 'rgba(57,73,229,0.08)' }}
-                  contentStyle={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    color: 'var(--fg-1)',
-                  }}
-                />
-                <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
-                  {topCustomers.map((_, i) => (
-                    <Cell key={i} fill={['var(--primary)','var(--success)','var(--warning)','var(--info)','var(--danger)'][i]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </motion.div>
+      {/* 5. Operations Bar (rendered for both basic and financial users) */}
+      {health?.ops && (
+        <motion.div variants={item} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* สต็อกวิกฤต */}
+          <button
+            onClick={() => navigate('/stock')}
+            className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
+          >
+            <div className="flex items-center gap-2.5">
+              <Package className="w-4 h-4 text-warning" />
+              <span className="text-xs font-semibold text-[var(--fg-2)]">
+                {t('dashboard.health.opsLowStock', 'สต็อกวิกฤต')}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
+                {health.ops.lowStock}
+              </b>
+              <ChevronRight className="w-3.5 h-3.5 text-[var(--fg-4)] group-hover:text-[var(--primary)] transition-colors" />
+            </div>
+          </button>
 
-      {/* Section 4: Operations Row */}
-      <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Pending Delivery */}
-        <button
-          onClick={() => navigate('/sales')}
-          className="phopy-card p-4 border border-warning/20 text-left cursor-pointer hover:border-warning/50 transition-colors group"
-          aria-label={t('dashboard.pendingDeliveryTitle')}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Truck className="w-4 h-4 text-warning" />
-            <h3 className="text-sm font-bold text-[var(--fg-2)]">{t('dashboard.pendingDeliveryTitle')}</h3>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-warning transition-colors" />
-          </div>
-          {loading || !funnel ? <Skeleton className="h-8 w-20" /> : (
-            <>
-              <p className="text-2xl font-bold text-warning">{funnel?.pendingDelivery?.count ?? 0} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.pendingValue', { amount: fmt(funnel?.pendingDelivery?.value ?? 0) })}</p>
-            </>
-          )}
-        </button>
+          {/* รอส่งของ */}
+          <button
+            onClick={() => navigate('/sales')}
+            className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
+          >
+            <div className="flex items-center gap-2.5">
+              <Truck className="w-4 h-4 text-warning" />
+              <span className="text-xs font-semibold text-[var(--fg-2)]">
+                {t('dashboard.health.opsPendingDelivery', 'รอส่งของ')}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
+                {health.ops.pendingDelivery}
+              </b>
+              <ChevronRight className="w-3.5 h-3.5 text-[var(--fg-4)] group-hover:text-[var(--primary)] transition-colors" />
+            </div>
+          </button>
 
-        {/* Critical Stock */}
-        <button
-          onClick={() => navigate('/stock')}
-          className="phopy-card p-4 border border-warning/20 text-left cursor-pointer hover:border-warning/50 transition-colors group"
-          aria-label={t('dashboard.criticalStock')}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Package className="w-4 h-4 text-warning" />
-            <h3 className="text-sm font-bold text-[var(--fg-2)]">{t('dashboard.criticalStock')}</h3>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-warning transition-colors" />
-          </div>
-          {loading ? <Skeleton className="h-8 w-20" /> : (
-            <>
-              <p className="text-2xl font-bold text-warning">{lowStockTotal} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
-              {lowStock.slice(0, 2).map(s => (
-                <p key={s.id} className="text-xs text-[var(--fg-4)] truncate">{s.name} · {t('dashboard.remaining', { quantity: s.available ?? s.quantity, unit: s.unit })}</p>
-              ))}
-            </>
-          )}
-        </button>
+          {/* รออนุมัติ */}
+          <button
+            onClick={() => navigate('/approvals')}
+            className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
+          >
+            <div className="flex items-center gap-2.5">
+              <CheckSquare className="w-4 h-4 text-warning" />
+              <span className="text-xs font-semibold text-[var(--fg-2)]">
+                {t('dashboard.health.opsPendingApprovals', 'รออนุมัติ')}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
+                {health.ops.pendingApprovals}
+              </b>
+              <ChevronRight className="w-3.5 h-3.5 text-[var(--fg-4)] group-hover:text-[var(--primary)] transition-colors" />
+            </div>
+          </button>
 
-        {/* Overdue Invoices */}
-        <button
-          onClick={() => navigate('/receivables')}
-          className="phopy-card p-4 border border-danger/20 text-left cursor-pointer hover:border-danger/50 transition-colors group"
-          aria-label={t('dashboard.overdueInvoices')}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-4 h-4 text-danger" />
-            <h3 className="text-sm font-bold text-[var(--fg-2)]">{t('dashboard.overdueInvoices')}</h3>
-            <ChevronRight className="w-3 h-3 text-[var(--fg-4)] ml-auto group-hover:text-danger transition-colors" />
-          </div>
-          {loading || !cf ? <Skeleton className="h-8 w-20" /> : (
-            <>
-              <p className="text-2xl font-bold text-danger">{cf?.ar?.overdue?.length ?? 0} <span className="text-sm font-normal text-[var(--fg-3)]">{t('dashboard.items')}</span></p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{t('dashboard.receivable', { amount: fmt((cf?.ar?.overdue ?? []).reduce((s,i) => s + i.amount, 0)) })}</p>
-              {(cf?.ar?.overdue ?? []).slice(0, 2).map(i => (
-                <p key={i.id} className="text-xs text-danger/70 truncate">{i.party_name} · {fmt(i.amount)}</p>
-              ))}
-            </>
-          )}
-        </button>
-      </motion.div>
-
+          {/* ลูกหนี้ครบกำหนด 7 วัน */}
+          <button
+            onClick={() => navigate('/accounting/phopy-board?view=receivables')}
+            className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-danger" />
+              <span className="text-xs font-semibold text-[var(--fg-2)]">
+                {t('dashboard.health.opsArDue7', 'ลูกหนี้ครบกำหนด 7 วัน')}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
+                {health.ops.arDue7.amount !== null
+                  ? fmtBaht(health.ops.arDue7.amount)
+                  : `${health.ops.arDue7.count} ใบ`}
+              </b>
+              <ChevronRight className="w-3.5 h-3.5 text-[var(--fg-4)] group-hover:text-[var(--primary)] transition-colors" />
+            </div>
+          </button>
+        </motion.div>
+      )}
     </motion.div>
   )
 }

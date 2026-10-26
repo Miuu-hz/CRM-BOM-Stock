@@ -151,6 +151,22 @@
       "forecast": "รายจ่ายประจำคาดการณ์",
       "perMonth": "/เดือน",
       "forecastEstimated": "(ประมาณจากเดือนนี้)"
+    },
+    "health": {
+      "title": "ชีพจรเช้านี้",
+      "confidence": "ความน่าเชื่อถือข้อมูล",
+      "chartTitle": "รายรับ · รายจ่าย · เงินคงเหลือ",
+      "chartSubtitle": "แท่งละ 1 สัปดาห์ (จันทร์–อาทิตย์) หน่วยเป็นบาทต่อวัน · ชี้ที่กราฟเพื่อดูตัวเลข",
+      "todoTitle": "เรื่องที่ต้องดูวันนี้",
+      "noTodo": "ไม่มี",
+      "opsLowStock": "สต็อกวิกฤต",
+      "opsPendingDelivery": "รอส่งของ",
+      "opsPendingApprovals": "รออนุมัติ",
+      "opsArDue7": "ลูกหนี้ครบกำหนด 7 วัน",
+      "statusNormal": "ปกติ",
+      "statusWatch": "เฝ้าดู",
+      "statusAction": "ต้องสั่งการ",
+      "statusNoData": "ไม่มีข้อมูล"
     }
   },
   "header": {

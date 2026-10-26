@@ -170,6 +170,20 @@ describe('dailySeries, cashOutflow & trendSeries (DB)', () => {
     expect(r2.warmup).toBe(1)
   })
 
+  it('วันในอนาคตไม่ถูกนับ: ส่ง to เป็นสิ้นเดือนหน้า งวดสุดท้ายจบที่วันนี้ และเงินออกเฉลี่ยหารเฉพาะวันที่ผ่านมา', () => {
+    const { t, postJe } = setupTenant()
+    const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
+    postJe(today, [['4101', 0, 700], ['1101', 700, 0]])
+    postJe(today, [['5303', 70, 0], ['1101', 0, 70]])
+    const far = `${Number(today.slice(0, 4)) + 1}-12-31`
+    const r = trendSeries(t, 'month', undefined, far)
+    expect(r.periods[r.periods.length - 1].to).toBe(today)
+    expect(r.periods[r.periods.length - 1].rev.c).toBe(700)
+    const o = cashOutflow(t, today, far)
+    expect(o.days).toBe(1)
+    expect(o.avgPerDay).toBe(70)
+  })
+
   it('trendSeries("year") เมื่อข้อมูลไม่ถึง 3 ปี จะลดเป็น quarter พร้อม note และ requestedGrain = "year"', () => {
     const { t, postJe } = setupTenant()
     postJe('2026-04-28', [['1101', 5000, 0], ['4101', 0, 5000]])

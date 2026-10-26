@@ -228,6 +228,16 @@ describe('closeChecklist (ด่านตรวจปิดงวด 11 ข้�
     expect(cl.rows?.some(r => r.kind === 'AGED' && r.docNumber === 'GR-OLD-1')).toBe(true)
   })
 
+  it('ข้อ 2: เงินที่หาที่มาไม่ได้ (1190) เกินเพดานบล็อกการปิดงวด แม้ไม่มีบัญชีธนาคาร · ไม่เกินเพดาน = ไม่บล็อก', () => {
+    const { t, postJe } = setupTenant()
+    postJe({ date: '2026-09-15', lines: [[ACC.SUSPENSE, 400, 0], [ACC.CASH, 0, 400]] })
+    expect(itemOf(closeChecklist(t, '2026-09'), 'bank_reconciled').status).not.toBe('block')
+    postJe({ date: '2026-09-16', lines: [[ACC.SUSPENSE, 200, 0], [ACC.CASH, 0, 200]] })
+    const item = itemOf(closeChecklist(t, '2026-09'), 'bank_reconciled')
+    expect(item.status).toBe('block')
+    expect(item.detail).toContain('เกินเพดาน')
+  })
+
   it('ข้อ 8 subledger_match: ยอดลูกหนี้ 1104 ในบัญชีไม่ตรงกับใบแจ้งหนี้ค้างชำระ → warn', () => {
     const { t, postJe } = setupTenant()
     // ในบัญชี AR มี 1,500 บาท แต่ในตาราง invoices มีแค่ 1,000 บาท

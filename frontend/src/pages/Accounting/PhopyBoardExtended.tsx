@@ -6,8 +6,8 @@ import {
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import {
-  ShoppingBag, Megaphone, DollarSign, TrendingUp,
-  TrendingDown, Package, Activity, AlertCircle, Factory
+  ShoppingBag, Megaphone, DollarSign,
+  Package, Activity, AlertCircle, Factory
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { phopyBoardApi, PhopyBoardExtendedData } from '../../services/phopyBoard'
@@ -30,589 +30,628 @@ function fmtPct(n: number) { return n.toFixed(1) + '%' }
 
 type ExtendedData = PhopyBoardExtendedData
 
-interface Props {
-  startDate: string
-  endDate: string
-}
+const ratioColor = (r: number) => r >= 2 ? 'var(--success, #22c55e)' : r >= 1 ? 'var(--warning, #f59e0b)' : 'var(--danger, #ef4444)'
+const ratioLabel = (r: number) => r >= 2 ? 'สุขภาพดี' : r >= 1 ? 'ควรระวัง' : 'เสี่ยงสูง'
 
-export default function PhopyBoardExtended({ startDate, endDate }: Props) {
-  const [data, setData] = useState<ExtendedData | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true)
-        const res = await phopyBoardApi.getExtended({ startDate, endDate })
-        setData(res.data.data)
-      } catch {
-        toast.error('ไม่สามารถโหลดข้อมูลเพิ่มเติมได้')
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [startDate, endDate])
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-12">
-      <div className="w-8 h-8 border-4 border-[var(--primary)]/30 border-t-[var(--primary)] rounded-full animate-spin" />
-    </div>
-  )
-  if (!data) return null
-
-  const { channel, adsROI, costStructure, products, workingCapital, outsourceProduction } = data
-  // 3-way channel split: Retail (POS หน้าร้าน) / Wholesale (ขายส่ง — CRM orders) / Online (platform ads)
+// ─── Zone 1: Channel Performance ───────────────────────────────────
+export function ChannelPerformance({ data }: { data: ExtendedData }) {
+  const { channel } = data
   const channelTotal = channel.channels.reduce((s, c) => s + c.revenue, 0)
   const splitData = channel.channels.map(c => ({
     name: c.label,
     value: channelTotal > 0 ? Math.round((c.revenue / channelTotal) * 1000) / 10 : 0,
   }))
 
-  const ratioColor = (r: number) => r >= 2 ? 'var(--success, #22c55e)' : r >= 1 ? 'var(--warning, #f59e0b)' : 'var(--danger, #ef4444)'
-  const ratioLabel = (r: number) => r >= 2 ? 'สุขภาพดี' : r >= 1 ? 'ควรระวัง' : 'เสี่ยงสูง'
-
   return (
-    <div className="space-y-8 mt-8">
-
-      {/* ─── Zone 1: Channel Performance ─────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <ShoppingBag className="w-5 h-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">Channel Performance</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">หน้าร้าน / ขายส่ง / ออนไลน์ · Revenue per Platform · Order Trend</span>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Online vs Offline Donut */}
-          <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">สัดส่วนรายได้</p>
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie data={splitData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
-                  {splitData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
-                </Pie>
-                <Tooltip formatter={(v: number) => fmtPct(v)} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="space-y-2 mt-1">
-              {channel.channels.map((c, i) => (
-                <div key={c.unit} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />{c.label}</span>
-                  <span className="font-bold text-[var(--fg-1)]">฿{fmt(c.revenue)} ({fmtPct(splitData[i]?.value || 0)})</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Revenue per Platform */}
-          <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">รายได้ต่อ Platform</p>
-            {channel.byPlatform.length === 0 ? (
-              <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล Online</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={channel.byPlatform} layout="vertical" margin={{ left: 8 }}>
-                  <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--fg-3)' }} tickFormatter={v => '฿' + fmt(v)} />
-                  <YAxis type="category" dataKey="platform" tick={{ fontSize: 11, fill: 'var(--fg-2)' }} width={60} />
-                  <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                  <Bar dataKey="revenue" fill={COLORS[0]} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </motion.div>
-
-          {/* Order Volume Trend */}
-          <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Order Volume Trend (12 เดือน)</p>
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={channel.orderTrend} margin={{ left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--fg-3)' }} />
-                <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="retail" stackId="1" stroke={COLORS[0]} fill={COLORS[0] + '40'} name="หน้าร้าน (บิล)" />
-                <Area type="monotone" dataKey="wholesale" stackId="1" stroke={COLORS[1]} fill={COLORS[1] + '40'} name="ขายส่ง (SO)" />
-                <Area type="monotone" dataKey="online" stackId="1" stroke={COLORS[2]} fill={COLORS[2] + '40'} name="ออนไลน์" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </motion.div>
-        </div>
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <ShoppingBag className="w-5 h-5 text-[var(--primary)]" />
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">Channel Performance</h2>
+        <span className="text-xs text-[var(--fg-3)] ml-1">หน้าร้าน / ขายส่ง / ออนไลน์ · Revenue per Platform · Order Trend</span>
       </div>
-
-      {/* ─── Zone 2: Ads ROI ─────────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Megaphone className="w-5 h-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">Ads ROI Dashboard</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">CPO · CPC · Conversion Funnel · Revenue/Ad Baht</span>
-        </div>
-        {/* KPI Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {[
-            { label: 'ROAS', value: `${fmtDec(adsROI.totals.roas)}x`, sub: 'รายได้ต่อ ฿1 โฆษณา' },
-            { label: 'CPC', value: `฿${fmtDec(adsROI.totals.cpc)}`, sub: 'ต้นทุนต่อคลิก' },
-            { label: 'CPO', value: `฿${fmt(adsROI.totals.cpo)}`, sub: 'ต้นทุนต่อ Order' },
-            { label: 'Rev/Ad ฿', value: `฿${fmtDec(adsROI.totals.revenuePerAdBaht)}`, sub: 'รายได้ต่อ ฿1 โฆษณา' },
-          ].map((k, i) => (
-            <motion.div key={k.label} {...fade(i * 0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-              <p className="text-xs text-[var(--fg-3)]">{k.label}</p>
-              <p className="text-xl font-bold text-[var(--fg-1)] mt-1">{k.value}</p>
-              <p className="text-xs text-[var(--fg-4)] mt-0.5">{k.sub}</p>
-            </motion.div>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Conversion Funnel */}
-          <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-4">Conversion Funnel</p>
-            <div className="space-y-3">
-              {[
-                { label: 'Impressions', value: fmt(adsROI.totals.impressions), pct: 100, color: COLORS[0] },
-                { label: 'Clicks', value: fmt(adsROI.totals.clicks), pct: adsROI.totals.ctr, color: COLORS[2] },
-                { label: 'Orders', value: fmt(adsROI.totals.orders), pct: adsROI.totals.orderRate, color: COLORS[1] },
-              ].map((step, i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-[var(--fg-2)]">{step.label}</span>
-                    <span className="font-semibold text-[var(--fg-1)]">{step.value} {i > 0 && <span className="text-xs text-[var(--fg-3)]">({fmtPct(step.pct)})</span>}</span>
-                  </div>
-                  <div className="h-6 bg-[var(--surface-2)] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full flex items-center justify-start pl-2" style={{ width: `${Math.max(5, i === 0 ? 100 : Math.min(100, step.pct * 20))}%`, background: step.color }}>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Platform Comparison Table */}
-          <motion.div {...fade(0.15)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">เปรียบเทียบ Platform</p>
-            {adsROI.byPlatform.length === 0 ? (
-              <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-[var(--border)]">
-                      {['Platform', 'Revenue', 'Ad Cost', 'ROAS', 'CPC', 'CPO'].map(h => (
-                        <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-3 font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adsROI.byPlatform.map((p, i) => (
-                      <tr key={i} className="border-b border-[var(--border)] last:border-0">
-                        <td className="py-2 pr-3 font-semibold text-[var(--fg-1)]">{p.platform}</td>
-                        <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(p.revenue)}</td>
-                        <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(p.adCost)}</td>
-                        <td className="py-2 pr-3 font-bold" style={{ color: p.roas >= 3 ? 'var(--success, #22c55e)' : p.roas >= 1 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtDec(p.roas)}x</td>
-                        <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmtDec(p.cpc)}</td>
-                        <td className="py-2 text-[var(--fg-2)]">฿{fmt(p.cpo)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Online vs Offline Donut */}
+        <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">สัดส่วนรายได้</p>
+          <ResponsiveContainer width="100%" height={160}>
+            <PieChart>
+              <Pie data={splitData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
+                {splitData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+              </Pie>
+              <Tooltip formatter={(v: number) => fmtPct(v)} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="space-y-2 mt-1">
+            {channel.channels.map((c, i) => (
+              <div key={c.unit} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />{c.label}</span>
+                <span className="font-bold text-[var(--fg-1)]">฿{fmt(c.revenue)} ({fmtPct(splitData[i]?.value || 0)})</span>
               </div>
-            )}
-          </motion.div>
-        </div>
-      </div>
-
-      {/* ─── Zone 3: Cost Structure ──────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <DollarSign className="w-5 h-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">Cost Structure</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">ต้นทุนขาย/ค่าใช้จ่ายจากบัญชี · ยอดซื้อ (PO) แยกไว้อ้างอิง ไม่ใช่ต้นทุนขาย</span>
-        </div>
-        {/* KPI cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
-          <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-            <p className="text-xs text-[var(--fg-3)]">Expense Ratio</p>
-            <p className="text-2xl font-bold mt-1" style={{ color: costStructure.expenseRatio > 80 ? 'var(--danger)' : costStructure.expenseRatio > 60 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{fmtPct(costStructure.expenseRatio)}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">ค่าใช้จ่าย (ไม่รวมต้นทุนขาย) ÷ รายได้ในบัญชี ฿{fmt(costStructure.ledgerRevenue)}</p>
-          </motion.div>
-          <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-            <p className="text-xs text-[var(--fg-3)]">Production Cost Variance</p>
-            <p className="text-2xl font-bold mt-1" style={{ color: costStructure.productionVariance.variancePct > 10 ? 'var(--danger)' : costStructure.productionVariance.variancePct > 5 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>
-              {costStructure.productionVariance.variancePct > 0 ? '+' : ''}{fmtPct(costStructure.productionVariance.variancePct)}
-            </p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">Actual vs Estimated ({costStructure.productionVariance.count} WO)</p>
-          </motion.div>
-          <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-            <p className="text-xs text-[var(--fg-3)]">ยอดซื้อวัตถุดิบ (PO งวดนี้)</p>
-            <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(costStructure.cogsByCategory.reduce((s, r) => s + r.amount, 0))}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">{costStructure.cogsByCategory.length} หมวดวัตถุดิบ — ไม่ใช่ COGS จริง</p>
-          </motion.div>
-          <motion.div {...fade(0.12)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-            <p className="text-xs text-[var(--fg-3)]">ต้นทุนขายจริง (Ledger COGS)</p>
-            <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(costStructure.ledgerCogsTotal)}</p>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">จากสมุดบัญชี — บัญชีหมวด COGS ที่ posted แล้ว</p>
-          </motion.div>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* COGS Donut */}
-          <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ยอดซื้อตามหมวดวัตถุดิบ (PO)</p>
-            {costStructure.cogsByCategory.length === 0 ? (
-              <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
-            ) : (
-              <>
-                <ResponsiveContainer width="100%" height={160}>
-                  <PieChart>
-                    <Pie data={costStructure.cogsByCategory} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="amount" paddingAngle={2}>
-                      {costStructure.cogsByCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-1 mt-1">
-                  {costStructure.cogsByCategory.slice(0, 5).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full flex-none" style={{ background: COLORS[i % COLORS.length] }} /><span className="text-[var(--fg-3)] truncate max-w-[110px]">{c.category}</span></span>
-                      <span className="text-[var(--fg-2)] font-medium">฿{fmt(c.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </motion.div>
-          {/* Expense by Category */}
-          <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ค่าใช้จ่ายตามบัญชี <span className="text-xs font-normal text-[var(--fg-4)]">(ไม่รวมต้นทุนขาย · ค่าติดลบ = เงินเกิน/ปรับเพิ่มสต็อก)</span></p>
-            {costStructure.expenseByCategory.length === 0 ? (
-              <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={costStructure.expenseByCategory.slice(0, 8)} layout="vertical" margin={{ left: 4 }}>
-                  <XAxis type="number" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
-                  <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill: 'var(--fg-2)' }} width={130} />
-                  <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                  <Bar dataKey="amount" fill={COLORS[4]} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </motion.div>
-          {/* Cost Trend 12mo */}
-          <motion.div {...fade(0.15)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Cost Trend (12 เดือน) <span className="text-xs font-normal text-[var(--fg-4)]">ต้นทุนขาย + ค่าใช้จ่ายจากบัญชี · เส้นประ = ยอดซื้อ</span></p>
-            <ResponsiveContainer width="100%" height={200}>
-              <ComposedChart data={costStructure.costTrend} margin={{ left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} />
-                <YAxis tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
-                <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="cogs" stackId="1" stroke={COLORS[3]} fill={COLORS[3] + '50'} name="ต้นทุนขาย (บัญชี)" />
-                <Area type="monotone" dataKey="opex" stackId="1" stroke={COLORS[4]} fill={COLORS[4] + '50'} name="ค่าใช้จ่ายอื่น" />
-                <Line type="monotone" dataKey="purchases" stroke={COLORS[1]} strokeDasharray="4 2" dot={false} name="ยอดซื้อ (PO)" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </motion.div>
-        </div>
-      </div>
-
-      {/* ─── Zone 4: Product Profitability ───────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Package className="w-5 h-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">Product Profitability</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">เมนู POS + ใบสั่งขาย · ต้นทุน = วัตถุดิบที่ตัดตามสูตร × ราคาทุนปัจจุบัน (ประมาณการ)</span>
-        </div>
-        {/* Concentration KPI */}
-        <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 mb-4 flex items-center gap-6">
-          <div>
-            <p className="text-xs text-[var(--fg-3)]">Revenue Concentration (Top 5 SKU)</p>
-            <p className="text-2xl font-bold mt-0.5" style={{ color: products.concentrationRisk > 70 ? 'var(--danger)' : products.concentrationRisk > 50 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{fmtPct(products.concentrationRisk)}</p>
-          </div>
-          <div className="text-xs text-[var(--fg-3)]">
-            {products.concentrationRisk > 70 ? '⚠️ เสี่ยงสูง — พึ่งพา SKU หลักมากเกินไป' : products.concentrationRisk > 50 ? '🟡 ควรกระจายสินค้า' : '✅ กระจายความเสี่ยงดี'}
-          </div>
-          <div className="ml-auto text-right">
-            <p className="text-xs text-[var(--fg-3)]">Total Revenue</p>
-            <p className="text-lg font-bold text-[var(--fg-1)]">฿{fmt(products.totalRevenue)}</p>
+            ))}
           </div>
         </motion.div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Top 10 */}
-          <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">🏆 Top 10 by Revenue</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-[var(--border)]">
-                    {['#', 'สินค้า', 'Revenue', 'Margin%'].map(h => (
-                      <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.top10.map((p, i) => (
-                    <tr key={p.id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-1.5 pr-3 text-[var(--fg-3)]">{i + 1}</td>
-                      <td className="py-1.5 pr-3 text-[var(--fg-1)] font-medium max-w-[120px] truncate">{p.name}</td>
-                      <td className="py-1.5 pr-3 text-[var(--fg-2)]">฿{fmt(p.revenue)}</td>
-                      <td className="py-1.5 font-bold" style={{ color: p.margin >= 30 ? 'var(--success, #22c55e)' : p.margin >= 10 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(p.margin)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </motion.div>
-          {/* Bottom 10 */}
-          <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-            <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">⚠️ Bottom 10 by Margin</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-[var(--border)]">
-                    {['#', 'สินค้า', 'Revenue', 'Margin%'].map(h => (
-                      <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.bottom10.map((p, i) => (
-                    <tr key={p.id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-1.5 pr-3 text-[var(--fg-3)]">{i + 1}</td>
-                      <td className="py-1.5 pr-3 text-[var(--fg-1)] font-medium max-w-[120px] truncate">{p.name}</td>
-                      <td className="py-1.5 pr-3 text-[var(--fg-2)]">฿{fmt(p.revenue)}</td>
-                      <td className="py-1.5 font-bold" style={{ color: p.margin >= 30 ? 'var(--success, #22c55e)' : p.margin >= 10 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(p.margin)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </motion.div>
-        </div>
-      </div>
 
-      {/* ─── Zone 5: Working Capital ─────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Activity className="w-5 h-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">Working Capital Health</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">Current Ratio · Quick Ratio · Cash Burn · WC Trend</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          {[
-            { label: 'Current Ratio', value: fmtDec(workingCapital.currentRatio), sub: `สินทรัพย์หมุนเวียน (11xx) ฿${fmt(workingCapital.currentAssets)} ÷ หนี้สินหมุนเวียน (21xx) ฿${fmt(workingCapital.currentLiabilities)}`, ratio: workingCapital.currentRatio },
-            { label: 'Quick Ratio', value: fmtDec(workingCapital.quickRatio), sub: `(เงินสด/ธนาคาร ฿${fmt(workingCapital.cash)} + ลูกหนี้ ฿${fmt(workingCapital.ar)}) ÷ หนี้สินหมุนเวียน`, ratio: workingCapital.quickRatio },
-            { label: 'ค่าใช้จ่ายเฉลี่ย/เดือน', value: `฿${fmt(workingCapital.cashBurnRate)}/เดือน`, sub: 'ต้นทุนขาย + ค่าใช้จ่ายในบัญชี เฉลี่ย 3 เดือนล่าสุด (ไม่ใช่เงินสดจ่ายจริง)', ratio: -1 },
-          ].map((k, i) => (
-            <motion.div key={k.label} {...fade(i * 0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-              <p className="text-xs text-[var(--fg-3)]">{k.label}</p>
-              <p className="text-3xl font-bold mt-2" style={{ color: k.ratio >= 0 ? ratioColor(k.ratio) : 'var(--fg-1)' }}>{k.value}</p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">{k.sub}</p>
-              {k.ratio >= 0 && (
-                <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: ratioColor(k.ratio) }}>
-                  {ratioLabel(k.ratio)}
-                </span>
-              )}
-            </motion.div>
-          ))}
-        </div>
-        {workingCapital.cash < 0 && (
-          <p className="mb-4 text-xs text-[color:var(--danger)]">
-            เงินสด/ธนาคารในบัญชีติดลบ ฿{fmt(-workingCapital.cash)} — มักเกิดจากยังไม่ได้ลงยอดยกมา/เงินทุนเจ้าของ (บัญชี 3xxx) ทำให้อัตราส่วนสภาพคล่องติดลบ ไม่ได้แปลว่าเงินหายจริง
-          </p>
-        )}
+        {/* Revenue per Platform */}
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">รายได้ต่อ Platform</p>
+          {channel.byPlatform.length === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล Online</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={channel.byPlatform} layout="vertical" margin={{ left: 8 }}>
+                <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--fg-3)' }} tickFormatter={v => '฿' + fmt(v)} />
+                <YAxis type="category" dataKey="platform" tick={{ fontSize: 11, fill: 'var(--fg-2)' }} width={60} />
+                <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                <Bar dataKey="revenue" fill={COLORS[0]} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </motion.div>
+
+        {/* Order Volume Trend */}
         <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Working Capital Trend (12 เดือน · ยอด ณ สิ้นแต่ละเดือน)</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={workingCapital.wcTrend} margin={{ left: -10 }}>
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Order Volume Trend (12 เดือน)</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <AreaChart data={channel.orderTrend} margin={{ left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} />
               <YAxis tick={{ fontSize: 10, fill: 'var(--fg-3)' }} />
               <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="currentRatio" stroke={COLORS[0]} strokeWidth={2} dot={false} name="Current Ratio" />
-              <Line type="monotone" dataKey="quickRatio" stroke={COLORS[2]} strokeWidth={2} dot={false} name="Quick Ratio" strokeDasharray="4 2" />
-            </LineChart>
+              <Area type="monotone" dataKey="retail" stackId="1" stroke={COLORS[0]} fill={COLORS[0] + '40'} name="หน้าร้าน (บิล)" />
+              <Area type="monotone" dataKey="wholesale" stackId="1" stroke={COLORS[1]} fill={COLORS[1] + '40'} name="ขายส่ง (SO)" />
+              <Area type="monotone" dataKey="online" stackId="1" stroke={COLORS[2]} fill={COLORS[2] + '40'} name="ออนไลน์" />
+            </AreaChart>
           </ResponsiveContainer>
         </motion.div>
       </div>
+    </div>
+  )
+}
 
-      {/* ─── Zone 6: Outsource Production (Phase 3) ──────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Factory className="w-5 h-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">การผลิตภายนอก</h2>
-          <span className="text-xs text-[var(--fg-3)] ml-1">Outsource Stock · ผู้รับเหมาที่ของค้าง · Yield</span>
-        </div>
+// ─── Zone 2: Ads ROI ───────────────────────────────────────────────
+export function AdsRoi({ data }: { data: ExtendedData }) {
+  const { adsROI } = data
 
-        {(() => {
-          const op = outsourceProduction
-          const totalStock = op.stockValue.inHouse + op.stockValue.offsite
-          const offsitePct = totalStock > 0 ? (op.stockValue.offsite / totalStock) * 100 : 0
-          return (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-                  <p className="text-xs text-[var(--fg-3)]">มูลค่าสต็อกในบริษัท</p>
-                  <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(op.stockValue.inHouse)}</p>
-                </motion.div>
-                <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-                  <p className="text-xs text-[var(--fg-3)]">มูลค่าสต็อกนอกบริษัท (ที่ผู้รับเหมา)</p>
-                  <p className="text-2xl font-bold mt-1" style={{ color: offsitePct > 20 ? 'var(--warning, #f59e0b)' : 'var(--fg-1)' }}>฿{fmt(op.stockValue.offsite)}</p>
-                  <p className="text-xs text-[var(--fg-4)] mt-0.5">{fmtPct(offsitePct)} ของสต็อกรวม</p>
-                </motion.div>
-                <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
-                  <p className="text-xs text-[var(--fg-3)]">สัญญาเกินกำหนดส่งคืน</p>
-                  <p className="text-2xl font-bold mt-1" style={{ color: op.overdueContracts.length > 0 ? 'var(--danger)' : 'var(--success, #22c55e)' }}>{op.overdueContracts.length}</p>
-                  <p className="text-xs text-[var(--fg-4)] mt-0.5">฿{fmt(op.overdueContracts.reduce((s, c) => s + c.outstanding_amount, 0))} ค้างจ่าย</p>
-                </motion.div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Suppliers with stock outstanding */}
-                <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 lg:col-span-2">
-                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ผู้รับเหมาที่มีวัตถุดิบค้างอยู่</p>
-                  {op.suppliersWithStock.length === 0 ? (
-                    <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีวัตถุดิบค้างที่ผู้รับเหมา</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-[var(--border)]">
-                            {['ผู้รับเหมา', 'รายการ', 'มูลค่าค้าง', 'สถานะกำหนดส่ง'].map(h => (
-                              <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-3 font-medium">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {op.suppliersWithStock.map(s => {
-                            const overdue = op.overdueContracts.filter(c => c.supplier_id === s.supplier_id)
-                            const isOverdue = overdue.length > 0
-                            return (
-                              <tr key={s.supplier_id} className="border-b border-[var(--border)] last:border-0">
-                                <td className="py-2 pr-3 font-semibold text-[var(--fg-1)]">{s.supplier_name}</td>
-                                <td className="py-2 pr-3 text-[var(--fg-2)]">{s.items}</td>
-                                <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(s.value)}</td>
-                                <td className="py-2">
-                                  {isOverdue ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: 'var(--danger, #ef4444)' }}>
-                                      <AlertCircle className="w-3 h-3" /> เกินกำหนด ({overdue.length})
-                                    </span>
-                                  ) : (
-                                    <span className="text-[var(--fg-4)]">ปกติ</span>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </motion.div>
-
-                {/* Stock value split donut */}
-                <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">สัดส่วนมูลค่าสต็อก</p>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
-                      <Pie
-                        data={[{ name: 'ในบริษัท', value: op.stockValue.inHouse }, { name: 'นอกบริษัท', value: op.stockValue.offsite }]}
-                        cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}
-                      >
-                        <Cell fill={COLORS[0]} />
-                        <Cell fill={COLORS[1]} />
-                      </Pie>
-                      <Tooltip formatter={(v: number) => '฿' + fmt(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="space-y-2 mt-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[0] }} />ในบริษัท</span>
-                      <span className="font-bold text-[var(--fg-1)]">฿{fmt(op.stockValue.inHouse)}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[1] }} />นอกบริษัท</span>
-                      <span className="font-bold text-[var(--fg-1)]">฿{fmt(op.stockValue.offsite)}</span>
-                    </div>
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <Megaphone className="w-5 h-5 text-[var(--primary)]" />
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">Ads ROI Dashboard</h2>
+        <span className="text-xs text-[var(--fg-3)] ml-1">CPO · CPC · Conversion Funnel · Revenue/Ad Baht</span>
+      </div>
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {[
+          { label: 'ROAS', value: `${fmtDec(adsROI.totals.roas)}x`, sub: 'รายได้ต่อ ฿1 โฆษณา' },
+          { label: 'CPC', value: `฿${fmtDec(adsROI.totals.cpc)}`, sub: 'ต้นทุนต่อคลิก' },
+          { label: 'CPO', value: `฿${fmt(adsROI.totals.cpo)}`, sub: 'ต้นทุนต่อ Order' },
+          { label: 'Rev/Ad ฿', value: `฿${fmtDec(adsROI.totals.revenuePerAdBaht)}`, sub: 'รายได้ต่อ ฿1 โฆษณา' },
+        ].map((k, i) => (
+          <motion.div key={k.label} {...fade(i * 0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+            <p className="text-xs text-[var(--fg-3)]">{k.label}</p>
+            <p className="text-xl font-bold text-[var(--fg-1)] mt-1">{k.value}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-0.5">{k.sub}</p>
+          </motion.div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Conversion Funnel */}
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-4">Conversion Funnel</p>
+          <div className="space-y-3">
+            {[
+              { label: 'Impressions', value: fmt(adsROI.totals.impressions), pct: 100, color: COLORS[0] },
+              { label: 'Clicks', value: fmt(adsROI.totals.clicks), pct: adsROI.totals.ctr, color: COLORS[2] },
+              { label: 'Orders', value: fmt(adsROI.totals.orders), pct: adsROI.totals.orderRate, color: COLORS[1] },
+            ].map((step, i) => (
+              <div key={i}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-[var(--fg-2)]">{step.label}</span>
+                  <span className="font-semibold text-[var(--fg-1)]">{step.value} {i > 0 && <span className="text-xs text-[var(--fg-3)]">({fmtPct(step.pct)})</span>}</span>
+                </div>
+                <div className="h-6 bg-[var(--surface-2)] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full flex items-center justify-start pl-2" style={{ width: `${Math.max(5, i === 0 ? 100 : Math.min(100, step.pct * 20))}%`, background: step.color }}>
                   </div>
-                </motion.div>
+                </div>
               </div>
+            ))}
+          </div>
+        </motion.div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-                {/* Yield donut */}
-                <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Yield ผู้รับเหมา (ดี/เสีย/หาย)</p>
-                  {op.yield.good + op.yield.scrap + op.yield.shortage === 0 ? (
-                    <p className="text-xs text-[var(--fg-4)] text-center py-8">ยังไม่มีข้อมูลรับของจากผู้รับเหมา</p>
-                  ) : (
-                    <>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <PieChart>
-                          <Pie
-                            data={[{ name: 'ดี', value: op.yield.good }, { name: 'เสีย', value: op.yield.scrap }, { name: 'หาย', value: op.yield.shortage }]}
-                            cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}
-                          >
-                            <Cell fill={COLORS[2]} />
-                            <Cell fill={COLORS[3]} />
-                            <Cell fill={COLORS[4]} />
-                          </Pie>
-                          <Tooltip formatter={(v: number) => fmt(v) + ' ชิ้น'} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="space-y-1.5 mt-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[2] }} />ดี</span>
-                          <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.good)} ({fmtPct(op.yield.goodPct)})</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[3] }} />เสีย</span>
-                          <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.scrap)} ({fmtPct(op.yield.scrapPct)})</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[4] }} />หาย</span>
-                          <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.shortage)} ({fmtPct(op.yield.shortagePct)})</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </motion.div>
+        {/* Platform Comparison Table */}
+        <motion.div {...fade(0.15)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">เปรียบเทียบ Platform</p>
+          {adsROI.byPlatform.length === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    {['Platform', 'Revenue', 'Ad Cost', 'ROAS', 'CPC', 'CPO'].map(h => (
+                      <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-3 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {adsROI.byPlatform.map((p, i) => (
+                    <tr key={i} className="border-b border-[var(--border)] last:border-0">
+                      <td className="py-2 pr-3 font-semibold text-[var(--fg-1)]">{p.platform}</td>
+                      <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(p.revenue)}</td>
+                      <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(p.adCost)}</td>
+                      <td className="py-2 pr-3 font-bold" style={{ color: p.roas >= 3 ? 'var(--success, #22c55e)' : p.roas >= 1 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtDec(p.roas)}x</td>
+                      <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmtDec(p.cpc)}</td>
+                      <td className="py-2 text-[var(--fg-2)]">฿{fmt(p.cpo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+      </div>
+    </div>
+  )
+}
 
-                {/* Yield by contract table */}
-                <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-                  <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Yield ต่อสัญญา</p>
-                  {op.yield.byContract.length === 0 ? (
-                    <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-[var(--border)]">
-                            {['สัญญา', 'ผู้รับเหมา', 'ดี', 'เสีย', 'หาย', 'Yield%'].map(h => (
-                              <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {op.yield.byContract.slice(0, 10).map(c => (
-                            <tr key={c.contract_id} className="border-b border-[var(--border)] last:border-0">
-                              <td className="py-1.5 pr-3 font-semibold text-[var(--fg-1)]">{c.contract_number}</td>
-                              <td className="py-1.5 pr-3 text-[var(--fg-2)] max-w-[100px] truncate">{c.supplier_name}</td>
-                              <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.good)}</td>
-                              <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.scrap)}</td>
-                              <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.shortage)}</td>
-                              <td className="py-1.5 font-bold" style={{ color: c.goodPct >= 90 ? 'var(--success, #22c55e)' : c.goodPct >= 75 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(c.goodPct)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </motion.div>
+// ─── Zone 3: Cost Structure ────────────────────────────────────────
+export function CostStructure({ data }: { data: ExtendedData }) {
+  const { costStructure } = data
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <DollarSign className="w-5 h-5 text-[var(--primary)]" />
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">Cost Structure</h2>
+        <span className="text-xs text-[var(--fg-3)] ml-1">ต้นทุนขาย/ค่าใช้จ่ายจากบัญชี · ยอดซื้อ (PO) แยกไว้อ้างอิง ไม่ใช่ต้นทุนขาย</span>
+      </div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+        <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">Expense Ratio</p>
+          <p className="text-2xl font-bold mt-1" style={{ color: costStructure.expenseRatio > 80 ? 'var(--danger)' : costStructure.expenseRatio > 60 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{fmtPct(costStructure.expenseRatio)}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-0.5">ค่าใช้จ่าย (ไม่รวมต้นทุนขาย) ÷ รายได้ในบัญชี ฿{fmt(costStructure.ledgerRevenue)}</p>
+        </motion.div>
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">Production Cost Variance</p>
+          <p className="text-2xl font-bold mt-1" style={{ color: costStructure.productionVariance.variancePct > 10 ? 'var(--danger)' : costStructure.productionVariance.variancePct > 5 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>
+            {costStructure.productionVariance.variancePct > 0 ? '+' : ''}{fmtPct(costStructure.productionVariance.variancePct)}
+          </p>
+          <p className="text-xs text-[var(--fg-4)] mt-0.5">Actual vs Estimated ({costStructure.productionVariance.count} WO)</p>
+        </motion.div>
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">ยอดซื้อวัตถุดิบ (PO งวดนี้)</p>
+          <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(costStructure.cogsByCategory.reduce((s, r) => s + r.amount, 0))}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-0.5">{costStructure.cogsByCategory.length} หมวดวัตถุดิบ — ไม่ใช่ COGS จริง</p>
+        </motion.div>
+        <motion.div {...fade(0.12)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">ต้นทุนขายจริง (Ledger COGS)</p>
+          <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(costStructure.ledgerCogsTotal)}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-0.5">จากสมุดบัญชี — บัญชีหมวด COGS ที่ posted แล้ว</p>
+        </motion.div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* COGS Donut */}
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ยอดซื้อตามหมวดวัตถุดิบ (PO)</p>
+          {costStructure.cogsByCategory.length === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie data={costStructure.cogsByCategory} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="amount" paddingAngle={2}>
+                    {costStructure.cogsByCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1 mt-1">
+                {costStructure.cogsByCategory.slice(0, 5).map((c, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full flex-none" style={{ background: COLORS[i % COLORS.length] }} /><span className="text-[var(--fg-3)] truncate max-w-[110px]">{c.category}</span></span>
+                    <span className="text-[var(--fg-2)] font-medium">฿{fmt(c.amount)}</span>
+                  </div>
+                ))}
               </div>
             </>
-          )
-        })()}
+          )}
+        </motion.div>
+        {/* Expense by Category */}
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ค่าใช้จ่ายตามบัญชี <span className="text-xs font-normal text-[var(--fg-4)]">(ไม่รวมต้นทุนขาย · ค่าติดลบ = เงินเกิน/ปรับเพิ่มสต็อก)</span></p>
+          {costStructure.expenseByCategory.length === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={costStructure.expenseByCategory.slice(0, 8)} layout="vertical" margin={{ left: 4 }}>
+                <XAxis type="number" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
+                <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill: 'var(--fg-2)' }} width={130} />
+                <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                <Bar dataKey="amount" fill={COLORS[4]} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </motion.div>
+        {/* Cost Trend 12mo */}
+        <motion.div {...fade(0.15)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Cost Trend (12 เดือน) <span className="text-xs font-normal text-[var(--fg-4)]">ต้นทุนขาย + ค่าใช้จ่ายจากบัญชี · เส้นประ = ยอดซื้อ</span></p>
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={costStructure.costTrend} margin={{ left: -10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} />
+              <YAxis tick={{ fontSize: 9, fill: 'var(--fg-3)' }} tickFormatter={v => fmt(v)} />
+              <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Area type="monotone" dataKey="cogs" stackId="1" stroke={COLORS[3]} fill={COLORS[3] + '50'} name="ต้นทุนขาย (บัญชี)" />
+              <Area type="monotone" dataKey="opex" stackId="1" stroke={COLORS[4]} fill={COLORS[4] + '50'} name="ค่าใช้จ่ายอื่น" />
+              <Line type="monotone" dataKey="purchases" stroke={COLORS[1]} strokeDasharray="4 2" dot={false} name="ยอดซื้อ (PO)" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </motion.div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Zone 4: Product Profitability ─────────────────────────────────
+export function ProductProfitability({ data }: { data: ExtendedData }) {
+  const { products } = data
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <Package className="w-5 h-5 text-[var(--primary)]" />
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">Product Profitability</h2>
+        <span className="text-xs text-[var(--fg-3)] ml-1">เมนู POS + ใบสั่งขาย · ต้นทุน = วัตถุดิบที่ตัดตามสูตร × ราคาทุนปัจจุบัน (ประมาณการ)</span>
+      </div>
+      {/* Concentration KPI */}
+      <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 mb-4 flex items-center gap-6">
+        <div>
+          <p className="text-xs text-[var(--fg-3)]">Revenue Concentration (Top 5 SKU)</p>
+          <p className="text-2xl font-bold mt-0.5" style={{ color: products.concentrationRisk > 70 ? 'var(--danger)' : products.concentrationRisk > 50 ? 'var(--warning, #f59e0b)' : 'var(--success, #22c55e)' }}>{fmtPct(products.concentrationRisk)}</p>
+        </div>
+        <div className="text-xs text-[var(--fg-3)]">
+          {products.concentrationRisk > 70 ? '⚠️ เสี่ยงสูง — พึ่งพา SKU หลักมากเกินไป' : products.concentrationRisk > 50 ? '🟡 ควรกระจายสินค้า' : '✅ กระจายความเสี่ยงดี'}
+        </div>
+        <div className="ml-auto text-right">
+          <p className="text-xs text-[var(--fg-3)]">Total Revenue</p>
+          <p className="text-lg font-bold text-[var(--fg-1)]">฿{fmt(products.totalRevenue)}</p>
+        </div>
+      </motion.div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Top 10 */}
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">🏆 Top 10 by Revenue</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  {['#', 'สินค้า', 'Revenue', 'Margin%'].map(h => (
+                    <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {products.top10.map((p, i) => (
+                  <tr key={p.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="py-1.5 pr-3 text-[var(--fg-3)]">{i + 1}</td>
+                    <td className="py-1.5 pr-3 text-[var(--fg-1)] font-medium max-w-[120px] truncate">{p.name}</td>
+                    <td className="py-1.5 pr-3 text-[var(--fg-2)]">฿{fmt(p.revenue)}</td>
+                    <td className="py-1.5 font-bold" style={{ color: p.margin >= 30 ? 'var(--success, #22c55e)' : p.margin >= 10 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(p.margin)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+        {/* Bottom 10 */}
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">⚠️ Bottom 10 by Margin</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  {['#', 'สินค้า', 'Revenue', 'Margin%'].map(h => (
+                    <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {products.bottom10.map((p, i) => (
+                  <tr key={p.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="py-1.5 pr-3 text-[var(--fg-3)]">{i + 1}</td>
+                    <td className="py-1.5 pr-3 text-[var(--fg-1)] font-medium max-w-[120px] truncate">{p.name}</td>
+                    <td className="py-1.5 pr-3 text-[var(--fg-2)]">฿{fmt(p.revenue)}</td>
+                    <td className="py-1.5 font-bold" style={{ color: p.margin >= 30 ? 'var(--success, #22c55e)' : p.margin >= 10 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(p.margin)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Zone 5: Working Capital ───────────────────────────────────────
+export function WorkingCapital({ data }: { data: ExtendedData }) {
+  const { workingCapital } = data
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <Activity className="w-5 h-5 text-[var(--primary)]" />
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">Working Capital Health</h2>
+        <span className="text-xs text-[var(--fg-3)] ml-1">Current Ratio · Quick Ratio · Cash Burn · WC Trend</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {[
+          { label: 'Current Ratio', value: fmtDec(workingCapital.currentRatio), sub: `สินทรัพย์หมุนเวียน (11xx) ฿${fmt(workingCapital.currentAssets)} ÷ หนี้สินหมุนเวียน (21xx) ฿${fmt(workingCapital.currentLiabilities)}`, ratio: workingCapital.currentRatio },
+          { label: 'Quick Ratio', value: fmtDec(workingCapital.quickRatio), sub: `(เงินสด/ธนาคาร ฿${fmt(workingCapital.cash)} + ลูกหนี้ ฿${fmt(workingCapital.ar)}) ÷ หนี้สินหมุนเวียน`, ratio: workingCapital.quickRatio },
+          { label: 'ค่าใช้จ่ายเฉลี่ย/เดือน', value: `฿${fmt(workingCapital.cashBurnRate)}/เดือน`, sub: 'ต้นทุนขาย + ค่าใช้จ่ายในบัญชี เฉลี่ย 3 เดือนล่าสุด (ไม่ใช่เงินสดจ่ายจริง)', ratio: -1 },
+        ].map((k, i) => (
+          <motion.div key={k.label} {...fade(i * 0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+            <p className="text-xs text-[var(--fg-3)]">{k.label}</p>
+            <p className="text-3xl font-bold mt-2" style={{ color: k.ratio >= 0 ? ratioColor(k.ratio) : 'var(--fg-1)' }}>{k.value}</p>
+            <p className="text-xs text-[var(--fg-4)] mt-1">{k.sub}</p>
+            {k.ratio >= 0 && (
+              <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: ratioColor(k.ratio) }}>
+                {ratioLabel(k.ratio)}
+              </span>
+            )}
+          </motion.div>
+        ))}
+      </div>
+      {workingCapital.cash < 0 && (
+        <p className="mb-4 text-xs text-[color:var(--danger)]">
+          เงินสด/ธนาคารในบัญชีติดลบ ฿{fmt(-workingCapital.cash)} — มักเกิดจากยังไม่ได้ลงยอดยกมา/เงินทุนเจ้าของ (บัญชี 3xxx) ทำให้อัตราส่วนสภาพคล่องติดลบ ไม่ได้แปลว่าเงินหายจริง
+        </p>
+      )}
+      <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+        <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Working Capital Trend (12 เดือน · ยอด ณ สิ้นแต่ละเดือน)</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={workingCapital.wcTrend} margin={{ left: -10 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'var(--fg-3)' }} />
+            <YAxis tick={{ fontSize: 10, fill: 'var(--fg-3)' }} />
+            <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line type="monotone" dataKey="currentRatio" stroke={COLORS[0]} strokeWidth={2} dot={false} name="Current Ratio" />
+            <Line type="monotone" dataKey="quickRatio" stroke={COLORS[2]} strokeWidth={2} dot={false} name="Quick Ratio" strokeDasharray="4 2" />
+          </LineChart>
+        </ResponsiveContainer>
+      </motion.div>
+    </div>
+  )
+}
+
+// ─── Zone 6: Outsource Production (Phase 3) ────────────────────────
+export function OutsourceProduction({ data }: { data: ExtendedData }) {
+  const { outsourceProduction } = data
+  const op = outsourceProduction
+  const totalStock = op.stockValue.inHouse + op.stockValue.offsite
+  const offsitePct = totalStock > 0 ? (op.stockValue.offsite / totalStock) * 100 : 0
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <Factory className="w-5 h-5 text-[var(--primary)]" />
+        <h2 className="text-lg font-bold text-[var(--fg-1)]">การผลิตภายนอก</h2>
+        <span className="text-xs text-[var(--fg-3)] ml-1">Outsource Stock · ผู้รับเหมาที่ของค้าง · Yield</span>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <motion.div {...fade(0)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">มูลค่าสต็อกในบริษัท</p>
+          <p className="text-2xl font-bold text-[var(--fg-1)] mt-1">฿{fmt(op.stockValue.inHouse)}</p>
+        </motion.div>
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">มูลค่าสต็อกนอกบริษัท (ที่ผู้รับเหมา)</p>
+          <p className="text-2xl font-bold mt-1" style={{ color: offsitePct > 20 ? 'var(--warning, #f59e0b)' : 'var(--fg-1)' }}>฿{fmt(op.stockValue.offsite)}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-0.5">{fmtPct(offsitePct)} ของสต็อกรวม</p>
+        </motion.div>
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-xs text-[var(--fg-3)]">สัญญาเกินกำหนดส่งคืน</p>
+          <p className="text-2xl font-bold mt-1" style={{ color: op.overdueContracts.length > 0 ? 'var(--danger)' : 'var(--success, #22c55e)' }}>{op.overdueContracts.length}</p>
+          <p className="text-xs text-[var(--fg-4)] mt-0.5">฿{fmt(op.overdueContracts.reduce((s, c) => s + c.outstanding_amount, 0))} ค้างจ่าย</p>
+        </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Suppliers with stock outstanding */}
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 lg:col-span-2">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">ผู้รับเหมาที่มีวัตถุดิบค้างอยู่</p>
+          {op.suppliersWithStock.length === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีวัตถุดิบค้างที่ผู้รับเหมา</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    {['ผู้รับเหมา', 'รายการ', 'มูลค่าค้าง', 'สถานะกำหนดส่ง'].map(h => (
+                      <th key={h} className="text-left text-[var(--fg-3)] py-2 pr-3 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {op.suppliersWithStock.map(s => {
+                    const overdue = op.overdueContracts.filter(c => c.supplier_id === s.supplier_id)
+                    const isOverdue = overdue.length > 0
+                    return (
+                      <tr key={s.supplier_id} className="border-b border-[var(--border)] last:border-0">
+                        <td className="py-2 pr-3 font-semibold text-[var(--fg-1)]">{s.supplier_name}</td>
+                        <td className="py-2 pr-3 text-[var(--fg-2)]">{s.items}</td>
+                        <td className="py-2 pr-3 text-[var(--fg-2)]">฿{fmt(s.value)}</td>
+                        <td className="py-2">
+                          {isOverdue ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: 'var(--danger, #ef4444)' }}>
+                              <AlertCircle className="w-3 h-3" /> เกินกำหนด ({overdue.length})
+                            </span>
+                          ) : (
+                            <span className="text-[var(--fg-4)]">ปกติ</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+
+        {/* Stock value split donut */}
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">สัดส่วนมูลค่าสต็อก</p>
+          <ResponsiveContainer width="100%" height={160}>
+            <PieChart>
+              <Pie
+                data={[{ name: 'ในบริษัท', value: op.stockValue.inHouse }, { name: 'นอกบริษัท', value: op.stockValue.offsite }]}
+                cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}
+              >
+                <Cell fill={COLORS[0]} />
+                <Cell fill={COLORS[1]} />
+              </Pie>
+              <Tooltip formatter={(v: number) => '฿' + fmt(v)} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="space-y-2 mt-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[0] }} />ในบริษัท</span>
+              <span className="font-bold text-[var(--fg-1)]">฿{fmt(op.stockValue.inHouse)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[1] }} />นอกบริษัท</span>
+              <span className="font-bold text-[var(--fg-1)]">฿{fmt(op.stockValue.offsite)}</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        {/* Yield donut */}
+        <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Yield ผู้รับเหมา (ดี/เสีย/หาย)</p>
+          {op.yield.good + op.yield.scrap + op.yield.shortage === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ยังไม่มีข้อมูลรับของจากผู้รับเหมา</p>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie
+                    data={[{ name: 'ดี', value: op.yield.good }, { name: 'เสีย', value: op.yield.scrap }, { name: 'หาย', value: op.yield.shortage }]}
+                    cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}
+                  >
+                    <Cell fill={COLORS[2]} />
+                    <Cell fill={COLORS[3]} />
+                    <Cell fill={COLORS[4]} />
+                  </Pie>
+                  <Tooltip formatter={(v: number) => fmt(v) + ' ชิ้น'} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1.5 mt-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[2] }} />ดี</span>
+                  <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.good)} ({fmtPct(op.yield.goodPct)})</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[3] }} />เสีย</span>
+                  <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.scrap)} ({fmtPct(op.yield.scrapPct)})</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[4] }} />หาย</span>
+                  <span className="font-bold text-[var(--fg-1)]">{fmt(op.yield.shortage)} ({fmtPct(op.yield.shortagePct)})</span>
+                </div>
+              </div>
+            </>
+          )}
+        </motion.div>
+
+        {/* Yield by contract table */}
+        <motion.div {...fade(0.1)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">Yield ต่อสัญญา</p>
+          {op.yield.byContract.length === 0 ? (
+            <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    {['สัญญา', 'ผู้รับเหมา', 'ดี', 'เสีย', 'หาย', 'Yield%'].map(h => (
+                      <th key={h} className="text-left text-[var(--fg-3)] py-1.5 pr-3 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {op.yield.byContract.slice(0, 10).map(c => (
+                    <tr key={c.contract_id} className="border-b border-[var(--border)] last:border-0">
+                      <td className="py-1.5 pr-3 font-semibold text-[var(--fg-1)]">{c.contract_number}</td>
+                      <td className="py-1.5 pr-3 text-[var(--fg-2)] max-w-[100px] truncate">{c.supplier_name}</td>
+                      <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.good)}</td>
+                      <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.scrap)}</td>
+                      <td className="py-1.5 pr-3 text-[var(--fg-2)]">{fmt(c.shortage)}</td>
+                      <td className="py-1.5 font-bold" style={{ color: c.goodPct >= 90 ? 'var(--success, #22c55e)' : c.goodPct >= 75 ? 'var(--warning, #f59e0b)' : 'var(--danger)' }}>{fmtPct(c.goodPct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+      </div>
+    </div>
+  )
+}
+
+interface PhopyBoardExtendedProps {
+  data?: ExtendedData | null
+  startDate?: string
+  endDate?: string
+}
+
+export default function PhopyBoardExtended({ data, startDate, endDate }: PhopyBoardExtendedProps) {
+  const [internalData, setInternalData] = useState<ExtendedData | null>(data ?? null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (data) {
+      setInternalData(data)
+      return
+    }
+    if (startDate && endDate) {
+      const load = async () => {
+        try {
+          setLoading(true)
+          const res = await phopyBoardApi.getExtended({ startDate, endDate })
+          setInternalData(res.data.data)
+        } catch {
+          toast.error('ไม่สามารถโหลดข้อมูลเพิ่มเติมได้')
+        } finally {
+          setLoading(false)
+        }
+      }
+      load()
+    }
+  }, [data, startDate, endDate])
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-12">
+      <div className="w-8 h-8 border-4 border-[var(--primary)]/30 border-t-[var(--primary)] rounded-full animate-spin" />
+    </div>
+  )
+  if (!internalData) return null
+
+  return (
+    <div className="space-y-8 mt-8">
+      <ChannelPerformance data={internalData} />
+      <AdsRoi data={internalData} />
+      <CostStructure data={internalData} />
+      <ProductProfitability data={internalData} />
+      <WorkingCapital data={internalData} />
+      <OutsourceProduction data={internalData} />
     </div>
   )
 }

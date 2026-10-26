@@ -470,6 +470,8 @@ export function cashOutflow(tenantId: string, from: string, to: string): {
   total: number; days: number; avgPerDay: number; dataSince: string | null; byDay: Record<string, number>
 } {
   const dataSince = firstPostedDate(tenantId)
+  const today = thaiToday()
+  if (to > today) to = today // วันที่ยังไม่ถึงไม่นับเป็นวันที่ไม่มีเงินออก
   if (!dataSince || from > to || dataSince > to) {
     return { total: 0, days: 0, avgPerDay: 0, dataSince, byDay: {} }
   }
@@ -736,7 +738,9 @@ export function trendSeries(
   to?: string,
   warmup?: number,
 ): TrendSeriesResult {
-  const end = to || thaiToday()
+  // ไม่เกินวันนี้ — งวดปัจจุบันที่ยังไม่จบต้องเฉลี่ยเฉพาะวันที่ผ่านมาแล้ว (วันในอนาคตไม่ใช่ยอด 0)
+  const today = thaiToday()
+  const end = to && to < today ? to : today
   const dataSince = firstPostedDate(tenantId)
   const spanDays = dataSince && dataSince <= end ? diffDaysStr(dataSince, end) + 1 : 0
   const fallback = grain === 'year' && spanDays < 365 * 3

@@ -37,6 +37,12 @@
     --info: rgb(var(--primary-rgb));
     --info-soft: #EEEEFF;
 
+    /* Candle chart tokens */
+    --up: #16A34A;
+    --dn: #DC2626;
+    --exp-up: #E07B00;
+    --exp-dn: #1F6FB2;
+
     --bg: #F6F6FB;
     --surface: #FFFFFF;
     --surface-2: #F1F1F8;
@@ -114,6 +120,12 @@
     --warning-strong: #FBBF24;
     --danger-strong: #F87171;
     --equity-strong: #A78BFA;
+
+    /* Candle chart tokens */
+    --up: #34C26A;
+    --dn: #F0605F;
+    --exp-up: #F5A524;
+    --exp-dn: #5AA9F0;
 
     --ink: #F4F4FA;
     --ink-hover: #FFFFFF;

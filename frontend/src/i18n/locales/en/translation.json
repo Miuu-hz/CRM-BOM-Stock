@@ -183,6 +183,22 @@
       "forecast": "Expected recurring expenses",
       "perMonth": "/mo",
       "forecastEstimated": "(estimated from this month)"
+    },
+    "health": {
+      "title": "Morning Pulse",
+      "confidence": "Data Confidence",
+      "chartTitle": "Revenue · Expenses · Cash Balance",
+      "chartSubtitle": "1 week per candle (Mon–Sun) in THB/day · Hover to inspect",
+      "todoTitle": "Action Items Today",
+      "noTodo": "None",
+      "opsLowStock": "Critical Stock",
+      "opsPendingDelivery": "Pending Delivery",
+      "opsPendingApprovals": "Pending Approvals",
+      "opsArDue7": "AR Due in 7 Days",
+      "statusNormal": "Normal",
+      "statusWatch": "Watch",
+      "statusAction": "Action Required",
+      "statusNoData": "No Data"
     }
   },
   "header": {

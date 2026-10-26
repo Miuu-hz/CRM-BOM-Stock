@@ -492,7 +492,7 @@ export function getDashboardHealth(tenantId: string, financial: boolean, now: Da
 
   const controlIssues: string[] = []
   if (drawerDiff > HEALTH.drawerDiffBaht.green) controlIssues.push(`เงินลิ้นชักต่าง ${fmtBaht(drawerDiff)}`)
-  for (const it of failedDaily) controlIssues.push(it.title || it.detail || `ด่านข้อ ${it.id}`)
+  for (const it of failedDaily) controlIssues.push(`ด่านข้อ ${it.id} ไม่ผ่าน (${it.title})`)
   if (prevMonthLate) controlIssues.push(`งวด ${prevMonth} ยังไม่ปิด`)
 
   const controlStatus: 'G' | 'Y' | 'R' =

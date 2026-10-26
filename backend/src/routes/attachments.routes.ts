@@ -39,6 +39,9 @@ const REF_TYPE_TABLES: Record<string, string> = {
   PURCHASE_INVOICE: 'purchase_invoices',
   // ใบปรับสต็อก — รูปของจริงตอนนับ ใช้เป็นหลักฐานประกอบรายการขาดทุน
   STOCK_ADJUSTMENT: 'stock_adjustments',
+  // ปิดบัญชีรายเดือน — หลักฐานของรายการบัญชี และ statement / ชุดปิดเดือนของงวด
+  JOURNAL_ENTRY: 'journal_entries',
+  TAX_PERIOD: 'tax_periods',
 }
 
 // Which subscription feature gates each ref_type. Mount in index.ts is gate-free
@@ -54,6 +57,8 @@ const REF_TYPE_FEATURE: Record<string, string> = {
   STOCK_ADJUSTMENT: 'stock',
   SUPPLIER_PAYMENT: 'purchase',
   POS_PAYMENT: 'pos',
+  JOURNAL_ENTRY: 'accounting',
+  TAX_PERIOD: 'accounting',
 }
 
 // Mirrors subscriptionGate() in middleware/subscription.middleware.ts, but the
