@@ -190,9 +190,18 @@ let settingsPromise: Promise<void> | null = null
 
 async function loadSettings() {
   if (settingsCache || settingsPromise) return settingsPromise ?? undefined
-  settingsPromise = api.get('/settings/documents')
-    .then((r: any) => { settingsCache = r?.data?.data ?? null })
-    .catch(() => { settingsCache = null })   // โหลดไม่ได้ก็ใช้ค่าตั้งต้นใน template
+  settingsPromise = Promise.all([
+    api.get('/settings/documents').catch(() => null),
+    api.get('/settings/company').catch(() => null),
+  ]).then(([docRes, compRes]: any[]) => {
+    settingsCache = docRes?.data?.data ?? null
+    const compData = compRes?.data?.data
+    if (compData && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('crm_company_settings', JSON.stringify(compData))
+      } catch {}
+    }
+  }).catch(() => { settingsCache = null })
   return settingsPromise
 }
 

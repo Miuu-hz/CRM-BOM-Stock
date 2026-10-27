@@ -3033,7 +3033,7 @@ const Purchase = () => {
     try {
       const { data } = await api.get(endpointMap[type])
       const doc = data?.data || data
-      printBill(type, { ...doc, _company: (getCachedCompanySettings() as any)?.name || user?.name || t('purchase.common.companyFallback') }, format)
+      printBill(type, { ...doc, _company: (getCachedCompanySettings() as any)?.name || t('purchase.common.companyFallback') }, format)
     } catch { toast.error(t('purchase.error.loadPrintData')) }
   }
 
