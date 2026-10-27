@@ -74,7 +74,7 @@ export interface LineResult {
   index: number
   statement_line_no: number | null
   type: string
-  status: 'accepted' | 'duplicate' | 'rejected'
+  status: 'accepted' | 'duplicate' | 'rejected' | 'not_saved'
   errors?: string[]
   warnings?: string[]
   record_id?: string
@@ -423,7 +423,7 @@ export interface SubmitResult {
   bank_account: { code: string; name: string; kind: string }
   results: LineResult[]
   summary: {
-    accepted: number; duplicate: number; rejected: number
+    accepted: number; duplicate: number; rejected: number; not_saved: number; saved: boolean
     book_closing_balance: number; pending_adjustments: number; timing_items: number
     statement_closing_balance: number; difference: number; reconciled: boolean
     message: string
@@ -491,73 +491,92 @@ export function submitCloseAdjustments(tenantId: string, actor: Actor, input: Su
     results.push({ ...base, status: 'accepted', warnings: plan.warnings.length ? plan.warnings : undefined, effect: plan.effect })
   })
 
-  const now = new Date().toISOString()
-  try {
-    db.transaction(() => {
-      // รอบกระทบยอด: 1 แถวต่อบัญชีต่องวด — statement ล่าสุดที่ส่งมาเป็นตัวเทียบ
-      db.prepare(`INSERT INTO bank_reconciliations (id, tenant_id, period, account_id, statement_closing_balance, statement_hash,
-          submitted_by, submitted_by_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(tenant_id, period, account_id) DO UPDATE SET statement_closing_balance = excluded.statement_closing_balance,
-          statement_hash = COALESCE(excluded.statement_hash, bank_reconciliations.statement_hash),
-          submitted_by = excluded.submitted_by, submitted_by_name = excluded.submitted_by_name, updated_at = excluded.updated_at`)
-        .run(generateId(), tenantId, input.period, bank.id, r2(stmt), input.statement_hash ?? null, actor.email, actor.name, now, now)
-      const recon = db.prepare('SELECT id FROM bank_reconciliations WHERE tenant_id = ? AND period = ? AND account_id = ?').get(tenantId, input.period, bank.id) as { id: string }
-
-      for (const w of toWrite) {
-        const recordId = generateId()
-        let jeId: string | null = null
-        let entryNumber: string | null = null
-        if (w.plan.legs.length) {
-          jeId = generateId()
-          entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', Number(w.line.date.substring(0, 4)), 5, w.line.date)
-          const total = r2(w.plan.legs.reduce((s, l) => s + l.debit, 0))
-          const label = ADJ_TYPES[w.type].label
-          db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, description,
-              total_debit, total_credit, is_auto_generated, is_posted, notes, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`)
-            .run(jeId, tenantId, entryNumber, w.line.date, CLOSE_ADJ_REF, recordId, String(w.line.statement_ref).trim(),
-              `ปิดเดือน ${input.period} · ${label}: ${String(w.line.description).trim()}`, total, total,
-              `เหตุผลจาก AI: ${String(w.line.reason).trim()}${w.line.confidence != null ? ` (ความมั่นใจ ${Math.round(Number(w.line.confidence) * 100)}%)` : ''} · statement บรรทัด ${w.line.statement_line_no}`,
-              actor.email, now, now)
-          const ins = db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-          w.plan.legs.forEach((l, i) => ins.run(generateId(), tenantId, jeId, l.accountId, i + 1, String(w.line.description).trim(), r2(l.debit), r2(l.credit)))
-        }
-        db.prepare(`INSERT INTO bank_reconciliation_records (id, tenant_id, reconciliation_id, dedupe_key, type, line_date, amount, effect, direction,
-            statement_ref, statement_line_no, description, account_code, counter_account_code, ref_line_id, source_doc_type, source_doc_id,
-            reason, confidence, statement_hash, journal_entry_id, status, submitted_by, submitted_by_name, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(recordId, tenantId, recon.id, w.key, w.type, w.line.date, r2(Number(w.line.amount)), w.plan.effect,
-            w.line.direction ? String(w.line.direction).toUpperCase() : null, String(w.line.statement_ref).trim(), w.line.statement_line_no,
-            String(w.line.description).trim(), w.line.account_code ?? null, w.line.counter_account_code ?? null, w.line.ref_line_id ?? null,
-            w.plan.sourceDocType ?? null, w.plan.sourceDocId ?? null, String(w.line.reason).trim(),
-            w.line.confidence != null ? Number(w.line.confidence) : null, input.statement_hash ?? null, jeId, w.plan.status,
-            actor.email, actor.name, now, now)
-        const res = results.find(r => r.index === w.index)!
-        res.record_id = recordId
-        res.entry_number = entryNumber
+  const NOT_SAVED_WARN = 'ยังไม่บันทึก — ชุดนี้มีบรรทัดที่ถูกปฏิเสธ ระบบจึงไม่บันทึกทั้งชุด (รวมยอด statement) แก้บรรทัดที่ถูกปฏิเสธแล้วส่งทั้งชุดใหม่'
+  const rejectedCount = results.filter(r => r.status === 'rejected').length
+  const saved = rejectedCount === 0
+  if (!saved) {
+    for (const r of results) {
+      if (r.status === 'accepted') {
+        r.status = 'not_saved'
+        r.warnings = [...(r.warnings ?? []), NOT_SAVED_WARN]
       }
-    })()
-  } catch (e) {
-    if (isHeaderAccountError(e)) throw new MonthCloseError(400, (e as Error).message)
-    throw e
+    }
+  } else {
+    const now = new Date().toISOString()
+    try {
+      db.transaction(() => {
+        // รอบกระทบยอด: 1 แถวต่อบัญชีต่องวด — statement ล่าสุดที่ส่งมาเป็นตัวเทียบ
+        db.prepare(`INSERT INTO bank_reconciliations (id, tenant_id, period, account_id, statement_closing_balance, statement_hash,
+            submitted_by, submitted_by_name, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(tenant_id, period, account_id) DO UPDATE SET statement_closing_balance = excluded.statement_closing_balance,
+            statement_hash = COALESCE(excluded.statement_hash, bank_reconciliations.statement_hash),
+            submitted_by = excluded.submitted_by, submitted_by_name = excluded.submitted_by_name, updated_at = excluded.updated_at`)
+          .run(generateId(), tenantId, input.period, bank.id, r2(stmt), input.statement_hash ?? null, actor.email, actor.name, now, now)
+        const recon = db.prepare('SELECT id FROM bank_reconciliations WHERE tenant_id = ? AND period = ? AND account_id = ?').get(tenantId, input.period, bank.id) as { id: string }
+
+        for (const w of toWrite) {
+          const recordId = generateId()
+          let jeId: string | null = null
+          let entryNumber: string | null = null
+          if (w.plan.legs.length) {
+            jeId = generateId()
+            entryNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', Number(w.line.date.substring(0, 4)), 5, w.line.date)
+            const total = r2(w.plan.legs.reduce((s, l) => s + l.debit, 0))
+            const label = ADJ_TYPES[w.type].label
+            db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, source_number, description,
+                total_debit, total_credit, is_auto_generated, is_posted, notes, created_by, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`)
+              .run(jeId, tenantId, entryNumber, w.line.date, CLOSE_ADJ_REF, recordId, String(w.line.statement_ref).trim(),
+                `ปิดเดือน ${input.period} · ${label}: ${String(w.line.description).trim()}`, total, total,
+                `เหตุผลจาก AI: ${String(w.line.reason).trim()}${w.line.confidence != null ? ` (ความมั่นใจ ${Math.round(Number(w.line.confidence) * 100)}%)` : ''} · statement บรรทัด ${w.line.statement_line_no}`,
+                actor.email, now, now)
+            const ins = db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+            w.plan.legs.forEach((l, i) => ins.run(generateId(), tenantId, jeId, l.accountId, i + 1, String(w.line.description).trim(), r2(l.debit), r2(l.credit)))
+          }
+          db.prepare(`INSERT INTO bank_reconciliation_records (id, tenant_id, reconciliation_id, dedupe_key, type, line_date, amount, effect, direction,
+              statement_ref, statement_line_no, description, account_code, counter_account_code, ref_line_id, source_doc_type, source_doc_id,
+              reason, confidence, statement_hash, journal_entry_id, status, submitted_by, submitted_by_name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(recordId, tenantId, recon.id, w.key, w.type, w.line.date, r2(Number(w.line.amount)), w.plan.effect,
+              w.line.direction ? String(w.line.direction).toUpperCase() : null, String(w.line.statement_ref).trim(), w.line.statement_line_no,
+              String(w.line.description).trim(), w.line.account_code ?? null, w.line.counter_account_code ?? null, w.line.ref_line_id ?? null,
+              w.plan.sourceDocType ?? null, w.plan.sourceDocId ?? null, String(w.line.reason).trim(),
+              w.line.confidence != null ? Number(w.line.confidence) : null, input.statement_hash ?? null, jeId, w.plan.status,
+              actor.email, actor.name, now, now)
+          const res = results.find(r => r.index === w.index)!
+          res.record_id = recordId
+          res.entry_number = entryNumber
+        }
+      })()
+    } catch (e) {
+      if (isHeaderAccountError(e)) throw new MonthCloseError(400, (e as Error).message)
+      throw e
+    }
   }
 
-  const st = reconciliationStatus(tenantId, input.period).find(r => r.accountId === bank.id) as ReconStatus
-  const difference = st.difference ?? r2(stmt - st.book)
+  const st = reconciliationStatus(tenantId, input.period).find(r => r.accountId === bank.id)
+  const book = st?.book ?? 0
+  const pending = st?.pending ?? 0
+  const timing = st?.timing ?? 0
+  const difference = st?.difference ?? r2(stmt - book)
+  const reconciled = saved && Math.abs(difference) <= ZERO
   const count = (s: LineResult['status']) => results.filter(r => r.status === s).length
   return {
     period: input.period,
     bank_account: { code: bank.code, name: bank.name, kind: bank.kind },
     results,
     summary: {
-      accepted: count('accepted'), duplicate: count('duplicate'), rejected: count('rejected'),
-      book_closing_balance: st.book, pending_adjustments: st.pending, timing_items: st.timing,
-      statement_closing_balance: r2(stmt), difference, reconciled: Math.abs(difference) <= ZERO,
-      message: Math.abs(difference) <= ZERO
-        ? 'ยอดตามบัญชี + รายการปรับปรุง + รายการระหว่างทาง = ยอดตาม statement แล้ว · รายการทั้งหมดเป็นร่าง รอคนอนุมัติที่หน้า บัญชี > ปิดงวด'
-        : `ยังต่าง ฿${difference.toLocaleString('th-TH', { minimumFractionDigits: 2 })} (statement − บัญชี − รายการปรับปรุง − รายการระหว่างทาง) — หาบรรทัด statement ที่ยังไม่จับคู่ แก้บรรทัดที่ถูกปฏิเสธ แล้วส่งเพิ่ม (ส่งซ้ำได้ ระบบกันซ้ำ) · ปิดงวดไม่ได้จนกว่าผลต่างเป็น 0`,
+      accepted: count('accepted'), duplicate: count('duplicate'), rejected: rejectedCount,
+      not_saved: count('not_saved'), saved,
+      book_closing_balance: book, pending_adjustments: pending, timing_items: timing,
+      statement_closing_balance: r2(stmt), difference, reconciled,
+      message: !saved
+        ? `ไม่ได้บันทึกอะไรเลย: มี ${rejectedCount} บรรทัดถูกปฏิเสธ — แก้ตาม errors ของแต่ละบรรทัดแล้วส่งทั้งชุดใหม่ (ส่งซ้ำได้ ระบบกันซ้ำ) · ยอด statement ยังไม่ถูกบันทึก`
+        : reconciled
+          ? 'ยอดตามบัญชี + รายการปรับปรุง + รายการระหว่างทาง = ยอดตาม statement แล้ว · รายการทั้งหมดเป็นร่าง รอคนอนุมัติที่หน้า บัญชี > ปิดงวด'
+          : `ยังต่าง ฿${difference.toLocaleString('th-TH', { minimumFractionDigits: 2 })} (statement − บัญชี − รายการปรับปรุง − รายการระหว่างทาง) — หาบรรทัด statement ที่ยังไม่จับคู่ แก้บรรทัดที่ถูกปฏิเสธ แล้วส่งเพิ่ม (ส่งซ้ำได้ ระบบกันซ้ำ) · ปิดงวดไม่ได้จนกว่าผลต่างเป็น 0`,
     },
   }
 }

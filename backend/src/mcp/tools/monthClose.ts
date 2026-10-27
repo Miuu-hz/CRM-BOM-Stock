@@ -46,6 +46,7 @@ export function registerMonthCloseTools(server: IMcpServer, tenantId: string, us
     'submit_close_adjustments',
     `ส่งรายการปรับปรุงจากการเทียบ statement กลับเข้าระบบ (ทีละ 1 บัญชี ≤ ${MAX_LINES} บรรทัด) / Submit month-end bank reconciliation adjustments.
 ระบบตรวจทุกบรรทัด (ประเภท/บัญชี/ยอด/งวด/รายการเดิม/บัญชีหัว) แล้วเก็บเป็น "ร่าง" เท่านั้น — คนต้องอนุมัติที่หน้า บัญชี > ปิดงวด ก่อนลงบัญชี
+ถ้ามีบรรทัดใดถูกปฏิเสธ (rejected) ระบบจะไม่บันทึกอะไรเลยทั้งชุดรวมยอด statement (บรรทัดที่ผ่านได้สถานะ not_saved) — แก้บรรทัดที่ถูกปฏิเสธแล้วส่งทั้งชุดใหม่
 ส่งซ้ำได้ (กันซ้ำด้วยบัญชี+วันที่+ยอด+statement_ref+statement_line_no) · ตอบผลรายบรรทัดพร้อมวิธีแก้ และผลต่างที่เหลือ (summary.difference ต้องเป็น 0)
 ไม่มีอะไรต้องปรับก็ส่ง lines: [] พร้อม statement_closing_balance เพื่อบันทึกว่ากระทบยอดแล้ว · ดูประเภท/ตัวอย่างใน get_close_pack (types, submitSchema)`,
     {

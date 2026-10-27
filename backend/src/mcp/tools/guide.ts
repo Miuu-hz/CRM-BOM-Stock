@@ -211,6 +211,7 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - Closed period rejected; every line date must be inside the period; amount > 0 with at most 2 decimals; type must be one of the 13; the account must be allowed for the type and must not be a header account ("บัญชีหัว ... เลือกบัญชีย่อยแทน").
 - ref_line_id must exist in this business and be posted; total corrections may not exceed the original line.
 - OWNER_* types need the business entity type set ("ตั้งรูปแบบกิจการที่ ตั้งค่า > ข้อมูลบริษัท ก่อน").
+- Atomic batch: if any line is rejected, nothing in the batch is saved including the statement closing balance (valid lines return status not_saved, "ไม่ได้บันทึกอะไรเลย: มี N บรรทัดถูกปฏิเสธ ...") — fix the rejected lines and resend the whole batch.
 - Resubmitting the same statement line returns status duplicate (no new entry).
 - Equation: book closing + pending adjustments + timing items = statement closing; otherwise the drafts are kept but the month cannot be closed, and summary.difference tells you what is left.
 (d) Pitfalls & fixes:

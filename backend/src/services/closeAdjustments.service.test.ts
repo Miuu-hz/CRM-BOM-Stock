@@ -245,23 +245,28 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
       period: PERIOD, bank_account_code: ACC.BANK, statement_closing_balance: 0, lines: [],
     })).toThrowError(expect.objectContaining({ status: 400, message: expect.stringContaining('บัญชีหัว') }))
 
-    const res = submitCloseAdjustments(t, u.actor, {
+    const badRes = submitCloseAdjustments(t, u.actor, {
       period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: -270,
       lines: [
         baseLine({ statement_line_no: 1, statement_ref: 'E1', type: 'MISSING_EXPENSE', account_code: ACC.INPUT_VAT, amount: 100 }),
         baseLine({ statement_line_no: 2, statement_ref: 'E2', type: 'MISSING_EXPENSE', account_code: ACC.COGS, amount: 100 }),
         baseLine({ statement_line_no: 3, statement_ref: 'E3', type: 'MISSING_EXPENSE', account_code: '5301', amount: 100 }),
         baseLine({ statement_line_no: 4, statement_ref: 'E4', type: 'MISSING_EXPENSE', account_code: '5999', amount: 100 }),
+      ],
+    })
+    expect(badRes.results.map(r => r.status)).toEqual(['rejected', 'rejected', 'rejected', 'rejected'])
+    expect(badRes.results[2].errors![0]).toContain('บัญชีหัว')
+    expect(badRes.results[3].errors![0]).toContain('ไม่พบบัญชี')
+
+    const res = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: -270,
+      lines: [
         baseLine({ statement_line_no: 5, statement_ref: 'E5', type: 'MISSING_EXPENSE', account_code: '5306', amount: 300 }),
         baseLine({ statement_line_no: 6, statement_ref: 'E6', type: 'BANK_FEE', amount: 20 }),
         baseLine({ statement_line_no: 7, statement_ref: 'E7', type: 'INTEREST_INCOME', amount: 50 }),
       ],
     })
-
-    expect(res.results.slice(0, 4).map(r => r.status)).toEqual(['rejected', 'rejected', 'rejected', 'rejected'])
-    expect(res.results[2].errors![0]).toContain('บัญชีหัว')
-    expect(res.results[3].errors![0]).toContain('ไม่พบบัญชี')
-    expect(res.results.slice(4).map(r => r.status)).toEqual(['accepted', 'accepted', 'accepted'])
+    expect(res.results.map(r => r.status)).toEqual(['accepted', 'accepted', 'accepted'])
 
     const checkJv = (recordId: string, drCode: string, crCode: string, amt: number) => {
       const rec = db.prepare('SELECT journal_entry_id FROM bank_reconciliation_records WHERE id = ?').get(recordId) as any
@@ -275,9 +280,9 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
       ])
     }
 
-    checkJv(res.results[4].record_id!, '5306', '1102-01', 300)
-    checkJv(res.results[5].record_id!, ACC.BANK_CHARGE, '1102-01', 20)
-    checkJv(res.results[6].record_id!, '1102-01', ACC.INTEREST_INCOME, 50)
+    checkJv(res.results[0].record_id!, '5306', '1102-01', 300)
+    checkJv(res.results[1].record_id!, ACC.BANK_CHARGE, '1102-01', 20)
+    checkJv(res.results[2].record_id!, '1102-01', ACC.INTEREST_INCOME, 50)
   })
 
   it('5. ทุกร่าง JV ที่สร้างต้องดุล (Σdebit = Σcredit) และผลกระทบต่อบัญชีที่กระทบยอดเท่ากับ record.effect', () => {
@@ -376,12 +381,19 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     const draftJe = insertJe(u1.tenantId, [{ code: '5306', debit: 500 }, { code: ACC.CASH, credit: 500 }], { posted: 0 })
     const postedJe = insertJe(u1.tenantId, [{ code: '5306', debit: 500 }, { code: ACC.CASH, credit: 500 }], { posted: 1 })
 
+    const okRes = submitCloseAdjustments(u1.tenantId, u1.actor, {
+      period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: -300,
+      lines: [
+        baseLine({ statement_line_no: 3, statement_ref: 'R3', type: 'WRONG_CHANNEL', ref_line_id: postedJe.lineIds[ACC.CASH], amount: 300 }),
+      ],
+    })
+    expect(okRes.results[0].status).toBe('accepted')
+
     const res = submitCloseAdjustments(u1.tenantId, u1.actor, {
       period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: -500,
       lines: [
         baseLine({ statement_line_no: 1, statement_ref: 'R1', type: 'WRONG_CHANNEL', ref_line_id: otherTenantJe.lineIds[ACC.CASH], amount: 500 }),
         baseLine({ statement_line_no: 2, statement_ref: 'R2', type: 'WRONG_CHANNEL', ref_line_id: draftJe.lineIds[ACC.CASH], amount: 500 }),
-        baseLine({ statement_line_no: 3, statement_ref: 'R3', type: 'WRONG_CHANNEL', ref_line_id: postedJe.lineIds[ACC.CASH], amount: 300 }),
         baseLine({ statement_line_no: 4, statement_ref: 'R4', type: 'WRONG_CHANNEL', ref_line_id: postedJe.lineIds[ACC.CASH], amount: 250 }),
       ],
     })
@@ -390,9 +402,8 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     expect(res.results[0].errors![0]).toContain('ไม่พบ ref_line_id')
     expect(res.results[1].status).toBe('rejected')
     expect(res.results[1].errors![0]).toContain('ยังเป็นร่าง')
-    expect(res.results[2].status).toBe('accepted')
-    expect(res.results[3].status).toBe('rejected')
-    expect(res.results[3].errors![0]).toContain('ยอดแก้รวมเกินยอดรายการเดิม')
+    expect(res.results[2].status).toBe('rejected')
+    expect(res.results[2].errors![0]).toContain('ยอดแก้รวมเกินยอดรายการเดิม')
   })
 
   it('8. WRONG_ACCOUNT: ลงจ่ายที่ 1102 ก่อนเพิ่มบัญชีย่อย 1102-01 → ส่ง WRONG_ACCOUNT ได้ร่าง → ADMIN อนุมัติแล้ว 1102 เหลือ 0 และ 1102-01 ลดลง · trigger ยังห้ามย้ายเกินยอด', () => {
@@ -493,12 +504,20 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
 
     // COMPANY: OWNER_PERSONAL → Dr 1114 + warning, OWNER_CAPITAL → Cr 2110, counter_account_code นอกเหนือ 2110/3101 → ปฏิเสธ
     db.prepare('UPDATE company_settings SET entity_type = ? WHERE tenant_id = ?').run('COMPANY', t)
+    const coBadRes = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 2300,
+      lines: [
+        baseLine({ statement_line_no: 6, statement_ref: 'O-BAD-CNT', type: 'OWNER_CAPITAL', counter_account_code: '2101', amount: 500 }),
+      ],
+    })
+    expect(coBadRes.results[0].status).toBe('rejected')
+    expect(coBadRes.results[0].errors![0]).toContain('counter_account_code')
+
     const coRes = submitCloseAdjustments(t, u.actor, {
       period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 2300,
       lines: [
         baseLine({ statement_line_no: 4, statement_ref: 'O-CO-P', type: 'OWNER_PERSONAL', amount: 400 }),
         baseLine({ statement_line_no: 5, statement_ref: 'O-CO-C', type: 'OWNER_CAPITAL', amount: 2000 }),
-        baseLine({ statement_line_no: 6, statement_ref: 'O-BAD-CNT', type: 'OWNER_CAPITAL', counter_account_code: '2101', amount: 500 }),
       ],
     })
     expect(coRes.results[0].status).toBe('accepted')
@@ -506,8 +525,6 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     expect(drAccountOf(coRes.results[0].record_id!)).toBe(ACC.DIRECTOR_LOAN) // 1114
     expect(coRes.results[1].status).toBe('accepted')
     expect(crAccountOf(coRes.results[1].record_id!)).toBe(ACC.OWNER_ADVANCE) // 2110
-    expect(coRes.results[2].status).toBe('rejected')
-    expect(coRes.results[2].errors![0]).toContain('counter_account_code')
     expect(bankId).toBeTruthy()
   })
 
@@ -554,40 +571,46 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     const res = submitCloseAdjustments(t, u.actor, {
       period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 1350,
       lines: [
-        // ยอดเกินใบแจ้งหนี้ → ปฏิเสธ
-        baseLine({ statement_line_no: 1, statement_ref: 'UR-OVER', type: 'UNRECORDED_RECEIPT', invoice_id: invId, amount: 1000.5 }),
         // ยอดตรงใบแจ้งหนี้ → รับโดยยังไม่สร้าง JV
         baseLine({ statement_line_no: 2, statement_ref: 'UR-OK', date: '2026-10-18', type: 'UNRECORDED_RECEIPT', invoice_id: invId, amount: 1000 }),
-        // ส่ง UNRECORDED_RECEIPT ซ้ำใบแจ้งหนี้เดิมในชุดเดียวกันจนเกินยอดค้าง → ปฏิเสธ
-        baseLine({ statement_line_no: 20, statement_ref: 'UR-DUP-INV', date: '2026-10-18', type: 'UNRECORDED_RECEIPT', invoice_id: invId, amount: 100 }),
         // DUPLICATE ใบจ่ายเงินผู้ขาย → รับโดยยังไม่สร้าง JV
         baseLine({ statement_line_no: 3, statement_ref: 'DUP-SP', date: '2026-10-19', type: 'DUPLICATE', ref_line_id: spJe.lineIds['1102-01'], amount: 600 }),
         // DUPLICATE รายการ MANUAL → สร้างร่าง JV กลับรายการ
         baseLine({ statement_line_no: 4, statement_ref: 'DUP-MAN', date: '2026-10-20', type: 'DUPLICATE', ref_line_id: manualJe.lineIds['1102-01'], amount: 200 }),
-        // DUPLICATE อ้าง ref_line_id เดิมซ้ำในชุดเดียวกัน → ปฏิเสธ
+      ],
+    })
+    expect(res.results.map(r => r.status)).toEqual(['accepted', 'accepted', 'accepted'])
+
+    const badRes = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 1350,
+      lines: [
+        // ยอดเกินใบแจ้งหนี้ → ปฏิเสธ
+        baseLine({ statement_line_no: 1, statement_ref: 'UR-OVER', type: 'UNRECORDED_RECEIPT', invoice_id: invId, amount: 1000.5 }),
+        // ส่ง UNRECORDED_RECEIPT ซ้ำใบแจ้งหนี้เดิมจนเกินยอดค้าง → ปฏิเสธ
+        baseLine({ statement_line_no: 20, statement_ref: 'UR-DUP-INV', date: '2026-10-18', type: 'UNRECORDED_RECEIPT', invoice_id: invId, amount: 100 }),
+        // DUPLICATE อ้าง ref_line_id เดิมซ้ำ → ปฏิเสธ
         baseLine({ statement_line_no: 40, statement_ref: 'DUP-MAN-2', date: '2026-10-20', type: 'DUPLICATE', ref_line_id: manualJe.lineIds['1102-01'], amount: 200 }),
         // DUPLICATE เอกสารอัตโนมัติ POS_SALE → ปฏิเสธ
         baseLine({ statement_line_no: 5, statement_ref: 'DUP-POS', type: 'DUPLICATE', ref_line_id: posJe.lineIds['1102-01'], amount: 350 }),
       ],
     })
+    expect(badRes.results.map(r => r.status)).toEqual(['rejected', 'rejected', 'rejected', 'rejected'])
+    expect(badRes.results[0].errors![0]).toContain('เกินยอดค้าง')
+    expect(badRes.results[1].errors![0]).toContain('เกินยอดค้าง')
+    expect(badRes.results[2].errors![0]).toContain('ยอดแก้รวมเกินยอดรายการเดิม')
+    expect(badRes.results[3].errors![0]).toContain('POS_SALE')
 
-    expect(res.results.map(r => r.status)).toEqual(['rejected', 'accepted', 'rejected', 'accepted', 'accepted', 'rejected', 'rejected'])
-    expect(res.results[0].errors![0]).toContain('เกินยอดค้าง')
-    expect(res.results[2].errors![0]).toContain('เกินยอดค้าง')
-    expect(res.results[5].errors![0]).toContain('ยอดแก้รวมเกินยอดรายการเดิม')
-    expect(res.results[6].errors![0]).toContain('POS_SALE')
-
-    const urRec = db.prepare('SELECT * FROM bank_reconciliation_records WHERE id = ?').get(res.results[1].record_id) as any
+    const urRec = db.prepare('SELECT * FROM bank_reconciliation_records WHERE id = ?').get(res.results[0].record_id) as any
     expect(urRec.journal_entry_id).toBeNull()
     expect(urRec.source_doc_type).toBe('INVOICE')
     expect(urRec.source_doc_id).toBe(invId)
 
-    const spRec = db.prepare('SELECT * FROM bank_reconciliation_records WHERE id = ?').get(res.results[3].record_id) as any
+    const spRec = db.prepare('SELECT * FROM bank_reconciliation_records WHERE id = ?').get(res.results[1].record_id) as any
     expect(spRec.journal_entry_id).toBeNull()
     expect(spRec.source_doc_type).toBe('SUPPLIER_PAYMENT_VOID')
     expect(spRec.source_doc_id).toBe(spId)
 
-    const manRec = db.prepare('SELECT * FROM bank_reconciliation_records WHERE id = ?').get(res.results[4].record_id) as any
+    const manRec = db.prepare('SELECT * FROM bank_reconciliation_records WHERE id = ?').get(res.results[2].record_id) as any
     expect(manRec.journal_entry_id).toBeTruthy()
 
     // อนุมัติ UNRECORDED_RECEIPT → สร้างใบเสร็จด้วย recordCustomerPayment วันที่ตาม statement, ตัดยอดค้างใบแจ้งหนี้, ลงบัญชี PAYMENT เข้า 1102-01
@@ -623,18 +646,25 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     // ส่งค่าธรรมเนียม -20 (pending = -20) + TIMING ของรายการจ่าย -200 (timing = +200)
     // ดังนั้น book (800) + pending (-20) + timing (+200) = 980
     // ถ้าระบุ statement = 950 → difference = -30, reconciled = false แต่ร่างยังถูกเก็บไว้
+    const batchDupTiming = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 950,
+      lines: [
+        baseLine({ statement_line_no: 2, statement_ref: 'EQ-TIM', type: 'TIMING', ref_line_id: unpresented.lineIds['1102-01'], amount: 200 }),
+        baseLine({ statement_line_no: 22, statement_ref: 'EQ-TIM-BATCH-DUP', type: 'TIMING', ref_line_id: unpresented.lineIds['1102-01'], amount: 200 }),
+      ],
+    })
+    expect(batchDupTiming.results[1].status).toBe('rejected')
+    expect(batchDupTiming.results[1].errors![0]).toContain('ถูกระบุเป็นรายการระหว่างทางของงวดนี้ไปแล้ว')
+
     const notEq = submitCloseAdjustments(t, u.actor, {
       period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 950,
       lines: [
         baseLine({ statement_line_no: 1, statement_ref: 'EQ-FEE', type: 'BANK_FEE', amount: 20 }),
         baseLine({ statement_line_no: 2, statement_ref: 'EQ-TIM', type: 'TIMING', ref_line_id: unpresented.lineIds['1102-01'], amount: 200 }),
-        baseLine({ statement_line_no: 22, statement_ref: 'EQ-TIM-BATCH-DUP', type: 'TIMING', ref_line_id: unpresented.lineIds['1102-01'], amount: 200 }),
       ],
     })
-    expect(notEq.results[2].status).toBe('rejected')
-    expect(notEq.results[2].errors![0]).toContain('ถูกระบุเป็นรายการระหว่างทางของงวดนี้ไปแล้ว')
     expect(notEq.summary).toMatchObject({
-      accepted: 2, rejected: 1, book_closing_balance: 800, pending_adjustments: -20, timing_items: 200,
+      accepted: 2, rejected: 0, book_closing_balance: 800, pending_adjustments: -20, timing_items: 200,
       statement_closing_balance: 950, difference: -30, reconciled: false,
     })
     const timingRecId = notEq.results[1].record_id!
@@ -650,8 +680,13 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     })
     expect(dupTiming.results[0].status).toBe('rejected')
     expect(dupTiming.results[0].errors![0]).toContain('ถูกระบุเป็นรายการระหว่างทางของงวดนี้ไปแล้ว')
+
     // และเมื่อส่ง statement = 980 → difference = 0, reconciled = true
-    expect(dupTiming.summary).toMatchObject({
+    const eqOk = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD, bank_account_code: '1102-01', statement_closing_balance: 980,
+      lines: [],
+    })
+    expect(eqOk.summary).toMatchObject({
       book_closing_balance: 800, pending_adjustments: -20, timing_items: 200,
       statement_closing_balance: 980, difference: 0, reconciled: true,
     })
@@ -800,5 +835,98 @@ describe('W8 — Month-close adjustments adversarial QA', () => {
     const badPeriod = await request(app).get('/api/month-close/2026-13/pack').set('Authorization', `Bearer ${u.token}`)
     expect(badPeriod.status).toBe(400)
     expect(badPeriod.body.message).toMatch(/[ก-๙]/)
+  })
+
+  it('16. (A) ส่งงวด 2026-08 แต่บรรทัดลงวันที่ต.ค.ทั้งหมด → ปฏิเสธทุกบรรทัด ไม่สร้างแถว bank_reconciliations/records ไม่ขยับเลข JOURNAL และ summary.saved === false', () => {
+    const u = setup('ADMIN')
+    const t = u.tenantId
+    addBank(t, '1102-01')
+    const seqBefore = jvSeq(t)
+
+    const res = submitCloseAdjustments(t, u.actor, {
+      period: '2026-08',
+      bank_account_code: '1102-01',
+      statement_closing_balance: 1171476.55,
+      lines: [
+        baseLine({ statement_line_no: 1, statement_ref: 'AUG-1', date: '2026-10-15', amount: 50 }),
+        baseLine({ statement_line_no: 2, statement_ref: 'AUG-2', date: '2026-10-20', type: 'INTEREST_INCOME', amount: 100 }),
+      ],
+    })
+
+    expect(res.results.map(r => r.status)).toEqual(['rejected', 'rejected'])
+    expect(db.prepare('SELECT * FROM bank_reconciliations WHERE tenant_id = ? AND period = ?').get(t, '2026-08')).toBeUndefined()
+    expect((db.prepare('SELECT COUNT(*) AS n FROM bank_reconciliation_records WHERE tenant_id = ?').get(t) as any).n).toBe(0)
+    expect(jvSeq(t)).toBe(seqBefore)
+    expect(res.summary.saved).toBe(false)
+    expect(res.summary.reconciled).toBe(false)
+    expect(res.summary.rejected).toBe(2)
+    expect(res.summary.not_saved).toBe(0)
+    expect(res.summary.message).toBe('ไม่ได้บันทึกอะไรเลย: มี 2 บรรทัดถูกปฏิเสธ — แก้ตาม errors ของแต่ละบรรทัดแล้วส่งทั้งชุดใหม่ (ส่งซ้ำได้ ระบบกันซ้ำ) · ยอด statement ยังไม่ถูกบันทึก')
+  })
+
+  it('17. (B) ส่งชุดสะอาดบันทึกยอด statement 1000 แล้วส่งชุดผสม (ดี 1 + ผิด 1) ด้วยยอด 2000 → หัวกระทบยอดยังเป็น 1000 บรรทัดที่ดีได้สถานะ not_saved ไม่สร้าง record/JE และไม่ขยับเลข JOURNAL', () => {
+    const u = setup('ADMIN')
+    const t = u.tenantId
+    addBank(t, '1102-01')
+
+    const clean = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD,
+      bank_account_code: '1102-01',
+      statement_closing_balance: 1000,
+      lines: [baseLine({ statement_line_no: 1, statement_ref: 'CLN-1', type: 'BANK_FEE', amount: 25 })],
+    })
+    expect(clean.summary.saved).toBe(true)
+    expect(clean.summary.accepted).toBe(1)
+    expect(clean.summary.not_saved).toBe(0)
+
+    const seqAfterClean = jvSeq(t)
+    const recCountAfterClean = (db.prepare('SELECT COUNT(*) AS n FROM bank_reconciliation_records WHERE tenant_id = ?').get(t) as any).n
+    const jeCountAfterClean = (db.prepare('SELECT COUNT(*) AS n FROM journal_entries WHERE tenant_id = ?').get(t) as any).n
+
+    const mixed = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD,
+      bank_account_code: '1102-01',
+      statement_closing_balance: 2000,
+      lines: [
+        baseLine({ statement_line_no: 2, statement_ref: 'MIX-OK', type: 'INTEREST_INCOME', amount: 80 }),
+        baseLine({ statement_line_no: 3, statement_ref: 'MIX-BAD', type: 'MISSING_EXPENSE', account_code: '5999', amount: 150 }),
+      ],
+    })
+
+    const header = db.prepare('SELECT statement_closing_balance FROM bank_reconciliations WHERE tenant_id = ? AND period = ?').get(t, PERIOD) as any
+    expect(header.statement_closing_balance).toBe(1000)
+    expect(mixed.results[0].status).toBe('not_saved')
+    expect(mixed.results[0].record_id).toBeUndefined()
+    expect(mixed.results[0].entry_number).toBeUndefined()
+    expect(mixed.results[0].warnings).toContain('ยังไม่บันทึก — ชุดนี้มีบรรทัดที่ถูกปฏิเสธ ระบบจึงไม่บันทึกทั้งชุด (รวมยอด statement) แก้บรรทัดที่ถูกปฏิเสธแล้วส่งทั้งชุดใหม่')
+    expect(mixed.results[1].status).toBe('rejected')
+    expect((db.prepare('SELECT COUNT(*) AS n FROM bank_reconciliation_records WHERE tenant_id = ?').get(t) as any).n).toBe(recCountAfterClean)
+    expect((db.prepare('SELECT COUNT(*) AS n FROM journal_entries WHERE tenant_id = ?').get(t) as any).n).toBe(jeCountAfterClean)
+    expect(jvSeq(t)).toBe(seqAfterClean)
+
+    expect(mixed.summary.saved).toBe(false)
+    expect(mixed.summary.reconciled).toBe(false)
+    expect(mixed.summary.accepted).toBe(0)
+    expect(mixed.summary.not_saved).toBe(1)
+    expect(mixed.summary.rejected).toBe(1)
+    expect(mixed.summary.message).toBe('ไม่ได้บันทึกอะไรเลย: มี 1 บรรทัดถูกปฏิเสธ — แก้ตาม errors ของแต่ละบรรทัดแล้วส่งทั้งชุดใหม่ (ส่งซ้ำได้ ระบบกันซ้ำ) · ยอด statement ยังไม่ถูกบันทึก')
+  })
+
+  it('18. (C) ส่ง lines: [] พร้อม statement_closing_balance 500 ยังสร้างหัวกระทบยอดด้วยยอด 500 ตามปกติ', () => {
+    const u = setup('ADMIN')
+    const t = u.tenantId
+    addBank(t, '1102-01')
+
+    const res = submitCloseAdjustments(t, u.actor, {
+      period: PERIOD,
+      bank_account_code: '1102-01',
+      statement_closing_balance: 500,
+      lines: [],
+    })
+    expect(res.summary.saved).toBe(true)
+    expect(res.summary.not_saved).toBe(0)
+    expect(res.summary.rejected).toBe(0)
+    const header = db.prepare('SELECT statement_closing_balance FROM bank_reconciliations WHERE tenant_id = ? AND period = ?').get(t, PERIOD) as any
+    expect(header).toEqual({ statement_closing_balance: 500 })
   })
 })
