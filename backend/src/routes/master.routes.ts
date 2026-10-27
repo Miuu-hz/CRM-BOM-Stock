@@ -6,6 +6,7 @@ import { authenticate, requireMaster } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { getSubscription, PACK_FEATURES, ADDON_FEATURES, EXTRA_USERS } from '../services/subscription.service'
 import { lookupKey, priceDefinitions } from '../services/billing.catalog'
+import { stopBilling } from '../services/billing.service'
 
 // tenant ที่จ่ายผ่าน Stripe: webhook เขียนสิทธิ์ทับทุกครั้งที่ Stripe แจ้ง แก้ใน DB ตรงๆ จะเด้งกลับ หรือ Stripe ยังตัดเงินต่อ
 const stripeRow = (tenantId: string) => getDb().prepare(
@@ -189,11 +190,18 @@ router.patch('/tenant/:tenantId/quota', authenticate, requireMaster, (req: Reque
 })
 
 // DELETE /api/master/tenant/:tenantId — soft deactivate all users
-router.delete('/tenant/:tenantId', authenticate, requireMaster, (req: Request, res: Response) => {
+// จ่ายผ่าน Stripe อยู่ → สั่งไม่ต่ออายุก่อน ถ้า Stripe ล้มก็ยังไม่ปิดผู้ใช้ (ไม่งั้นปิดบริษัทแล้วยังโดนตัดเงิน)
+router.delete('/tenant/:tenantId', authenticate, requireMaster, async (req: Request, res: Response): Promise<void> => {
   const db = getDb()
   const { tenantId } = req.params
+  let stripeStopped = false
+  if (stripeRow(tenantId)?.stripe_subscription_id) {
+    try { stripeStopped = await stopBilling(tenantId, false) } catch (err: any) {
+      res.status(502).json({ success: false, message: `หยุดต่ออายุใน Stripe ไม่สำเร็จ ยังไม่ได้ปิดใช้งาน: ${err.message}` }); return
+    }
+  }
   const result = db.prepare("UPDATE users SET status = 'inactive' WHERE tenant_id = ?").run(tenantId)
-  res.json({ success: true, data: { tenantId, deactivated: result.changes } })
+  res.json({ success: true, data: { tenantId, deactivated: result.changes, stripeStopped } })
 })
 
 // DELETE /api/master/tenant/:tenantId/purge — ลบถาวร เฉพาะ tenant ที่ไม่มีผู้ใช้และไม่มีข้อมูลธุรกิจ
@@ -202,14 +210,11 @@ const SHELL_TABLES = new Set([
   'company_settings', 'tenant_subscriptions', 'document_sequences',
   'document_number_formats', 'currencies', 'accounts',
 ])
-router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, (req: Request, res: Response) => {
+router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, async (req: Request, res: Response): Promise<void> => {
   const db = getDb()
   const { tenantId } = req.params
   if (tenantId === req.user!.tenantId) {
     res.status(400).json({ success: false, message: 'ลบ tenant ที่กำลังใช้งานอยู่ไม่ได้ ให้สลับไป tenant อื่นก่อน' }); return
-  }
-  if (stripeRow(tenantId)?.stripe_subscription_id) {
-    res.status(409).json({ success: false, message: 'บริษัทนี้ยังมี subscription ใน Stripe — ยกเลิกใน Stripe Dashboard ก่อน ไม่งั้น Stripe จะตัดบัตรต่อทั้งที่ลบบริษัทไปแล้ว' }); return
   }
   const envKey = Object.keys(process.env).find(k => /^MASTER_.+_TENANT_ID$/.test(k) && process.env[k] === tenantId)
   if (envKey) {
@@ -229,6 +234,12 @@ router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, (req: Requ
     }); return
   }
 
+  // ยกเลิก Stripe ก่อนลบ — ลบแล้วจะไม่เหลือ subscription id ให้ตามไปยกเลิก
+  if (stripeRow(tenantId)?.stripe_subscription_id) {
+    try { await stopBilling(tenantId, true) } catch (err: any) {
+      res.status(502).json({ success: false, message: `ยกเลิก subscription ใน Stripe ไม่สำเร็จ ยังไม่ได้ลบ: ${err.message}` }); return
+    }
+  }
   const deleted = db.transaction(() =>
     owned.reduce((n, t) => n + db.prepare(`DELETE FROM "${t}" WHERE tenant_id = ?`).run(tenantId).changes, 0)
   )()

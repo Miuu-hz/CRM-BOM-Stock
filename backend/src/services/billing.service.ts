@@ -297,6 +297,24 @@ export async function cancelPendingChange(tenantId: string): Promise<void> {
   getDb().prepare('UPDATE tenant_subscriptions SET pending_change = NULL WHERE tenant_id = ?').run(tenantId)
 }
 
+// Master ปิดใช้งาน/ลบบริษัท → หยุดตัดเงิน คืน true ถ้ามี subscription ให้หยุด
+// immediate=false (ปิดใช้งาน): ไม่ต่ออายุ ใช้ได้ถึงสิ้นรอบที่จ่ายไว้ ไม่คืนเงิน — กดยกเลิกการยกเลิกใน Stripe Dashboard ได้
+// immediate=true (ลบถาวร): ยกเลิกทันที
+export async function stopBilling(tenantId: string, immediate: boolean): Promise<boolean> {
+  const existing = await activeSubscription(tenantBilling(tenantId))
+  if (!existing) return false
+  await releaseSchedule(existing) // มีลดแพ็กตั้งเวลาไว้ Stripe ไม่ให้แก้ subscription
+  getDb().prepare('UPDATE tenant_subscriptions SET pending_change = NULL WHERE tenant_id = ?').run(tenantId)
+  if (immediate) {
+    // ลบ tenant_id ออกก่อน — webhook ของการยกเลิกจะข้ามไป ไม่สร้างแถวของบริษัทที่ลบแล้วกลับมา
+    await stripe().subscriptions.update(existing.id, { metadata: { tenant_id: '' } })
+    await stripe().subscriptions.cancel(existing.id)
+  } else {
+    applySubscription(await stripe().subscriptions.update(existing.id, { cancel_at_period_end: true }) as unknown as SubscriptionLike)
+  }
+  return true
+}
+
 async function activeSubscription(billing: TenantBilling): Promise<Stripe.Subscription | null> {
   if (!billing.stripe_subscription_id) return null
   const sub = await stripe().subscriptions.retrieve(billing.stripe_subscription_id)

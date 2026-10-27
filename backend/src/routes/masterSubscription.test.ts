@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+const stopBilling = vi.fn(async () => true)
+vi.mock('../services/billing.service', () => ({ stopBilling: (...a: unknown[]) => stopBilling(...(a as [])) }))
 import express from 'express'
 import request from 'supertest'
 import masterRouter from './master.routes'
@@ -57,7 +60,7 @@ describe('MASTER ตั้ง Pack / Add-on ให้ tenant', () => {
 })
 
 describe('tenant ที่จ่ายผ่าน Stripe', () => {
-  it('Master เปลี่ยนแพ็ก/ต่ออายุ/ลบถาวรไม่ได้ (webhook จะเขียนทับ หรือ Stripe ตัดเงินต่อ) และเห็นลิงก์ Stripe', async () => {
+  it('Master เปลี่ยนแพ็ก/ต่ออายุไม่ได้ (webhook จะเขียนทับ หรือ Stripe ตัดเงินต่อ) และเห็นลิงก์ Stripe', async () => {
     const master = createTestUser({ role: 'MASTER' })
     const tenantId = `t_${generateId()}`
     await put(master.token, tenantId, { planCode: 'business' })
@@ -66,8 +69,35 @@ describe('tenant ที่จ่ายผ่าน Stripe', () => {
 
     expect((await put(master.token, tenantId, { planCode: 'pro' })).status).toBe(409)
     expect((await request(app).post(`/api/master/tenant/${tenantId}/extend`).set(auth).send({ days: 30 })).status).toBe(409)
-    expect((await request(app).delete(`/api/master/tenant/${tenantId}/purge`).set(auth)).status).toBe(409)
     expect(getSubscription(tenantId).planCode).toBe('business')
+  })
+
+  it('ปิดใช้งาน → สั่ง Stripe ไม่ต่ออายุ · Stripe ล้ม = ไม่ปิดผู้ใช้', async () => {
+    const master = createTestUser({ role: 'MASTER' })
+    const tenantId = `t_${generateId()}`
+    await put(master.token, tenantId, { planCode: 'business' })
+    getDb().prepare("UPDATE tenant_subscriptions SET stripe_subscription_id = 'sub_y' WHERE tenant_id = ?").run(tenantId)
+    const auth = { Authorization: `Bearer ${master.token}` }
+
+    stopBilling.mockClear()
+    const ok = await request(app).delete(`/api/master/tenant/${tenantId}`).set(auth)
+    expect(ok.status).toBe(200)
+    expect(ok.body.data.stripeStopped).toBe(true)
+    expect(stopBilling).toHaveBeenCalledWith(tenantId, false)
+
+    stopBilling.mockRejectedValueOnce(new Error('stripe down'))
+    expect((await request(app).delete(`/api/master/tenant/${tenantId}`).set(auth)).status).toBe(502)
+  })
+
+  it('ลบถาวร → ยกเลิก Stripe ทันทีก่อนลบ', async () => {
+    const master = createTestUser({ role: 'MASTER' })
+    const tenantId = `t_${generateId()}`
+    await put(master.token, tenantId, { planCode: 'business' })
+    getDb().prepare("UPDATE tenant_subscriptions SET stripe_subscription_id = 'sub_z' WHERE tenant_id = ?").run(tenantId)
+    stopBilling.mockClear()
+    const res = await request(app).delete(`/api/master/tenant/${tenantId}/purge`).set({ Authorization: `Bearer ${master.token}` })
+    expect(res.status).toBe(200)
+    expect(stopBilling).toHaveBeenCalledWith(tenantId, true)
   })
 
   it('แก้ราคาแพ็กจากหน้า Master ไม่ได้ ราคาที่แสดงมาจาก catalog ที่ Stripe ใช้', async () => {

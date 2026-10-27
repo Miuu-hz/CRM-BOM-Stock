@@ -549,12 +549,12 @@ export default function MasterPanel() {
     `แนะนำให้เปลี่ยนรหัสผ่านหลังเข้าใช้ครั้งแรก`
 
   const handleDeactivate = async (tenantId: string, tenantName: string) => {
-    if (!window.confirm(`ปิดการใช้งาน "${tenantName}" ใช่ไหม?\nผู้ใช้ทั้งหมดใน tenant นี้จะถูก deactivate`)) return
+    if (!window.confirm(`ปิดการใช้งาน "${tenantName}" ใช่ไหม?\nผู้ใช้ทั้งหมดใน tenant นี้จะถูก deactivate\nถ้าจ่ายผ่าน Stripe จะสั่งไม่ต่ออายุ ไม่ตัดเงินรอบถัดไป`)) return
     setDeactivating(tenantId)
     try {
       const res = await api.delete(`/master/tenant/${tenantId}`, { headers: { Authorization: `Bearer ${token}` } })
       if (res.data.success) {
-        toast.success(`ปิดการใช้งาน ${tenantName} แล้ว (${res.data.data.deactivated} users)`)
+        toast.success(`ปิดการใช้งาน ${tenantName} แล้ว (${res.data.data.deactivated} users)${res.data.data.stripeStopped ? ' · Stripe หยุดต่ออายุแล้ว' : ''}`)
         loadStats()
       }
     } catch (err: any) {
@@ -566,7 +566,8 @@ export default function MasterPanel() {
 
   const handlePurge = async (tenantId: string, tenantName: string) => {
     if (!window.confirm(`ลบ "${tenantName}" ถาวรใช่ไหม?
-ลบได้เฉพาะธุรกิจที่ไม่มีผู้ใช้และไม่มีข้อมูล — กู้คืนไม่ได้`)) return
+ลบได้เฉพาะธุรกิจที่ไม่มีผู้ใช้และไม่มีข้อมูล — กู้คืนไม่ได้
+ถ้าจ่ายผ่าน Stripe จะยกเลิก subscription ทันที`)) return
     setDeactivating(tenantId)
     try {
       const res = await api.delete(`/master/tenant/${tenantId}/purge`, { headers: { Authorization: `Bearer ${token}` } })
