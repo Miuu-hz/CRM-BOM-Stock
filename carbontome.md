@@ -1411,7 +1411,7 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 | **Add-on** | API & Webhook Access | `api_access` | `/api/mcp-settings` | `/settings?tab=mcp` | - | เชื่อมต่อโปรแกรมภายนอก, ออก API Key, ยิง Webhook (แถมใน Enterprise AI) |
 | **Add-on** | เพิ่มจำนวนผู้ใช้ (Extra Users) | `extra_users` | ใน `billing.catalog.ts` | `/settings?tab=subscription` | - | เพิ่มจำนวนที่นั่งใช้งานเกินกว่าโควตาของแพ็กเกจ (เช่น Solo +1, Business +2, Business+ +5) |
 | **ระบบเชื่อมต่อ & AI** | Phopy MCP Server | `ai` / `api_access` | `/sse`<br>`/messages` | `/settings?tab=mcp` | ครอบคลุม 30+ tools | อินเทอร์เฟซ Model Context Protocol สำหรับ Claude Desktop / Cursor / Agent ทำงานอัตโนมัติ 3 ระดับสิทธิ์ (readonly / draft / full) |
-| **ระบบเชื่อมต่อ & AI** | LINE Notification & Tasks | *(รอจัด tier)* | `/api/line` | `/settings?tab=line` | - | แจ้งเตือนงานอนุมัติเอกสารและงานเร่งด่วนผ่าน LINE Notify / LINE Bot · สรุปปิดกะ POS (ยอดขาย ลิ้นชัก ขายดี/ซื้อสูงสุด 5 อันดับ) เข้า LINE ส่วนตัวของ Admin |
+| **ระบบเชื่อมต่อ & AI** | LINE Notification & Tasks | *(รอจัด tier)* | `/api/line` | `/settings?tab=line` | - | แจ้งเตือนงานอนุมัติเอกสารและงานเร่งด่วนผ่าน LINE Notify / LINE Bot · สรุปปิดกะ POS (ยอดขาย ลิ้นชัก ขายดี/ซื้อสูงสุด 5 อันดับ) เข้า LINE ส่วนตัวของ Admin · ริชเมนู 4 แบบตามตำแหน่ง (ผู้บริหาร/หัวหน้า/พนักงาน/ยังไม่ผูก) + ยอดขายวันนี้ / กำไรเดือนนี้ / รออนุมัติ / สต็อกต่ำ / บัญชีของฉัน |
 | **ระบบเชื่อมต่อ & AI** | Phopy Kanban (Planka) SSO | *(expiry gate)* | `/api/kanban/sso` | แถบเมนูด้านข้าง | - | ระบบ Single Sign-On ส่งตัวไปยังกระดานจัดการงาน Kanban (kanban.phopy.net) |
 | **Master & แอดมิน** | ระบบจัดการผู้เช่า (Master Panel) | MASTER only | `/api/master/*` | `/master` | - | จัดการ Tenant, สลับบริษัท, ตั้งแพ็กเกจและเลือก Pack/Add-on, กู้คืนฐานข้อมูล, ดูสถิติการใช้งาน |
 ### สถานะ ณ 13 ต.ค. 2026 (ทำตามเฟสด้วย sub-agent + ตรวจเองทุกเฟส) — **deploy แล้ว 14 ต.ค. 2026** (backup DB: /root/dev.db.bak-platform-20261014)
@@ -1850,7 +1850,7 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 ---
 
 ## 👥 แผนพัฒนา: Phopy HR (แยกหมวด HR ออกจาก Journal) + LINE OA กลาง
-> บันทึกเมื่อ: 25 ตุลาคม 2026 · สถานะ: **แผน ยังไม่ได้เริ่มเขียนโค้ด** · UI ตัวอย่าง + ตารางเต็มอยู่ใน artifact "แผน Phopy HR" (claude.ai/artifact/RccQX7RwUGEaWv3URpiwi5 เปิดได้เฉพาะเจ้าของ)
+> บันทึกเมื่อ: 25 ตุลาคม 2026 · สถานะ: **ช่วง 8a (หน้าตา LINE ตามตำแหน่ง) deploy แล้ว 27 ต.ค. `94f943b`** · ช่วงอื่นยังไม่เริ่ม · 8b (OA กลาง) รอ LINE OA + LINE Login channel ในนาม Phopy · UI ตัวอย่าง + ตารางเต็มอยู่ใน artifact "แผน Phopy HR" (claude.ai/artifact/RccQX7RwUGEaWv3URpiwi5 เปิดได้เฉพาะเจ้าของ)
 
 ### ปัญหาที่เจอ
 - ช่อง **"หน่วยธุรกิจ"** ใน `frontend/src/components/accounting/PayrollModal.tsx` (`BUSINESS_UNITS`) คือแท็กช่องทางขาย RETAIL/WHOLESALE/ONLINE ที่ยืมมาจากหน้าซื้อของ เอาไว้ให้ Phopy Board แยกต้นทุน ไม่ได้เป็นแหล่งจ่ายเงิน แต่หน้าตาชวนให้เข้าใจผิด
@@ -2116,3 +2116,48 @@ Master ต่ออายุ +30 → ยืดวันใน DB              �
 - ไม่มีปุ่ม "เปิดใช้งานกลับ" — เปิดเองต้องไปยกเลิกการยกเลิกใน Stripe Dashboard ด้วย
 - เช็ค upgrade ด้วยการ require `dist/` ทำให้ migration (idempotent) รันบน `dev.db` 1 ครั้ง ไม่มีข้อมูลเปลี่ยน
 - backup ไฟล์ก่อนแก้: `/tmp/*.bak-20261027`, `*.bak2-20261027`, `*.bak3-20261027` บน LXC 100
+
+---
+
+## 📅 Session Log — 27 ต.ค. 2026 (LINE: ริชเมนูตามตำแหน่ง + การ์ดโทน Phopy · HR Phase 8a) — ✅ deploy แล้ว `94f943b`
+
+```
+ก่อน                                           หลัง
+ทุกคนเห็นแชทเปล่า ต้องจำคำสั่งเอง                → ริชเมนู 4 แบบตาม users.role (default = ยังไม่ผูก)
+mapping.role = สำเนาตอนผูก ไม่เคยอัปเดต          → อัปเดตทุกข้อความ + ผูกเมนูใหม่ให้เอง
+การ์ดสีน้ำเงิน/เทาคนละแบบ                        → card kit เดียวกับการ์ดปิดกะ (คราม/มะม่วง/ทราย)
+ปุ่ม "เริ่ม/ผลิตเสร็จ" บนการ์ด WO 🔴              → เปิดเว็บแทน (เดิม UPDATE ข้าม tenant + ไม่ตัดสต็อก)
+```
+
+| เมนู | role | ปุ่ม |
+|---|---|---|
+| exec | MASTER / ADMIN / OWNER | ยอดขายวันนี้ · กำไรเดือนนี้ · รออนุมัติ · สต็อกต่ำ · Phopy Board · บัญชีของฉัน |
+| manager | MANAGER | รออนุมัติ · สต็อกต่ำ · เช็คสต็อก · งานผลิต · ออเดอร์ · เปิด ERP |
+| staff | USER / อื่นๆ | เช็คสต็อก · สูตร · งานผลิต · ออเดอร์ · บัญชีของฉัน · เปิด ERP |
+| guest | ยังไม่ผูก (default ของ OA) | เชื่อมบัญชี · วิธีใช้ · เปิดเว็บ |
+
+### ไฟล์
+- `backend/src/services/line-richmenu.service.ts` (ใหม่) — `MENUS`, `buildRichMenu`, `menuKeyForRole`, `effectiveRole`, `richMenus.ensure/syncUser`
+- `backend/assets/line-richmenu/{exec,manager,staff,guest}.png` — 2500×1686 (guest 2500×843) สร้างจาก HTML ด้วย Chrome headless บนเครื่อง dev (server ไม่มี lib รูป) **ลำดับปุ่มในรูปต้องตรงกับ `MENUS`**
+- `line-bot.service.ts` — `linkedUser()`, handler ใหม่ 5 ตัว, gate ให้คนยังไม่ผูกกด "วิธีเชื่อมบัญชี/ช่วยเหลือ" ได้, `getClient()` คืน `token`
+- `line-flex-templates.ts` — card kit (`card/hero/tiles/kv/listRow/barRow/pill`) + การ์ดใหม่ 5 ใบ, welcome/help/stock/orders/status ทำใหม่, `APPROVAL_MODULES` ยกออกมาใช้ร่วม
+- `migrations.ts` — `line_channels.rich_menus` TEXT = `{version, ids}`
+
+### ตัดสินใจ
+- **สร้างเมนูแบบ lazy:** version = sha1(นิยาม + รูป) ต่างจากใน DB → สร้างชุดใหม่ ย้ายทุกคนไปชุดใหม่ แล้วลบชุดเก่า ตอนมีคนทักครั้งถัดไป ไม่แตะ `index.ts` · cache คนละเมนูในหน่วยความจำ (restart แล้วผูกซ้ำ 1 API call ต่อคน)
+- **เมนูซ่อนปุ่มอย่างเดียว:** สิทธิ์ตรวจที่ handler — ยอดขาย/กำไร = exec, สต็อกต่ำ = exec+manager, รออนุมัติกรองด้วย `canApprove()` ทีละแถว (ponytail: 200 แถวล่าสุด) · คำสั่งเหล่านี้ตอบในกลุ่มว่า "ดูได้ในแชทส่วนตัว"
+- **ตัวเลขใช้ของเดิม:** `posSales` / `ledgerRevenue/Cogs/Opex` จาก phopyBoard.service, `getLowStockItems` จาก dashboard.routes (นับแพ็คที่ยังไม่แกะ)
+- "เช็คสต็อก/สูตร" ในเมนูเป็น postback `inputOption: openKeyboard` + `fillInText` → เข้า handler `สต็อก xxx` / `สูตร xxx` เดิม
+
+### ตรวจแล้ว
+- tsc ผ่าน · `lineRichMenu.test.ts` (5) + `lineBotOrders.test.ts` (2, ปรับตามโครงการ์ดใหม่) + `posShiftSummary` (2) ผ่าน · ไม่ได้รันทั้งชุด
+- LINE `validateReply` การ์ด 14 แบบ + `validateRichMenuObject` 4 เมนู ผ่านหมด (ไม่ส่งข้อความจริง)
+- สร้างจริงบน OA `tenant_bb_pillow` (Kids House): default = guest, Sasiporn (ADMIN) + บัญชี Master → exec, patty → staff · pm2 online, `/api/health` 200
+- ยังไม่ได้กดจากมือถือจริง
+
+### ค้าง / ควรรู้
+- **patty:** `line_user_mappings.role` = MANAGER แต่ `users.role` = USER → ได้เมนูพนักงาน และหลังทักครั้งถัดไปจะหยุดได้แจ้งเตือนแบบ MANAGER (ค่าใช้จ่ายปิดกะ ฯลฯ) — ถามเจ้าของแล้วว่าตั้งใจไหม
+- **8b OA กลาง:** รอเจ้าของเปิด LINE OA + LINE Login channel (LIFF) ในนาม Phopy · ต้องเพิ่ม "เปลี่ยนบริษัท" ในเมนู และเปลี่ยน `tryLinkAccount` เป็นโทเคนยาวก่อนเปิด
+- ปุ่ม HR (เช็คอิน/ลา/สลิป/กะ) ใส่แทนปุ่มในเมนู staff เมื่อช่วง 1–7 เสร็จ — แก้รูป + `MENUS` แล้ว deploy ระบบสร้างชุดใหม่เอง
+- ยังไม่ push origin
+- รัน validate ด้วยการ require `dist/` ทำให้ migration (idempotent) รันบน `dev.db` → เพิ่มคอลัมน์ `rich_menus` ก่อน restart
