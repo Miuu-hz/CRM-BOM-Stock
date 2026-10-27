@@ -624,7 +624,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                             {data.bankAccountType && <div className="pay-row"><span className="k">ประเภท</span><span className="v">{data.bankAccountType}</span></div>}
                           </>
                         )}
-                        <div className="pay-row"><span className="k">อ้างอิง</span><span className="v">{data.docNumber}</span></div>
+                        <div className="pay-row flex items-center gap-1.5"><span className="w-3.5 h-3.5 inline-block" /><span className="k">อ้างอิง</span><span className="v">{data.docNumber}</span></div>
                       </div>
                       {showQr && (
                         <div className="bill-pay-qr-pair">

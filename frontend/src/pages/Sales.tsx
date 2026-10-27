@@ -3393,7 +3393,7 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
     if (!detail) return
     const co = getCachedCompanySettings()
     const bank = getCachedDefaultBankAccount()
-    printBill('qt', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
+    printBill('qt', { ...detail, _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
   }
 
   const updateStatus = async (status: string) => {
@@ -3789,7 +3789,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     if (!detail) return
     const co = getCachedCompanySettings()
     const bank = getCachedDefaultBankAccount()
-    printBill('so', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, 'a4')
+    printBill('so', { ...detail, _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, 'a4')
   }
 
   const updateStatus = async (status: string) => {
@@ -3998,7 +3998,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
     if (!detail) return
     const co = getCachedCompanySettings()
     const bank = getCachedDefaultBankAccount()
-    printBill('inv', { ...detail, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
+    printBill('inv', { ...detail, _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
   }
   const handlePrintReceipt = (r: any, format: 'a4' | 'thermal') => {
     const co = getCachedCompanySettings()
@@ -4012,7 +4012,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
       customer_address: invoice.customer_address,
       invoice_number: invoice.invoice_number,
       so_number: invoice.so_number,
-      _company: co.name || companyName || '-',
+      _company: co.name || '-',
       _companyAddress: co.address || '',
       _companyTax: co.tax_id || '',
       _companyPhone: co.phone || '',
@@ -4625,7 +4625,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
 
   const handlePrint = () => {
     const co = getCachedCompanySettings()
-    printBill('cn', { ...creditNote, _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
+    printBill('cn', { ...creditNote, _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
   }
 
   const statusLabel: Record<string, string> = {
@@ -4842,7 +4842,7 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
     const co = getCachedCompanySettings()
     // ใบส่งของไม่ใช่เอกสารเรียกเก็บเงิน — total_amount ที่ join มาจาก SO ต้องไม่ถูกพิมพ์เป็นยอดของใบนี้
     printBill('do', { ...(detail || deliveryOrder), total_amount: 0, subtotal: 0,
-      _company: co.name || companyName || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '',
+      _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '',
       _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
   }
 

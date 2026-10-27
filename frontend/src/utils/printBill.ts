@@ -98,14 +98,17 @@ function toItems(raw: any[]): BillItem[] {
 
 function sellerOf(d: any): BillParty {
   // POS ส่งมาเป็น _shop* ส่วนเอกสารอื่นส่ง _company*
-  // ถ้าทั้งคู่ว่าง (ร้านยังไม่ได้กรอก "ตั้งค่าร้าน" ใน POS) ให้ใช้ข้อมูลบริษัทจริง
-  // จาก company_settings ที่แคชไว้ แทนที่จะพิมพ์ขีด "-" โดด ๆ ออกมาบนหัวบิล
+  // ใช้ข้อมูลจริงจาก company_settings เป็นหลักก่อน (ถ้ามี) ป้องกัน fallback แปลกปลอม (เช่น ชื่อ user)
   const co = getCachedCompanySettings()
+  const name = co.name || d._company || d._shopName || ''
+  const address = co.address || d._companyAddress || d._shopAddress || ''
+  const taxId = co.tax_id || d._companyTax || d._shopTaxId || ''
+  const tel = co.phone || d._companyPhone || d._shopPhone || ''
   return {
-    name: String(d._company || d._shopName || co.name || ''),
-    address: String(d._companyAddress || d._shopAddress || co.address || ''),
-    taxId: String(d._companyTax || d._shopTaxId || co.tax_id || ''),
-    tel: String(d._companyPhone || d._shopPhone || co.phone || ''),
+    name: String(name),
+    address: String(address),
+    taxId: String(taxId),
+    tel: String(tel),
     // ใบกำกับภาษีเต็มรูปต้องระบุสาขาของผู้ขายด้วย ไม่ใช่แค่ของผู้ซื้อ (ม.86/4)
     // ยังไม่มีระบบสาขาในระบบ ค่าใน company_settings จึงเป็น 'สำนักงานใหญ่' ให้ทุกกิจการ แก้ได้ในหน้าตั้งค่า
     branch: d._companyBranch || (co as any).tax_branch || undefined,

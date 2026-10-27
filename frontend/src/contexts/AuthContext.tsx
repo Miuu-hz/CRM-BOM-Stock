@@ -226,7 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.post('/auth/login', { email, password })
       if (response.data.success) {
         const { user: apiUser, token: apiToken, refreshToken: apiRefresh } = response.data.data
-        const tenantObj = { code: apiUser.tenant_id, name: apiUser.name || apiUser.tenant_id }
+        const tenantObj = { code: apiUser.tenant_id, name: apiUser.tenant_id }
         const now = Date.now()
         setUser(apiUser)
         setToken(apiToken)

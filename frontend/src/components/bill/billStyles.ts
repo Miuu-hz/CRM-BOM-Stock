@@ -287,7 +287,8 @@ export const BILL_CSS = `
 ═══════════════════════════════════ */
 .bill-pay-section {
   display: grid;
-  grid-template-columns: 1fr 132px;
+  grid-template-columns: 1fr auto;
+  align-items: center;
   gap: 16px;
   margin-top: 16px;
   background: #f7f8fb;
@@ -295,10 +296,13 @@ export const BILL_CSS = `
   border-radius: 10px;
   padding: 13px 15px;
 }
+.bill-pay-section > div:first-child {
+  min-width: 0;
+}
 .bill-section-heading { font-weight: 700; font-size: 12px; margin-bottom: 7px; color: #1f2430; }
 .pay-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 3px; }
-.pay-row .k { color: #7b8394; flex: 1 1 auto; }
-.pay-row .v { font-weight: 600; color: #1f2430; flex: 0 0 auto; text-align: right; }
+.pay-row .k { color: #7b8394; flex: 0 0 65px; }
+.pay-row .v { font-weight: 600; color: #1f2430; flex: 1 1 auto; text-align: left; word-break: break-word; }
 .pay-row .pay-account { font-size: 15px; font-weight: 800; letter-spacing: .5px; }
 
 .bill-pay-qr { text-align: center; }
@@ -314,7 +318,7 @@ export const BILL_CSS = `
 }
 .pay-qr-cap { font-size: 10px; color: #7b8394; margin-top: 4px; }
 /* QR โอนเงิน + QR ดูใบเสร็จออนไลน์ วางคู่กัน (มีตัวเดียวก็อยู่กลางเอง) */
-.bill-pay-qr-pair { display: flex; justify-content: center; gap: 10px; }
+.bill-pay-qr-pair { display: flex; justify-content: center; gap: 12px; flex-shrink: 0; }
 .bill-pay-qr-pair .bill-pay-qr img { width: 96px; height: 96px; }
 
 /* ═══════════════════════════════════
