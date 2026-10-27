@@ -94,28 +94,6 @@ function fmtPct(n: number) {
   return n.toFixed(1) + '%'
 }
 
-function DeltaBadge({ curr, prev }: { curr: number; prev: number }) {
-  if (prev === 0) return null
-  const pct = ((curr - prev) / prev) * 100
-  const up = pct >= 0
-  return (
-    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${up ? 'text-[color:var(--success,#22c55e)]' : 'text-[color:var(--danger)]'}`}>
-      {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-      {Math.abs(pct).toFixed(1)}%
-    </span>
-  )
-}
-
-function KPICard({ label, value, prefix = '฿', prev, delay = 0 }: { label: string; value: number; prefix?: string; prev?: number; delay?: number }) {
-  return (
-    <motion.div {...fade(delay)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-2 min-w-0">
-      <p className="text-xs text-[var(--fg-3)] font-medium uppercase tracking-wide truncate">{label}</p>
-      <p className="text-2xl font-bold text-[var(--fg-1)] truncate">{prefix}{fmt(value)}</p>
-      {prev !== undefined && <DeltaBadge curr={value} prev={prev} />}
-    </motion.div>
-  )
-}
-
 function ComingSoonCard({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 space-y-2">
@@ -348,21 +326,6 @@ export default function PhopyBoard() {
                 isLongPeriod={isLongPeriod}
               />
 
-              {/* 5 existing KPI cards */}
-              {data && (
-                <div>
-                  <h3 className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wider mb-3">
-                    ภาพรวมผลประกอบการในงวด
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                    <KPICard label="รายได้รวม" value={data.kpis.revenue} prev={data.kpis.prevRevenue} delay={0} />
-                    <KPICard label="ต้นทุนขาย (บัญชี)" value={data.kpis.cost} delay={0.05} />
-                    <KPICard label="กำไรขั้นต้น" value={data.kpis.grossProfit} prev={data.kpis.prevGrossProfit} delay={0.1} />
-                    <KPICard label="กำไรสุทธิ" value={data.kpis.netProfit} delay={0.15} />
-                    <KPICard label="Gross Margin" value={data.kpis.grossMarginPct} prefix="" delay={0.2} />
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
