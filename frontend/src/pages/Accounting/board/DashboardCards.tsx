@@ -218,11 +218,11 @@ export function CashJourneyCard() {
         <ChevronRight className="w-4 h-4 text-[var(--fg-4)] ml-auto group-hover:text-[var(--primary)] transition-colors" />
       </div>
       {loading || !pipeline ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-16" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
           {waterfallRows.map(({ labelKey, value, color }) => (
             <div key={labelKey}>
               <p className="text-xs text-[var(--fg-4)]">{t(labelKey)}</p>

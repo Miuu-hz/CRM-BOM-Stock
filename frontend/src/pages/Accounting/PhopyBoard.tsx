@@ -222,7 +222,7 @@ export default function PhopyBoard() {
         {!isReceivables && (
           <div className="flex flex-wrap items-center gap-2">
             {/* Period presets */}
-            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
+            <div className="inline-flex flex-wrap rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
               {PERIOD_PRESETS.map(p => (
                 <button
                   key={p.id}
@@ -240,7 +240,7 @@ export default function PhopyBoard() {
             </div>
 
             {/* Compare presets */}
-            <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
+            <div className="inline-flex flex-wrap rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
               {COMPARE_PRESETS.map(c => (
                 <button
                   key={c.id}
@@ -258,7 +258,7 @@ export default function PhopyBoard() {
             </div>
 
             {preset === 'custom' && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <input
                   type="date"
                   value={customStart}

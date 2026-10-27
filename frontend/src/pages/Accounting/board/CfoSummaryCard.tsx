@@ -55,7 +55,7 @@ export function CfoSummaryCard({ data, onNavigateChapter }: CfoSummaryCardProps)
       </div>
 
       {/* 4 CFO KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {data.kpis.map(kpi => (
           <CfoKpiCard key={kpi.key} kpi={kpi} />
         ))}

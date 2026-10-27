@@ -177,7 +177,7 @@ export default function Dashboard() {
               variants={item}
               className="phopy-card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-[var(--border)]"
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 min-w-0">
                 {/* Big light indicator with pulse ring */}
                 <span
                   role="img"
@@ -190,7 +190,7 @@ export default function Dashboard() {
                       : 'bg-[var(--danger)] text-[var(--danger)]'
                   }`}
                 />
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-lg sm:text-xl font-bold text-[var(--fg-1)] leading-snug">
                     {health.overall.headline}
                   </h2>
@@ -387,13 +387,13 @@ export default function Dashboard() {
             onClick={() => navigate('/stock')}
             className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
           >
-            <div className="flex items-center gap-2.5">
-              <Package className="w-4 h-4 text-warning" />
-              <span className="text-xs font-semibold text-[var(--fg-2)]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Package className="w-4 h-4 text-warning flex-shrink-0" />
+              <span className="text-xs font-semibold text-[var(--fg-2)] truncate">
                 {t('dashboard.health.opsLowStock', 'สต็อกวิกฤต')}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
                 {health.ops.lowStock}
               </b>
@@ -406,13 +406,13 @@ export default function Dashboard() {
             onClick={() => navigate('/sales')}
             className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
           >
-            <div className="flex items-center gap-2.5">
-              <Truck className="w-4 h-4 text-warning" />
-              <span className="text-xs font-semibold text-[var(--fg-2)]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Truck className="w-4 h-4 text-warning flex-shrink-0" />
+              <span className="text-xs font-semibold text-[var(--fg-2)] truncate">
                 {t('dashboard.health.opsPendingDelivery', 'รอส่งของ')}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
                 {health.ops.pendingDelivery}
               </b>
@@ -425,13 +425,13 @@ export default function Dashboard() {
             onClick={() => navigate('/approvals')}
             className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
           >
-            <div className="flex items-center gap-2.5">
-              <CheckSquare className="w-4 h-4 text-warning" />
-              <span className="text-xs font-semibold text-[var(--fg-2)]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <CheckSquare className="w-4 h-4 text-warning flex-shrink-0" />
+              <span className="text-xs font-semibold text-[var(--fg-2)] truncate">
                 {t('dashboard.health.opsPendingApprovals', 'รออนุมัติ')}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
                 {health.ops.pendingApprovals}
               </b>
@@ -444,13 +444,13 @@ export default function Dashboard() {
             onClick={() => navigate('/accounting/phopy-board?view=receivables')}
             className="phopy-card p-3.5 flex items-center justify-between text-left cursor-pointer hover:border-[var(--primary)]/40 border border-[var(--border)] transition-colors group"
           >
-            <div className="flex items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 text-danger" />
-              <span className="text-xs font-semibold text-[var(--fg-2)]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AlertCircle className="w-4 h-4 text-danger flex-shrink-0" />
+              <span className="text-xs font-semibold text-[var(--fg-2)] truncate">
                 {t('dashboard.health.opsArDue7', 'ลูกหนี้ครบกำหนด 7 วัน')}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <b className="text-base font-bold text-[var(--fg-1)] font-mono tabular-nums">
                 {health.ops.arDue7.amount !== null
                   ? fmtBaht(health.ops.arDue7.amount)

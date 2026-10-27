@@ -8,7 +8,7 @@ interface LayoutProps {
 }
 
 function Layout({ children }: LayoutProps) {
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('full')
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'rail' : 'full'))
   const location = useLocation()
   const path = location.pathname
 
@@ -50,7 +50,7 @@ function Layout({ children }: LayoutProps) {
 
         <main
           id="main-content"
-          className={`relative z-10 flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
+          className={`relative z-10 flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-4 sm:p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
         >
           <div className="max-w-[1920px] mx-auto">
             {children}
