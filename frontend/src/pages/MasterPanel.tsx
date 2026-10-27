@@ -55,6 +55,8 @@ interface TenantSubscription {
   packs: string[]
   addons: Record<string, number>
   usage: { users: Usage; products: Usage }
+  // มีค่า = จ่ายผ่าน Stripe สิทธิ์ตาม webhook แก้แพ็ก/ต่ออายุจากหน้านี้ไม่ได้
+  stripe: { subscriptionUrl: string; customerUrl: string | null; cancelAt: string | null; pendingChange: string | null } | null
 }
 
 interface Plan {
@@ -431,14 +433,9 @@ export default function MasterPanel() {
     const edit = planEdits[code]
     if (!edit) return
     const numOrNull = (v: string) => (v.trim() === '' ? null : Number(v))
-    for (const v of [edit.price_monthly, edit.price_yearly]) {
-      if (v.trim() === '' || isNaN(Number(v)) || Number(v) < 0) { toast.error('ราคาต้องเป็นตัวเลขบวก'); return }
-    }
     setSavingPlan(code)
     try {
       const res = await api.patch(`/master/plans/${code}`, {
-        price_monthly: Number(edit.price_monthly),
-        price_yearly: Number(edit.price_yearly),
         max_users: numOrNull(edit.max_users),
         max_products: numOrNull(edit.max_products),
         max_pos_shifts: numOrNull(edit.max_pos_shifts),
@@ -877,6 +874,18 @@ export default function MasterPanel() {
                             </div>
                           </div>
 
+                          {selSub.stripe ? (
+                          <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] space-y-2 text-sm">
+                            <p className="font-medium text-[var(--fg-1)]">จ่ายผ่าน Stripe</p>
+                            <p className="text-xs text-[var(--fg-3)] leading-relaxed">แพ็กเกจและวันหมดอายุอัปเดตตาม Stripe เอง เปลี่ยนแพ็ก ต่ออายุ หรือยกเลิก ให้ทำใน Stripe Dashboard หรือให้ลูกค้าทำในหน้าตั้งค่า &gt; สมาชิก</p>
+                            {selSub.stripe.cancelAt && <p className="text-xs text-[var(--warning)]">ลูกค้ากดยกเลิกแล้ว ใช้ได้ถึง {fmtDate(selSub.stripe.cancelAt)}</p>}
+                            {selSub.stripe.pendingChange && <p className="text-xs text-[var(--fg-2)]">ตั้งลดแพ็กไว้ มีผล {fmtDate(selSub.stripe.pendingChange)}</p>}
+                            <div className="flex gap-3 flex-wrap">
+                              <a href={selSub.stripe.subscriptionUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[var(--primary)] hover:underline"><ExternalLink className="w-3.5 h-3.5" />Subscription</a>
+                              {selSub.stripe.customerUrl && <a href={selSub.stripe.customerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[var(--primary)] hover:underline"><ExternalLink className="w-3.5 h-3.5" />ลูกค้าใน Stripe</a>}
+                            </div>
+                          </div>
+                          ) : (
                           <div className="space-y-2">
                             <label className="block text-xs text-[var(--fg-3)]">เปลี่ยนแพ็กเกจ</label>
                             <div className="flex items-center gap-2 flex-wrap">
@@ -967,6 +976,7 @@ export default function MasterPanel() {
                               ต่ออายุ +30 วัน
                             </button>
                           </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -1221,8 +1231,14 @@ export default function MasterPanel() {
                       <span className="text-xs font-mono text-[var(--fg-4)]">{p.code}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mb-3">
-                      {numInput('price_monthly', 'ราคา/เดือน (฿)')}
-                      {numInput('price_yearly', 'ราคา/ปี (฿)')}
+                      <div title="ราคาที่ Stripe เก็บจริง แก้ใน billing.catalog.ts แล้วรัน stripeSetup">
+                        <p className="text-xs text-[var(--fg-3)] mb-1">ราคา/เดือน (฿) · Stripe</p>
+                        <p className="px-2.5 py-1.5 text-sm text-[var(--fg-2)]">{p.price_monthly.toLocaleString()}</p>
+                      </div>
+                      <div title="ราคาที่ Stripe เก็บจริง แก้ใน billing.catalog.ts แล้วรัน stripeSetup">
+                        <p className="text-xs text-[var(--fg-3)] mb-1">ราคา/ปี (฿) · Stripe</p>
+                        <p className="px-2.5 py-1.5 text-sm text-[var(--fg-2)]">{p.price_yearly.toLocaleString()}</p>
+                      </div>
                       {numInput('max_users', 'Users สูงสุด', '∞')}
                       {numInput('max_products', 'สินค้าสูงสุด', '∞')}
                       {numInput('max_pos_shifts', 'กะ POS พร้อมกัน', '∞')}

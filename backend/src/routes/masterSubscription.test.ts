@@ -5,6 +5,7 @@ import masterRouter from './master.routes'
 import { createTestUser } from '../test/testAuth'
 import { generateId } from '../utils/id'
 import { getSubscription } from '../services/subscription.service'
+import { getDb } from '../db/sqlite'
 
 const app = express()
 app.use(express.json())
@@ -52,5 +53,28 @@ describe('MASTER ตั้ง Pack / Add-on ให้ tenant', () => {
     const admin = createTestUser({ role: 'ADMIN' })
     const res = await put(admin.token, admin.tenantId, { planCode: 'pro', packs: ['shop'] })
     expect(res.status).toBe(403)
+  })
+})
+
+describe('tenant ที่จ่ายผ่าน Stripe', () => {
+  it('Master เปลี่ยนแพ็ก/ต่ออายุ/ลบถาวรไม่ได้ (webhook จะเขียนทับ หรือ Stripe ตัดเงินต่อ) และเห็นลิงก์ Stripe', async () => {
+    const master = createTestUser({ role: 'MASTER' })
+    const tenantId = `t_${generateId()}`
+    await put(master.token, tenantId, { planCode: 'business' })
+    getDb().prepare("UPDATE tenant_subscriptions SET stripe_subscription_id = 'sub_x', stripe_customer_id = 'cus_x' WHERE tenant_id = ?").run(tenantId)
+    const auth = { Authorization: `Bearer ${master.token}` }
+
+    expect((await put(master.token, tenantId, { planCode: 'pro' })).status).toBe(409)
+    expect((await request(app).post(`/api/master/tenant/${tenantId}/extend`).set(auth).send({ days: 30 })).status).toBe(409)
+    expect((await request(app).delete(`/api/master/tenant/${tenantId}/purge`).set(auth)).status).toBe(409)
+    expect(getSubscription(tenantId).planCode).toBe('business')
+  })
+
+  it('แก้ราคาแพ็กจากหน้า Master ไม่ได้ ราคาที่แสดงมาจาก catalog ที่ Stripe ใช้', async () => {
+    const master = createTestUser({ role: 'MASTER' })
+    const auth = { Authorization: `Bearer ${master.token}` }
+    expect((await request(app).patch('/api/master/plans/business').set(auth).send({ price_monthly: 1 })).status).toBe(400)
+    const plans = (await request(app).get('/api/master/plans').set(auth)).body.data
+    expect(plans.find((p: any) => p.code === 'business').price_monthly).toBe(690)
   })
 })

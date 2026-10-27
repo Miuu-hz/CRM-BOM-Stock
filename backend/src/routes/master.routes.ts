@@ -5,6 +5,16 @@ import { randomBytes } from 'crypto'
 import { authenticate, requireMaster } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { getSubscription, PACK_FEATURES, ADDON_FEATURES, EXTRA_USERS } from '../services/subscription.service'
+import { lookupKey, priceDefinitions } from '../services/billing.catalog'
+
+// tenant ที่จ่ายผ่าน Stripe: webhook เขียนสิทธิ์ทับทุกครั้งที่ Stripe แจ้ง แก้ใน DB ตรงๆ จะเด้งกลับ หรือ Stripe ยังตัดเงินต่อ
+const stripeRow = (tenantId: string) => getDb().prepare(
+  'SELECT stripe_customer_id, stripe_subscription_id, cancel_at, pending_change FROM tenant_subscriptions WHERE tenant_id = ?',
+).get(tenantId) as { stripe_customer_id: string | null; stripe_subscription_id: string | null; cancel_at: string | null; pending_change: string | null } | undefined
+const STRIPE_DASH = `https://dashboard.stripe.com/${(process.env.STRIPE_SECRET_KEY ?? '').startsWith('sk_test') ? 'test/' : ''}`
+const STRIPE_LOCKED = 'บริษัทนี้จ่ายผ่าน Stripe อยู่ — เปลี่ยนแพ็ก/ต่ออายุ/ยกเลิก ต้องทำใน Stripe Dashboard หรือให้ลูกค้าทำในหน้าตั้งค่า แล้วระบบจะอัปเดตตาม webhook เอง'
+// ราคาจริงที่ Stripe เก็บมาจาก billing.catalog (stripeSetup สร้าง Price จากที่นั่น) ไม่ใช่ subscription_plans
+const CATALOG_PRICE = new Map(priceDefinitions().map(d => [d.lookupKey, d.unitAmountBaht]))
 import { provisionTenant, ProvisionError } from '../services/provisioning'
 
 const router = Router()
@@ -198,6 +208,9 @@ router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, (req: Requ
   if (tenantId === req.user!.tenantId) {
     res.status(400).json({ success: false, message: 'ลบ tenant ที่กำลังใช้งานอยู่ไม่ได้ ให้สลับไป tenant อื่นก่อน' }); return
   }
+  if (stripeRow(tenantId)?.stripe_subscription_id) {
+    res.status(409).json({ success: false, message: 'บริษัทนี้ยังมี subscription ใน Stripe — ยกเลิกใน Stripe Dashboard ก่อน ไม่งั้น Stripe จะตัดบัตรต่อทั้งที่ลบบริษัทไปแล้ว' }); return
+  }
   const envKey = Object.keys(process.env).find(k => /^MASTER_.+_TENANT_ID$/.test(k) && process.env[k] === tenantId)
   if (envKey) {
     res.status(400).json({ success: false, message: `tenant นี้ผูกกับบัญชี Master ใน .env (${envKey}) ต้องเอาออกจาก .env ก่อน` }); return
@@ -228,7 +241,12 @@ router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, (req: Requ
 router.get('/plans', authenticate, requireMaster, (req: Request, res: Response) => {
   const db = getDb()
   const plans = (db.prepare('SELECT * FROM subscription_plans ORDER BY sort_order').all() as any[])
-    .map(p => ({ ...p, features: JSON.parse(p.features || '[]') }))
+    .map(p => ({
+      ...p,
+      features: JSON.parse(p.features || '[]'),
+      price_monthly: CATALOG_PRICE.get(lookupKey.plan(p.code, 'monthly')) ?? 0,
+      price_yearly: CATALOG_PRICE.get(lookupKey.plan(p.code, 'yearly')) ?? 0,
+    }))
   res.json({ success: true, data: plans })
 })
 
@@ -239,7 +257,10 @@ router.patch('/plans/:code', authenticate, requireMaster, (req: Request, res: Re
   const existing = db.prepare('SELECT id FROM subscription_plans WHERE code = ?').get(code)
   if (!existing) { res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' }); return }
 
-  const ALLOWED = ['name', 'description', 'price_monthly', 'price_yearly', 'max_users', 'max_products', 'max_pos_shifts', 'features', 'is_active', 'sort_order']
+  if (req.body.price_monthly !== undefined || req.body.price_yearly !== undefined) {
+    res.status(400).json({ success: false, message: 'ราคาแก้ที่นี่ไม่ได้ — ราคาที่ Stripe เก็บจริงอยู่ใน billing.catalog.ts แก้แล้วรัน dist/scripts/stripeSetup.js' }); return
+  }
+  const ALLOWED = ['name', 'description', 'max_users', 'max_products', 'max_pos_shifts', 'features', 'is_active', 'sort_order']
   const fields: Record<string, any> = {}
   for (const key of ALLOWED) {
     if (req.body[key] !== undefined) {
@@ -267,8 +288,15 @@ router.get('/subscriptions', authenticate, requireMaster, (req: Request, res: Re
     const daysRemaining = sub.currentPeriodEnd
       ? Math.ceil((new Date(sub.currentPeriodEnd).getTime() - Date.now()) / 86400000)
       : null
+    const sr = stripeRow(t.tenantId)
     return {
       ...t,
+      stripe: sr?.stripe_subscription_id ? {
+        subscriptionUrl: `${STRIPE_DASH}subscriptions/${sr.stripe_subscription_id}`,
+        customerUrl: sr.stripe_customer_id ? `${STRIPE_DASH}customers/${sr.stripe_customer_id}` : null,
+        cancelAt: sr.cancel_at,
+        pendingChange: sr.pending_change ? JSON.parse(sr.pending_change).effectiveAt ?? null : null,
+      } : null,
       plan: sub.planCode === 'none' ? null : sub.planCode,
       planName: sub.planCode === 'none' ? null : sub.planName,
       status: sub.status,
@@ -290,6 +318,7 @@ router.put('/tenant/:id/subscription', authenticate, requireMaster, (req: Reques
   const db = getDb()
   const { id } = req.params
   const { planCode, billingCycle, periodDays, notes, packs, addons } = req.body
+  if (stripeRow(id)?.stripe_subscription_id) { res.status(409).json({ success: false, message: STRIPE_LOCKED }); return }
 
   const plan = db.prepare('SELECT code FROM subscription_plans WHERE code = ?').get(planCode)
   if (!plan) { res.status(404).json({ success: false, message: `ไม่พบแพ็กเกจ "${planCode}"` }); return }
@@ -348,6 +377,7 @@ router.post('/tenant/:id/extend', authenticate, requireMaster, (req: Request, re
   const { id } = req.params
   const { days } = req.body
 
+  if (stripeRow(id)?.stripe_subscription_id) { res.status(409).json({ success: false, message: STRIPE_LOCKED }); return }
   if (typeof days !== 'number' || days <= 0) {
     res.status(400).json({ success: false, message: 'days ต้องเป็นตัวเลขบวก' }); return
   }
