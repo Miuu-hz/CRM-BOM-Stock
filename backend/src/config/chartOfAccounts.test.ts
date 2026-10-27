@@ -68,6 +68,19 @@ describe('seedChartOfAccounts', () => {
     }
   })
 
+  // ACC_META ใช้ตอนผังของ tenant ไม่มีรหัสนั้น — ประเภท/หมวดต่างจากผังเมื่อไร บัญชีที่ปั้นสดจะไปโผล่ผิดบรรทัดในงบ
+  // (เคยเจอ 2026-10-27: 5103 ค่าแรงตรงเป็น COGS ใน ACC_META แต่ DIRECT_LABOR ในผัง · ACC.DEPRECIATION ชี้ 5201 ค่าโฆษณา)
+  it('ACC_META ประเภท/หมวด/ด้านปกติ ตรงกับผัง และ ACC.DEPRECIATION คือบัญชีค่าเสื่อม', () => {
+    const chart = new Map(DEFAULT_CHART_OF_ACCOUNTS.map(a => [a.code as string, a]))
+    const diff = Object.entries(ACC_META).flatMap(([code, m]) => {
+      const c = chart.get(code)!
+      return [m.type, m.category, m.normalBalance].join() === [c.type, c.category, c.normal_balance].join() ? []
+        : [`${code}: ${m.type}/${m.category}/${m.normalBalance} ≠ ผัง ${c.type}/${c.category}/${c.normal_balance}`]
+    })
+    expect(diff).toEqual([])
+    expect(chart.get(ACC.DEPRECIATION)!.category).toBe('DEPRECIATION')
+  })
+
   it('5901 (เงินขาด/เงินเกิน) กับ 5902 (ปรับปรุงสต็อก) ต้องเป็นคนละบัญชี', () => {
     expect(ACC.CASH_OVER_SHORT).not.toBe(ACC.STOCK_ADJUSTMENT)
     expect(ACC_META[ACC.CASH_OVER_SHORT]!.name).not.toBe(ACC_META[ACC.STOCK_ADJUSTMENT]!.name)

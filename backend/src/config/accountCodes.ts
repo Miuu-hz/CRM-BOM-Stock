@@ -52,7 +52,12 @@ export const ACC = {
   SUBCON_LABOR:      '5106',  // ค่าจ้างเหมาช่วง (Phase 2)
 
   // Operating Expenses (examples)
-  DEPRECIATION:      '5201',
+  // เดิมเป็น 5201 ซึ่งในผังคือ "ค่าโฆษณา" — ค่าเสื่อมราคาในผังคือ 5205 (แก้ 2026-10-27 ก่อนมีโค้ดเรียกใช้)
+  DEPRECIATION:      '5205',
+  // เงินเดือน — ฟอร์มเงินเดือนเดิมใช้รหัสดิบ, HR payroll จะใช้ตัวเดียวกัน
+  SALARY:            '5301',
+  SSO_EXPENSE:       '5314',  // เงินสมทบประกันสังคมส่วนนายจ้าง
+  SSO_PAYABLE:       '2106',  // ประกันสังคมค้างนำส่ง (ลูกจ้าง+นายจ้าง)
   // ส่วนของใบแจ้งหนี้ซื้อที่ skip_stock (น้ำมัน/ของใช้สำนักงาน ไม่เข้าคลัง) — เดิมหลุดไปลง 1107
   // เป็นสินทรัพย์ทั้งที่เป็นค่าใช้จ่ายจริง (2026-10) ตรงกับ 5403 ใน DEFAULT_CHART_OF_ACCOUNTS
   OTHER_EXPENSE:     '5403',  // ค่าใช้จ่ายอื่น
@@ -120,10 +125,13 @@ export const ACC_META: Record<string, AccountMeta> = {
 
   [ACC.COGS_PRODUCT]:     { name: 'ต้นทุนสินค้าขาย', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
   [ACC.COGS_RAW_MATERIAL]:{ name: 'ต้นทุนวัตถุดิบใช้ไป', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
-  [ACC.DIRECT_LABOR]:     { name: 'ค่าแรงทางตรง', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
+  // category ต้องตรงกับผัง (DIRECT_LABOR) — Phopy Board ledgerLabour นับจาก category นี้
+  [ACC.DIRECT_LABOR]:     { name: 'ค่าแรงงานตรง', type: 'EXPENSE', category: 'DIRECT_LABOR', normalBalance: 'DEBIT' },
+  [ACC.SALARY]:           { name: 'เงินเดือนและค่าจ้าง', type: 'EXPENSE', category: 'SALARY', normalBalance: 'DEBIT' },
+  [ACC.SSO_PAYABLE]:      { name: 'ประกันสังคม', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
   [ACC.SUBCON_LABOR]:     { name: 'ค่าจ้างเหมาช่วง', type: 'EXPENSE', category: 'COGS', normalBalance: 'DEBIT' },
 
-  [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
+  [ACC.ACCRUED]:          { name: 'ค่าใช้จ่ายค้างจ่าย', type: 'LIABILITY', category: 'ACCRUED', normalBalance: 'CREDIT' }, // ตรงผัง — HR ใช้ตั้งค่าจ้างค้างจ่าย
   [ACC.OTHER_PAYABLE]:    { name: 'เจ้าหนี้อื่น', type: 'LIABILITY', category: 'PAYABLE', normalBalance: 'CREDIT' },
 
   [ACC.POS_CLEARING]:     { name: 'ลูกหนี้การค้า-POS', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },

@@ -255,7 +255,7 @@ export function createPayrollEntry(tenantId: string, userName: string, input: Pa
   }
 
   const warnings: string[] = []
-  const salary = getOrCreateAccount(tenantId, '5301', 'เงินเดือนและค่าจ้าง', 'EXPENSE', 'SALARY', 'DEBIT')
+  const salary = getOrCreateAccount(tenantId, ACC.SALARY)
   // 5314 ถูกเติมให้ทุก tenant ตอน server start (backfillChartOfAccounts) — ถ้ายังไม่มี (เช่นผู้ใช้ลบทิ้ง) ไม่ปั้นเอง ลง 5301 แล้วเตือน
   let ssEmployerExpense = getAccountIdByCode(tenantId, SSO_EMPLOYER_CODE)
   if (!ssEmployerExpense) {
@@ -268,7 +268,7 @@ export function createPayrollEntry(tenantId: string, userName: string, input: Pa
   const built = buildPayrollLines(input, {
     salary,
     ssEmployerExpense,
-    ssPayable: getOrCreateAccount(tenantId, '2106', 'ประกันสังคม', 'LIABILITY', 'PAYABLE', 'CREDIT'),
+    ssPayable: getOrCreateAccount(tenantId, ACC.SSO_PAYABLE),
     whtPayable: getOrCreateAccount(tenantId, ACC.WHT_PAYABLE),
     pay: pay.id,
     otherDeduction: input.otherDeductionAccountId,
@@ -305,7 +305,8 @@ export function createPayrollEntry(tenantId: string, userName: string, input: Pa
 // ---------- ประวัติเงินเดือนรายคน (autocomplete + เตือนจ่ายซ้ำงวด) ----------
 // ระบบไม่มีธง void บน JE — การยกเลิกคือลบ JE (ร่างลบได้เลย, ยืนยันแล้วต้อง unpost ก่อน)
 // payroll_lines หายตาม ON DELETE CASCADE และทุก query ยัง JOIN journal_entries กันแถวกำพร้าซ้ำอีกชั้น
-export const SSO_EMPLOYER_CODE = '5314'
+// JE ที่ยืนยันแล้วยกเลิกด้วย "กลับรายการ" (REVERSAL อ้าง id เดิม) — แถวยังอยู่ จึงกรองออกใน query ด้วย
+export const SSO_EMPLOYER_CODE = ACC.SSO_EXPENSE
 
 export function normEmployeeName(v: unknown): string {
   return String(v ?? '').trim().replace(/\s+/g, ' ')
@@ -318,6 +319,7 @@ export function listPayrollEmployees(tenantId: string, q?: string) {
     FROM payroll_lines pl
     JOIN journal_entries je ON je.id = pl.journal_entry_id AND je.tenant_id = pl.tenant_id
     WHERE pl.tenant_id = ? AND (? = '' OR instr(lower(pl.employee_name), lower(?)) > 0)
+      AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.tenant_id = je.tenant_id AND r.reference_type = 'REVERSAL' AND r.reference_id = je.id)
     GROUP BY lower(pl.employee_name)
     ORDER BY lastPayDate DESC
     LIMIT 50
@@ -330,7 +332,8 @@ export function payrollHistory(tenantId: string, employee: string, period?: stri
   const base = `
     FROM payroll_lines pl
     JOIN journal_entries je ON je.id = pl.journal_entry_id AND je.tenant_id = pl.tenant_id
-    WHERE pl.tenant_id = ? AND lower(pl.employee_name) = lower(?)`
+    WHERE pl.tenant_id = ? AND lower(pl.employee_name) = lower(?)
+      AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.tenant_id = je.tenant_id AND r.reference_type = 'REVERSAL' AND r.reference_id = je.id)`
   const sumRow = (extra: string, ...p: string[]) => db.prepare(`
     SELECT COUNT(*) as count, COALESCE(SUM(pl.gross), 0) as gross, COALESCE(SUM(pl.net), 0) as net ${base} ${extra}
   `).get(tenantId, name, ...p) as { count: number; gross: number; net: number }
@@ -522,7 +525,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 })
 
 // ชื่อพนักงานที่เคยบันทึกเงินเดือน (autocomplete)
-router.get('/payroll/employees', async (req: Request, res: Response) => {
+// ค่าจ้างรายคน — เปิดเฉพาะคนที่บันทึกเงินเดือนได้ (GET อื่นในไฟล์นี้เปิดให้ทุกคน · 2026-10-27)
+router.get('/payroll/employees', requirePermission('accounting', 'write'), async (req: Request, res: Response) => {
   try {
     res.json({ success: true, data: listPayrollEmployees(req.user!.tenantId, req.query.q as string | undefined) })
   } catch (error) {
@@ -532,7 +536,7 @@ router.get('/payroll/employees', async (req: Request, res: Response) => {
 })
 
 // คนนี้เคยรับไปแล้วเท่าไร: งวดเดียวกัน / ทั้งปี / 3 รายการล่าสุด
-router.get('/payroll/history', async (req: Request, res: Response) => {
+router.get('/payroll/history', requirePermission('accounting', 'write'), async (req: Request, res: Response) => {
   try {
     const employee = normEmployeeName(req.query.employee)
     const period = typeof req.query.period === 'string' ? req.query.period : undefined
@@ -626,6 +630,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     if (entry.reference_type === CLOSE_ADJ_REF) {
       return res.status(400).json({ success: false, message: CLOSE_ADJ_LOCKED })
+    }
+    // ยอดรายคนอยู่ใน payroll_lines — แก้บรรทัด JE ตรงๆ แล้วสองที่ไม่ตรงกัน ให้ลบร่างแล้วบันทึกใหม่จากฟอร์มเงินเดือน
+    if (entry.reference_type === PAYROLL_REF) {
+      return res.status(400).json({ success: false, message: 'ร่างเงินเดือนแก้ในสมุดรายวันไม่ได้ — ลบร่างนี้แล้วบันทึกใหม่จากฟอร์มเงินเดือน' })
     }
     
     const now = new Date().toISOString()

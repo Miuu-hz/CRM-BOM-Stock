@@ -194,6 +194,31 @@ describe('ประวัติเงินเดือนรายคน + เ�
     expect(r1.status).toBe(200)
   })
 
+  // ตรวจก่อนเริ่ม HR (2026-10-27): ยกเลิกแบบกลับรายการต้องไม่นับเป็นจ่ายแล้ว · ร่างแก้ตรงไม่ได้ · ค่าจ้างรายคนไม่เปิดให้ทุกคน
+  it('JE ที่กลับรายการแล้วไม่นับ, ร่างเงินเดือนแก้ใน journal ไม่ได้, พนักงานทั่วไปดูค่าจ้างรายคนไม่ได้', async () => {
+    const u = newUser()
+    const bank = getOrCreateAccount(u.tenantId, '1102')
+    const auth = { Authorization: `Bearer ${u.token}` }
+    const r = await pay(u.token, bank, '2026-10', '2026-10-31', [{ name: 'มาลี', gross: 9000 }])
+
+    const put = await request(app).put(`/api/journal/${r.body.data.id}`).set(auth).send({ description: 'แก้', lines: [] })
+    expect(put.status).toBe(400)
+    expect(put.body.message).toContain('ฟอร์มเงินเดือน')
+
+    expect((await request(app).post(`/api/journal/${r.body.data.id}/post`).set(auth)).status).toBe(200)
+    expect((await request(app).post(`/api/journal/${r.body.data.id}/reverse`).set(auth).send({ reason: 'จ่ายผิดคน', date: '2026-10-31' })).status).toBe(200)
+    const h = (await request(app).get('/api/journal/payroll/history').query({ employee: 'มาลี', period: '2026-10' }).set(auth)).body.data
+    expect(h.samePeriod.count).toBe(0)
+    expect(h.recent).toEqual([])
+    const names = (await request(app).get('/api/journal/payroll/employees').set(auth)).body.data
+    expect(names).toEqual([])
+
+    const staff = createTestUser({ role: 'USER', tenantId: u.tenantId })
+    const s = { Authorization: `Bearer ${staff.token}` }
+    expect((await request(app).get('/api/journal/payroll/history').query({ employee: 'มาลี' }).set(s)).status).toBe(403)
+    expect((await request(app).get('/api/journal/payroll/employees').set(s)).status).toBe(403)
+  })
+
   it('ไม่ระบุชื่อหรืองวดผิดรูป → 400', async () => {
     const u = newUser()
     const auth = { Authorization: `Bearer ${u.token}` }
