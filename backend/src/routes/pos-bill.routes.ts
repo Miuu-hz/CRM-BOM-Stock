@@ -284,16 +284,22 @@ router.put('/bills/:id', (req, res) => {
   try {
     const tenantId = (req as any).user!.tenantId
     const { id } = req.params
-    const { display_name, customer_name, customer_phone, notes } = req.body
+    const { display_name, customer_name, customer_phone, notes, discount_reason } = req.body
     
+    const hasDiscountReason = discount_reason !== undefined
     const stmt = db.prepare(`
       UPDATE pos_running_bills 
-      SET display_name = ?, customer_name = ?, customer_phone = ?, notes = ?
+      SET display_name = COALESCE(?, display_name),
+          customer_name = COALESCE(?, customer_name),
+          customer_phone = COALESCE(?, customer_phone),
+          notes = COALESCE(?, notes),
+          discount_reason = CASE WHEN ? = 1 THEN ? ELSE discount_reason END
       WHERE id = ? AND tenant_id = ? AND status = 'OPEN'
     `)
     
     const result = stmt.run(
-      display_name, customer_name || null, customer_phone || null, notes || null,
+      display_name || null, customer_name || null, customer_phone || null, notes || null,
+      hasDiscountReason ? 1 : 0, hasDiscountReason ? (String(discount_reason).trim() || null) : null,
       id, tenantId
     )
     
@@ -715,7 +721,7 @@ router.post('/bills/:id/pay', async (req, res) => {
     const userId = (req as any).user!.userId
     const { id } = req.params
     const { payment_method, received_amount, reference, redeem_points, bank_account_id,
-      discount_amount, extra_charge_amount, extra_charge_label } = req.body
+      discount_amount, discount_reason, extra_charge_amount, extra_charge_label } = req.body
 
     if (!payment_method) {
       return res.status(400).json({ success: false, message: 'Payment method required' })
@@ -780,11 +786,12 @@ router.post('/bills/:id/pay', async (req, res) => {
     // ส่วนลดจากแต้ม (redeemBaht) ยังไม่ลงบิลตรงนี้ — ลงใน payTx ตอนตัดจ่ายจริงเท่านั้น
     // (เดิมลงก่อน แล้วติดด่าน/สต็อก → เปิดบิลใหม่หน้าจอดึงกลับเป็นส่วนลดมือ แลกแต้มซ้ำ = ลดสองต่อ)
     const prevDiscount = Number((bill as any).discount_amount) || 0
-    if (discount_amount !== undefined || extra_charge_amount !== undefined) {
+    if (discount_amount !== undefined || extra_charge_amount !== undefined || discount_reason !== undefined) {
       db.prepare(`UPDATE pos_running_bills
-        SET discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?
+        SET discount_amount = ?, discount_reason = COALESCE(?, discount_reason), extra_charge_amount = ?, extra_charge_label = ?
         WHERE id = ? AND tenant_id = ?`)
-        .run(manualDiscount, Math.max(0, Number(extra_charge_amount) || 0),
+        .run(manualDiscount, discount_reason !== undefined ? (String(discount_reason).trim() || null) : null,
+          Math.max(0, Number(extra_charge_amount) || 0),
           extra_charge_label || null, id, tenantId)
     }
 
@@ -835,13 +842,14 @@ router.post('/bills/:id/pay', async (req, res) => {
           refType: 'pos_running_bills',
           refId: id,
           amount: discountBaht,
-          description: `บิล ${(refreshedBill as any).bill_number} ขออนุมัติส่วนลด ฿${discountBaht.toLocaleString()} (${discountPct}% ของยอด ฿${baseBeforeDiscount.toLocaleString()})`,
+          description: `บิล ${(refreshedBill as any).bill_number} ขออนุมัติส่วนลด ฿${discountBaht.toLocaleString()} (${discountPct}% ของยอด ฿${baseBeforeDiscount.toLocaleString()})${discount_reason ? ` — ${discount_reason}` : ''}`,
           payload: {
             severity: 'high',
             billId: id,
             discountAmount: discountBaht,
             discountPct,
             baseBeforeDiscount,
+            discountReason: discount_reason || null,
           },
         })
       return res.status(202).json({

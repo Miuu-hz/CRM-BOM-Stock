@@ -95,6 +95,10 @@ interface CurrentBill {
   tax_amount: number
   service_charge_amount: number
   total_amount: number
+  discount_amount?: number
+  discount_reason?: string | null
+  extra_charge_amount?: number
+  extra_charge_label?: string | null
   receipt_url?: string
   receipt_qr?: string
   invoice?: { id: string; invoice_number: string; status: string } | null
@@ -172,6 +176,8 @@ export default function Cashier() {
   const [managingStaleBills, setManagingStaleBills] = useState(false)
   // Discount & extra charge (local, per-session)
   const [discount, setDiscount] = useState<{ type: 'pct' | 'fixed'; value: number }>({ type: 'pct', value: 0 })
+  const [discountReason, setDiscountReason] = useState('')
+  const [showDiscountReasonModal, setShowDiscountReasonModal] = useState(false)
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
   const [expandedRow, setExpandedRow] = useState<'discount' | 'extra' | null>(null)
   const [billing, setBilling] = useState<BillingConfig>(loadBillingConfig)
@@ -477,6 +483,7 @@ export default function Cashier() {
         const savedDiscount = Number(res.data?.discount_amount) || 0
         const savedExtra = Number(res.data?.extra_charge_amount) || 0
         setDiscount(savedDiscount > 0 ? { type: 'fixed', value: savedDiscount } : { type: 'pct', value: 0 })
+        setDiscountReason(res.data?.discount_reason || '')
         setExtraCharge({ label: res.data?.extra_charge_label || 'ค่าบริการอื่น', amount: savedExtra })
         setExpandedRow(null)
         setView('menu')
@@ -565,6 +572,20 @@ export default function Cashier() {
     const t = billTotals(bill, billing, { extraCharge: extraCharge.amount })
     return Math.round((t.subtotal + t.serviceChargeAmount + t.extraCharge) * pct / 100)
   }
+  const handleSaveDiscountReason = async (newReason: string) => {
+    setDiscountReason(newReason)
+    if (currentBill?.id) {
+      try {
+        await posBillService.updateBill(currentBill.id, {
+          display_name: currentBill.display_name,
+          discount_reason: newReason,
+        })
+      } catch {
+        // non-blocking update
+      }
+    }
+  }
+
   const billDiscountPct = (bill: any) => {
     if (!bill || discount.value <= 0) return 0
     if (discount.type === 'pct') return Math.min(100, Math.max(0, discount.value))
@@ -614,6 +635,13 @@ export default function Cashier() {
   const processPayment = async (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => {
     if (!isBillEditable(currentBill)) return
 
+    if (billDiscountAmount(currentBill) > 0 && billDiscountPct(currentBill) >= 20 && !discountReason.trim()) {
+      toast.error('กรุณาระบุสาเหตุส่วนลด ≥ 20% (เช่น ยอด Shopee, LINE MAN, Grab)')
+      setShowPaymentModal(false)
+      setShowDiscountReasonModal(true)
+      return
+    }
+
     try {
       const res = await posBillService.payBill(currentBill.id, {
         payment_method: method,
@@ -621,6 +649,7 @@ export default function Cashier() {
         bank_account_id: bankAccountId,
         // ต้องส่งไปด้วย ไม่งั้น backend คิดยอด/VAT/บัญชีจากบิลเปล่า ๆ คนละยอดกับที่ลูกค้าจ่าย
         discount_amount: billDiscountAmount(currentBill),
+        discount_reason: discountReason.trim() || undefined,
         extra_charge_amount: extraCharge.amount,
         extra_charge_label: extraCharge.label,
       })
@@ -653,6 +682,7 @@ export default function Cashier() {
         const receiptData = buildReceiptData(currentBill, method, cashReceived, billDiscountAmount(currentBill) + (res.data?.redeem_discount || 0))
         printPOSReceipt(receiptData, 'thermal')
         setCurrentBill(null)
+        setDiscountReason('')
         setShowPaymentModal(false)
         setView('bills')
         await fetchData()
@@ -676,6 +706,7 @@ export default function Cashier() {
       if (approvalGate.handleResponse(res)) return
       toast.success('ยกเลิกบิลแล้ว')
       setCurrentBill(null)
+      setDiscountReason('')
       setView('bills')
       await fetchData()
     } catch (error) {
@@ -1055,7 +1086,7 @@ export default function Cashier() {
                     </p>
                   </div>
                   <button
-                    onClick={() => { setCurrentBill(null); setView('bills') }}
+                    onClick={() => { setCurrentBill(null); setDiscountReason(''); setView('bills') }}
                     aria-label="ปิดบิลนี้ กลับไปหน้าบิลทั้งหมด"
                     className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
                   >
@@ -1265,15 +1296,54 @@ export default function Cashier() {
                                   const next = Math.max(0, discount.type === 'pct' ? Math.min(100, raw) : raw)
                                   setDiscount(d => ({ ...d, value: next }))
                                 }}
-                                onKeyDown={e => e.key === 'Enter' && setExpandedRow(null)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    setExpandedRow(null)
+                                    if (billDiscountPct(currentBill) >= 20 && !discountReason.trim()) {
+                                      setShowDiscountReasonModal(true)
+                                    }
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (billDiscountPct(currentBill) >= 20 && !discountReason.trim()) {
+                                    setShowDiscountReasonModal(true)
+                                  }
+                                }}
                                 autoFocus
                                 className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-warning"
                               />
                             </div>
                             {discount.value > 0 && (
-                              <button onClick={() => { setDiscount({ type: 'pct', value: 0 }); setExpandedRow(null) }}
+                              <button onClick={() => { setDiscount({ type: 'pct', value: 0 }); setDiscountReason(''); setExpandedRow(null) }}
                                 className="text-[var(--fg-4)] hover:text-danger text-xs">ล้าง</button>
                             )}
+                          </div>
+                        )}
+                        {(billDiscountPct(currentBill) >= 20 || discountReason.trim()) && (
+                          <div className="mt-1.5 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-[var(--primary)] font-medium flex items-center gap-1 flex-shrink-0">
+                                <Tag className="w-3.5 h-3.5" />
+                                แท็ก:
+                              </span>
+                              {discountReason.trim() ? (
+                                <span className="font-semibold px-2 py-0.5 rounded bg-[var(--primary-soft)] text-[var(--primary)] truncate">
+                                  {discountReason}
+                                </span>
+                              ) : (
+                                <span className="text-warning font-medium flex items-center gap-1">
+                                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                                  ลด ≥ 20% ระบุสาเหตุ
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowDiscountReasonModal(true)}
+                              className="ml-2 px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--bg)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--fg-2)] hover:text-[var(--primary)] transition-colors flex-shrink-0"
+                            >
+                              {discountReason.trim() ? 'เปลี่ยนแท็ก' : 'ระบุแท็ก'}
+                            </button>
                           </div>
                         )}
                         {billDiscountPct(currentBill) > approvalDiscountPct && (
@@ -1371,7 +1441,14 @@ export default function Cashier() {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setShowPaymentModal(true)}
+                        onClick={() => {
+                          if (billDiscountAmount(currentBill) > 0 && billDiscountPct(currentBill) >= 20 && !discountReason.trim()) {
+                            toast.error('กรุณาระบุสาเหตุส่วนลด ≥ 20% (เช่น ยอด Shopee, LINE MAN, Grab)')
+                            setShowDiscountReasonModal(true)
+                            return
+                          }
+                          setShowPaymentModal(true)
+                        }}
                         disabled={currentBill.items.length === 0 || !isBillEditable(currentBill)}
                         className="flex-1 px-4 py-4 rounded-xl bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
@@ -1507,6 +1584,16 @@ export default function Cashier() {
         onClose={() => setShowEditNameModal(false)}
         currentName={currentBill?.display_name || ''}
         onSave={updateBillName}
+      />
+
+      {/* Discount Reason Modal */}
+      <DiscountReasonModal
+        isOpen={showDiscountReasonModal}
+        onClose={() => setShowDiscountReasonModal(false)}
+        currentReason={discountReason}
+        discountPct={billDiscountPct(currentBill)}
+        discountAmount={billDiscountAmount(currentBill)}
+        onSave={handleSaveDiscountReason}
       />
 
       {/* Payment Modal */}
@@ -2694,6 +2781,143 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
             </div>
           </div>
         )}
+      </motion.div>
+    </div>
+  )
+}
+
+
+// ==================== Discount Reason Modal ====================
+
+interface DiscountReasonModalProps {
+  isOpen: boolean
+  onClose: () => void
+  currentReason: string
+  discountPct: number
+  discountAmount: number
+  onSave: (reason: string) => void
+}
+
+const PRESET_DISCOUNT_TAGS = [
+  { label: '🧡 Shopee', value: 'Shopee' },
+  { label: '💚 LINE MAN', value: 'LINE MAN' },
+  { label: '🟢 Grab', value: 'Grab' },
+  { label: '🏷️ โปรโมชั่นร้าน', value: 'โปรโมชั่นร้าน' },
+  { label: '👤 พนักงาน/เจ้าของ', value: 'พนักงาน/เจ้าของ' },
+  { label: '👥 ลูกค้าประจำ', value: 'ลูกค้าประจำ' },
+]
+
+function DiscountReasonModal({
+  isOpen,
+  onClose,
+  currentReason,
+  discountPct,
+  discountAmount,
+  onSave,
+}: DiscountReasonModalProps) {
+  useModalClose(onClose)
+  const [reason, setReason] = useState(currentReason)
+
+  useEffect(() => {
+    if (isOpen) {
+      setReason(currentReason)
+    }
+  }, [isOpen, currentReason])
+
+  if (!isOpen) return null
+
+  const handleSave = () => {
+    if (discountPct >= 20 && !reason.trim()) {
+      toast.error('กรุณาระบุสาเหตุส่วนลด ≥ 20% หรือเลือกแท็กช่องทาง')
+      return
+    }
+    onSave(reason.trim())
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[var(--warning-soft)] flex items-center justify-center text-warning">
+              <Tag className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[var(--fg-1)]">ระบุสาเหตุส่วนลด / แท็กช่องทาง</h3>
+              <p className="text-xs text-[var(--fg-3)]">
+                ส่วนลด {discountPct}% (฿{discountAmount.toLocaleString()})
+                {discountPct >= 20 && <span className="text-warning ml-1">· เกณฑ์ ≥ 20% ต้องระบุ</span>}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg text-[var(--fg-4)] hover:text-[var(--fg-1)] hover:bg-[var(--surface-2)]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Quick Tag Chips */}
+        <div>
+          <label className="text-xs font-medium text-[var(--fg-2)] block mb-2">เลือกแท็กด่วน (Delivery / โปรโมชั่น):</label>
+          <div className="flex flex-wrap gap-2">
+            {PRESET_DISCOUNT_TAGS.map(t => {
+              const active = reason.trim().toLowerCase() === t.value.toLowerCase() || (t.value === 'Shopee' && reason.toLowerCase().includes('shopee'))
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setReason(t.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    active
+                      ? 'bg-[var(--primary)] text-white border-[var(--primary)] shadow-sm'
+                      : 'bg-[var(--surface-2)] text-[var(--fg-1)] border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Text Input */}
+        <div>
+          <label className="text-xs font-medium text-[var(--fg-2)] block mb-1.5">หรือพิมพ์ระบุรายละเอียด / ช่องทาง:</label>
+          <input
+            type="text"
+            placeholder="เช่น ยอด shopee, lineman, grab, ลูกค้า VIP"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            autoFocus
+            className="w-full px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:border-[var(--primary)]"
+          />
+        </div>
+
+        {/* Modal Actions */}
+        <div className="flex gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border)] text-sm text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-colors"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={discountPct >= 20 && !reason.trim()}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            บันทึกแท็ก
+          </button>
+        </div>
       </motion.div>
     </div>
   )

@@ -882,6 +882,7 @@ export const flexTemplates = {
         topSales: { name: string; qty: number; amount: number }[]
         buys: { total: number; top: { label: string; sub: string; amount: number }[] }
         alerts: { voids: number; itemVoids: number; discountTotal: number }
+        deliveryDiscounts?: { tag: string; count: number; discountAmount: number; salesAmount: number }[]
         webUrl: string
     }) => {
         const C = {
@@ -938,9 +939,25 @@ export const flexTemplates = {
             contents: [{ type: 'text', text: label, size: 'sm', weight: 'bold', align: 'center', color: primary ? '#FFFFFF' : C.indigo }],
         })
 
+const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
+            type: 'box', layout: 'horizontal', spacing: 'md', alignItems: 'center', margin: 'sm',
+            contents: [
+                { type: 'box', layout: 'vertical', width: '22px', height: '22px', cornerRadius: '8px', backgroundColor: C.mango50,
+                  justifyContent: 'center', contents: [{ type: 'text', text: '🛵', size: 'xxs', align: 'center' }] },
+                { type: 'box', layout: 'vertical', flex: 1, contents: [
+                    { type: 'text', text: `${d.tag} (${d.count} บิล)`, size: 'sm', weight: 'bold', color: C.ink900, wrap: false },
+                    { type: 'text', text: `ส่วนลด ฿${Number(d.discountAmount).toLocaleString('th-TH')}`, size: 'xxs', color: C.mango600 },
+                ] },
+                { type: 'text', text: baht(d.salesAmount), size: 'sm', weight: 'bold', color: C.ink900, flex: 0 },
+            ],
+        }))
+
+        const deliveryText = s.deliveryDiscounts?.length
+            ? ` · 🛵 ${s.deliveryDiscounts.map(d => `${d.tag}(${d.count})`).join(' ')}`
+            : ''
         return {
             type: 'flex',
-            altText: `🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล) · ส่วนลดรวม ${baht(s.alerts.discountTotal)} · ${drawer.text}`,
+            altText: (`🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล)${deliveryText} · ส่วนลดรวม ${baht(s.alerts.discountTotal)} · ${drawer.text}`).slice(0, 400),
             contents: {
                 type: 'bubble', size: 'mega',
                 header: {
@@ -986,6 +1003,9 @@ export const flexTemplates = {
                             ] },
                         ] },
                         section('🍽️ ขายดีสุด 5 อันดับ', 'ตามยอดเงิน', rankList(sales, C.indigo50, C.indigo, sales[0]?.amount || 0), 'ไม่มีบิลที่ชำระในกะนี้'),
+                        ...(deliveryRows.length ? [
+                            section('🛵 ยอด Delivery / ส่วนลด > 20%', `รวม ${s.deliveryDiscounts!.reduce((t, d) => t + d.count, 0)} บิล`, deliveryRows, '')
+                        ] : []),
                         section('🛒 ซื้อสูงสุด 5 อันดับ', `รวม ${baht(s.buys.total)}`, rankList(buys, C.mango50, C.mango, buys[0]?.amount || 0), 'ไม่มีการซื้อหรือจ่ายออกในกะนี้'),
                         ...(chips.length ? [{ type: 'box', layout: 'vertical', margin: 'xl', spacing: 'xs', contents: chips.map(c => ({
                             type: 'box', layout: 'horizontal', contents: [{ type: 'box', layout: 'vertical', flex: 0, backgroundColor: C.sand100, cornerRadius: 'xxl',

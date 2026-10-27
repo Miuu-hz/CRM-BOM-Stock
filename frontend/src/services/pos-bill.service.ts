@@ -64,6 +64,7 @@ const posBillService = {
     customer_name?: string
     customer_phone?: string
     notes?: string
+    discount_reason?: string
   }) => {
     const response = await api.put(`/pos/bills/${id}`, data)
     return response.data
@@ -110,6 +111,7 @@ const posBillService = {
     bank_account_id?: string
     /** ส่วนลด/ค่าขนส่งท้ายบิล — ต้องส่งมาด้วย เพราะเป็นส่วนหนึ่งของฐานภาษีและยอดที่ลูกค้าจ่ายจริง */
     discount_amount?: number
+    discount_reason?: string
     extra_charge_amount?: number
     extra_charge_label?: string
   }) => {

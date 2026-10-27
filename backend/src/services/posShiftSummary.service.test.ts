@@ -70,4 +70,45 @@ describe("สรุปปิดกะส่ง LINE", () => {
     expect(card.altText).toContain("ขาด")
     expect(JSON.stringify(card)).not.toContain("undefined")
   })
+  it("สรุปยอด delivery และบิลส่วนลด > 20% แยกตามแท็ก Shopee, LINE MAN, Grab", () => {
+    const T = generateId(), shiftId = generateId()
+    const opened = "2026-10-16T02:00:00.000Z", closed = "2026-10-16T13:00:00.000Z"
+    db.prepare(`INSERT INTO pos_shifts (id, tenant_id, shift_number, status, opened_at, closed_at, opening_cash, expected_cash,
+      closing_cash_counted, cash_difference, total_revenue, cash_revenue, bank_revenue, bill_count)
+      VALUES (?, ?, 'SHIFT-DELIVERY-01', 'CLOSED', ?, ?, 0, 0, 0, 0, 1000, 0, 1000, 3)`).run(shiftId, T, opened, closed)
+
+    // บิล 1: Shopee (ลด 25%)
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, shift_id, subtotal, discount_amount, total_amount, discount_reason)
+      VALUES (?, ?, 'B1', 'Shopee #1', 'PAID', ?, 200, 50, 150, 'Shopee')`).run(generateId(), T, shiftId)
+
+    // บิล 2: LINE MAN (ลด 20%)
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, shift_id, subtotal, discount_amount, total_amount, discount_reason)
+      VALUES (?, ?, 'B2', 'LM #1', 'PAID', ?, 300, 60, 240, 'ยอด lineman')`).run(generateId(), T, shiftId)
+
+    // บิล 3: Grab (ลด 30%)
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, shift_id, subtotal, discount_amount, total_amount, discount_reason)
+      VALUES (?, ?, 'B3', 'Grab #1', 'PAID', ?, 400, 120, 280, 'GrabFood')`).run(generateId(), T, shiftId)
+
+    // บิล 4: ไม่ได้ใส่แท็กแต่ลด 25% (>= 20%)
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, shift_id, subtotal, discount_amount, total_amount, discount_reason)
+      VALUES (?, ?, 'B4', 'No Tag', 'PAID', ?, 100, 25, 75, '')`).run(generateId(), T, shiftId)
+
+    // บิล 5: ลดแค่ 10% ไม่มีแท็ก -> ไม่ถูกนับใน deliveryDiscounts
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, shift_id, subtotal, discount_amount, total_amount, discount_reason)
+      VALUES (?, ?, 'B5', 'Normal', 'PAID', ?, 100, 10, 90, '')`).run(generateId(), T, shiftId)
+
+    const s = buildShiftSummary(T, shiftId)!
+    expect(s.deliveryDiscounts).toBeDefined()
+    expect(s.deliveryDiscounts!.length).toBe(4)
+    expect(s.deliveryDiscounts!.find(d => d.tag === 'Grab')).toEqual({ tag: 'Grab', count: 1, discountAmount: 120, salesAmount: 280 })
+    expect(s.deliveryDiscounts!.find(d => d.tag === 'LINE MAN')).toEqual({ tag: 'LINE MAN', count: 1, discountAmount: 60, salesAmount: 240 })
+    expect(s.deliveryDiscounts!.find(d => d.tag === 'Shopee')).toEqual({ tag: 'Shopee', count: 1, discountAmount: 50, salesAmount: 150 })
+    expect(s.deliveryDiscounts!.find(d => d.tag === 'ลด >20%')).toEqual({ tag: 'ลด >20%', count: 1, discountAmount: 25, salesAmount: 75 })
+
+    const card = flexTemplates.shiftCloseCard({ ...s, webUrl: "https://erp.phopy.net" })
+    expect(card.altText).toContain('Shopee')
+    expect(card.altText).toContain('LINE MAN')
+    expect(card.altText).toContain('Grab')
+    expect(JSON.stringify(card)).toContain('ยอด Delivery / ส่วนลด > 20%')
+  })
 })

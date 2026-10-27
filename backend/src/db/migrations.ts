@@ -3,6 +3,15 @@ import { docSeqOf, MAX_DOC_SEQ, DOC_NUMBER_TABLES } from '../utils/docSeq'
 // vat.ts เป็นฟังก์ชันล้วน ไม่ import db/sqlite เลย จึงไม่โดนกับดัก require วงกลมเหมือน docSeq.ts ข้างบน
 import { vatModeOf } from '../utils/vat'
 export function runMigrations(db: any): void {
+  try {
+    const cols = (db.prepare("PRAGMA table_info(pos_running_bills)").all() as any[]).map((c: any) => c.name)
+    if (!cols.includes('discount_reason')) {
+      db.exec('ALTER TABLE pos_running_bills ADD COLUMN discount_reason TEXT')
+      console.log('✅ Migration: pos_running_bills.discount_reason added')
+    }
+  } catch (err) {
+    console.warn('Migration pos_running_bills.discount_reason skipped:', err)
+  }
   // FK ที่ชี้ตาราง products — products เป็นแคตตาล็อกตาย 12 แถว ของจริงอยู่ที่ stock_items
   // FK พวกนี้ทำ feature ตายเงียบมาแล้ว 4 ตาราง (credit_note_items / delivery_order_items /
   // backorder_items / purchase_invoice_items) ล้างที่เหลือทิ้งก่อนมีคนเปิดใช้แล้วเจอหน้าเดิม

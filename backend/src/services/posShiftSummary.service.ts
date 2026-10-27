@@ -22,6 +22,7 @@ export interface ShiftSummary {
   topSales: { name: string; qty: number; amount: number }[]
   buys: { total: number; top: { label: string; sub: string; amount: number }[] }
   alerts: { voids: number; itemVoids: number; discountTotal: number }
+  deliveryDiscounts?: { tag: string; count: number; discountAmount: number; salesAmount: number }[]
 }
 
 const r2 = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100
@@ -94,6 +95,41 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
   const discountTotal = discountBills.reduce((t, b) =>
     t + Math.max(0, b.discount - Math.floor(Math.max(0, b.counter_points) / redeemRate)), 0)
 
+  // สรุปยอดขายตามแท็กช่องทาง / บิลที่ลดเกิน 20% (Shopee, LINE MAN, Grab ฯลฯ)
+  const deliveryBills = db.prepare(`
+    SELECT b.bill_number, b.total_amount, b.discount_amount, b.subtotal,
+           b.service_charge_amount, b.extra_charge_amount, b.discount_reason
+    FROM pos_running_bills b
+    WHERE b.tenant_id = ? AND b.status = 'PAID'
+      AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at BETWEEN ? AND ?))
+      AND (
+        (b.discount_reason IS NOT NULL AND TRIM(b.discount_reason) != '')
+        OR (
+          b.discount_amount > 0
+          AND (b.subtotal + COALESCE(b.service_charge_amount, 0) + COALESCE(b.extra_charge_amount, 0)) > 0
+          AND (b.discount_amount * 100.0 / (b.subtotal + COALESCE(b.service_charge_amount, 0) + COALESCE(b.extra_charge_amount, 0))) >= 20.0
+        )
+      )
+    ORDER BY b.discount_amount DESC
+  `).all(tenantId, shiftId, s.opened_at, s.closed_at) as any[]
+
+  const tagMap = new Map<string, { tag: string; count: number; discountAmount: number; salesAmount: number }>()
+  for (const b of deliveryBills) {
+    const rawReason = (b.discount_reason || '').trim()
+    let tag = rawReason || 'ลด >20%'
+    const lower = rawReason.toLowerCase()
+    if (lower.includes('shopee')) tag = 'Shopee'
+    else if (lower.includes('lineman') || lower.includes('line man')) tag = 'LINE MAN'
+    else if (lower.includes('grab')) tag = 'Grab'
+
+    const cur = tagMap.get(tag) || { tag, count: 0, discountAmount: 0, salesAmount: 0 }
+    cur.count += 1
+    cur.discountAmount = r2(cur.discountAmount + (Number(b.discount_amount) || 0))
+    cur.salesAmount = r2(cur.salesAmount + (Number(b.total_amount) || 0))
+    tagMap.set(tag, cur)
+  }
+  const deliveryDiscounts = Array.from(tagMap.values()).sort((a, b) => b.salesAmount - a.salesAmount)
+
   return {
     shiftNumber: s.shift_number,
     shopName: shop?.name || '',
@@ -114,5 +150,6 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
       itemVoids: logs.filter(l => l.module_type === 'pos_item_void').length,
       discountTotal: r2(discountTotal),
     },
+    deliveryDiscounts,
   }
 }
