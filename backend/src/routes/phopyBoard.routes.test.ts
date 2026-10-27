@@ -69,4 +69,14 @@ describe('GET /phopy-board/summary + /extended', () => {
     const res = await request(app).get('/api/phopy-board/summary?startDate=2026-10-01;DROP').set('Authorization', 'Bearer ' + user.token)
     expect(res.status).toBe(400)
   })
+
+  it('cfo-summary: ข้อความแนะนำตั้งงบประมาณใช้ปี พ.ศ. (เช่น 2570 แทน 2027)', async () => {
+    const res = await request(app).get('/api/phopy-board/cfo-summary' + q).set('Authorization', 'Bearer ' + user.token)
+    expect(res.status).toBe(200)
+    const d = res.body.data
+    const budgetDecision = d.decisions.find((dec: any) => dec.text.includes('ตั้งงบประมาณปี'))
+    expect(budgetDecision).toBeDefined()
+    expect(budgetDecision.text).toContain('2570')
+    expect(budgetDecision.text).not.toContain('2027')
+  })
 })

@@ -505,8 +505,9 @@ export default function CandleChart({ periods, visibleFrom = 0, ma, labelOf }: C
                 dataKey="index"
                 tickFormatter={idx => {
                   const p = visiblePeriods[idx]
-                  if (!p) return ''
-                  return p.from ? p.from.slice(5) : ''
+                  if (!p || !p.from) return ''
+                  const d = new Date(p.from.slice(0, 10) + 'T00:00:00')
+                  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
                 }}
                 axisLine={{ stroke: 'var(--border)' }}
                 tickLine={false}

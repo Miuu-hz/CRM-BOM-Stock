@@ -787,7 +787,7 @@ router.get('/cfo-summary', (req: Request, res: Response) => {
     const hasBudget = !!db.prepare('SELECT 1 FROM budgets WHERE tenant_id = ? AND year = ? LIMIT 1').get(tenantId, endYear)
     if (!hasBudget) {
       decisions.push({
-        text: `ตั้งงบประมาณปี ${endYear + 1} เพื่อให้บท 7 มีตัวเทียบ`,
+        text: `ตั้งงบประมาณปี ${endYear + 1 + 543} เพื่อให้บท 7 มีตัวเทียบ`,
         from: 'ตาราง budgets ยังว่าง · บท 7',
       })
     }

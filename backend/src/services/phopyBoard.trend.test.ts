@@ -251,6 +251,6 @@ describe('dailySeries, cashOutflow & trendSeries (DB)', () => {
     expect(cfo.kpis.find((k: any) => k.key === 'netProfit')).toMatchObject({ value: -10000, prev: null, deltaPct: null })
     expect(cfo.cautions.some((c: any) => c.text.includes('ขาดทุนสุทธิ') && c.from.includes('· บท 3'))).toBe(true)
     expect(cfo.cautions.some((c: any) => c.text.includes('การเทียบยังไม่สมบูรณ์') && c.from.includes('· บท'))).toBe(true)
-    expect(cfo.decisions.some((d: any) => d.text.includes('ตั้งงบประมาณปี 2027') && d.from.includes('· บท 7'))).toBe(true)
+    expect(cfo.decisions.some((d: any) => d.text.includes('ตั้งงบประมาณปี 2570') && d.from.includes('· บท 7'))).toBe(true)
   })
 })

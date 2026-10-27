@@ -87,7 +87,7 @@ export function BudgetVsActualCard({ endDate }: BudgetVsActualCardProps) {
             to="/accounting/reports?tab=budget"
             className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >
-            <span>ตั้งงบประมาณปี {year}</span>
+            <span>ตั้งงบประมาณปี {year + 543}</span>
             <ExternalLink className="w-4 h-4" />
           </Link>
         </div>
@@ -107,7 +107,7 @@ export function BudgetVsActualCard({ endDate }: BudgetVsActualCardProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-bold text-[var(--fg-1)]">
-            งบประมาณเทียบจริง ปี {year}
+            งบประมาณเทียบจริง ปี {year + 543}
           </h3>
           <p className="text-xs text-[var(--fg-3)]">
             รายการที่มีส่วนต่างสูงสุด (Top Variance)
