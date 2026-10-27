@@ -1,7 +1,7 @@
 # 🏭 Carbon ERP - System Architecture & Development Guide
 
 > เอกสารสถาปัตยกรรมระบบ CRM-BOM-Stock ERP และแผนการพัฒนา
-> อัปเดตล่าสุด: 24 ตุลาคม 2026
+> อัปเดตล่าสุด: 27 ตุลาคม 2026
 
 ---
 
@@ -1751,6 +1751,104 @@ prompt ทุกตัวเป็นแบบ 6 ส่วน (CONTEXT/ROLE/INPU
 
 ---
 
+## 🤖 แผนพัฒนา: ระบบกระทบยอดบัญชี-ธนาคารอัจฉริยะ (AI-Assisted Smart Bank Reconciliation & CRM Custom Skill)
+> บันทึกเมื่อ: 25 ตุลาคม 2026
+
+### 1. ปัญหาและที่มา (Problem Statement & Context)
+ในชีวิตจริงของธุรกิจ SME, ห้างหุ้นส่วน (หจก.) และบริษัทจำกัด (บจก.) ในไทย มีอุปสรรคสำคัญในการทำบัญชี 3 ประการ:
+1. **การปะปนระหว่างเงินส่วนตัวกับเงินธุรกิจ:** เจ้าของมักใช้บัญชีธนาคารร้านซื้อของส่วนตัว (เช่น ซื้อของให้ลูก, ถอนเงินส่วนตัว, โอนค่าใช้จ่ายในบ้าน) หรือควักเงินตัวเองจ่ายค่าของแทนร้าน
+2. **ความผิดพลาดในการลงช่องทางชำระเงิน:** พนักงานจัดซื้อ/หน้าร้านมักลงข้อมูลผิด เช่น จ่ายโอนผ่านแอปธนาคารจริง แต่เผลอกดเลือกเป็น "เงินสด" ส่งผลให้บัญชีเงินสดติดลบและยอดในธนาคารไม่ตรงกับสเตทเมนต์
+3. **ธนาคารปกปิดชื่อผู้โอน (Masked Bank Names):** ใน Bank Statement (KBank, SCB, Krungsri ฯลฯ) มักจะตัดทอนหรือเซนเซอร์ชื่อผู้โอน เช่น *"นาย ส... ส..."* หรือแสดงเพียงเลขบัญชีบางส่วน ทำให้ระบบอัตโนมัติแบบเดิมจับคู่ไม่ได้
+
+---
+
+### 2. สถาปัตยกรรมระบบ 5 ขั้นตอน (End-to-End Workflow Architecture)
+
+```
+[ 1. Phopy ERP ] ──── Export ────> [ Reconciliation Sheet (Excel/CSV) ]
+                                                    │
+[ Bank Statement ] ─────────────────────────────────┤
+ (PDF / CSV ของแบงก์)                                │
+                                                    ▼
+                                    [ 2. Client-side Local AI ]
+                                    (จับคู่ Amount + Date + Description)
+                                    (ตรวจจับชื่อที่โดน Mask เพื่อยืนยัน)
+                                                    │
+                                                    ▼
+                                    [ 3. Human Confirmation & Review ]
+                                    (ลูกค้าตรวจ/ยืนยันชื่อคู่ค้าที่ธนาคารปิดไว้)
+                                                    │
+                                                    ▼
+[ 4. Phopy Ingestion ] <── Upload ── [ Matched & Reconciled Dataset ]
+   ├── Match สำเร็จ ──────> บันทึกเข้า DB
+   └── ตัวค้าง/ตกหล่น ─────> แสดงผลบน UI / ดาวน์โหลดไปกรอกมือกลับมา
+                                                    │
+                                                    ▼
+[ 5. The Catch-All ] ──────────────> [ Reclassification Journal Voucher ]
+                                     (ล้างยอดผิดช่องทาง / โอนเข้าบัญชีกรรมการ)
+                                                    │
+                                                    ▼
+[ 6. CRM Learning Loop ] ──────────> [ Customer/Supplier Aliases & Custom Skill ]
+```
+
+---
+
+### 3. รายละเอียดการทำงานแต่ละส่วน (Component Specifications)
+
+#### ขั้นที่ 1: ระบบส่งออกข้อมูลเปรียบเทียบ (Phopy Reconciliation Feed / Export)
+- Phopy ERP มีปุ่มกด Export รายรับ-รายจ่าย (Transactions Feed) ในช่วงวันที่กำหนด ออกมาเป็นไฟล์ `Excel (.xlsx)` หรือ `CSV`
+- **โครงสร้างคอลัมน์มาตรฐาน:**
+  - `tx_id`: รหัสอ้างอิงธุรกรรมในระบบ
+  - `tx_date`: วันที่เกิดรายการ
+  - `type`: ประเภท (SALES, PURCHASE_PAYMENT, POS_SALE, EXPENSE, CASH_MOVEMENT)
+  - `doc_number`: เลขที่เอกสาร (เช่น INV-xxxx, PAY-xxxx, POS-xxxx)
+  - `contact_name`: ชื่อลูกค้า / ผู้ขาย
+  - `amount`: จำนวนเงิน
+  - `payment_method`: ช่องทางที่บันทึกไว้ในระบบ (เงินสด, โอนธนาคาร, QR)
+  - `account_code`: รหัสบัญชีที่ลงไว้ (เช่น 1101, 1102-01)
+  - `reconcile_status`: สถานะการจับคู่ (UNMATCHED / MATCHED / MANUAL)
+
+#### ขั้นที่ 2: การประมวลผลด้วย AI ฝั่งลูกค้า (Client-side AI Matching Engine)
+- ลูกค้านำไฟล์ Bank Statement (PDF หรือ CSV) และ Reconciliation Sheet จาก Phopy มาให้ AI ของลูกค้าประมวลผล (ผ่าน Antigravity Agent, Local LLM, หรือ MCP Tool)
+- **ตรรกะการจับคู่ (Matching Heuristics):**
+  - **Match ระดับ 1 (ยอดเงิน + วันที่):** ยอดเงินตรงกันเป๊ะ และวันที่อยู่ในช่วง $\pm 1$ ถึง 3 วัน
+  - **ตรวจจับชื่อที่ถูก Mask (Masked Name Detection):** หากชื่อในสเตทเมนต์เป็นแบบย่อ (เช่น "นาย วิ... ภ...") AI จะนำไปเทียบกับฐานข้อมูลลูกค้าใน Sheet และตั้งสถานะ `FLAG_NEEDS_CONFIRMATION` เพื่อให้มนุษย์ตรวจสอบ
+
+#### ขั้นที่ 3: การตรวจยืนยันและการส่งข้อมูลกลับเข้า Phopy (Ingestion & Exception Handling)
+- เมื่อลูกค้าตรวจยืนยันชื่อคู่ค้าเสร็จสิ้น ให้อัปโหลดไฟล์กลับเข้า Phopy ERP
+- **Phopy Backend ประมวลผล:**
+  1. บันทึกประวัติการกระทบยอดลงในตารางกระทบยอด (`bank_reconciliation_records`)
+  2. กรองและแยก **"รายการตกหล่น / รายการค้าง (Exceptions / Unmatched)"** ออกมาแสดงผลอย่างชัดเจนบนหน้า Web UI
+  3. ผู้ใช้สามารถเลือกแก้ไข/จับคู่ด้วยตนเองได้ 2 ทาง:
+     - กรอกมือบนหน้าจอ (Interactive Grid Edit)
+     - ดาวน์โหลดเฉพาะรายการตกหล่นเป็น Excel นำไปกรอกแล้ว Upload กลับเข้ามาใหม่
+
+#### ขั้นที่ 4: การใช้ "ใบปรับปรุงโอนย้ายประเภทบัญชี" เป็นไพ่ตาย (Reclassification JV Engine)
+สำหรับรายการที่ยอดไม่ตรง หรือไม่พบบิลในระบบ ERP:
+1. **กรณีพนักงานคีย์ช่องทางผิด (เช่น โอนจริง แต่ลงเงินสด):**
+   - ระบบมีปุ่มสร้าง **Reclassification JV** อัตโนมัติ:
+     - `Dr. 1101 เงินสด` (คืนเงินสดที่เผลอตัด)
+     - `Cr. 1102-xx เงินฝากธนาคาร` (ตัดออกจากธนาคารตามสเตทเมนต์จริง)
+2. **กรณีรายการส่วนตัวของเจ้าของ (ซื้อของให้ลูก / ถอนส่วนตัว / ทุนส่วนตัว):**
+   - สรุปรวมยอดสิ้นเดือน และสร้าง **Monthly Batch Adjustment JV**:
+     - `Dr. 1105 เงินให้กู้ยืมแก่กรรมการ / เงินทดรองกรรมการ` (กรณีเงินบริษัทจ่ายส่วนตัว)
+     - `Cr. 1102-xx เงินฝากธนาคาร`
+     *(ทำให้ตัวเลขในงบการเงินและสเตทเมนต์ดุลกัน 100% ถูกต้องตามหลักภาษีสรรพากร ไม่ปนเป็นค่าใช้จ่ายต้องห้าม)*
+
+#### ขั้นที่ 5: การสร้าง Custom AI Skill & ผลกระทบต่อระบบ CRM (CRM Memory & Learning Loop)
+เพื่อให้ AI ฉลาดขึ้นเรื่อยๆ ตามบริบทของแต่ละร้านค้า:
+1. **การเชื่อมโยงกับฐานข้อมูล CRM (`customers` & `suppliers`):**
+   - เพิ่มฟิลด์ใน CRM เช่น:
+     - `bank_aliases`: รายชื่อบัญชี/ชื่อย่อในสเตทเมนต์ที่เชื่อมโยงกับลูกค้ารายนี้ (เช่น `["นาย สม... ส...", "SOMSAK S", "PromptPay-081xxxxxxx"]`)
+     - `preferred_payment_channel`: ช่องทางประจำที่ลูกค้าใช้
+2. **Auto-Learning จากการยืนยันของผู้ใช้:**
+   - เมื่อผู้ใช้กดยืนยันว่า "นาย สม... ส... โอนเงิน 1,500 บาท" คือลูกค้ารหัส `CUST-0042`
+   - ระบบจะบันทึก Alias นี้ลงใน Profile ของลูกค้าใน CRM ทันที
+3. **Client Custom AI Skill File:**
+   - ลูกค้าสามารถเซฟ Rules และความจำเฉพาะร้านลงใน AI Skill ของตนเอง (เช่น กฎว่า "ยอดโอน Lotus Express 120 บาทค่านมลูก ให้แท็กเป็นเงินทดรองกรรมการเสมอ")
+   - ในรอบการกระทบยอดเดือนถัดไป AI จะดึง Custom Skill + CRM Data มาจับคู่ได้ถูกต้องโดยอัตโนมัติทันที
+---
+
 ## 👥 แผนพัฒนา: Phopy HR (แยกหมวด HR ออกจาก Journal) + LINE OA กลาง
 > บันทึกเมื่อ: 25 ตุลาคม 2026 · สถานะ: **แผน ยังไม่ได้เริ่มเขียนโค้ด** · UI ตัวอย่าง + ตารางเต็มอยู่ใน artifact "แผน Phopy HR" (claude.ai/artifact/RccQX7RwUGEaWv3URpiwi5 เปิดได้เฉพาะเจ้าของ)
 
@@ -1980,3 +2078,41 @@ CTO คนใหม่รับช่วงต่อ · เขียนโค้
 
 ### ค้าง
 - worktree `/root/crm-cto`, `/root/crm-fa`, `/root/crm-fb` รวมเข้า `ui` หมดแล้ว ลบได้ · branch `cto/w1..w8` เก็บไว้ (worktree ลบแล้ว งานอยู่ใน `ui` ครบ)
+
+---
+
+## 📅 Session Log — 27 ต.ค. 2026 (Stripe: Checkout Studio + หน้า Master ทำงานผ่าน Stripe) — ✅ deploy แล้ว `493822b` `51b78f4` `a4a7cd6` `bebfd58`
+
+```
+ก่อน                                         หลัง
+Master เปลี่ยนแพ็ก → เขียน DB ตรง             → สั่ง Stripe แล้ว webhook เขียนสิทธิ์ให้
+  webhook ทับกลับ, Stripe ตัดแพ็กเดิมต่อ         อัปเกรดตัดส่วนต่างทันที (ให้ดูยอดก่อนยืนยัน)
+Master ต่ออายุ +30 → ยืดวันใน DB              → เลื่อนวันตัดเงินด้วย trial_end ไม่เก็บเงินช่วงแถม
+ปิดใช้งาน / ลบถาวร → Stripe ตัดบัตรต่อ 🔴      → ไม่ต่ออายุ / ยกเลิกทันที (Stripe ล้ม = ไม่ทำอะไร)
+แก้ราคาแพ็กหน้า Master → แก้แค่ตัวเลขโชว์       → อ่านอย่างเดียว ดึงจาก billing.catalog (ราคาที่ Stripe เก็บจริง)
+```
+
+| # | เรื่อง | แก้อย่างไร | commit |
+|---|---|---|---|
+| 1 | ค่าจาก Stripe Checkout Studio | ใส่แค่ `ui_mode: hosted_page`, `name_collection` (บุคคล/บริษัท ไม่บังคับ), `phone_number_collection`, `allow_promotion_codes: false` · SDK 23.0.0 | `493822b` |
+| 2 | Master แก้สิทธิ์ทับ Stripe | `/subscriptions` คืน `stripe` (ลิงก์ Dashboard test/live ตาม key, cancelAt, pendingChange) + `billingCycle` · ราคาแพ็กมาจาก catalog, PATCH ราคา = 400 | `51b78f4` |
+| 3 | ปิดใช้งาน/ลบถาวรแล้วยังโดนตัดเงิน | `stopBilling(tenantId, immediate)` ใน billing.service: ปิดใช้งาน = `cancel_at_period_end` ก่อนปิดผู้ใช้ · ลบถาวร = ล้าง `tenant_id` ใน metadata แล้ว cancel ทันที (webhook ข้าม ไม่สร้างแถวผีกลับ) · Stripe ล้ม = 502 ไม่ปิด/ไม่ลบ | `a4a7cd6` |
+| 4 | เปลี่ยนแพ็ก/ต่ออายุจาก Master | `changeSubscription` = ทางเดียวกับลูกค้า (`checkout` → changeParams / scheduleDowngrade) · เลือก Free = `stopBilling(false)` · `extendSubscription` = `trial_end` +N วัน `proration_behavior: none` · `POST /master/tenant/:id/subscription/preview` ให้ UI โชว์ยอดตัดบัตรก่อนยืนยัน · Stripe ปฏิเสธ (บัตรไม่ผ่าน) = 502 พร้อมเหตุผล | `bebfd58` |
+| 5 | ฟอร์มแพ็กใน Master เปิดเป็นรายเดือนเสมอ | ใช้ `billing_cycle` จริงของบริษัท (กันบริษัทรายปีโดนสลับเป็นรายเดือนตอนกดบันทึก) | `bebfd58` |
+
+### ตัดสินใจ / ต่างจากที่ Checkout Studio สั่ง
+- **ไม่ใส่** `automatic_tax` (ใช้คู่กับ `default_tax_rates` VAT 7% ไม่ได้ → สร้าง session ไม่ได้), `payment_method_collection: always` (ช่วงทดลองต้องไม่ใส่บัตร), `billing_address_collection: auto` (ใบกำกับภาษีเต็มรูปต้องมีที่อยู่), `shipping_address_collection` (ขายซอฟต์แวร์), `submit_type` / `saved_payment_method_options` (ใช้ได้เฉพาะ mode payment), `integration_identifier` / `origin_context` (ไม่ได้ยืนยันว่า Stripe รับ) · **ไม่ลบ** param เดิม (customer/metadata/subscription_data/tax_id_collection/locale) ไม่งั้น webhook หา tenant ไม่เจอ · ไม่สร้าง `STRIPE_INTEGRATION_TODO.md` เพราะไม่มีค่า placeholder
+- **ต่ออายุใช้ trial_end**: subscription ที่จ่ายอยู่จะกลายเป็น `trialing` จนถึงวันใหม่ แล้วตัดเงินรอบถัดไปตามปกติ · มีลดแพ็กตั้งเวลาไว้ (schedule) = ต่ออายุไม่ได้ ต้องยกเลิกการลดแพ็กก่อน
+- **ปิดใช้งานไม่คืนเงิน** ใช้ได้ถึงสิ้นรอบที่จ่าย · กดผิดยกเลิกการยกเลิกได้ใน Stripe Dashboard
+
+### ตรวจแล้ว
+- backend 171 ไฟล์ / 1,201 ผ่าน · tsc ผ่านทั้งสองฝั่ง · `masterSubscription.test.ts` mock billing.service ครอบทาง Stripe ทุกปุ่ม + บัตรถูกปฏิเสธ + Stripe ล้มตอนปิดใช้งาน
+- ยิงจริงด้วย test key (ลูกค้าทิ้งแล้วลบ): Checkout Session แบบจ่ายเลย/ทดลอง ✅ · cancel_at_period_end / ล้าง metadata + cancel ✅ · แถม 30 วัน → trialing, ตัดเงินถัดไป +30 วัน, invoice ช่วงแถม 0 ✅ · อัปเกรด 19 → 3,490 ตัด 3,471 (หักที่จ่ายไว้) ✅
+- pm2 online, `/api/health` 200
+
+### ค้าง / ควรรู้
+- server ยังใช้ `sk_test` — ก่อนเปิดรับเงินจริงต้องเปลี่ยน live key + รัน `dist/scripts/stripeSetup.js` ฝั่ง live (Price + Tax Rate VAT 7%)
+- บริษัทเดียวที่จ่ายผ่าน Stripe ตอนนี้: `tenant_bb_pillow` (Enterprise AI, subscription test mode) ไม่ได้แตะ
+- ไม่มีปุ่ม "เปิดใช้งานกลับ" — เปิดเองต้องไปยกเลิกการยกเลิกใน Stripe Dashboard ด้วย
+- เช็ค upgrade ด้วยการ require `dist/` ทำให้ migration (idempotent) รันบน `dev.db` 1 ครั้ง ไม่มีข้อมูลเปลี่ยน
+- backup ไฟล์ก่อนแก้: `/tmp/*.bak-20261027`, `*.bak2-20261027`, `*.bak3-20261027` บน LXC 100
