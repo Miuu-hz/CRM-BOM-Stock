@@ -185,6 +185,9 @@ describe('GET /api/dashboard/health', () => {
     expect(h.chart?.grain).toBe('week')
     expect(h.chart?.ma).toEqual([4, 13])
     expect(h.chart?.periods.length).toBeGreaterThan(0)
+    const lastPeriod = h.chart?.periods[h.chart.periods.length - 1]
+    expect(lastPeriod?.to).toBe(asOf)
+    expect(lastPeriod?.to).not.toBe(today)
 
     // ถ้ากะเมื่อวานมีเงินลิ้นชักต่างเกิน 500 บาท → สัญญาณ control เป็น R และไฟรวมเป็น "แดง · ต้องสั่งการ 1 เรื่อง"
     db.prepare(`

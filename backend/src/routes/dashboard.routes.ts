@@ -534,8 +534,9 @@ export function getDashboardHealth(tenantId: string, financial: boolean, now: Da
     blocks: prevCheck.blocks,
   }
 
-  const chartFrom = addDaysStr(weekKey(today), -51 * 7)
-  const trend = trendSeries(tenantId, 'week', chartFrom, today, 12)
+  const yesterday = addDaysStr(today, -1)
+  const chartFrom = addDaysStr(weekKey(yesterday), -51 * 7)
+  const trend = trendSeries(tenantId, 'week', chartFrom, yesterday, 12)
   const chart = {
     grain: 'week' as const,
     ma: trend.ma,
