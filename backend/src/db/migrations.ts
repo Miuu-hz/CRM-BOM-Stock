@@ -2827,6 +2827,12 @@ export function runMigrations(db: any): void {
     `)
   } catch (e) { console.error('⚠️ payroll_lines migration error:', e) }
 
+  // ริชเมนู LINE ตามตำแหน่ง (HR Phase 8, 2026-10-27): {version, ids:{guest,staff,manager,exec}}
+  try {
+    const lcCols = db.prepare("PRAGMA table_info(line_channels)").all() as any[]
+    if (!lcCols.some((c: any) => c.name === 'rich_menus')) db.exec('ALTER TABLE line_channels ADD COLUMN rich_menus TEXT')
+  } catch (e) { console.error('⚠️ line_channels.rich_menus migration error:', e) }
+
   runMonthCloseMigrations(db)
 }
 

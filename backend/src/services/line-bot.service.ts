@@ -87,6 +87,14 @@ try {
 
 import { flexTemplates } from './line-flex-templates'
 import { detectIntent } from './llm.service'
+import { richMenus, menuKeyForRole, effectiveRole, MENUS, MenuKey } from './line-richmenu.service'
+import { posSales, ledgerRevenue, ledgerCogs, ledgerOpex, thaiToday, addDaysStr } from './phopyBoard.service'
+import { canApprove } from './approvalGate.service'
+import { getLowStockItems } from '../routes/dashboard.routes'
+
+const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน' }
+const companyName = (tenantId: string) =>
+    ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
 // ─── Paperclip API ────────────────────────────────────────────────────────────
 const PAPERCLIP_URL        = process.env.PAPERCLIP_URL
@@ -171,6 +179,7 @@ class LineBotService {
         // Wrap v11 API to be compatible with v8 call signatures used throughout this service
         const wrap = (msgs: any) => Array.isArray(msgs) ? msgs : [msgs]
         return {
+            token: config.channel_access_token as string,
             replyMessage: (replyToken: string, messages: any) =>
                 inner.replyMessage({ replyToken, messages: wrap(messages) }),
             pushMessage: (to: string, messages: any) =>
@@ -737,6 +746,74 @@ class LineBotService {
             type: 'text', text: texts[result],
             quickReply: { items: quickReplyItems(true) }
         })
+        const me = result === 'ok' ? this.linkedUser(tenantId, lineUserId) : null
+        if (me) await richMenus.syncUser(tenantId, client.token, lineUserId, me.menu)
+    }
+
+    // ── ผู้ใช้ที่ผูกแล้ว + role ปัจจุบัน (เลื่อนตำแหน่งในเว็บ → mapping.role ตามทันในข้อความถัดไป) ──
+    private linkedUser(tenantId: string, lineUserId: string) {
+        const db = getDb()
+        const m = db.prepare(`
+            SELECT lum.user_id, lum.role, lum.linked_at, u.role AS user_role, u.name, u.email
+            FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
+            WHERE lum.tenant_id = ? AND lum.line_user_id = ?
+        `).get(tenantId, lineUserId) as any
+        if (!m) return null
+        const role = effectiveRole(m)
+        if (role !== m.role) {
+            db.prepare('UPDATE line_user_mappings SET role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role, tenantId, lineUserId)
+        }
+        return { ...m, role, menu: menuKeyForRole(role) as MenuKey }
+    }
+
+    // ── เมนูผู้บริหาร / หัวหน้า (ตรวจสิทธิ์ที่นี่ ไม่พึ่งว่าเมนูซ่อนปุ่มไว้) ─────────
+    private async handleDailySales(tenantId: string, replyToken: string, client: any) {
+        const today = thaiToday()
+        const s = posSales(tenantId, today, today)
+        const lw = addDaysStr(today, -7)
+        const last = posSales(tenantId, lw, lw)
+        await client.replyMessage(replyToken, flexTemplates.dailySalesCard({
+            company: companyName(tenantId), date: today, revenue: s.revenue, bills: s.bills, avgBill: s.avgBill,
+            discount: s.discount, byMethod: s.byMethod, cancelled: s.cancelled, lastWeek: last.bills > 0 ? last.revenue : null,
+        }))
+    }
+
+    private async handleMonthProfit(tenantId: string, replyToken: string, client: any) {
+        const to = thaiToday(), from = `${to.slice(0, 7)}-01`
+        await client.replyMessage(replyToken, flexTemplates.monthProfitCard({
+            company: companyName(tenantId), from, to,
+            revenue: ledgerRevenue(tenantId, from, to), cogs: ledgerCogs(tenantId, from, to), opex: ledgerOpex(tenantId, from, to),
+        }))
+    }
+
+    private async handlePendingApprovals(tenantId: string, me: any, replyToken: string, client: any) {
+        // ponytail: ดึง 200 แถวล่าสุดแล้วกรองด้วย canApprove ทีละแถว — พอสำหรับร้านเล็ก ถ้าค้างเกินนี้ให้ย้ายเงื่อนไขไปใน SQL
+        const rows = (getDb().prepare(`
+            SELECT request_number, module_type, requester_name, amount, created_at
+            FROM approval_requests WHERE tenant_id = ? AND status = 'PENDING'
+            ORDER BY created_at DESC LIMIT 200
+        `).all(tenantId) as any[])
+            .filter(r => canApprove(tenantId, { userId: me.user_id, email: me.email ?? '', role: me.role }, r.module_type, Number(r.amount) || 0))
+        await client.replyMessage(replyToken, flexTemplates.pendingApprovalsCard({
+            company: companyName(tenantId), total: rows.length,
+            rows: rows.slice(0, 6).map(r => ({ requestNumber: r.request_number, moduleType: r.module_type, requesterName: r.requester_name,
+                amount: Number(r.amount) || 0, createdAt: r.created_at })),
+        }))
+    }
+
+    private async handleLowStock(tenantId: string, replyToken: string, client: any) {
+        const rows = getLowStockItems(tenantId)
+        await client.replyMessage(replyToken, flexTemplates.lowStockCard({
+            company: companyName(tenantId), total: rows.length,
+            rows: rows.slice(0, 8).map((r: any) => ({ name: r.name, available: r.available, minStock: r.min_stock, unit: r.unit })),
+        }))
+    }
+
+    private async handleMe(tenantId: string, me: any, replyToken: string, client: any) {
+        await client.replyMessage(replyToken, flexTemplates.meCard({
+            company: companyName(tenantId), name: me.name ?? '', email: me.email ?? '',
+            roleLabel: ROLE_LABEL[me.role] ?? me.role, menuLabel: MENUS[me.menu as MenuKey].label, linkedAt: me.linked_at,
+        }))
     }
 
     private async handleHowToLinkCommand(replyToken: string, client: any) {
@@ -947,14 +1024,17 @@ class LineBotService {
             const lower = text.toLowerCase()
 
             // ── Registration gate ─────────────────────────────────────────────
-            // Allow only "ลิงก์ XXXXXX" to pass — everything else requires a linked account
+            // คนที่ยังไม่ผูกใช้ได้แค่ "ลิงก์ XXXXXX" + ปุ่มในเมนู guest (วิธีเชื่อมบัญชี / ช่วยเหลือ)
             const isLinkAttempt = lower.startsWith('ลิงก์ ') || lower.startsWith('/ลิงก์ ')
-            if (!isLinkAttempt) {
-                const db = getDb()
-                const linked = db.prepare(
-                    'SELECT id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
-                ).get(tenantId, event.source.userId)
-                if (!linked) {
+            const isHelp = ['-help', '/help', 'help', 'ช่วยเหลือ', '?', 'menu', 'เมนู'].includes(lower)
+            const isHowToLink = ['วิธีเชื่อมบัญชี', 'เชื่อมบัญชี', 'link', '-link'].includes(lower)
+            const me = this.linkedUser(tenantId, event.source.userId)
+            if (me) {
+                // ไม่ await — อย่าให้การผูกเมนู (ครั้งแรกต้องอัปโหลดรูป) ถ่วงการตอบ
+                richMenus.syncUser(tenantId, client.token, event.source.userId, me.menu).catch(() => {})
+            }
+            if (!isLinkAttempt && !(src === 'user' && (isHelp || isHowToLink))) {
+                if (!me) {
                     if (src === 'user') {
                         await client.replyMessage(event.replyToken, {
                             type: 'text',
@@ -978,17 +1058,39 @@ class LineBotService {
             }
 
             // ── คำสั่ง: วิธีเชื่อมบัญชี (personal only) ─────────────────────
-            if (src === 'user' && ['วิธีเชื่อมบัญชี', 'เชื่อมบัญชี', 'link', '-link'].includes(lower)) {
+            if (src === 'user' && isHowToLink) {
                 await this.handleHowToLinkCommand(event.replyToken, client)
                 return
             }
 
             // ── คำสั่ง: -help / /help / help / ช่วยเหลือ / ? ────────────────
-            const isHelp = ['-help', '/help', 'help', 'ช่วยเหลือ', '?', 'menu', 'เมนู'].includes(lower)
             if (isHelp) {
-                const msg = flexTemplates.helpCard(src === 'user') as any
+                const msg = flexTemplates.helpCard(me ? me.menu : 'guest') as any
                 msg.quickReply = { items: quickReplyItems(src === 'user') }
                 await client.replyMessage(event.replyToken, msg)
+                return
+            }
+
+            // ── เมนูตามตำแหน่ง (ข้อมูลเงิน/อนุมัติ → แชทส่วนตัวเท่านั้น ไม่โชว์ในกลุ่ม) ──
+            const menuCmd: Record<string, MenuKey[]> = {
+                'ยอดขายวันนี้': ['exec'], 'กำไรเดือนนี้': ['exec'],
+                'รออนุมัติ': ['exec', 'manager', 'staff'], 'สต็อกต่ำ': ['exec', 'manager'],
+                'บัญชีของฉัน': ['exec', 'manager', 'staff'],
+            }
+            if (me && menuCmd[text]) {
+                if (src !== 'user') {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `🔒 "${text}" ดูได้ในแชทส่วนตัวกับบอทเท่านั้นครับ` })
+                    return
+                }
+                if (!menuCmd[text].includes(me.menu)) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `🔒 "${text}" สำหรับ${text === 'สต็อกต่ำ' ? 'หัวหน้าและผู้บริหาร' : 'ผู้บริหาร'}เท่านั้นครับ` })
+                    return
+                }
+                if (text === 'ยอดขายวันนี้') await this.handleDailySales(tenantId, event.replyToken, client)
+                else if (text === 'กำไรเดือนนี้') await this.handleMonthProfit(tenantId, event.replyToken, client)
+                else if (text === 'รออนุมัติ') await this.handlePendingApprovals(tenantId, me, event.replyToken, client)
+                else if (text === 'สต็อกต่ำ') await this.handleLowStock(tenantId, event.replyToken, client)
+                else await this.handleMe(tenantId, me, event.replyToken, client)
                 return
             }
 
@@ -1046,31 +1148,14 @@ class LineBotService {
             const id     = params.get('id')
             const db     = getDb()
 
-            if (action === 'start_wo' && id) {
-                db.prepare(
-                    "UPDATE work_orders SET status = 'IN_PROGRESS', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                ).run(id)
-                const wo = db.prepare(
-                    "SELECT wo.*, si.name as product_name FROM work_orders wo LEFT JOIN stock_items si ON wo.bom_id = si.id WHERE wo.id = ?"
-                ).get(id) as any
+            // ปุ่มเริ่ม/ผลิตเสร็จบนการ์ดเก่า: เคย UPDATE ตรงๆ โดยไม่เช็ค tenant/สิทธิ์ และไม่ตัดสต็อก
+            // → การ์ดใหม่เปิดเว็บแทน ส่วนการ์ดเก่าที่ค้างในแชทตอบลิงก์ให้ไปทำในเว็บ
+            if ((action === 'start_wo' || action === 'complete_wo') && id) {
                 await client.replyMessage(event.replyToken, {
-                    type: 'text', text: `🏭 เริ่มผลิต ${wo?.wo_number ?? id} แล้วครับ`
+                    type: 'text',
+                    text: `กรุณาเปลี่ยนสถานะใบสั่งผลิตในเว็บ เพื่อให้ระบบตัดสต็อกและลงบัญชีให้ถูกต้องครับ
+${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
                 })
-                if (wo) await this.notifyWorkOrderStatusChanged(tenantId, wo)
-                return
-            }
-
-            if (action === 'complete_wo' && id) {
-                db.prepare(
-                    "UPDATE work_orders SET status = 'COMPLETED', completed_date = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                ).run(id)
-                const wo = db.prepare(
-                    "SELECT wo.*, si.name as product_name FROM work_orders wo LEFT JOIN stock_items si ON wo.bom_id = si.id WHERE wo.id = ?"
-                ).get(id) as any
-                await client.replyMessage(event.replyToken, {
-                    type: 'text', text: `✅ บันทึกว่าผลิตเสร็จ ${wo?.wo_number ?? id} แล้วครับ`
-                })
-                if (wo) await this.notifyWorkOrderStatusChanged(tenantId, wo)
                 return
             }
 

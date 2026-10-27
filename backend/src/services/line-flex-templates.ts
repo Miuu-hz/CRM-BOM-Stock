@@ -1,3 +1,105 @@
+// ─── Phopy card kit (โทนเดียวกับ shiftCloseCard: คราม/มะม่วง/ทราย) ─────────────
+const APP_URL = process.env.APP_URL ?? 'https://erp.phopy.net'
+const P = {
+    indigo: '#3949E5', indigo50: '#EEF0FE', indigoSoft: '#DDE1FD', mango: '#F5A524', mango600: '#D9881A', mango50: '#FEF4E2',
+    ink900: '#1E1B16', ink500: '#6B6658', sand100: '#F5F0E2', sand200: '#ECE6D8',
+    danger: '#DC2626', danger50: '#FEE2E2', success: '#16A34A', success50: '#DCFCE7',
+}
+const baht = (n: number) => `฿${(Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
+const thDate = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00+07:00` : iso)
+    .toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' })
+// LINE ปฏิเสธ text ว่าง — กันไว้ที่เดียว
+const txt = (text: any, o: Record<string, any> = {}) => ({ type: 'text', text: String(text ?? '') || '-', ...o })
+const pill = (label: string, action: any, primary: boolean) => ({
+    type: 'box', layout: 'vertical', cornerRadius: 'xxl', paddingTop: '11px', paddingBottom: '11px',
+    backgroundColor: primary ? P.indigo : P.sand100, action,
+    contents: [txt(label, { size: 'sm', weight: 'bold', align: 'center', color: primary ? '#FFFFFF' : P.indigo })],
+})
+const uriBtn = (label: string, uri: string, primary = false) => pill(label, { type: 'uri', label, uri }, primary)
+const msgBtn = (label: string, text: string, primary = false) => pill(label, { type: 'message', label, text }, primary)
+const sectionTitle = (title: string) => txt(title, { size: 'sm', weight: 'bold', color: P.ink900, margin: 'xl' })
+const kv = (k: string, v: string, color = P.ink900) => ({
+    type: 'box', layout: 'horizontal', margin: 'sm',
+    contents: [txt(k, { size: 'sm', color: P.ink500, flex: 1, wrap: true }), txt(v, { size: 'sm', weight: 'bold', color, flex: 0, align: 'end' })],
+})
+const hero = (label: string, value: string, note = '', bg = P.indigo50, color = P.ink900) => ({
+    type: 'box', layout: 'vertical', backgroundColor: bg, cornerRadius: '20px', paddingAll: '14px',
+    contents: [
+        txt(label, { size: 'xxs', color: P.ink500, weight: 'bold' }),
+        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+            txt(value, { size: 'xxl', weight: 'bold', color, flex: 0 }),
+            ...(note ? [txt(note, { size: 'xs', color: P.ink500 })] : []),
+        ] },
+    ],
+})
+const tiles = (items: [string, string, string][]) => ({
+    type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+    contents: items.map(([label, value, color]) => ({
+        type: 'box', layout: 'vertical', backgroundColor: P.sand100, cornerRadius: '14px', paddingAll: '8px',
+        contents: [txt(label, { size: 'xxs', color: P.ink500 }), txt(value, { size: 'md', weight: 'bold', color })],
+    })),
+})
+/** แถวรายการ: [เลขลำดับ] ชื่อ/บรรทัดรอง ........ ค่าด้านขวา */
+const listRow = (title: string, sub: string, right: string, rightColor: string, n?: number) => ({
+    type: 'box', layout: 'horizontal', spacing: 'md', alignItems: 'center', margin: 'md',
+    contents: [
+        ...(n ? [{ type: 'box', layout: 'vertical', width: '22px', height: '22px', cornerRadius: '8px', backgroundColor: P.indigo50,
+            justifyContent: 'center', contents: [txt(n, { size: 'xxs', weight: 'bold', color: P.indigo, align: 'center' })] }] : []),
+        { type: 'box', layout: 'vertical', flex: 1, contents: [
+            txt(title, { size: 'sm', weight: 'bold', color: P.ink900, wrap: true }),
+            ...(sub ? [txt(sub, { size: 'xxs', color: P.ink500, wrap: true })] : []),
+        ] },
+        ...(right ? [txt(right, { size: 'sm', weight: 'bold', color: rightColor, flex: 0 })] : []),
+    ],
+})
+const barRow = (title: string, sub: string, amount: number, max: number, i: number) => ({
+    type: 'box', layout: 'vertical', margin: 'md', contents: [
+        { type: 'box', layout: 'horizontal', contents: [
+            txt(title, { size: 'sm', weight: 'bold', color: P.ink900, flex: 1 }),
+            txt(sub, { size: 'xxs', color: P.ink500, flex: 0, gravity: 'center' }),
+            txt(baht(amount), { size: 'sm', weight: 'bold', color: P.ink900, flex: 0, margin: 'md' }),
+        ] },
+        { type: 'box', layout: 'vertical', height: '4px', backgroundColor: P.sand100, cornerRadius: '4px', margin: 'xs', contents: [
+            { type: 'box', layout: 'vertical', height: '4px', cornerRadius: '4px', backgroundColor: i === 0 ? P.indigo : P.mango,
+              width: `${Math.max(4, Math.round((amount / (max || 1)) * 100))}%`, contents: [] },
+        ] },
+    ],
+})
+function card(o: { alt: string; kicker: string; title: string; sub?: string; body: any[]; buttons?: any[]; tone?: string }) {
+    return {
+        type: 'flex', altText: o.alt.slice(0, 400),
+        contents: {
+            type: 'bubble', size: 'mega',
+            header: {
+                type: 'box', layout: 'vertical', backgroundColor: o.tone ?? P.indigo, paddingAll: '18px', spacing: 'xs',
+                contents: [
+                    txt(o.kicker, { size: 'xxs', weight: 'bold', color: '#FFFFFFCC' }),
+                    txt(o.title, { size: 'lg', weight: 'bold', color: '#FFFFFF', wrap: true }),
+                    ...(o.sub ? [txt(o.sub, { size: 'xxs', color: '#FFFFFFCC', wrap: true })] : []),
+                ],
+            },
+            body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: o.body },
+            ...(o.buttons?.length ? { footer: {
+                type: 'box', layout: 'vertical', spacing: 'sm', paddingStart: '16px', paddingEnd: '16px', paddingBottom: '16px', paddingTop: '4px',
+                contents: o.buttons,
+            } } : {}),
+        },
+    }
+}
+
+export const APPROVAL_MODULES: Record<string, { label: string; icon: string; bg: string; color: string }> = {
+    stock_adjust:      { label: 'ปรับ/เปลี่ยนสต็อก',  icon: '📦', bg: '#EEF2FF', color: '#4F46E5' },
+    pos_void:          { label: 'ยกเลิกบิล POS',     icon: '🧾', bg: '#FFF7ED', color: '#EA580C' },
+    pos_discount:      { label: 'ส่วนลดหน้าร้าน POS', icon: '🏷️', bg: '#FEF3C7', color: '#D97706' },
+    doc_edit:          { label: 'แก้ไขเอกสาร',       icon: '✏️', bg: '#FAF5FF', color: '#9333EA' },
+    sales_order:       { label: 'คำสั่งขาย',         icon: '🛒', bg: '#ECFEFF', color: '#0891B2' },
+    sales_cancel:      { label: 'ยกเลิกเอกสารขาย',   icon: '🚫', bg: '#FEF2F2', color: '#DC2626' },
+    purchase_cancel:   { label: 'ยกเลิกเอกสารซื้อ',  icon: '🚫', bg: '#FEF2F2', color: '#DC2626' },
+    purchase_order:    { label: 'ใบสั่งซื้อ',         icon: '🛍️', bg: '#F0FDF4', color: '#16A34A' },
+    purchase_request:  { label: 'ใบขอซื้อ',          icon: '📄', bg: '#FEF3C7', color: '#D97706' },
+    work_orders:       { label: 'ใบสั่งผลิต',        icon: '🏭', bg: '#F1F5F9', color: '#475569' },
+}
+
 export const flexTemplates = {
     // 1. Work Order Card (ใบสั่งผลิต)
     workOrderCard: (wo: any) => ({
@@ -79,10 +181,9 @@ export const flexTemplates = {
                         style: 'primary',
                         height: 'sm',
                         action: {
-                            type: 'postback',
-                            label: 'เริ่มผลิต',
-                            data: `action=start_wo&id=${wo.id}`,
-                            displayText: `เริ่มผลิต ${wo.wo_number}`
+                            type: 'uri',
+                            label: 'เปิดใบสั่งผลิต',
+                            uri: `${APP_URL}/work-orders`
                         }
                     }
                 ],
@@ -119,10 +220,9 @@ export const flexTemplates = {
                 height: 'sm',
                 color: '#00cc66',
                 action: {
-                    type: 'postback',
-                    label: 'ผลิตเสร็จ',
-                    data: `action=complete_wo&id=${wo.id}`,
-                    displayText: `ผลิตเสร็จ ${wo.wo_number}`
+                    type: 'uri',
+                    label: 'เปิดใบสั่งผลิต',
+                    uri: `${APP_URL}/work-orders`
                 }
             });
         }
@@ -348,91 +448,46 @@ export const flexTemplates = {
     }),
 
     // 4. Welcome Card (follow event)
-    welcomeCard: () => ({
-        type: 'flex',
-        altText: 'ยินดีต้อนรับสู่ระบบ CRM-BOM-Stock',
-        contents: {
-            type: 'bubble',
-            header: {
-                type: 'box', layout: 'vertical',
-                backgroundColor: '#0066cc',
-                contents: [{ type: 'text', text: '👋 ยินดีต้อนรับ!', weight: 'bold', color: '#ffffff', size: 'xl' }]
-            },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'md',
-                contents: [
-                    { type: 'text', text: 'เชื่อมบัญชีเพื่อใช้งานเต็มรูปแบบ:', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: '1. เปิดระบบ → ตั้งค่า → LINE Bot', size: 'sm', color: '#666666' },
-                    { type: 'text', text: '2. กด "สร้างรหัสเชื่อม" และได้รับรหัส 6 หลัก', size: 'sm', color: '#666666' },
-                    { type: 'text', text: '3. ส่ง: /ลิงก์ [รหัส] มาในแชทนี้', size: 'sm', color: '#666666' },
-                    { type: 'separator', margin: 'md' },
-                    { type: 'text', text: 'พิมพ์ "ช่วยเหลือ" เพื่อดูคำสั่งทั้งหมด', size: 'sm', color: '#0066cc' },
-                ]
-            }
-        }
+    welcomeCard: () => card({
+        alt: 'ยินดีต้อนรับสู่ Phopy ERP · กดเชื่อมบัญชีเพื่อเริ่มใช้งาน',
+        kicker: 'Phopy ERP', title: 'สวัสดีครับ 👋', sub: 'ผูก LINE กับบัญชี ERP แล้วเมนูด้านล่างจะเปลี่ยนตามตำแหน่งของคุณ',
+        body: [
+            sectionTitle('เชื่อมบัญชีใน 3 ขั้น'),
+            listRow('เปิด erp.phopy.net', 'ไปที่ ตั้งค่า → LINE Bot', '', P.ink900, 1),
+            listRow('กด "สร้างรหัสเชื่อม"', 'ได้รหัส 6 หลัก อายุ 10 นาที', '', P.ink900, 2),
+            listRow('ส่งรหัสมาในแชทนี้', 'พิมพ์: ลิงก์ 123456', '', P.ink900, 3),
+        ],
+        buttons: [uriBtn('เปิด ERP', APP_URL, true), msgBtn('คำสั่งทั้งหมด', 'ช่วยเหลือ')],
     }),
 
-    // 4. Help Card
-    helpCard: (isPersonal: boolean) => ({
-        type: 'flex',
-        altText: 'คำสั่งที่ใช้ได้',
-        contents: {
-            type: 'bubble',
-            header: {
-                type: 'box', layout: 'vertical', backgroundColor: '#333333',
-                contents: [{ type: 'text', text: '📖 คำสั่งที่ใช้ได้', weight: 'bold', color: '#ffffff' }]
-            },
-            body: {
-                type: 'box', layout: 'vertical', spacing: 'sm',
-                contents: [
-                    { type: 'text', text: 'สถานะ', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: '→ ดูใบสั่งผลิตที่กำลังดำเนินการ', size: 'sm', color: '#666666', margin: 'xs' },
-                    { type: 'separator', margin: 'md' },
-                    { type: 'text', text: 'สต็อก [ชื่อสินค้า]', weight: 'bold', size: 'sm', margin: 'md' },
-                    { type: 'text', text: '→ ค้นหาสินค้าในคลัง', size: 'sm', color: '#666666', margin: 'xs' },
-                    { type: 'separator', margin: 'md' },
-                    { type: 'text', text: 'ออเดอร์', weight: 'bold', size: 'sm', margin: 'md' },
-                    { type: 'text', text: '→ ดูคำสั่งซื้อล่าสุด 5 รายการ', size: 'sm', color: '#666666', margin: 'xs' },
-                    { type: 'separator', margin: 'md' },
-                    { type: 'text', text: 'สูตร [ชื่อสินค้า]', weight: 'bold', size: 'sm', margin: 'md' },
-                    { type: 'text', text: '→ ดูส่วนผสม + ต้นทุนการผลิต', size: 'sm', color: '#666666', margin: 'xs' },
-                    ...(isPersonal ? [
-                        { type: 'separator' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: 'ถาม-ตอบทั่วไป (AI)', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: '→ พิมพ์สอบถามหรือคุยกับระบบได้โดยตรง', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
-                        { type: 'separator' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: 'ลิงก์ [รหัส 6 หลัก]', weight: 'bold' as const, size: 'sm' as const, margin: 'md' as const },
-                        { type: 'text' as const, text: '→ เชื่อมบัญชีเพื่อรับการแจ้งเตือนงานอนุมัติ', size: 'sm' as const, color: '#666666', margin: 'xs' as const },
-                    ] : []),
-                ]
-            }
+    // 4b. Help Card — แยกตามเมนูของตำแหน่ง
+    helpCard: (menu: 'guest' | 'staff' | 'manager' | 'exec') => {
+        const cmds: Record<string, [string, string][]> = {
+            guest:   [['ลิงก์ [รหัส 6 หลัก]', 'เชื่อมบัญชี LINE กับ ERP'], ['วิธีเชื่อมบัญชี', 'ขั้นตอนขอรหัส']],
+            staff:   [['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['สูตร [ชื่อ]', 'ส่วนผสม + ต้นทุน'], ['สถานะ', 'ใบสั่งผลิตที่กำลังทำ'], ['ออเดอร์', 'ใบสั่งขายล่าสุด'], ['บัญชีของฉัน', 'บริษัทและตำแหน่งที่ผูกไว้']],
+            manager: [['รออนุมัติ', 'คำขอที่คุณอนุมัติได้'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['สถานะ', 'ใบสั่งผลิตที่กำลังทำ'], ['ออเดอร์', 'ใบสั่งขายล่าสุด']],
+            exec:    [['ยอดขายวันนี้', 'POS วันนี้เทียบสัปดาห์ก่อน'], ['กำไรเดือนนี้', 'จากสมุดบัญชีที่ลงแล้ว'], ['รออนุมัติ', 'คำขอที่ค้างทั้งหมด'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง']],
         }
-    }),
+        return card({
+            alt: 'คำสั่งที่ใช้ได้', kicker: 'Phopy ERP', title: '📖 คำสั่งที่ใช้ได้',
+            sub: menu === 'guest' ? 'ยังไม่ได้เชื่อมบัญชี' : 'กดจากเมนูด้านล่าง หรือพิมพ์คำสั่งเองก็ได้',
+            body: [
+                ...cmds[menu].map(([c, d]) => listRow(c, d, '', P.ink900)),
+                ...(menu === 'guest' ? [] : [txt('พิมพ์คำถามอื่นได้เลย ระบบ AI จะช่วยตอบ', { size: 'xxs', color: P.ink500, margin: 'lg', wrap: true })]),
+            ],
+        })
+    },
 
     // 5. Stock Query Card
     stockQueryCard: (query: string, items: any[]) => {
         if (items.length === 0) {
             return { type: 'text', text: `ไม่พบสินค้าที่ชื่อมี "${query}" ในคลังสินค้าครับ` }
         }
-        const rows = items.map(it => ({
-            type: 'box', layout: 'horizontal', margin: 'sm',
-            contents: [
-                { type: 'text', text: it.name, size: 'sm', flex: 4, wrap: true },
-                { type: 'text', text: `${it.quantity} ${it.unit}`, size: 'sm', flex: 2, align: 'end' as const,
-                  color: it.quantity <= 0 ? '#cc0000' : it.status === 'LOW' ? '#ff9900' : '#00aa44' }
-            ]
-        }))
-        return {
-            type: 'flex', altText: `สต็อก: ${query}`,
-            contents: {
-                type: 'bubble',
-                header: {
-                    type: 'box', layout: 'vertical', backgroundColor: '#005599',
-                    contents: [{ type: 'text', text: `📦 ค้นหา: ${query}`, weight: 'bold', color: '#ffffff', size: 'sm' }]
-                },
-                body: { type: 'box', layout: 'vertical', contents: rows }
-            }
-        }
+        return card({
+            alt: `สต็อก: ${query}`, kicker: '📦 ค้นหาสต็อก', title: query,
+            body: items.map(it => listRow(it.name, it.sku || '', `${Number(it.quantity).toLocaleString('th-TH')} ${it.unit || ''}`,
+                it.quantity <= 0 ? P.danger : it.status === 'LOW' ? P.mango600 : P.success)),
+        })
     },
 
     // 6. Recent Orders Card
@@ -440,78 +495,124 @@ export const flexTemplates = {
         if (orders.length === 0) {
             return { type: 'text', text: 'ยังไม่มีคำสั่งซื้อในระบบครับ' }
         }
-        const rows = orders.map(o => ({
-            type: 'box', layout: 'horizontal', margin: 'sm',
-            contents: [
-                { type: 'text', text: o.order_number, size: 'sm', flex: 2, weight: 'bold' as const },
-                { type: 'text', text: o.status, size: 'xs', flex: 2, color: '#888888' },
-                { type: 'text', text: `฿${Number(o.total_amount).toLocaleString()}`, size: 'sm', flex: 2, align: 'end' as const }
-            ]
-        }))
-        return {
-            type: 'flex', altText: 'คำสั่งซื้อล่าสุด',
-            contents: {
-                type: 'bubble',
-                header: {
-                    type: 'box', layout: 'vertical', backgroundColor: '#444444',
-                    contents: [{ type: 'text', text: '🛒 คำสั่งซื้อล่าสุด', weight: 'bold', color: '#ffffff', size: 'sm' }]
-                },
-                body: { type: 'box', layout: 'vertical', contents: rows }
-            }
-        }
+        return card({
+            alt: 'คำสั่งซื้อล่าสุด', kicker: '🛒 ออเดอร์', title: 'ใบสั่งขายล่าสุด',
+            body: orders.map(o => listRow(o.order_number, o.status, `฿${Number(o.total_amount).toLocaleString()}`, P.ink900)),
+            buttons: [uriBtn('เปิดใบสั่งขาย', `${APP_URL}/sales`, false)],
+        })
     },
 
     // 7. Status Summary Card
     statusSummaryCard: (inProgress: any[]) => {
         if (inProgress.length === 0) {
-            return {
-                type: 'text',
-                text: 'ตอนนี้ไม่มีรายการที่กำลังผลิตครับ ✨'
-            };
+            return { type: 'text', text: 'ตอนนี้ไม่มีรายการที่กำลังผลิตครับ ✨' }
         }
-
-        const items = inProgress.slice(0, 5).map(wo => ({
-            type: 'box',
-            layout: 'horizontal',
-            margin: 'md',
-            contents: [
-                { type: 'text', text: wo.wo_number, size: 'sm', color: '#555555', flex: 2, weight: 'bold' },
-                { type: 'text', text: wo.product_name, size: 'sm', color: '#888888', flex: 3 }
-            ]
-        }));
-
-        if (inProgress.length > 5) {
-            items.push({
-                type: 'box',
-                layout: 'horizontal',
-                margin: 'md',
-                contents: [
-                    { type: 'text', text: `... และอีก ${inProgress.length - 5} รายการ`, size: 'xs', color: '#aaaaaa', flex: 0 }
-                ]
-            });
-        }
-
-        return {
-            type: 'flex',
-            altText: 'สรุปสถานะการผลิต',
-            contents: {
-                type: 'bubble',
-                header: {
-                    type: 'box',
-                    layout: 'vertical',
-                    backgroundColor: '#333333',
-                    contents: [
-                        { type: 'text', text: '📊 รายการกำลังผลิต', weight: 'bold', color: '#ffffff' }
-                    ]
-                },
-                body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: items
-                }
-            }
-        };
+        return card({
+            alt: 'สรุปสถานะการผลิต', kicker: '🏭 งานผลิต', title: `กำลังผลิต ${inProgress.length} รายการ`,
+            body: [
+                ...inProgress.slice(0, 5).map(wo => listRow(wo.wo_number, wo.product_name || '', '', P.ink900)),
+                ...(inProgress.length > 5 ? [txt(`... และอีก ${inProgress.length - 5} รายการ`, { size: 'xs', color: P.ink500, margin: 'md' })] : []),
+            ],
+            buttons: [uriBtn('เปิดใบสั่งผลิต', `${APP_URL}/work-orders`, false)],
+        })
     },
+
+    // 8. ยอดขายวันนี้ (ผู้บริหาร) — ตัวเลขจาก posSales() ตัวเดียวกับ Phopy Board
+    dailySalesCard: (d: {
+        company: string; date: string; revenue: number; bills: number; avgBill: number; discount: number
+        byMethod: { label: string; amount: number; count: number }[]; cancelled: { bills: number; amount: number }
+        lastWeek: number | null
+    }) => {
+        const delta = d.lastWeek && d.lastWeek > 0 ? ((d.revenue - d.lastWeek) / d.lastWeek) * 100 : null
+        const max = d.byMethod[0]?.amount || 0
+        return card({
+            alt: `ยอดขายวันนี้ ${baht(d.revenue)} · ${d.bills} บิล${d.company ? ` · ${d.company}` : ''}`,
+            kicker: d.company || 'Phopy ERP', title: '📈 ยอดขายวันนี้', sub: thDate(d.date),
+            body: [
+                hero('ยอดขาย POS ที่ชำระแล้ว', baht(d.revenue), `· ${d.bills} บิล`),
+                tiles([
+                    ['เฉลี่ย/บิล', baht(d.avgBill), P.ink900],
+                    ['เทียบสัปดาห์ก่อน', delta === null ? '–' : `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%`,
+                        delta === null ? P.ink500 : delta >= 0 ? P.success : P.danger],
+                ]),
+                sectionTitle('ช่องทางชำระ'),
+                ...(d.byMethod.length
+                    ? d.byMethod.map((m, i) => barRow(m.label, `${m.count} บิล`, m.amount, max, i))
+                    : [txt('ยังไม่มีบิลที่ชำระวันนี้', { size: 'xs', color: P.ink500 })]),
+                ...(d.discount > 0 || d.cancelled.bills > 0 ? [
+                    sectionTitle('ควรดู'),
+                    ...(d.discount > 0 ? [kv('🏷️ ส่วนลดรวม', baht(d.discount), P.mango600)] : []),
+                    ...(d.cancelled.bills > 0 ? [kv(`🔴 ยกเลิกบิล ${d.cancelled.bills} ใบ`, baht(d.cancelled.amount), P.danger)] : []),
+                ] : []),
+            ],
+            buttons: [uriBtn('ดูรายการขายวันนี้', `${APP_URL}/accounting/pos-clearing`, true)],
+        })
+    },
+
+    // 9. กำไรเดือนนี้ (ผู้บริหาร) — ledgerRevenue/Cogs/Opex ตัวเดียวกับ Phopy Board
+    monthProfitCard: (d: { company: string; from: string; to: string; revenue: number; cogs: number; opex: number }) => {
+        const net = d.revenue - d.cogs - d.opex
+        const gm = d.revenue > 0 ? ((d.revenue - d.cogs) / d.revenue) * 100 : 0
+        return card({
+            alt: `กำไรเดือนนี้ ${baht(net)} · ยอดขาย ${baht(d.revenue)}`,
+            kicker: d.company || 'Phopy ERP', title: '💰 กำไรเดือนนี้', sub: `${thDate(d.from)} – ${thDate(d.to)} · จากสมุดบัญชีที่ลงแล้ว`,
+            body: [
+                hero(net < 0 ? 'ขาดทุนสุทธิ (ก่อนภาษี)' : 'กำไรสุทธิ (ก่อนภาษี)', baht(net), '', net < 0 ? P.danger50 : P.success50, net < 0 ? P.danger : P.ink900),
+                kv('รายได้', baht(d.revenue)),
+                kv('− ต้นทุนขาย', baht(d.cogs)),
+                kv('− ค่าใช้จ่าย', baht(d.opex)),
+                { type: 'separator', margin: 'md', color: P.sand200 },
+                kv('% กำไรขั้นต้น', `${gm.toFixed(1)}%`, gm < 0 ? P.danger : P.indigo),
+            ],
+            buttons: [uriBtn('เปิด Phopy Board', `${APP_URL}/accounting/phopy-board`, true)],
+        })
+    },
+
+    // 10. รออนุมัติ — แสดงเฉพาะคำขอที่คนกดอนุมัติได้จริง (canApprove)
+    pendingApprovalsCard: (d: { company: string; total: number; rows: { requestNumber: string; moduleType: string; requesterName: string; amount: number; createdAt: string }[] }) => {
+        if (d.total === 0) return { type: 'text', text: '✅ ไม่มีคำขอที่รอคุณอนุมัติครับ' }
+        return card({
+            alt: `รออนุมัติ ${d.total} รายการ${d.company ? ` · ${d.company}` : ''}`,
+            kicker: d.company || 'Phopy ERP', title: `📝 รออนุมัติ ${d.total} รายการ`, tone: P.mango600,
+            body: [
+                ...d.rows.map(r => {
+                    const m = APPROVAL_MODULES[r.moduleType]
+                    return listRow(`${m?.icon ?? '📋'} ${m?.label ?? r.moduleType}`, `${r.requestNumber} · ${r.requesterName} · ${thDate(r.createdAt)}`,
+                        r.amount > 0 ? baht(r.amount) : '', P.ink900)
+                }),
+                ...(d.total > d.rows.length ? [txt(`... และอีก ${d.total - d.rows.length} รายการ`, { size: 'xs', color: P.ink500, margin: 'md' })] : []),
+            ],
+            buttons: [uriBtn('เปิดหน้าอนุมัติ', `${APP_URL}/approvals`, true)],
+        })
+    },
+
+    // 11. สต็อกต่ำ — getLowStockItems() ตัวเดียวกับแดชบอร์ด (นับแพ็คที่ยังไม่แกะแล้ว)
+    lowStockCard: (d: { company: string; total: number; rows: { name: string; available: number; minStock: number; unit: string }[] }) => {
+        if (d.total === 0) return { type: 'text', text: '✅ ไม่มีสินค้าที่ต่ำกว่าจุดสั่งซื้อครับ' }
+        const fmt = (n: number) => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })
+        return card({
+            alt: `สต็อกต่ำ ${d.total} รายการ`, kicker: d.company || 'Phopy ERP', title: `⚠️ สต็อกต่ำ ${d.total} รายการ`, tone: P.danger,
+            body: [
+                ...d.rows.map(r => listRow(r.name, `จุดสั่งซื้อ ${fmt(r.minStock)} ${r.unit || ''}`, `${fmt(r.available)} ${r.unit || ''}`,
+                    r.available <= 0 ? P.danger : P.mango600)),
+                ...(d.total > d.rows.length ? [txt(`... และอีก ${d.total - d.rows.length} รายการ`, { size: 'xs', color: P.ink500, margin: 'md' })] : []),
+            ],
+            buttons: [uriBtn('เปิดคลังสินค้า', `${APP_URL}/stock`, true)],
+        })
+    },
+
+    // 12. บัญชีของฉัน
+    meCard: (d: { company: string; name: string; email: string; roleLabel: string; menuLabel: string; linkedAt: string | null }) => card({
+        alt: `บัญชีของฉัน · ${d.company}`, kicker: '👤 บัญชีของฉัน', title: d.name || d.email || '-', sub: d.email || undefined,
+        body: [
+            kv('บริษัท', d.company || '-'),
+            kv('ตำแหน่ง', d.roleLabel),
+            kv('เมนูที่ใช้', d.menuLabel),
+            kv('ผูก LINE เมื่อ', d.linkedAt ? thDate(d.linkedAt) : '-'),
+            txt('เปลี่ยนตำแหน่งในเว็บแล้ว เมนูจะเปลี่ยนตามเองในข้อความถัดไป', { size: 'xxs', color: P.ink500, margin: 'lg', wrap: true }),
+        ],
+        buttons: [uriBtn('เปิด ERP', APP_URL, false)],
+    }),
 
     // ─── Samsung One UI 9 Style: Approval Request Card ───────────────────────
     approvalRequestCard: (req: {
@@ -525,18 +626,7 @@ export const flexTemplates = {
         createdAt: string
         webUrl: string
     }) => {
-        const moduleConfig: Record<string, { label: string; icon: string; bg: string; color: string }> = {
-            stock_adjust:      { label: 'ปรับ/เปลี่ยนสต็อก',  icon: '📦', bg: '#EEF2FF', color: '#4F46E5' },
-            pos_void:          { label: 'ยกเลิกบิล POS',     icon: '🧾', bg: '#FFF7ED', color: '#EA580C' },
-            pos_discount:      { label: 'ส่วนลดหน้าร้าน POS', icon: '🏷️', bg: '#FEF3C7', color: '#D97706' },
-            doc_edit:          { label: 'แก้ไขเอกสาร',       icon: '✏️', bg: '#FAF5FF', color: '#9333EA' },
-            sales_order:       { label: 'คำสั่งขาย',         icon: '🛒', bg: '#ECFEFF', color: '#0891B2' },
-            sales_cancel:      { label: 'ยกเลิกเอกสารขาย',   icon: '🚫', bg: '#FEF2F2', color: '#DC2626' },
-            purchase_cancel:   { label: 'ยกเลิกเอกสารซื้อ',  icon: '🚫', bg: '#FEF2F2', color: '#DC2626' },
-            purchase_order:    { label: 'ใบสั่งซื้อ',         icon: '🛍️', bg: '#F0FDF4', color: '#16A34A' },
-            purchase_request:  { label: 'ใบขอซื้อ',          icon: '📄', bg: '#FEF3C7', color: '#D97706' },
-            work_orders:       { label: 'ใบสั่งผลิต',        icon: '🏭', bg: '#F1F5F9', color: '#475569' },
-        }
+        const moduleConfig = APPROVAL_MODULES
         const mod = moduleConfig[req.moduleType] || { label: req.moduleType, icon: '📋', bg: '#F1F5F9', color: '#475569' }
 
         const amountFormatted = req.amount && req.amount > 0

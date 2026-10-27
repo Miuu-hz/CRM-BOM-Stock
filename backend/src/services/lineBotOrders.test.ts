@@ -35,10 +35,11 @@ describe('LINE คำสั่ง orders (handleOrderCommand)', () => {
     const msg = replies[0]
     expect(msg.type).toBe('flex')
     const rows = msg.contents.body.contents
-    const numbers = rows.map((r: any) => r.contents[0].text)
+    // listRow: [ชื่อ/บรรทัดรอง, ค่าด้านขวา]
+    const numbers = rows.map((r: any) => r.contents[0].contents[0].text)
     expect(numbers).toEqual(['SO-A-NEW', 'SO-A-OLD'])
-    expect(rows[0].contents[1].text).toBe('CONFIRMED')
-    expect(rows[0].contents[2].text).toBe(`฿${Number(2500).toLocaleString()}`)
+    expect(rows[0].contents[0].contents[1].text).toBe('CONFIRMED')
+    expect(rows[0].contents[1].text).toBe(`฿${Number(2500).toLocaleString()}`)
     expect(msg.quickReply).toBeDefined()
   })
 
