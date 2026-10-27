@@ -135,10 +135,6 @@ export default function Dashboard() {
   const normalSignalsCount = signals.filter(s => s.status === 'G').length
   const flaggedSignals = signals.filter(s => s.status === 'Y' || s.status === 'R')
 
-  // Chart periods & visibleFrom
-  const chartPeriods = health?.chart?.periods ?? []
-  const visibleFrom = Math.max(0, chartPeriods.length - chartWeeks)
-
   const labelOfPeriod = (p: TrendPeriod) => `สัปดาห์ ${thDay(p.from)}–${thDay(p.to)}`
 
   return (
@@ -317,7 +313,8 @@ export default function Dashboard() {
               {/* Shared CandleChart Component */}
               <CandleChart
                 periods={health.chart.periods}
-                visibleFrom={visibleFrom}
+                visibleFrom={health.chart.warmup}
+                bars={chartWeeks}
                 ma={health.chart.ma || [4, 13]}
                 labelOf={labelOfPeriod}
               />
