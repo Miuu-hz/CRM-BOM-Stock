@@ -238,7 +238,7 @@ describe('GET /api/dashboard/health', () => {
       VALUES (?, ?, 'INV-DUE10', ?, ?, ?, ?, 5000, 5000, 5000, 'ISSUED', 'UNPAID')
     `).run(generateId(), t, soId, custId, today, addDaysStr(today, 10))
 
-    // 4. ใบแจ้งหนี้ที่ไม่มี due_date (no due date -> not counted)
+    // 4. ใบแจ้งหนี้ที่ไม่มี due_date = ถึงกำหนดแล้ว (arAging ไม่นับเป็นเกินกำหนด) -> นับ
     db.prepare(`
       INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date, subtotal, total_amount, balance_amount, status, payment_status)
       VALUES (?, ?, 'INV-NODUE', ?, ?, ?, NULL, 2000, 2000, 2000, 'ISSUED', 'UNPAID')
@@ -247,8 +247,8 @@ describe('GET /api/dashboard/health', () => {
     const res = await request(app).get('/api/dashboard/health').set('Authorization', `Bearer ${admin.token}`)
     expect(res.status).toBe(200)
     expect(res.body.data.ops.arDue7).toEqual({
-      count: 1,
-      amount: 3000,
+      count: 2,
+      amount: 5000,
     })
   })
 })

@@ -261,7 +261,8 @@ export function getDashboardHealth(tenantId: string, financial: boolean, now: Da
       AND status NOT IN ('CANCELLED', 'DRAFT')
       AND COALESCE(payment_status, '') <> 'PAID'
       AND balance_amount > 0
-      AND date(due_date) BETWEEN ? AND ?
+      -- ponytail: ไม่มีวันครบกำหนด = ถึงกำหนดแล้ว (arAging ไม่เคยนับใบแบบนี้เป็นเกินกำหนด จึงไม่ซ้ำกัน)
+      AND (due_date IS NULL OR due_date = '' OR date(due_date) BETWEEN ? AND ?)
   `).get(tenantId, today, due7Str) as { count: number; amount: number }
 
   const ops = {
