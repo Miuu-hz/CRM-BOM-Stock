@@ -306,8 +306,19 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
   // รอรูป (โลโก้ร้าน/QR) โหลดเสร็จก่อน — สั่งพิมพ์ก่อนรูปมา = โลโก้ไม่ติด และวัดความสูงบิลได้สั้นกว่าจริง (ท้ายบิลโดนตัด)
   await waitForImages(w.document)
   if (w.closed) return
-  if (format === 'thermal') fitThermalPage(w.document)
+  if (format === 'thermal') { await waitForLayout(w); if (w.closed) return; fitThermalPage(w.document) }
   w.print()
+}
+
+/**
+ * รอฟอนต์โหลด + เบราว์เซอร์จัดหน้าเสร็จก่อนวัดความสูง — วัดเร็วไปได้ scrollHeight เล็กนิดเดียว
+ * → @page สั้นมาก → เครื่องพิมพ์ 80mm ออกมาแค่เศษกระดาษเปล่า
+ * ponytail: delay คงที่ 400ms กันเหนียวสำหรับเครื่องช้า; ถ้ายังออกสั้นอยู่ให้เพิ่ม delayMs
+ */
+export async function waitForLayout(w: Window, delayMs = 400): Promise<void> {
+  try { await Promise.race([w.document.fonts.ready, new Promise(r => setTimeout(r, 2000))]) } catch { /* ไม่มี fonts API ก็ข้าม */ }
+  await new Promise(r => w.requestAnimationFrame(() => w.requestAnimationFrame(() => r(undefined))))
+  await new Promise(r => setTimeout(r, delayMs))
 }
 
 /** รอทุก <img> โหลด/ถอดรหัสเสร็จ (สำเร็จหรือพังก็ได้) แต่ไม่เกิน timeoutMs กันค้าง */
@@ -328,6 +339,7 @@ function fitThermalPage(doc: Document) {
   const paper = doc.querySelector('.unified-bill-paper') as HTMLElement | null
   if (!paper) return
   const heightMm = Math.ceil((paper.scrollHeight * 25.4) / 96) + 4 // +4mm เผื่อปัดเศษ ไม่ให้ล้นไปหน้าที่ 2
+  if (heightMm < 40) return // วัดได้สั้นผิดปกติ (ยังไม่ render) — ใช้กระดาษตั้งต้นดีกว่าพิมพ์เศษกระดาษ
   const style = doc.createElement('style')
   style.textContent = `@page thermal80 { size: 80mm ${heightMm}mm; margin: 0; }
 @media print { html, body { margin: 0; padding: 0; } .unified-bill-container { padding: 0; } }`

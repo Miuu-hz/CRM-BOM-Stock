@@ -1,3 +1,4 @@
+import { waitForLayout } from '../../utils/printBill'
 import api from '../../services/api'
 import { getCachedCompanySettings } from '../../services/companySettings.service'
 
@@ -23,10 +24,12 @@ async function writeAndPrint(w: Window, title: string, css: string, body: string
   ])
   if (w.closed) return
   if (thermal) {
+    await waitForLayout(w)
+    if (w.closed) return
     const heightMm = Math.ceil((w.document.body.scrollHeight * 25.4) / 96) + 8
     const style = w.document.createElement('style')
     style.textContent = `@page { size: 80mm ${heightMm}mm; margin: 0 }`
-    w.document.head.appendChild(style)
+    if (heightMm >= 40) w.document.head.appendChild(style) // สั้นผิดปกติ = ยังไม่ render อย่าตั้งหน้าเล็ก
   }
   w.focus()
   w.print()
