@@ -261,8 +261,8 @@ export function getDashboardHealth(tenantId: string, financial: boolean, now: Da
       AND status NOT IN ('CANCELLED', 'DRAFT')
       AND COALESCE(payment_status, '') <> 'PAID'
       AND balance_amount > 0
-      AND (due_date IS NULL OR due_date = '' OR date(due_date) <= ?)
-  `).get(tenantId, due7Str) as { count: number; amount: number }
+      AND date(due_date) BETWEEN ? AND ?
+  `).get(tenantId, today, due7Str) as { count: number; amount: number }
 
   const ops = {
     lowStock,

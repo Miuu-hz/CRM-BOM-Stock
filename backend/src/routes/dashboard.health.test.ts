@@ -204,4 +204,51 @@ describe('GET /api/dashboard/health', () => {
       na: 1,
     })
   })
+
+  it('arDue7: ลูกหนี้ถึงกำหนดใน 7 วัน นับเฉพาะใบที่ครบกำหนดในช่วงวันนี้ถึง 7 วันข้างหน้า', async () => {
+    const admin = makeUser('ADMIN')
+    const t = admin.tenantId
+    const today = thaiToday()
+    const custId = generateId()
+    const soId = generateId()
+    db.prepare(`
+      INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city)
+      VALUES (?, ?, 'C-AR', 'ลูกค้าทดสอบ AR', 'COMPANY', '-', 'ar@test.local', '0800000000', 'BKK')
+    `).run(custId, t)
+    db.prepare(`
+      INSERT INTO sales_orders (id, tenant_id, so_number, customer_id, order_date, status, subtotal, total_amount)
+      VALUES (?, ?, 'SO-AR', ?, ?, 'CONFIRMED', 9000, 9000)
+    `).run(soId, t, custId, today)
+
+    // 1. ใบแจ้งหนี้เกินกำหนด (overdue)
+    db.prepare(`
+      INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date, subtotal, total_amount, balance_amount, status, payment_status)
+      VALUES (?, ?, 'INV-OVERDUE', ?, ?, ?, ?, 1000, 1000, 1000, 'ISSUED', 'UNPAID')
+    `).run(generateId(), t, soId, custId, addDaysStr(today, -10), addDaysStr(today, -3))
+
+    // 2. ใบแจ้งหนี้ครบกำหนดใน 3 วัน (due in 3 days -> counts!)
+    db.prepare(`
+      INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date, subtotal, total_amount, balance_amount, status, payment_status)
+      VALUES (?, ?, 'INV-DUE3', ?, ?, ?, ?, 3000, 3000, 3000, 'ISSUED', 'UNPAID')
+    `).run(generateId(), t, soId, custId, today, addDaysStr(today, 3))
+
+    // 3. ใบแจ้งหนี้ครบกำหนดใน 10 วัน (due in 10 days -> not in 7 days)
+    db.prepare(`
+      INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date, subtotal, total_amount, balance_amount, status, payment_status)
+      VALUES (?, ?, 'INV-DUE10', ?, ?, ?, ?, 5000, 5000, 5000, 'ISSUED', 'UNPAID')
+    `).run(generateId(), t, soId, custId, today, addDaysStr(today, 10))
+
+    // 4. ใบแจ้งหนี้ที่ไม่มี due_date (no due date -> not counted)
+    db.prepare(`
+      INSERT INTO invoices (id, tenant_id, invoice_number, sales_order_id, customer_id, invoice_date, due_date, subtotal, total_amount, balance_amount, status, payment_status)
+      VALUES (?, ?, 'INV-NODUE', ?, ?, ?, NULL, 2000, 2000, 2000, 'ISSUED', 'UNPAID')
+    `).run(generateId(), t, soId, custId, today)
+
+    const res = await request(app).get('/api/dashboard/health').set('Authorization', `Bearer ${admin.token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.data.ops.arDue7).toEqual({
+      count: 1,
+      amount: 3000,
+    })
+  })
 })

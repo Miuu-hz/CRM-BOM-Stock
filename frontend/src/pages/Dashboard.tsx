@@ -447,7 +447,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-2.5 min-w-0">
               <AlertCircle className="w-4 h-4 text-danger flex-shrink-0" />
               <span className="text-xs font-semibold text-[var(--fg-2)] truncate">
-                {t('dashboard.health.opsArDue7', 'ลูกหนี้ครบกำหนด 7 วัน')}
+                {t('dashboard.health.opsArDue7', 'ลูกหนี้ถึงกำหนดใน 7 วัน')}
               </span>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">

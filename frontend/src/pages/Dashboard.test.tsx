@@ -62,7 +62,7 @@ describe('Dashboard Page', () => {
     expect(screen.getByText(/สต็อกวิกฤต/)).toBeDefined()
     expect(screen.getByText(/รอส่งของ/)).toBeDefined()
     expect(screen.getByText(/รออนุมัติ/)).toBeDefined()
-    expect(screen.getByText(/ลูกหนี้ครบกำหนด 7 วัน/)).toBeDefined()
+    expect(screen.getByText(/ลูกหนี้ถึงกำหนดใน 7 วัน/)).toBeDefined()
     expect(screen.getByText('3 ใบ')).toBeDefined()
 
     // No money/currency "฿" symbol anywhere in the document
