@@ -46,14 +46,39 @@ describe('CandleChart helpers', () => {
       expect(capFor(rows, [])).toBe(140)
     })
 
-    it('cuts spike wick at 1.6x the maximum body value', () => {
+    it('cuts spike wick at 1.6x the maximum body value when wicks are below 1.6x', () => {
+      // 10 rows: 9 normal wicks <= 130 (p90 = 130 <= 160).
       // Bodies max = 100, threshold = 1.6 * 100 = 160.
       // Max wick = 500 > 160, so wick is cut at 160.
       const rows = [
+        ...Array(9).fill(0).map(() => ({ o: 80, c: 100, h: 130, l: 70 })),
         { o: 80, c: 100, h: 500, l: 70 },
-        { o: 100, c: 90, h: 120, l: 80 },
       ]
       expect(capFor(rows, [])).toBe(160)
+    })
+
+    it('monthly-like bars: does not clip when most wicks are ~2.5x body max (cap >= p90)', () => {
+      // Bodies max = 100, 10 monthly bars where wicks are ~2.5x body max (h = 250).
+      // threshold = 1.6 * 100 = 160, but p90 = 250.
+      // cap = min(250, max(160, 250)) = 250 >= p90 (none clipped).
+      const rows = Array(10).fill(0).map(() => ({ o: 80, c: 100, h: 250, l: 50 }))
+      const cap = capFor(rows, [])
+      expect(cap).toBeGreaterThanOrEqual(250)
+      expect(cap).toBe(250)
+    })
+
+    it('monthly-like bars with one extreme outlier wick: still clipped below that outlier', () => {
+      // 10 monthly bars: 9 have h = 250 (~2.5x body max 100), 1 extreme outlier has h = 1000.
+      // p90 = 250. threshold = 160. max(160, 250) = 250.
+      // cap = min(1000, 250) = 250.
+      // Result: cap >= p90 (250 >= 250, 9 wicks not clipped) and cap < 1000 (outlier is clipped).
+      const rows = [
+        ...Array(9).fill(0).map(() => ({ o: 80, c: 100, h: 250, l: 50 })),
+        { o: 80, c: 100, h: 1000, l: 50 },
+      ]
+      const cap = capFor(rows, [])
+      expect(cap).toBe(250)
+      expect(cap).toBeLessThan(1000)
     })
 
     it('considers MA values when computing threshold', () => {

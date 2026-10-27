@@ -56,7 +56,8 @@ export function movingAverage(vals: number[], n: number): Array<number | null> {
 
 /**
  * คำนวณขีดจำกัดความสูงของแท่งเทียน (Wick cap)
- * min(max wick, 1.6 × max(visible bodies' max(o,c) and MA values))
+ * min(max wick, max(1.6 × max(visible bodies' max(o,c) and MA values), p90 of upper wicks r.h))
+ * โดย p90 คิดจาก nearest-rank ของค่า r.h ที่เรียงลำดับแล้ว
  */
 export function capFor(
   rows: Array<{ o: number; c: number; h: number; l?: number }>,
@@ -71,7 +72,12 @@ export function capFor(
   ]
   const maxBodyOrMa = bodiesAndMa.length > 0 ? Math.max(...bodiesAndMa) : 0
   const threshold = 1.6 * maxBodyOrMa
-  return Math.min(maxWick, threshold)
+
+  const sortedH = rows.map(r => r.h).sort((a, b) => a - b)
+  const p90Idx = Math.min(sortedH.length - 1, Math.max(0, Math.ceil(0.9 * sortedH.length) - 1))
+  const p90 = sortedH[p90Idx]
+
+  return Math.min(maxWick, Math.max(threshold, p90))
 }
 
 /** คำนวณช่วงสเกลแกน Y ที่ลงตัว (nice step) */
