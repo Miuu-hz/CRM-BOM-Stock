@@ -393,6 +393,11 @@ async function createSession(o: SessionOptions): Promise<{ url: string }> {
     // ใบกำกับภาษีเต็มรูปต้องมีชื่อ ที่อยู่ เลขผู้เสียภาษีของผู้ซื้อ
     billing_address_collection: 'required',
     tax_id_collection: { enabled: true },
+    // ค่าจาก Stripe Checkout Studio — ตัวที่ขัดกับ subscription/trial/VAT เอง (automatic_tax, shipping, submit_type ฯลฯ) ตัดออก
+    ui_mode: 'hosted_page',
+    name_collection: { individual: { enabled: true, optional: true }, business: { enabled: true, optional: true } },
+    phone_number_collection: { enabled: true },
+    allow_promotion_codes: false,
     // ช่วงทดลองไม่ต้องใส่บัตร — ไม่ใส่จนครบกำหนด Stripe ยกเลิกเอง แล้ว applySubscription ปล่อยลงเป็น Free
     payment_method_collection: o.trial ? 'if_required' : 'always',
     subscription_data: {
