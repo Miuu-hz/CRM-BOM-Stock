@@ -55,6 +55,7 @@ interface TenantSubscription {
   packs: string[]
   addons: Record<string, number>
   usage: { users: Usage; products: Usage }
+  billingCycle: 'monthly' | 'yearly' | null
   // มีค่า = จ่ายผ่าน Stripe สิทธิ์ตาม webhook แก้แพ็ก/ต่ออายุจากหน้านี้ไม่ได้
   stripe: { subscriptionUrl: string; customerUrl: string | null; cancelAt: string | null; pendingChange: string | null } | null
 }
@@ -378,7 +379,7 @@ export default function MasterPanel() {
         const subs: TenantSubscription[] = subsRes.data.data
         setSubscriptions(subs)
         const drafts: Record<string, PlanDraft> = {}
-        subs.forEach(s => { drafts[s.tenantId] = { planCode: s.plan ?? 'free', billingCycle: 'monthly', packs: s.packs ?? [], addons: s.addons ?? {} } })
+        subs.forEach(s => { drafts[s.tenantId] = { planCode: s.plan ?? 'free', billingCycle: s.billingCycle === 'yearly' ? 'yearly' : 'monthly', packs: s.packs ?? [], addons: s.addons ?? {} } })
         setPlanDrafts(drafts)
       }
       if (plansRes.data.success) {
@@ -395,16 +396,30 @@ export default function MasterPanel() {
   const handleChangePlan = async (tenantId: string) => {
     const draft = planDrafts[tenantId]
     if (!draft) return
+    const auth = { headers: { Authorization: `Bearer ${token}` } }
+    const body = { planCode: draft.planCode, billingCycle: draft.billingCycle, packs: draft.packs, addons: draft.addons }
+    const viaStripe = !!subscriptions.find(s => s.tenantId === tenantId)?.stripe
     setSavingSub(tenantId)
     try {
-      const res = await api.put(`/master/tenant/${tenantId}/subscription`, {
-        planCode: draft.planCode,
-        billingCycle: draft.billingCycle,
-        packs: draft.packs,
-        addons: draft.addons,
-      }, { headers: { Authorization: `Bearer ${token}` } })
+      // จ่ายผ่าน Stripe: ให้ Master เห็นยอดที่จะตัดบัตรลูกค้าก่อนกดยืนยัน
+      if (viaStripe) {
+        let msg: string
+        if (draft.planCode === 'free') {
+          msg = 'ลงเป็น Free: สั่ง Stripe ไม่ต่ออายุ ลูกค้าใช้แพ็กเดิมได้ถึงสิ้นรอบที่จ่ายไว้ ไม่คืนเงิน'
+        } else {
+          const p = (await api.post(`/master/tenant/${tenantId}/subscription/preview`, body, auth)).data.data
+          if (p.kind === 'downgrade' && p.blocked) { toast.error(p.blocked); return }
+          msg = p.kind === 'trial' ? 'อยู่ในช่วงทดลอง เปลี่ยนแพ็กได้ทันที ยังไม่ตัดเงิน'
+            : p.kind === 'downgrade' ? `ลดแพ็ก: มีผลวันที่ ${fmtDate(p.effectiveAt)} (ครบรอบที่จ่ายไว้) ไม่คืนเงิน`
+            : p.kind === 'change' ? `ตัดบัตรลูกค้าทันที ฿${p.total.toLocaleString()}\n(แพ็กใหม่ ฿${p.charge.toLocaleString()} − เครดิตแพ็กเดิม ฿${p.credit.toLocaleString()} + VAT ฿${p.tax.toLocaleString()})\nตัดรอบถัดไป ${fmtDate(p.nextBilling)}`
+            : 'ไม่พบ subscription ใน Stripe'
+        }
+        if (!window.confirm(`เปลี่ยนแพ็กผ่าน Stripe\n\n${msg}\n\nยืนยันไหม?`)) return
+      }
+      const res = await api.put(`/master/tenant/${tenantId}/subscription`, body, auth)
       if (res.data.success) {
-        toast.success('อัปเดตแพ็กเกจแล้ว')
+        const st = res.data.stripe
+        toast.success(st?.scheduled ? `ตั้งลดแพ็กแล้ว มีผล ${fmtDate(st.effectiveAt)}` : st?.cancelAtPeriodEnd ? 'Stripe ไม่ต่ออายุแล้ว ลงเป็น Free เมื่อสิ้นรอบ' : 'อัปเดตแพ็กเกจแล้ว')
         loadSubscriptionData()
       }
     } catch (err: any) {
@@ -415,11 +430,13 @@ export default function MasterPanel() {
   }
 
   const handleExtend = async (tenantId: string) => {
+    const viaStripe = !!subscriptions.find(s => s.tenantId === tenantId)?.stripe
+    if (viaStripe && !window.confirm('แถม 30 วันผ่าน Stripe: เลื่อนวันตัดเงินครั้งถัดไปออกไป 30 วัน ไม่เก็บเงินช่วงที่แถม\n\nยืนยันไหม?')) return
     setExtending(tenantId)
     try {
       const res = await api.post(`/master/tenant/${tenantId}/extend`, { days: 30 }, { headers: { Authorization: `Bearer ${token}` } })
       if (res.data.success) {
-        toast.success('ต่ออายุ +30 วันแล้ว')
+        toast.success(res.data.stripe?.nextCharge ? `เลื่อนวันตัดเงินเป็น ${fmtDate(res.data.stripe.nextCharge)} แล้ว` : 'ต่ออายุ +30 วันแล้ว')
         loadSubscriptionData()
       }
     } catch (err: any) {
@@ -875,10 +892,10 @@ export default function MasterPanel() {
                             </div>
                           </div>
 
-                          {selSub.stripe ? (
+                          {selSub.stripe && (
                           <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] space-y-2 text-sm">
                             <p className="font-medium text-[var(--fg-1)]">จ่ายผ่าน Stripe</p>
-                            <p className="text-xs text-[var(--fg-3)] leading-relaxed">แพ็กเกจและวันหมดอายุอัปเดตตาม Stripe เอง เปลี่ยนแพ็ก ต่ออายุ หรือยกเลิก ให้ทำใน Stripe Dashboard หรือให้ลูกค้าทำในหน้าตั้งค่า &gt; สมาชิก</p>
+                            <p className="text-xs text-[var(--fg-3)] leading-relaxed">ปุ่มด้านล่างสั่งผ่าน Stripe: อัปเกรดตัดบัตรส่วนต่างทันที · ลดแพ็กมีผลสิ้นรอบ · เลือก Free = ไม่ต่ออายุ · ต่ออายุ = เลื่อนวันตัดเงินโดยไม่เก็บเงิน</p>
                             {selSub.stripe.cancelAt && <p className="text-xs text-[var(--warning)]">ลูกค้ากดยกเลิกแล้ว ใช้ได้ถึง {fmtDate(selSub.stripe.cancelAt)}</p>}
                             {selSub.stripe.pendingChange && <p className="text-xs text-[var(--fg-2)]">ตั้งลดแพ็กไว้ มีผล {fmtDate(selSub.stripe.pendingChange)}</p>}
                             <div className="flex gap-3 flex-wrap">
@@ -886,7 +903,7 @@ export default function MasterPanel() {
                               {selSub.stripe.customerUrl && <a href={selSub.stripe.customerUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[var(--primary)] hover:underline"><ExternalLink className="w-3.5 h-3.5" />ลูกค้าใน Stripe</a>}
                             </div>
                           </div>
-                          ) : (
+                          )}
                           <div className="space-y-2">
                             <label className="block text-xs text-[var(--fg-3)]">เปลี่ยนแพ็กเกจ</label>
                             <div className="flex items-center gap-2 flex-wrap">
@@ -974,10 +991,9 @@ export default function MasterPanel() {
                               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-all text-sm disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               {extending === selSub.tenantId ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CalendarClock className="w-4 h-4" />}
-                              ต่ออายุ +30 วัน
+                              {selSub.stripe ? 'แถม 30 วัน (เลื่อนวันตัดเงิน)' : 'ต่ออายุ +30 วัน'}
                             </button>
                           </div>
-                          )}
                         </>
                       )}
                     </div>

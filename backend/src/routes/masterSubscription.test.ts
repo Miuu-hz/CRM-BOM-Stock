@@ -1,7 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
 
 const stopBilling = vi.fn(async () => true)
-vi.mock('../services/billing.service', () => ({ stopBilling: (...a: unknown[]) => stopBilling(...(a as [])) }))
+const changeSubscription = vi.fn(async () => ({ updated: true }))
+const extendSubscription = vi.fn(async () => '2027-01-01T00:00:00.000Z')
+vi.mock('../services/billing.service', () => ({
+  stopBilling: (...a: unknown[]) => stopBilling(...(a as [])),
+  changeSubscription: (...a: unknown[]) => changeSubscription(...(a as [])),
+  extendSubscription: (...a: unknown[]) => extendSubscription(...(a as [])),
+  previewChange: async () => ({ kind: 'trial' }),
+}))
 import express from 'express'
 import request from 'supertest'
 import masterRouter from './master.routes'
@@ -60,16 +67,30 @@ describe('MASTER ตั้ง Pack / Add-on ให้ tenant', () => {
 })
 
 describe('tenant ที่จ่ายผ่าน Stripe', () => {
-  it('Master เปลี่ยนแพ็ก/ต่ออายุไม่ได้ (webhook จะเขียนทับ หรือ Stripe ตัดเงินต่อ) และเห็นลิงก์ Stripe', async () => {
+  it('Master เปลี่ยนแพ็ก/ต่ออายุ → สั่งผ่าน Stripe ไม่เขียน DB ตรง (webhook จะทับ)', async () => {
     const master = createTestUser({ role: 'MASTER' })
     const tenantId = `t_${generateId()}`
     await put(master.token, tenantId, { planCode: 'business' })
     getDb().prepare("UPDATE tenant_subscriptions SET stripe_subscription_id = 'sub_x', stripe_customer_id = 'cus_x' WHERE tenant_id = ?").run(tenantId)
     const auth = { Authorization: `Bearer ${master.token}` }
 
-    expect((await put(master.token, tenantId, { planCode: 'pro' })).status).toBe(409)
-    expect((await request(app).post(`/api/master/tenant/${tenantId}/extend`).set(auth).send({ days: 30 })).status).toBe(409)
-    expect(getSubscription(tenantId).planCode).toBe('business')
+    const body = { planCode: 'pro', billingCycle: 'yearly', packs: [], addons: {} }
+    expect((await put(master.token, tenantId, body)).status).toBe(200)
+    expect(changeSubscription).toHaveBeenCalledWith(tenantId, { plan: 'pro', cycle: 'yearly', packs: [], addons: {} })
+    expect(getSubscription(tenantId).planCode).toBe('business') // รอ webhook
+
+    stopBilling.mockClear()
+    expect((await put(master.token, tenantId, { planCode: 'free' })).status).toBe(200)
+    expect(stopBilling).toHaveBeenCalledWith(tenantId, false)
+
+    const ext = await request(app).post(`/api/master/tenant/${tenantId}/extend`).set(auth).send({ days: 30 })
+    expect(ext.status).toBe(200)
+    expect(extendSubscription).toHaveBeenCalledWith(tenantId, 30)
+
+    changeSubscription.mockRejectedValueOnce(new Error('Your card was declined.'))
+    const declined = await put(master.token, tenantId, body)
+    expect(declined.status).toBe(502)
+    expect(declined.body.message).toContain('declined')
   })
 
   it('ปิดใช้งาน → สั่ง Stripe ไม่ต่ออายุ · Stripe ล้ม = ไม่ปิดผู้ใช้', async () => {

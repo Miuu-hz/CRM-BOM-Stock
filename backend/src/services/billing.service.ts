@@ -315,6 +315,25 @@ export async function stopBilling(tenantId: string, immediate: boolean): Promise
   return true
 }
 
+// Master เปลี่ยนแพ็กให้บริษัทที่จ่ายผ่าน Stripe — ทางเดียวกับลูกค้ากดเอง (อัปเกรดตัดส่วนต่างทันที / ลดแพ็กมีผลสิ้นรอบ)
+export async function changeSubscription(tenantId: string, input: unknown): Promise<CheckoutResult> {
+  if (!(await activeSubscription(tenantBilling(tenantId)))) throw new BillingError('บริษัทนี้ไม่มี subscription ที่ใช้งานอยู่ใน Stripe')
+  return checkout(tenantId, '', input) // มี subscription แล้ว จึงไม่เข้าทางสร้างหน้า Checkout (ไม่ใช้อีเมล)
+}
+
+// Master แถมวัน: เลื่อนวันตัดเงินครั้งถัดไปออกไป N วันโดยไม่เก็บเงิน — ใช้ trial_end ของ Stripe
+// คืนวันตัดเงินครั้งใหม่ (ISO)
+export async function extendSubscription(tenantId: string, days: number): Promise<string> {
+  const existing = await activeSubscription(tenantBilling(tenantId))
+  if (!existing) throw new BillingError('บริษัทนี้ไม่มี subscription ที่ใช้งานอยู่ใน Stripe')
+  if (existing.schedule) throw new BillingError('มีการลดแพ็กตั้งเวลาไว้ — ยกเลิกการลดแพ็กก่อน แล้วค่อยต่ออายุ')
+  const paidUntil = Math.max(existing.trial_end ?? 0, ...existing.items.data.map(i => i.current_period_end), Math.floor(Date.now() / 1000))
+  const trialEnd = paidUntil + days * 86400
+  const updated = await stripe().subscriptions.update(existing.id, { trial_end: trialEnd, proration_behavior: 'none' })
+  applySubscription(updated as unknown as SubscriptionLike)
+  return new Date(trialEnd * 1000).toISOString()
+}
+
 async function activeSubscription(billing: TenantBilling): Promise<Stripe.Subscription | null> {
   if (!billing.stripe_subscription_id) return null
   const sub = await stripe().subscriptions.retrieve(billing.stripe_subscription_id)

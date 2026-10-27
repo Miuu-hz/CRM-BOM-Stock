@@ -6,14 +6,20 @@ import { authenticate, requireMaster } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
 import { getSubscription, PACK_FEATURES, ADDON_FEATURES, EXTRA_USERS } from '../services/subscription.service'
 import { lookupKey, priceDefinitions } from '../services/billing.catalog'
-import { stopBilling } from '../services/billing.service'
+import { changeSubscription, extendSubscription, previewChange, stopBilling } from '../services/billing.service'
+import { BillingError } from '../services/billing.catalog'
 
 // tenant ที่จ่ายผ่าน Stripe: webhook เขียนสิทธิ์ทับทุกครั้งที่ Stripe แจ้ง แก้ใน DB ตรงๆ จะเด้งกลับ หรือ Stripe ยังตัดเงินต่อ
 const stripeRow = (tenantId: string) => getDb().prepare(
-  'SELECT stripe_customer_id, stripe_subscription_id, cancel_at, pending_change FROM tenant_subscriptions WHERE tenant_id = ?',
-).get(tenantId) as { stripe_customer_id: string | null; stripe_subscription_id: string | null; cancel_at: string | null; pending_change: string | null } | undefined
+  'SELECT stripe_customer_id, stripe_subscription_id, cancel_at, pending_change, billing_cycle FROM tenant_subscriptions WHERE tenant_id = ?',
+).get(tenantId) as { stripe_customer_id: string | null; stripe_subscription_id: string | null; cancel_at: string | null; pending_change: string | null; billing_cycle: string | null } | undefined
 const STRIPE_DASH = `https://dashboard.stripe.com/${(process.env.STRIPE_SECRET_KEY ?? '').startsWith('sk_test') ? 'test/' : ''}`
-const STRIPE_LOCKED = 'บริษัทนี้จ่ายผ่าน Stripe อยู่ — เปลี่ยนแพ็ก/ต่ออายุ/ยกเลิก ต้องทำใน Stripe Dashboard หรือให้ลูกค้าทำในหน้าตั้งค่า แล้วระบบจะอัปเดตตาม webhook เอง'
+// BillingError = ข้อมูลไม่ผ่านกติกาแพ็ก (400) · อื่นๆ = Stripe ปฏิเสธ เช่นตัดบัตรไม่ผ่าน (502 พร้อมเหตุผล)
+const billingFail = (res: Response, err: any) => {
+  if (!(err instanceof BillingError)) console.error('[master/stripe]', err)
+  res.status(err instanceof BillingError ? 400 : 502).json({ success: false, message: err?.message || 'Stripe ไม่ตอบรับ' })
+}
+const toSelection = (b: any) => ({ plan: b.planCode, cycle: b.billingCycle, packs: b.packs ?? [], addons: b.addons ?? {} })
 // ราคาจริงที่ Stripe เก็บมาจาก billing.catalog (stripeSetup สร้าง Price จากที่นั่น) ไม่ใช่ subscription_plans
 const CATALOG_PRICE = new Map(priceDefinitions().map(d => [d.lookupKey, d.unitAmountBaht]))
 import { provisionTenant, ProvisionError } from '../services/provisioning'
@@ -302,6 +308,7 @@ router.get('/subscriptions', authenticate, requireMaster, (req: Request, res: Re
     const sr = stripeRow(t.tenantId)
     return {
       ...t,
+      billingCycle: sr?.billing_cycle ?? null,
       stripe: sr?.stripe_subscription_id ? {
         subscriptionUrl: `${STRIPE_DASH}subscriptions/${sr.stripe_subscription_id}`,
         customerUrl: sr.stripe_customer_id ? `${STRIPE_DASH}customers/${sr.stripe_customer_id}` : null,
@@ -325,14 +332,29 @@ router.get('/subscriptions', authenticate, requireMaster, (req: Request, res: Re
 })
 
 // PUT /api/master/tenant/:id/subscription — เปลี่ยนแพ็กเกจ/เปิด ACTIVE/ปรับกลับ free
-router.put('/tenant/:id/subscription', authenticate, requireMaster, (req: Request, res: Response) => {
+// POST /api/master/tenant/:id/subscription/preview — บริษัทที่จ่ายผ่าน Stripe: ยอดที่จะถูกตัดถ้าเปลี่ยนแพ็กตอนนี้
+router.post('/tenant/:id/subscription/preview', authenticate, requireMaster, async (req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await previewChange(req.params.id, toSelection(req.body)) }) } catch (err) { billingFail(res, err) }
+})
+
+router.put('/tenant/:id/subscription', authenticate, requireMaster, async (req: Request, res: Response): Promise<void> => {
   const db = getDb()
   const { id } = req.params
   const { planCode, billingCycle, periodDays, notes, packs, addons } = req.body
-  if (stripeRow(id)?.stripe_subscription_id) { res.status(409).json({ success: false, message: STRIPE_LOCKED }); return }
-
   const plan = db.prepare('SELECT code FROM subscription_plans WHERE code = ?').get(planCode)
   if (!plan) { res.status(404).json({ success: false, message: `ไม่พบแพ็กเกจ "${planCode}"` }); return }
+
+  // จ่ายผ่าน Stripe → เปลี่ยนที่ Stripe แล้วสิทธิ์ตามมาเอง (เขียน DB ตรงๆ จะโดน webhook ทับ)
+  if (stripeRow(id)?.stripe_subscription_id) {
+    try {
+      if (planCode === 'free') {
+        await stopBilling(id, false)
+        res.json({ success: true, data: getSubscription(id), stripe: { cancelAtPeriodEnd: true } }); return
+      }
+      const result = await changeSubscription(id, toSelection(req.body))
+      res.json({ success: true, data: getSubscription(id), stripe: result }); return
+    } catch (err) { billingFail(res, err); return }
+  }
 
   // packs/addons ไม่ส่งมา = คงค่าเดิม (COALESCE ด้านล่าง)
   if (packs !== undefined &&
@@ -383,14 +405,20 @@ router.put('/tenant/:id/subscription', authenticate, requireMaster, (req: Reques
 })
 
 // POST /api/master/tenant/:id/extend — { days } ขยาย current_period_end (ต่ออายุ)
-router.post('/tenant/:id/extend', authenticate, requireMaster, (req: Request, res: Response) => {
+router.post('/tenant/:id/extend', authenticate, requireMaster, async (req: Request, res: Response): Promise<void> => {
   const db = getDb()
   const { id } = req.params
   const { days } = req.body
 
-  if (stripeRow(id)?.stripe_subscription_id) { res.status(409).json({ success: false, message: STRIPE_LOCKED }); return }
   if (typeof days !== 'number' || days <= 0) {
     res.status(400).json({ success: false, message: 'days ต้องเป็นตัวเลขบวก' }); return
+  }
+  // จ่ายผ่าน Stripe → เลื่อนวันตัดเงินครั้งถัดไป ไม่เก็บเงินช่วงที่แถม
+  if (stripeRow(id)?.stripe_subscription_id) {
+    try {
+      const nextCharge = await extendSubscription(id, days)
+      res.json({ success: true, data: getSubscription(id), stripe: { nextCharge } }); return
+    } catch (err) { billingFail(res, err); return }
   }
   const sub = db.prepare('SELECT status, current_period_end FROM tenant_subscriptions WHERE tenant_id = ?').get(id) as any
   if (!sub) { res.status(404).json({ success: false, message: 'Tenant นี้ยังไม่มี subscription' }); return }
