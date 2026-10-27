@@ -512,7 +512,7 @@ export interface DailyPoint {
 
 /**
  * ซีรีส์รายวันตั้งแต่ max(from, dataSince) ถึง to
- * เงินคงเหลือสูงสุด/ต่ำสุดระหว่างวันไล่ตามลำดับ journal_entries.created_at แล้วตาม jl.id เริ่มจากยอดก่อนวันแรก
+ * เงินคงเหลือสูงสุด/ต่ำสุดระหว่างวันไล่ตามยอดสุทธิต่อรายการบัญชี (journal_entries.created_at แล้วตาม je.id) เริ่มจากยอดก่อนวันแรก
  */
 export function dailySeries(tenantId: string, from: string, to: string): DailyPoint[] {
   const dataSince = firstPostedDate(tenantId)
@@ -534,10 +534,11 @@ export function dailySeries(tenantId: string, from: string, to: string): DailyPo
   const cashDeltasByDay = new Map<string, number[]>()
   if (cashIds.length > 0) {
     const lineRows = db.prepare(`
-      SELECT date(je.date) as d, (jl.debit - jl.credit) as delta
+      SELECT date(je.date) as d, SUM(jl.debit - jl.credit) as delta
       FROM journal_lines jl JOIN journal_entries je ON jl.journal_entry_id = je.id
       WHERE ${POSTED} AND date(je.date) BETWEEN ? AND ? AND jl.account_id IN (${cashIds.map(() => '?').join(',')})
-      ORDER BY date(je.date) ASC, je.created_at ASC, jl.id ASC
+      GROUP BY je.id
+      ORDER BY d ASC, je.created_at ASC, je.id ASC
     `).all(tenantId, start, to, ...cashIds) as Array<{ d: string; delta: number }>
     for (const r of lineRows) {
       let arr = cashDeltasByDay.get(r.d)

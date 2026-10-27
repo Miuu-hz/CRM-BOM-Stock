@@ -4,6 +4,7 @@ import request from 'supertest'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { seedChartOfAccounts } from '../config/chartOfAccounts'
+import { ACC } from '../config/accountCodes'
 import { createTestUser } from '../test/testAuth'
 import boardRouter from '../routes/phopy-board.routes'
 import {
@@ -140,6 +141,32 @@ describe('dailySeries, cashOutflow & trendSeries (DB)', () => {
       cashHi: 300,
       cashLo: 300,
     })
+  })
+
+  it('dailySeries คิดยอดสุทธิต่อรายการบัญชี: โอนภายในชุดเงินสด (เงินสด → ธนาคาร, 1180 → เงินสด) ไม่ดัน cashHi/cashLo พุ่งหลอก แต่เงินเข้าจริงวันอื่นยังขยับ cashHi/cashClose', () => {
+    const { t, postJe } = setupTenant()
+    // ยอดยกมาก่อนวัน D (2026-10-15) = 3,000,000 ในบัญชีเงินสด
+    postJe('2026-10-14', [[ACC.CASH, 3000000, 0], [ACC.CAPITAL, 0, 3000000]])
+    // วัน D (2026-10-15): โอนเงินสดเข้าธนาคาร 2,740,000 (ทั้งคู่ในชุดเงินสด) และปิดกะ 1180 → เงินสด 50,000
+    postJe('2026-10-15', [[ACC.BANK, 2740000, 0], [ACC.CASH, 0, 2740000]], { createdAt: '2026-10-15T03:00:00.000Z' })
+    postJe('2026-10-15', [[ACC.CASH, 50000, 0], [ACC.POS_CLEARING, 0, 50000]], { createdAt: '2026-10-15T06:00:00.000Z' })
+    // วันถัดไป (2026-10-16): รายรับจริง Dr เงินสด / Cr รายได้ 120,000
+    postJe('2026-10-16', [[ACC.CASH, 120000, 0], [ACC.REVENUE_PRODUCT, 0, 120000]])
+
+    const series = dailySeries(t, '2026-10-15', '2026-10-16')
+    expect(series).toHaveLength(2)
+    const [d15, d16] = series
+    expect(d15.date).toBe('2026-10-15')
+    expect(d15.cashOpen).toBe(3000000)
+    expect(d15.cashClose).toBe(d15.cashOpen)
+    expect(d15.cashHi).toBe(d15.cashOpen)
+    expect(d15.cashLo).toBe(d15.cashOpen)
+
+    expect(d16.date).toBe('2026-10-16')
+    expect(d16.cashOpen).toBe(3000000)
+    expect(d16.cashHi).toBe(3120000)
+    expect(d16.cashClose).toBe(3120000)
+    expect(d16.cashLo).toBe(3000000)
   })
 
   it('โอนภายในชุดเงินสด (1180 → เงินสด/ธนาคาร ตอนปิดกะ) สุทธิเป็น 0 ไม่นับเป็นเงินออก', () => {
