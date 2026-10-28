@@ -182,6 +182,7 @@ import { startBackupScheduler } from './services/backup.scheduler'
 import qcRoutes from './routes/qc.routes'
 import subcontractRoutes from './routes/subcontract.routes'
 import hrRoutes from './routes/hr.routes'
+import hrPayrollRoutes from './routes/hr.payroll.routes'
 
 
 import { setupMcpRoutes } from './mcp/server'
@@ -642,6 +643,7 @@ app.use('/api/kanban', kanbanSsoRoutes)
 app.use('/api/qc', qcRoutes)
 app.use('/api/subcontracts', subcontractRoutes)
 app.use('/api/hr', hrRoutes)
+app.use('/api/hr', hrPayrollRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)

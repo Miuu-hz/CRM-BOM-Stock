@@ -34,6 +34,7 @@ interface TaxDashboard {
     paid: number
     pnd3: number
     pnd53: number
+    pnd1?: number
   }
   cit: {
     revenue: number
@@ -449,8 +450,12 @@ function Tax() {
               </div>
               <p className="text-sm text-[var(--fg-3)] mb-1">ภาษีหัก ณ ที่จ่าย ที่เราหักคู่ค้า (ต้องนำส่งสรรพากร)</p>
               <p className="text-2xl font-bold text-danger">{formatCurrency(dashboard?.wht.paid || 0)}</p>
-              <p className="text-xs text-[var(--fg-4)] mt-1">ยอดที่ต้องนำส่งผ่าน ภ.ง.ด.3 / ภ.ง.ด.53</p>
-              <div className="mt-3 pt-3 border-t border-[var(--border)] grid grid-cols-2 gap-2">
+              <p className="text-xs text-[var(--fg-4)] mt-1">ยอดที่ต้องนำส่งผ่าน ภ.ง.ด.1 / ภ.ง.ด.3 / ภ.ง.ด.53</p>
+              <div className="mt-3 pt-3 border-t border-[var(--border)] grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-xs text-[var(--fg-4)]">ภ.ง.ด.1 (เงินเดือน)</p>
+                  <p className="text-sm font-semibold text-[var(--fg-2)]">{formatCurrency(dashboard?.wht.pnd1 || 0)}</p>
+                </div>
                 <div>
                   <p className="text-xs text-[var(--fg-4)]">ภ.ง.ด.3</p>
                   <p className="text-sm font-semibold text-[var(--fg-2)]">{formatCurrency(dashboard?.wht.pnd3 || 0)}</p>
@@ -638,6 +643,12 @@ function Tax() {
                 formCode="ภ.พ.30"
                 formName="แบบแสดงรายการภาษีมูลค่าเพิ่ม"
                 dueDate="15 ของเดือนถัดไป"
+                status="pending"
+              />
+              <FilingCard
+                formCode="ภ.ง.ด.1"
+                formName="แบบแสดงรายการภาษีหัก ณ ที่จ่าย (เงินเดือนพนักงาน)"
+                dueDate="7 ของเดือนถัดไป"
                 status="pending"
               />
               <FilingCard

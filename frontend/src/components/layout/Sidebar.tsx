@@ -112,6 +112,8 @@ const menuItems: MenuItem[] = [
     subMenu: [
       { path: '/hr/employees', tKey: 'sidebar.employees', icon: Users },
       { path: '/hr/org', tKey: 'sidebar.orgUnits', icon: Building2 },
+      { path: '/hr/payroll', tKey: 'sidebar.payroll', icon: Wallet },
+      { path: '/hr/settings', tKey: 'sidebar.hrSettings', icon: Settings },
     ],
   },
   { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },

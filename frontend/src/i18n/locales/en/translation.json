@@ -116,7 +116,9 @@
     "hr": "HR",
     "hrDesc": "Employees & Org Chart",
     "employees": "Employees",
-    "orgUnits": "Org Units"
+    "orgUnits": "Org Units",
+    "payroll": "Payroll",
+    "hrSettings": "Payroll Settings"
   },
   "dashboard": {
     "title": "Executive Dashboard",

@@ -31,6 +31,9 @@ import ApprovalInbox from './pages/ApprovalInbox'
 import DigitalTwin from './pages/DigitalTwin'
 import Employees from './pages/HR/Employees'
 import OrgUnits from './pages/HR/OrgUnits'
+import Payroll from './pages/HR/Payroll'
+import HrSettings from './pages/HR/HrSettings'
+import PayslipPrint from './pages/HR/PayslipPrint'
 
 // Blocks direct-URL access to a route whose menu is restricted in
 // menuPermissions.ts (e.g. typing /users into the address bar as a USER).
@@ -117,6 +120,9 @@ function AppContent() {
         <Route path="/hr" element={<Navigate to="/hr/employees" replace />} />
         <Route path="/hr/employees" element={<Guard path="/hr/employees"><Employees /></Guard>} />
         <Route path="/hr/org" element={<Guard path="/hr/org"><OrgUnits /></Guard>} />
+        <Route path="/hr/payroll" element={<Guard path="/hr/payroll"><Payroll /></Guard>} />
+        <Route path="/hr/payroll/:id/print" element={<Guard path="/hr/payroll"><PayslipPrint /></Guard>} />
+        <Route path="/hr/settings" element={<Guard path="/hr/settings"><HrSettings /></Guard>} />
 
         {/* Cashier & KDS Route */}
         <Route path="/cashier" element={<Cashier />} />
