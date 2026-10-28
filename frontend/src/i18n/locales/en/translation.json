@@ -112,7 +112,11 @@
     "receivables": "Receivables / Payables",
     "receivablesDesc": "Track outstanding balances and debt aging",
     "digitalTwin": "3D Digital Twin",
-    "digitalTwinDesc": "3D Digital Twin of SME Operations Hub"
+    "digitalTwinDesc": "3D Digital Twin of SME Operations Hub",
+    "hr": "HR",
+    "hrDesc": "Employees & Org Chart",
+    "employees": "Employees",
+    "orgUnits": "Org Units"
   },
   "dashboard": {
     "title": "Executive Dashboard",
@@ -2789,6 +2793,7 @@
         "purchase": "Purchase",
         "stock": "Stock",
         "accounting": "Accounting",
+        "hr": "HR",
         "production": "Production",
         "qc": "QC",
         "marketing": "Marketing",
@@ -3034,6 +3039,8 @@
         "stockDesc": "Inventory management",
         "accounting": "Accounting",
         "accountingDesc": "Accounting, financial reports",
+        "hr": "HR",
+        "hrDesc": "Employee registry, org chart",
         "production": "Production",
         "productionDesc": "Production, BOM, Work Orders",
         "qc": "QC",

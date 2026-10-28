@@ -110,6 +110,7 @@ const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 export class PayrollError extends Error {}
 
 export interface PayrollEmployee {
+  employeeId?: string
   name: string
   gross: number          // เงินเดือน/ค่าจ้างก่อนหัก
   ssEmployee?: number    // ประกันสังคมส่วนลูกจ้าง (หักจากเงินเดือน)
@@ -147,7 +148,7 @@ const payrollAmount = (v: unknown, label: string): number => {
   return round2(n)
 }
 
-export function validatePayroll(raw: Record<string, unknown>): PayrollInput {
+export function validatePayroll(raw: Record<string, unknown>, tenantId?: string): PayrollInput {
   const period = String(raw.period ?? '')
   const payDate = String(raw.payDate ?? '')
   if (!PERIOD_RE.test(period)) throw new PayrollError('งวดเดือนต้องเป็นรูปแบบ YYYY-MM')
@@ -155,11 +156,25 @@ export function validatePayroll(raw: Record<string, unknown>): PayrollInput {
   if (!raw.payAccountId || typeof raw.payAccountId !== 'string') throw new PayrollError('กรุณาเลือกบัญชีที่จ่ายเงิน')
   if (!Array.isArray(raw.employees) || raw.employees.length === 0) throw new PayrollError('ต้องมีพนักงานอย่างน้อย 1 รายการ')
 
+  const empBizUnits: Array<string | null> = []
   const employees = raw.employees.map((item: unknown, i: number): PayrollEmployee => {
     const e = (item ?? {}) as Record<string, unknown>
-    const name = normEmployeeName(e.name)
+    const employeeId = typeof e.employeeId === 'string' && e.employeeId.trim() ? e.employeeId.trim() : undefined
+    let name = normEmployeeName(e.name)
+    if (employeeId && tenantId) {
+      const row = db.prepare(`
+        SELECT e.id, e.first_name, e.last_name, ou.business_unit
+        FROM employees e
+        LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
+        WHERE e.id = ? AND e.tenant_id = ?
+      `).get(employeeId, tenantId) as { id: string; first_name: string; last_name: string | null; business_unit: string | null } | undefined
+      if (!row) throw new PayrollError(`แถวที่ ${i + 1}: ไม่พบพนักงานในทะเบียนของบริษัทนี้`)
+      name = normEmployeeName([row.first_name, row.last_name].filter(Boolean).join(' '))
+      empBizUnits.push(row.business_unit ?? null)
+    }
     if (!name) throw new PayrollError(`แถวที่ ${i + 1}: กรุณากรอกชื่อ`)
-    const emp = {
+    const emp: PayrollEmployee = {
+      ...(employeeId ? { employeeId } : {}),
       name,
       gross: payrollAmount(e.gross, `${name}: เงินเดือน`),
       ssEmployee: payrollAmount(e.ssEmployee, `${name}: ประกันสังคม`),
@@ -167,14 +182,18 @@ export function validatePayroll(raw: Record<string, unknown>): PayrollInput {
       otherDeduction: payrollAmount(e.otherDeduction, `${name}: หักอื่นๆ`),
     }
     if (emp.gross <= 0) throw new PayrollError(`${name}: เงินเดือนต้องมากกว่า 0`)
-    if (emp.ssEmployee + emp.wht + emp.otherDeduction > emp.gross) {
+    if (emp.ssEmployee! + emp.wht! + emp.otherDeduction! > emp.gross) {
       throw new PayrollError(`${name}: ยอดหักรวมเกินเงินเดือน (สุทธิติดลบ)`)
     }
     return emp
   })
 
-  const businessUnit = raw.businessUnit ? String(raw.businessUnit) : null
+  // ponytail: one JE carries one business_unit; split per unit if the board ever needs it
+  let businessUnit = raw.businessUnit ? String(raw.businessUnit) : null
   if (businessUnit && !BUSINESS_UNITS.includes(businessUnit)) throw new PayrollError('หน่วยธุรกิจไม่ถูกต้อง')
+  if (!businessUnit && empBizUnits.length > 0 && empBizUnits.every(u => u !== null && u === empBizUnits[0])) {
+    businessUnit = empBizUnits[0]
+  }
 
   const otherTotal = employees.reduce((s, e) => s + (e.otherDeduction ?? 0), 0)
   const otherDeductionAccountId = typeof raw.otherDeductionAccountId === 'string' && raw.otherDeductionAccountId
@@ -275,9 +294,9 @@ export function createPayrollEntry(tenantId: string, userName: string, input: Pa
   })
 
   const insertPayrollLine = db.prepare(`
-    INSERT INTO payroll_lines (id, tenant_id, journal_entry_id, period, pay_date, employee_name,
+    INSERT INTO payroll_lines (id, tenant_id, journal_entry_id, period, pay_date, employee_id, employee_name,
       gross, sso_employee, wht, other_deduction, net, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const { id, entryNumber } = db.transaction(() => {
     const je = insertJournalEntry(tenantId, userName, {
@@ -294,7 +313,7 @@ export function createPayrollEntry(tenantId: string, userName: string, input: Pa
     const now = new Date().toISOString()
     for (const e of input.employees) {
       const ss = e.ssEmployee ?? 0, wht = e.wht ?? 0, other = e.otherDeduction ?? 0
-      insertPayrollLine.run(generateId(), tenantId, je.id, input.period, input.payDate, e.name,
+      insertPayrollLine.run(generateId(), tenantId, je.id, input.period, input.payDate, e.employeeId ?? null, e.name,
         e.gross, ss, wht, other, round2(e.gross - ss - wht - other), now)
     }
     return je
@@ -552,7 +571,7 @@ router.get('/payroll/history', requirePermission('accounting', 'write'), async (
 // บันทึกเงินเดือน → JE แบบร่าง reference_type = 'PAYROLL' (ไปกดยืนยันในหน้าสมุดรายวันเหมือน JE อื่น)
 router.post('/payroll', async (req: Request, res: Response) => {
   try {
-    const input = validatePayroll(req.body ?? {})
+    const input = validatePayroll(req.body ?? {}, req.user!.tenantId)
     const result = createPayrollEntry(req.user!.tenantId, req.user!.email, input)
     res.json({ success: true, message: 'บันทึกเงินเดือนสำเร็จ', data: result })
   } catch (error) {

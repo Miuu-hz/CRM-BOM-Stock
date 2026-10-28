@@ -3,13 +3,15 @@ import { motion } from 'framer-motion'
 import { AlertTriangle, Banknote, Calculator, Check, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { journalApi, type Account } from '../../services/accounting'
+import { useSubscription } from '../../contexts/SubscriptionContext'
+import { hrService } from '../../services/hr.service'
 import { useModalClose } from '../../hooks/useModalClose'
 import { PayrollHistoryNote, normName, periodLabel, useEmployeeNames, usePayrollHistory } from './PayrollHistoryNote'
 
 // บันทึกจ่ายเงินเดือนเป็น JE (reference_type PAYROLL) — ไม่มีโมดูล HR แยก ยอดรายคนเก็บที่ payroll_lines + memo ของรายการ
 // บัญชีฝั่งค่าใช้จ่าย/หนี้สินถูกกำหนดที่ backend: Dr 5301 · Dr 5314 สมทบนายจ้าง · Cr 2106 ประกันสังคม · Cr 2105 ภาษีหัก ณ ที่จ่าย
 
-interface Row { name: string; gross: string; ssEmployee: string; wht: string; otherDeduction: string }
+interface Row { employeeId?: string; name: string; gross: string; ssEmployee: string; wht: string; otherDeduction: string }
 
 const emptyRow = (name = ''): Row => ({ name, gross: '', ssEmployee: '', wht: '', otherDeduction: '' })
 const num = (s: string) => parseFloat(s) || 0
@@ -31,6 +33,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
   onSuccess: () => void
 }) {
   useModalClose(onClose)
+  const { hasFeature } = useSubscription()
   const today = new Date()
   const cashAccounts = accounts.filter(a => a.type === 'ASSET' && /^110[12]/.test(a.code ?? ''))
   const payChoices = cashAccounts.length ? cashAccounts : accounts.filter(a => a.type === 'ASSET')
@@ -54,7 +57,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
   const historyOf = usePayrollHistory(activeRows.map(r => r.name), period)
   // เตือนเฉย ๆ ไม่บล็อก — บางร้านจ่ายเดือนละ 2 รอบ
   const paidThisPeriod = activeRows.map(r => historyOf(r.name)).filter(h => h && h.samePeriod.count > 0)
-  const total = (k: keyof Omit<Row, 'name'>) => round2(activeRows.reduce((s, r) => s + num(r[k]), 0))
+  const total = (k: keyof Omit<Row, 'name' | 'employeeId'>) => round2(activeRows.reduce((s, r) => s + num(r[k]), 0))
   const gross = total('gross')
   const ssEe = total('ssEmployee')
   const wht = total('wht')
@@ -80,6 +83,23 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
 
   const updateRow = (i: number, patch: Partial<Row>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r))
 
+  const loadFromHr = async () => {
+    try {
+      const emps = await hrService.getEmployees({ status: 'ACTIVE' })
+      if (!emps.length) { toast('ไม่พบพนักงานที่ทำงานอยู่ในทะเบียน'); return }
+      setRows(emps.map(e => ({
+        employeeId: e.id,
+        name: [e.first_name, e.last_name].filter(Boolean).join(' '),
+        gross: e.employment_type === 'MONTHLY' && e.base_wage != null ? String(e.base_wage) : '',
+        ssEmployee: '',
+        wht: '',
+        otherDeduction: '',
+      })))
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'ดึงข้อมูลพนักงานไม่สำเร็จ')
+    }
+  }
+
   const handleSubmit = async () => {
     if (error) { toast.error(error); return }
     setSaving(true)
@@ -87,7 +107,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
       const res = await journalApi.createPayroll({
         period, payDate,
         employees: activeRows.map(r => ({
-          name: normName(r.name), gross: num(r.gross), ssEmployee: num(r.ssEmployee), wht: num(r.wht), otherDeduction: num(r.otherDeduction),
+          ...(r.employeeId ? { employeeId: r.employeeId } : {}), name: normName(r.name), gross: num(r.gross), ssEmployee: num(r.ssEmployee), wht: num(r.wht), otherDeduction: num(r.otherDeduction),
         })),
         ssEmployer: ssEr,
         payAccountId,
@@ -192,7 +212,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
                 <PayrollHistoryNote history={historyOf(lumpRow.name)} /></div>
               ) : rows.map((r, i) => (
                 <div key={i} className="space-y-1"><div className={gridCols}>
-                  <input value={r.name} onChange={e => updateRow(i, { name: e.target.value })} list="payroll-employee-names"
+                  <input value={r.name} onChange={e => updateRow(i, { name: e.target.value, employeeId: undefined })} list="payroll-employee-names"
                     placeholder={`พนักงาน ${i + 1}`} className={`${cellCls} font-sans text-left`} />
                   {amountInputs(r, p => updateRow(i, p))}
                   <span className={`text-right font-mono text-sm ${netOf(r) < 0 ? 'text-danger' : 'text-[var(--fg-1)]'}`}>{fmt(netOf(r))}</span>
@@ -219,10 +239,18 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
             </div>
           </div>
           {!lump && (
-            <button type="button" onClick={() => setRows(prev => [...prev, emptyRow()])}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-[var(--border)] rounded-lg text-xs text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo">
-              <Plus className="w-3.5 h-3.5" /> เพิ่มพนักงาน
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => setRows(prev => [...prev, emptyRow()])}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-[var(--border)] rounded-lg text-xs text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo">
+                <Plus className="w-3.5 h-3.5" /> เพิ่มพนักงาน
+              </button>
+              {hasFeature('hr') && (
+                <button type="button" onClick={loadFromHr}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-[var(--border)] rounded-lg text-xs text-[var(--fg-3)] hover:text-[var(--primary)] hover:border-phopy-indigo">
+                  <RefreshCw className="w-3.5 h-3.5" /> ดึงจากทะเบียนพนักงาน
+                </button>
+              )}
+            </div>
           )}
 
           {/* สมทบนายจ้าง + บัญชีหักอื่นๆ */}

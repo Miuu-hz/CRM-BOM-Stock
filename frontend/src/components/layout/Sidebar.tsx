@@ -103,6 +103,17 @@ const menuItems: MenuItem[] = [
       { path: '/tax', tKey: 'sidebar.tax', icon: Percent, beta: true },
     ],
   },
+  {
+    path: '/hr',
+    tKey: 'sidebar.hr',
+    icon: Users,
+    descriptionKey: 'sidebar.hrDesc',
+    isParent: true,
+    subMenu: [
+      { path: '/hr/employees', tKey: 'sidebar.employees', icon: Users },
+      { path: '/hr/org', tKey: 'sidebar.orgUnits', icon: Building2 },
+    ],
+  },
   { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },
   { path: '/users', tKey: 'sidebar.userManagement', icon: UserCog },
   { path: '/cashier', tKey: 'sidebar.cashier', icon: Store, descriptionKey: 'sidebar.cashierDesc' },
@@ -339,6 +350,7 @@ function Sidebar({ mode }: SidebarProps) {
         <div className={`space-y-1 ${isRail ? 'px-1.5' : 'px-2'}`}>
           {menuItems
             .filter((item) => canViewMenu(user?.role, item.path, user?.departments))
+            .filter((item) => item.path !== '/hr' || !isLocked('/hr'))
             .map((item) => item.subMenu ? { ...item, subMenu: item.subMenu.filter((sub) => canViewMenu(user?.role, sub.path, user?.departments)) } : item)
             .filter((item) => !item.subMenu || item.subMenu.length > 0)
             .map((item) => {

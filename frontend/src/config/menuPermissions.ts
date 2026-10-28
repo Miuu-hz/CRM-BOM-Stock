@@ -41,6 +41,9 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/accounting/platform-settlement': ALL_ROLES,
   '/accounting/reports': ALL_ROLES,
   '/accounting/phopy-board': ALL_ROLES,
+  '/hr': ALL_ROLES,
+  '/hr/employees': ALL_ROLES,
+  '/hr/org': ALL_ROLES,
   '/approvals': NOT_USER,
   '/users': MASTER_ONLY,
   '/cashier': ALL_ROLES,
@@ -107,6 +110,9 @@ export const MENU_REQUIRED_FEATURES: Record<string, string> = {
   '/accounting/platform-settlement': 'platform_settlement',
   '/accounting/reports': 'accounting',
   '/accounting/phopy-board': 'accounting',
+  '/hr': 'hr',
+  '/hr/employees': 'hr',
+  '/hr/org': 'hr',
   '/kds': 'kds',
 }
 

@@ -80,7 +80,11 @@
     "receivables": "ลูกหนี้ / เจ้าหนี้",
     "receivablesDesc": "ติดตามยอดค้างชำระและอายุหนี้",
     "digitalTwin": "3D Digital Twin",
-    "digitalTwinDesc": "จำลองคลังสินค้า 3 มิติและระบบติดตามสำหรับ SME ยุคใหม่"
+    "digitalTwinDesc": "จำลองคลังสินค้า 3 มิติและระบบติดตามสำหรับ SME ยุคใหม่",
+    "hr": "บุคคล (HR)",
+    "hrDesc": "ทะเบียนพนักงานและผังองค์กร",
+    "employees": "ทะเบียนพนักงาน",
+    "orgUnits": "ผังองค์กร"
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",
@@ -2790,6 +2794,7 @@
         "purchase": "Purchase",
         "stock": "Stock",
         "accounting": "Accounting",
+        "hr": "บุคคล (HR)",
         "production": "Production",
         "qc": "QC",
         "marketing": "Marketing",
@@ -3035,6 +3040,8 @@
         "stockDesc": "คลังสินค้า",
         "accounting": "Accounting — บัญชี",
         "accountingDesc": "บัญชี, รายงานการเงิน",
+        "hr": "บุคคล (HR)",
+        "hrDesc": "ทะเบียนพนักงานและผังองค์กร",
         "production": "Production — ผลิต",
         "productionDesc": "การผลิต, BOM, Work Orders",
         "qc": "QC — ควบคุมคุณภาพ",

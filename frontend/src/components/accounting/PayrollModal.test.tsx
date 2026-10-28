@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
+const mockHasFeature = vi.fn((_f: string) => false)
+vi.mock('../../contexts/SubscriptionContext', () => ({
+  useSubscription: () => ({ hasFeature: mockHasFeature }),
+}))
 vi.mock('../../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('react-hot-toast', () => ({ default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 
@@ -25,6 +29,7 @@ const emptyHistory = (employee: string): PayrollHistory => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockHasFeature.mockReturnValue(false)
   mockApi.get.mockImplementation((url: string, cfg?: { params?: { employee?: string } }) => {
     if (url === '/journal/payroll/employees') {
       return Promise.resolve({ data: { success: true, data: [{ name: 'สมชาย', count: 3, lastPayDate: '2026-10-15' }] } })
@@ -102,5 +107,50 @@ describe('PayrollModal', () => {
     fireEvent.change(screen.getByLabelText('ภาษีหัก ณ ที่จ่าย'), { target: { value: '200' } })
     expect(screen.getByText('ก: ยอดหักเกินเงินเดือน')).toBeTruthy()
     expect((screen.getByRole('button', { name: /บันทึกเงินเดือน/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('เมื่อมีฟีเจอร์ hr แสดงปุ่ม "ดึงจากทะเบียนพนักงาน" ดึงพนักงาน ACTIVE มาเติมแถวและส่ง employeeId', async () => {
+    mockHasFeature.mockImplementation((f: string) => f === 'hr')
+    mockApi.get.mockImplementation((url: string, cfg?: { params?: { employee?: string } }) => {
+      if (url === '/hr/employees') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: [
+              { id: 'emp-1', tenant_id: 't1', code: 'EMP-001', first_name: 'สมศรี', last_name: 'มีสุข', employment_type: 'MONTHLY', base_wage: 20000, start_date: '2026-01-01', status: 'ACTIVE', sso_enrolled: 1 },
+              { id: 'emp-2', tenant_id: 't1', code: 'EMP-002', first_name: 'สมปอง', last_name: null, employment_type: 'DAILY', base_wage: 500, start_date: '2026-01-01', status: 'ACTIVE', sso_enrolled: 1 },
+            ],
+          },
+        })
+      }
+      if (url === '/journal/payroll/employees') {
+        return Promise.resolve({ data: { success: true, data: [] } })
+      }
+      return Promise.resolve({ data: { success: true, data: emptyHistory(cfg?.params?.employee ?? '') } })
+    })
+    mockApi.post.mockResolvedValue({ data: { success: true, data: { entryNumber: 'JV-HR', warnings: [] } } })
+
+    const onSuccess = vi.fn()
+    render(<PayrollModal accounts={accounts} onClose={() => {}} onSuccess={onSuccess} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /ดึงจากทะเบียนพนักงาน/ }))
+
+    await vi.waitFor(() => expect(screen.getByDisplayValue('สมศรี มีสุข')).toBeTruthy())
+    expect(screen.getByDisplayValue('สมปอง')).toBeTruthy()
+
+    const grossInputs = screen.getAllByLabelText('เงินเดือน') as HTMLInputElement[]
+    expect(grossInputs[0].value).toBe('20000')
+    expect(grossInputs[1].value).toBe('')
+
+    fireEvent.change(grossInputs[1], { target: { value: '3000' } })
+    fireEvent.click(screen.getByRole('button', { name: /บันทึกเงินเดือน/ }))
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalled())
+
+    const [url, body] = mockApi.post.mock.calls[0]
+    expect(url).toBe('/journal/payroll')
+    expect(body.employees).toEqual([
+      { employeeId: 'emp-1', name: 'สมศรี มีสุข', gross: 20000, ssEmployee: 0, wht: 0, otherDeduction: 0 },
+      { employeeId: 'emp-2', name: 'สมปอง', gross: 3000, ssEmployee: 0, wht: 0, otherDeduction: 0 },
+    ])
   })
 })

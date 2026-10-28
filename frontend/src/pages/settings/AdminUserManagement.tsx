@@ -19,7 +19,7 @@ interface TenantUser {
 
 const ROLE_VALUES = ['ADMIN', 'MANAGER', 'POWERUSER', 'USER'] as const
 
-const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'PRODUCTION', 'QC', 'MARKETING', 'POS', 'CEO', 'IT'] as const
+const DEPT_VALUES = ['SALES', 'PURCHASE', 'STOCK', 'ACCOUNTING', 'HR', 'PRODUCTION', 'QC', 'MARKETING', 'POS', 'CEO', 'IT'] as const
 
 function RoleBadge({ role }: { role: string }) {
   const { t } = useTranslation()

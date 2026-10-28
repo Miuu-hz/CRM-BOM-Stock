@@ -19,6 +19,9 @@ const tenants: string[] = []
 afterEach(() => {
   for (const t of tenants.splice(0)) {
     db.prepare('DELETE FROM payroll_lines WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM employees WHERE tenant_id = ?').run(t)
+    db.prepare('UPDATE org_units SET parent_id = NULL WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM org_units WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM journal_lines WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM journal_entries WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM accounts WHERE tenant_id = ?').run(t)
@@ -153,6 +156,56 @@ describe('POST /api/journal/payroll', () => {
     })
     expect(res.status).toBe(400)
     expect(db.prepare('SELECT COUNT(*) n FROM journal_entries WHERE tenant_id = ?').get(u.tenantId)).toEqual({ n: 0 })
+  })
+
+  it('รองรับ employeeId จากทะเบียนพนักงาน: เติมชื่อ + เก็บ employee_id + ดึง business_unit จากหน่วยงานเมื่อเหมือนกันหมด', async () => {
+    const u = newUser()
+    const other = newUser()
+    const bank = getOrCreateAccount(u.tenantId, '1102')
+    const now = new Date().toISOString()
+
+    const ouOnline = generateId()
+    const ouRetail = generateId()
+    db.prepare(`INSERT INTO org_units (id, tenant_id, name, business_unit, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)`)
+      .run(ouOnline, u.tenantId, 'ทีมออนไลน์', 'ONLINE', now, now)
+    db.prepare(`INSERT INTO org_units (id, tenant_id, name, business_unit, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)`)
+      .run(ouRetail, u.tenantId, 'ทีมหน้าร้าน', 'RETAIL', now, now)
+
+    const emp1 = generateId()
+    const emp2 = generateId()
+    const empOther = generateId()
+    const insEmp = db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, org_unit_id, employment_type, base_wage, start_date, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'MONTHLY', 20000, '2026-01-01', 'ACTIVE', ?, ?)`)
+    insEmp.run(emp1, u.tenantId, 'EMP-001', 'กานต์', 'รักงาน', ouOnline, now, now)
+    insEmp.run(emp2, u.tenantId, 'EMP-002', 'ขจร', 'ขยัน', ouRetail, now, now)
+    insEmp.run(empOther, other.tenantId, 'EMP-001', 'คนอื่น', null, null, now, now)
+
+    // employeeId ต่างบริษัท → 400
+    const bad = await request(app).post('/api/journal/payroll').set('Authorization', `Bearer ${u.token}`).send({
+      period: '2026-10', payDate: '2026-10-31', payAccountId: bank,
+      employees: [{ employeeId: empOther, gross: 20000 }],
+    })
+    expect(bad.status).toBe(400)
+
+    // ทุกคนอยู่ ONLINE เหมือนกันและไม่ได้ส่ง businessUnit → JE ได้ ONLINE
+    const ok1 = await request(app).post('/api/journal/payroll').set('Authorization', `Bearer ${u.token}`).send({
+      period: '2026-10', payDate: '2026-10-31', payAccountId: bank,
+      employees: [{ employeeId: emp1, gross: 20000 }],
+    })
+    expect(ok1.status).toBe(200)
+    const je1 = db.prepare('SELECT business_unit FROM journal_entries WHERE id = ?').get(ok1.body.data.id) as any
+    expect(je1.business_unit).toBe('ONLINE')
+    const pl1 = db.prepare('SELECT employee_id, employee_name FROM payroll_lines WHERE journal_entry_id = ?').get(ok1.body.data.id) as any
+    expect(pl1).toEqual({ employee_id: emp1, employee_name: 'กานต์ รักงาน' })
+
+    // อยู่คนละ business_unit (ONLINE + RETAIL) → JE business_unit เป็น null
+    const ok2 = await request(app).post('/api/journal/payroll').set('Authorization', `Bearer ${u.token}`).send({
+      period: '2026-10', payDate: '2026-10-31', payAccountId: bank,
+      employees: [{ employeeId: emp1, gross: 20000 }, { employeeId: emp2, gross: 18000 }],
+    })
+    expect(ok2.status).toBe(200)
+    const je2 = db.prepare('SELECT business_unit FROM journal_entries WHERE id = ?').get(ok2.body.data.id) as any
+    expect(je2.business_unit).toBeNull()
   })
 })
 

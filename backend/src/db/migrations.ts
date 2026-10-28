@@ -1495,7 +1495,7 @@ export function runMigrations(db: any): void {
         ['plan_pro', 'pro', 'Pro', '8 ผู้ใช้ ครบ 4 Pack + Smart Unit + Backup', 1950, 19500, 8, null, null,
           [...base, ...allPacks, 'ai', 'smart_unit', 'backup'], 5],
         ['plan_enterprise_ai', 'enterprise_ai', 'Enterprise AI', '20 ผู้ใช้ ครบทุกโมดูล + AI + API', 3490, 34900, 20, null, null,
-          [...base, ...allPacks, 'ai', 'smart_unit', 'backup', 'multi_currency', 'subcontract', 'api_access'], 6],
+          [...base, ...allPacks, 'ai', 'smart_unit', 'backup', 'multi_currency', 'subcontract', 'api_access', 'hr'], 6],
       ]
       db.transaction(() => {
         for (const [id, code, name, desc, pm, py, users, products, shifts, features, sort] of v2) {
@@ -2979,6 +2979,70 @@ export function runMonthCloseMigrations(db: any): void {
     console.error('⚠️ payment_attachments JOURNAL_ENTRY/TAX_PERIOD migration error:', e)
     try { db.exec('PRAGMA foreign_keys=ON') } catch {}
   }
+
+  // ── HR Phase 1: org_units + employees + payroll_lines.employee_id + enterprise_ai feature 'hr' ──
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS org_units (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        parent_id TEXT NULL REFERENCES org_units(id),
+        manager_employee_id TEXT NULL,
+        business_unit TEXT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(tenant_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS employees (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT,
+        nickname TEXT,
+        org_unit_id TEXT NULL REFERENCES org_units(id),
+        position TEXT,
+        employment_type TEXT NOT NULL CHECK (employment_type IN ('MONTHLY','DAILY','HOURLY')),
+        base_wage REAL NOT NULL DEFAULT 0 CHECK (base_wage >= 0),
+        start_date TEXT NOT NULL,
+        end_date TEXT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','RESIGNED','TERMINATED')),
+        national_id TEXT,
+        bank_name TEXT,
+        bank_account TEXT,
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        sso_enrolled INTEGER NOT NULL DEFAULT 1,
+        tax_allowances TEXT NOT NULL DEFAULT '{}',
+        user_id TEXT NULL,
+        device_pin TEXT NULL,
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(tenant_id, code)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_employees_tenant_user
+        ON employees(tenant_id, user_id) WHERE user_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_employees_tenant_device_pin
+        ON employees(tenant_id, device_pin) WHERE device_pin IS NOT NULL;
+    `)
+    // ponytail: payroll_lines has 0 rows in every tenant, so no backfill needed
+    try {
+      db.exec(`ALTER TABLE payroll_lines ADD COLUMN employee_id TEXT NULL`)
+    } catch { /* column already exists */ }
+
+    const entAi = db.prepare(`SELECT features FROM subscription_plans WHERE code = 'enterprise_ai'`).get() as any
+    if (entAi) {
+      const f = new Set<string>(JSON.parse(entAi.features || '[]'))
+      if (!f.has('hr')) {
+        f.add('hr')
+        db.prepare(`UPDATE subscription_plans SET features = ? WHERE code = 'enterprise_ai'`).run(JSON.stringify([...f]))
+      }
+    }
+  } catch (e) { console.error('⚠️ HR Phase 1 migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
