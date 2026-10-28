@@ -244,7 +244,7 @@ export const journalApi = {
   createPayroll: (data: {
     period: string
     payDate: string
-    employees: Array<{ name: string; gross: number; ssEmployee?: number; wht?: number; otherDeduction?: number }>
+    employees: Array<{ employeeId?: string; name: string; gross: number; ssEmployee?: number; wht?: number; otherDeduction?: number }>
     ssEmployer?: number
     payAccountId: string
     otherDeductionAccountId?: string

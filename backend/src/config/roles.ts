@@ -8,6 +8,7 @@ export type Department =
   | 'PURCHASE'
   | 'STOCK'
   | 'ACCOUNTING'
+  | 'HR'
   | 'MARKETING'
   | 'QC'
   | 'PRODUCTION'
@@ -22,6 +23,7 @@ export type Resource =
   | 'purchase'
   | 'stock'
   | 'accounting'
+  | 'hr'
   | 'marketing'
   | 'production'
   | 'qc'
@@ -35,6 +37,7 @@ export const resourceActions: Record<Resource, Action[]> = {
   purchase:   ['read', 'write', 'approve', 'delete', 'admin'],
   stock:      ['read', 'write', 'approve', 'delete', 'admin'],
   accounting: ['read', 'write', 'approve', 'delete', 'admin'],
+  hr:         ['read', 'write', 'approve', 'delete', 'admin'],
   marketing:  ['read', 'write', 'approve', 'delete', 'admin'],
   production: ['read', 'write', 'approve', 'delete', 'admin'],
   qc:         ['read', 'write', 'approve', 'delete', 'admin'],

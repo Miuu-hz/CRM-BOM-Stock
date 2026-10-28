@@ -83,6 +83,14 @@ describe('menuPermissions — isMenuLocked (Phase 3)', () => {
     // Shopee/Lazada Settlement ต้องการ 'platform_settlement'
     expect(isMenuLocked('/accounting/platform-settlement', ['accounting'])).toBe(true)
     expect(isMenuLocked('/accounting/platform-settlement', ['accounting', 'platform_settlement'])).toBe(false)
+
+    // HR ต้องการ 'hr'
+    expect(isMenuLocked('/hr', [])).toBe(true)
+    expect(isMenuLocked('/hr/employees', [])).toBe(true)
+    expect(isMenuLocked('/hr/org', [])).toBe(true)
+    expect(isMenuLocked('/hr', ['hr'])).toBe(false)
+    expect(isMenuLocked('/hr/employees', ['hr'])).toBe(false)
+    expect(isMenuLocked('/hr/org', ['hr'])).toBe(false)
   })
 })
 describe('GM แผนก CEO', () => {

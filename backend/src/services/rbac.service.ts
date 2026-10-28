@@ -4,13 +4,14 @@ import { isCashierOnly } from '../middleware/cashierScope'
 export type { Role, Department }
 
 const departmentResources: Record<Department, Resource[]> = {
-  IT:         ['customers', 'suppliers', 'orders', 'purchase', 'stock', 'accounting', 'marketing', 'production', 'qc', 'users', 'settings'],
-  CEO:        ['customers', 'suppliers', 'orders', 'purchase', 'stock', 'accounting', 'marketing', 'production', 'qc', 'users', 'settings'],
+  IT:         ['customers', 'suppliers', 'orders', 'purchase', 'stock', 'accounting', 'hr', 'marketing', 'production', 'qc', 'users', 'settings'],
+  CEO:        ['customers', 'suppliers', 'orders', 'purchase', 'stock', 'accounting', 'hr', 'marketing', 'production', 'qc', 'users', 'settings'],
   CTO:        ['production', 'qc', 'stock', 'users', 'settings'],
   SALES:      ['customers', 'orders', 'marketing'],
   PURCHASE:   ['purchase', 'suppliers'],
   STOCK:      ['stock'],
   ACCOUNTING: ['accounting'],
+  HR:         ['hr'],
   MARKETING:  ['marketing'],
   QC:         ['qc'],
   PRODUCTION: ['production'],
