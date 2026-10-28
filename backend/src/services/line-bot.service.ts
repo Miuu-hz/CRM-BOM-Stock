@@ -299,7 +299,8 @@ class LineBotService {
         `).all(tenantId) as { line_user_id: string }[]
     }
 
-    // ── สรุปปิดกะ POS → LINE ส่วนตัวของ Admin เท่านั้น (เจ้าของสั่ง 2026-10-16 ไม่ส่งเข้ากลุ่ม) ──
+    // ── สรุปปิดกะ POS → LINE ส่วนตัวของ Admin เสมอ + กลุ่มเมื่อติ๊ก line_shift_expense_groups ──
+    // (2026-10-16 เคยห้ามเข้ากลุ่ม · 2026-10-28 เจ้าของสั่งให้กลุ่มได้การ์ดเดียวกัน แทนข้อความค่าใช้จ่ายล้วน)
     public async notifyShiftClosed(tenantId: string, summary: any) {
         const client = this.getClient(tenantId)
         if (!client || !summary) return
@@ -309,9 +310,17 @@ class LineBotService {
                 console.error(`notifyShiftClosed push failed → ${line_user_id}:`, err)
             }
         }
+        if (this.shiftToGroups(tenantId)) await this.pushToAllGroups(tenantId, card)
     }
 
-    // ── ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ → LINE ส่วนตัวของ Admin/Master + Manager (ไม่เข้ากลุ่ม ตามสรุปปิดกะ) ──
+    // ponytail: ชื่อคอลัมน์เดิมยังเป็น line_shift_expense_groups — ตอนนี้คุม "สรุปปิดกะเข้ากลุ่ม" ทั้งใบ
+    private shiftToGroups(tenantId: string): boolean {
+        const cfg = getDb().prepare('SELECT line_shift_expense_groups FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+        return cfg?.line_shift_expense_groups === 1
+    }
+
+    // ── ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ → LINE ส่วนตัวของ Admin/Master + Manager ──
+    // กลุ่มไม่ได้ข้อความนี้ — ได้การ์ดสรุปปิดกะแทน (เงินออกลิ้นชักอยู่ในหัวข้อ "ซื้อสูงสุด")
     // ไม่ต้องอนุมัติ แต่เจ้าของต้องรู้ทุกรายการ (เจ้าของสั่ง 2026-10-22)
     public async notifyShiftExpenses(
         tenantId: string,
@@ -338,8 +347,6 @@ class LineBotService {
                 console.error(`notifyShiftExpenses push failed → ${lineUserId}:`, err)
             }
         }
-        const cfg = db.prepare('SELECT line_shift_expense_groups FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
-        if (cfg?.line_shift_expense_groups === 1) await this.pushToAllGroups(tenantId, msg)
     }
 
     // ── Approval notifications (Samsung One UI 9 Flex Card) ───────────────────

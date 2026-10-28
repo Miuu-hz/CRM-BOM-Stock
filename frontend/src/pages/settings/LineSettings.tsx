@@ -414,7 +414,7 @@ export default function LineSettings() {
   )
 }
 
-// ค่าใช้จ่ายเงินสดตอนปิดกะ ส่ง LINE หา admin/manager รายคนเสมอ — ติ๊กนี้ให้ส่งเข้ากลุ่มที่ผูกไว้ด้วย
+// การ์ดสรุปปิดกะ ส่ง LINE หา admin รายคนเสมอ — ติ๊กนี้ให้ส่งการ์ดเดียวกันเข้ากลุ่มที่ผูกไว้ด้วย
 function ShiftExpenseGroupToggle() {
   const [on, setOn] = useState<boolean | null>(null)
   useEffect(() => {
@@ -442,8 +442,8 @@ function ShiftExpenseGroupToggle() {
           className="rounded bg-[var(--bg)] border-[var(--border)] text-[var(--primary)] focus:ring-phopy-indigo"
         />
         <label htmlFor="line_shift_expense_groups" className="text-[var(--fg-2)]">
-          ส่งแจ้งเตือนค่าใช้จ่ายตอนปิดกะเข้ากลุ่ม LINE ด้วย
-          <span className="block text-xs text-[var(--fg-4)]">ปกติส่งหา Admin/Manager รายคนอยู่แล้ว</span>
+          ส่งสรุปปิดกะ (ยอดขาย · เงินในลิ้นชัก · ขายดี/ซื้อ) เข้ากลุ่ม LINE ด้วย
+          <span className="block text-xs text-[var(--fg-4)]">การ์ดเดียวกับที่ส่งหา Admin รายคน — ทุกคนในกลุ่มจะเห็นเงินขาด/เกิน</span>
         </label>
       </div>
     </div>

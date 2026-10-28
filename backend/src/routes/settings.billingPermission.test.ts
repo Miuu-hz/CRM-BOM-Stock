@@ -93,7 +93,12 @@ describe('เอกสารขายรับ VAT แค่ 0 หรืออ�
   })
 })
 
-describe('แจ้งค่าใช้จ่ายปิดกะเข้ากลุ่ม LINE', () => {
+describe('สรุปปิดกะเข้ากลุ่ม LINE', () => {
+  const summary = {
+    shiftNumber: 'SH-1', shopName: 'ร้าน', openedAt: '2026-10-28T01:00:00Z', closedAt: '2026-10-28T10:00:00Z', closedByName: 'แคชเชียร์',
+    billCount: 3, totalRevenue: 450, cashRevenue: 300, bankRevenue: 150, expectedCash: 300, countedCash: 300, difference: 0,
+    topSales: [], buys: { total: 50, top: [{ label: 'น้ำแข็ง', sub: 'เงินออกลิ้นชัก', amount: 50 }] }, alerts: { voids: 0, itemVoids: 0, discountTotal: 0 },
+  }
   async function run(groupsOn: boolean) {
     const a = admin()
     if (groupsOn) expect((await put(a.token, { line_shift_expense_groups: true })).status).toBe(200)
@@ -102,18 +107,20 @@ describe('แจ้งค่าใช้จ่ายปิดกะเข้า�
     vi.spyOn(lineBotService as any, 'adminLineUsers').mockReturnValue([{ line_user_id: 'U-admin' }])
     const groups = vi.spyOn(lineBotService, 'pushToAllGroups').mockResolvedValue(undefined)
     await lineBotService.notifyShiftExpenses(a.tenantId, { shiftNumber: 'SH-1', expenses: [{ reason: 'น้ำแข็ง', amount: 50 }] })
+    await lineBotService.notifyShiftClosed(a.tenantId, summary)
     return { push, groups }
   }
 
   it('ปิดอยู่ (ค่าตั้งต้น) → ส่งรายคนอย่างเดียว', async () => {
     const { push, groups } = await run(false)
-    expect(push).toHaveBeenCalledWith('U-admin', expect.anything())
+    expect(push).toHaveBeenCalledWith('U-admin', expect.objectContaining({ type: 'flex' }))
     expect(groups).not.toHaveBeenCalled()
   })
 
-  it('เปิด → ส่งรายคนและเข้ากลุ่ม', async () => {
+  it('เปิด → กลุ่มได้การ์ดสรุปปิดกะใบเดียวกับ admin (ไม่ใช่ข้อความค่าใช้จ่ายล้วน)', async () => {
     const { push, groups } = await run(true)
-    expect(push).toHaveBeenCalled()
+    const adminCard = push.mock.calls.find(c => c[1]?.type === 'flex')?.[1]
     expect(groups).toHaveBeenCalledTimes(1)
+    expect(groups.mock.calls[0][1]).toBe(adminCard)
   })
 })
