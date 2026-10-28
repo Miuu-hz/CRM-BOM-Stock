@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, Plus, Search, Pencil, UserMinus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, OrgUnit, Shift } from '../../services/hr.service'
+import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, OrgUnit, PayItem, Shift } from '../../services/hr.service'
 
 const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   MONTHLY: 'รายเดือน',
@@ -80,6 +80,8 @@ export default function Employees() {
   const [editing, setEditing] = useState<Employee | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
   const [saving, setSaving] = useState(false)
+  const [payItems, setPayItems] = useState<PayItem[]>([])
+  const [empPayItems, setEmpPayItems] = useState<Record<string, { checked: boolean; amount: string }>>({})
 
   const [offboardTarget, setOffboardTarget] = useState<Employee | null>(null)
   const [offboardDate, setOffboardDate] = useState(todayStr())
@@ -115,6 +117,8 @@ export default function Employees() {
   const openCreate = () => {
     setEditing(null)
     setForm(emptyForm())
+    setEmpPayItems({})
+    hrService.getPayItems?.().then((items) => setPayItems((items || []).filter((i) => i.is_active !== 0))).catch(() => {})
     setModalOpen(true)
   }
 
@@ -141,6 +145,22 @@ export default function Employees() {
       shift_id: emp.shift_id || '',
       notes: emp.notes || '',
     })
+    setEmpPayItems({})
+    if (hrService.getPayItems && hrService.getEmployeePayItems) {
+      Promise.all([hrService.getPayItems(), hrService.getEmployeePayItems(emp.id)])
+        .then(([items, assigned]) => {
+          setPayItems((items || []).filter((i) => i.is_active !== 0))
+          const map: Record<string, { checked: boolean; amount: string }> = {}
+          for (const a of assigned || []) {
+            map[a.pay_item_id] = {
+              checked: true,
+              amount: a.amount !== null && a.amount !== undefined ? String(a.amount) : '',
+            }
+          }
+          setEmpPayItems(map)
+        })
+        .catch(() => {})
+    }
     setModalOpen(true)
   }
 
@@ -173,11 +193,23 @@ export default function Employees() {
         shift_id: form.shift_id || null,
         notes: form.notes.trim() || null,
       }
+      const selectedPayItems = Object.entries(empPayItems)
+        .filter(([, v]) => v.checked)
+        .map(([pay_item_id, v]) => ({
+          pay_item_id,
+          amount: v.amount.trim() === '' ? null : Number(v.amount),
+        }))
       if (editing) {
         await hrService.updateEmployee(editing.id, payload)
+        if (hrService.updateEmployeePayItems) {
+          await hrService.updateEmployeePayItems(editing.id, selectedPayItems)
+        }
         toast.success('บันทึกข้อมูลพนักงานแล้ว')
       } else {
-        await hrService.createEmployee(payload)
+        const created = await hrService.createEmployee(payload)
+        if (created?.id && hrService.updateEmployeePayItems && selectedPayItems.length > 0) {
+          await hrService.updateEmployeePayItems(created.id, selectedPayItems)
+        }
         toast.success('เพิ่มพนักงานแล้ว')
       }
       setModalOpen(false)
@@ -550,6 +582,60 @@ export default function Employees() {
                 />
                 <label htmlFor="sso_enrolled" className="text-sm text-[var(--fg-2)]">ขึ้นทะเบียนประกันสังคม (SSO)</label>
               </div>
+
+              {payItems.length > 0 && (
+                <div className="border-t border-[var(--border)] pt-3 space-y-2">
+                  <div className="text-xs font-semibold text-[var(--fg-2)]">
+                    สวัสดิการ / รายได้ประจำ (เว้นว่างจำนวนเงินเพื่อใช้ค่าเริ่มต้นของรายการ)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {payItems.map((item) => {
+                      const state = empPayItems[item.id] || { checked: false, amount: '' }
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]"
+                        >
+                          <label className="flex items-center gap-2 text-xs text-[var(--fg-1)] cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              checked={state.checked}
+                              onChange={(e) =>
+                                setEmpPayItems({
+                                  ...empPayItems,
+                                  [item.id]: { ...state, checked: e.target.checked },
+                                })
+                              }
+                            />
+                            <span>
+                              {item.name}{' '}
+                              <span className="text-[var(--fg-3)]">
+                                ({item.calc === 'PER_DAY' ? 'ต่อวัน' : 'ต่อเดือน'} · {item.default_amount.toLocaleString('th-TH')} ฿)
+                              </span>
+                            </span>
+                          </label>
+                          {state.checked && (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder={String(item.default_amount)}
+                              value={state.amount}
+                              onChange={(e) =>
+                                setEmpPayItems({
+                                  ...empPayItems,
+                                  [item.id]: { ...state, amount: e.target.value },
+                                })
+                              }
+                              className="w-24 px-2 py-1 text-xs text-right rounded bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-1)]"
+                            />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border)]">
                 <button

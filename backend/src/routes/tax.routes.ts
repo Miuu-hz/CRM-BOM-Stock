@@ -271,6 +271,12 @@ function syncTaxData(tenantId: string) {
   syncVatOutputFromSalesInvoices(tenantId)
   syncWhtFromSupplierPayments(tenantId)
   syncWhtReceivedFromCustomerWht(tenantId)
+  const payrollPeriods = db
+    .prepare("SELECT DISTINCT period FROM payroll_runs WHERE tenant_id = ? AND status IN ('POSTED', 'PAID')")
+    .all(tenantId) as { period: string }[]
+  for (const r of payrollPeriods) {
+    if (r.period) ensurePeriod(tenantId, `${r.period}-01`)
+  }
 }
 
 function computeCitForPeriod(tenantId: string, startDate: string, endDate: string) {
@@ -380,7 +386,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
         data: {
           periodId: null,
           vat: { output: 0, input: 0, net: 0, undeductible: 0 },
-          wht: { collected: 0, paid: 0, pnd3: 0, pnd53: 0 },
+          wht: { collected: 0, paid: 0, pnd3: 0, pnd53: 0, pnd1: 0 },
           cit: { revenue: 0, expense: 0, netProfit: 0, estimatedTax: 0, taxRate: 20, isSme: true, effectiveRate: 0 },
           alerts: []
         }
@@ -388,8 +394,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     }
 
     const period = db.prepare(
-      'SELECT start_date, end_date FROM tax_periods WHERE tenant_id = ? AND id = ?'
-    ).get(tenantId, currentPeriodId) as { start_date: string; end_date: string } | undefined
+      'SELECT year, month, start_date, end_date FROM tax_periods WHERE tenant_id = ? AND id = ?'
+    ).get(tenantId, currentPeriodId) as { year: number; month: number; start_date: string; end_date: string } | undefined
 
     const vatSummary = db.prepare(
       `SELECT
@@ -407,6 +413,19 @@ router.get('/dashboard', async (req: Request, res: Response) => {
          SUM(CASE WHEN transaction_type = 'WHT' AND wht_form = 'PND53' THEN tax_amount ELSE 0 END) AS wht_pnd53
        FROM tax_transactions WHERE tenant_id = ? AND period_id = ?`
     ).get(tenantId, currentPeriodId) as any
+
+    const periodYm = period ? periodMonthKey(period.year, period.month) : null
+    const pnd1Row = periodYm
+      ? (db
+          .prepare(
+            `SELECT COALESCE(SUM(prl.wht), 0) AS wht_pnd1
+             FROM payroll_run_lines prl
+             JOIN payroll_runs pr ON pr.id = prl.run_id AND pr.tenant_id = prl.tenant_id
+             WHERE pr.tenant_id = ? AND pr.period = ? AND pr.status IN ('POSTED', 'PAID')`
+          )
+          .get(tenantId, periodYm) as { wht_pnd1: number } | undefined)
+      : undefined
+    const pnd1 = Math.round(((pnd1Row?.wht_pnd1 || 0) + 1e-9) * 100) / 100
 
     const cit = period
       ? computeCitForPeriod(tenantId, period.start_date, period.end_date)
@@ -429,7 +448,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
           paid: whtSummary?.wht_paid || 0,
           collected: whtSummary?.wht_collected || 0,
           pnd3: whtSummary?.wht_pnd3 || 0,
-          pnd53: whtSummary?.wht_pnd53 || 0
+          pnd53: whtSummary?.wht_pnd53 || 0,
+          pnd1
         },
         cit,
         alerts: buildAlerts(tenantId, currentPeriodId)

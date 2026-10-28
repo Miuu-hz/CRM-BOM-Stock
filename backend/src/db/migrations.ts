@@ -3093,6 +3093,72 @@ export function runMonthCloseMigrations(db: any): void {
       db.exec(`ALTER TABLE employees ADD COLUMN shift_id TEXT NULL`)
     } catch { /* column already exists */ }
   } catch (e) { console.error('⚠️ HR Phase 3b migration error:', e) }
+
+  // ── HR Phase 2b: ตั้งค่าเงินเดือน, สวัสดิการ/เงินได้เพิ่มเติม, และรอบจ่ายเงินเดือน ──
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS hr_settings (
+        tenant_id TEXT PRIMARY KEY,
+        settings TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS pay_items (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        taxable INTEGER NOT NULL DEFAULT 1,
+        ssoable INTEGER NOT NULL DEFAULT 0,
+        calc TEXT NOT NULL DEFAULT 'FIXED' CHECK (calc IN ('FIXED','PER_DAY')),
+        default_amount REAL NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT,
+        UNIQUE(tenant_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS employee_pay_items (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        pay_item_id TEXT NOT NULL,
+        amount REAL NULL,
+        UNIQUE(employee_id, pay_item_id)
+      );
+      CREATE TABLE IF NOT EXISTS payroll_runs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        period TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('DRAFT','APPROVED','POSTED','PAID','VOID')),
+        pay_date TEXT,
+        pay_account_id TEXT,
+        other_deduction_account_id TEXT,
+        accrual_je_ids TEXT,
+        payment_je_id TEXT,
+        created_by TEXT,
+        approved_by TEXT,
+        approved_at TEXT,
+        posted_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_runs_tenant_period
+        ON payroll_runs(tenant_id, period) WHERE status <> 'VOID';
+      CREATE TABLE IF NOT EXISTS payroll_run_lines (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        run_id TEXT NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+        employee_id TEXT NOT NULL,
+        inputs TEXT NOT NULL,
+        result TEXT NOT NULL,
+        gross REAL,
+        late REAL,
+        sso_employee REAL,
+        sso_employer REAL,
+        wht REAL,
+        other_deduction REAL,
+        net REAL,
+        UNIQUE(run_id, employee_id)
+      );
+    `)
+  } catch (e) { console.error('⚠️ HR Phase 2b migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

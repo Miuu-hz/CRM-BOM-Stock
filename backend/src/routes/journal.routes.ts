@@ -15,7 +15,7 @@ router.use(authenticate)
 // เดิมไม่ตรวจเลย พนักงานคนไหนก็ลงสมุดรายวันเองได้ — กระทบงบการเงินตรง (ตรวจสิทธิ์ 2026-09-29)
 router.use((req, res, next) => (req.method === 'GET' ? next() : requirePermission('accounting', 'write')(req, res, next)))
 
-interface JournalLineInput {
+export interface JournalLineInput {
   accountId: string
   description?: string
   debit?: number
@@ -40,7 +40,7 @@ function generateEntryNumber(tenantId: string, date: string): string {
   return formatDocumentNumber('JV', tenantId, 'JOURNAL', year, 5, date)
 }
 
-interface NewJournalEntry {
+export interface NewJournalEntry {
   date: string
   description: string
   referenceType?: string | null
@@ -53,7 +53,7 @@ interface NewJournalEntry {
 }
 
 // บันทึก JE แบบร่าง (is_posted = 0) — ใช้ร่วมกันระหว่างบันทึกเองกับบันทึกเงินเดือน
-function insertJournalEntry(tenantId: string, userName: string, e: NewJournalEntry): { id: string; entryNumber: string } {
+export function insertJournalEntry(tenantId: string, userName: string, e: NewJournalEntry): { id: string; entryNumber: string } {
   const id = generateId()
   const now = new Date().toISOString()
   let entryNumber = ''

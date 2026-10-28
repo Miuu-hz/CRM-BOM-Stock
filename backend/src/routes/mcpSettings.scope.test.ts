@@ -18,7 +18,7 @@ app.use('/api/mcp-settings', mcpSettingsRouter)
 const READ_ONLY_ALLOWLIST = new Set([
   'search', 'get_erp_guide', 'get_summary', 'get_sales', 'get_orders',
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
-  'get_stock_movements', 'explode_bom',
+  'get_stock_movements', 'explode_bom', 'hr_attendance_summary',
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
   'list_marketing_shops', 'platform_month_status', 'get_customer_insights', 'get_quotations',
   'check_unit_issues', 'get_lead_source_performance',
