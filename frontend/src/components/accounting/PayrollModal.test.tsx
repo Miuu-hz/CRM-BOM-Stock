@@ -57,6 +57,10 @@ describe('PayrollModal', () => {
     fireEvent.change(screen.getByLabelText('ประกันสังคมลูกจ้าง'), { target: { value: '750' } })
     fireEvent.change(screen.getByLabelText('ภาษีหัก ณ ที่จ่าย'), { target: { value: '250' } })
 
+    // ไม่แสดงตัวเลือกหน่วยธุรกิจ (Phase 0: จะดึงจากแผนกพนักงานใน Phase 1)
+    expect(screen.queryByLabelText('หน่วยธุรกิจ')).toBeNull()
+    expect(screen.queryByText('หน่วยธุรกิจ')).toBeNull()
+
     // Dr 15,000 + สมทบนายจ้าง 750 = Cr สุทธิ 14,000 + ปกส. 1,500 + ภาษี 250
     expect(screen.getByText('Dr. 15,750.00 / Cr. 15,750.00')).toBeTruthy()
     expect(screen.getByText('5314 เงินสมทบประกันสังคม (ส่วนนายจ้าง)')).toBeTruthy()
@@ -69,6 +73,7 @@ describe('PayrollModal', () => {
       payAccountId: 'bank', ssEmployer: 750,
       employees: [{ name: 'สมหญิง', gross: 15000, ssEmployee: 750, wht: 250, otherDeduction: 0 }],
     })
+    expect(body.businessUnit).toBeUndefined()
   })
 
   it('หักอื่นๆ ค่าเริ่มต้นลงบัญชี 2102 เจ้าหนี้อื่น', async () => {

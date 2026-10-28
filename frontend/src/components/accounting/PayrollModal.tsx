@@ -18,9 +18,6 @@ const netOf = (r: Row) => round2(num(r.gross) - num(r.ssEmployee) - num(r.wht) -
 const fmt = (n: number) => (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const pad = (n: number) => String(n).padStart(2, '0')
-const BUSINESS_UNITS = [
-  ['', '— ไม่ระบุ —'], ['RETAIL', 'หน้าร้าน (POS)'], ['WHOLESALE', 'ขายส่ง / ใบแจ้งหนี้'], ['ONLINE', 'ขายออนไลน์ (แพลตฟอร์ม)'], ['OTHER', 'อื่น ๆ'],
-] as const
 
 const inputCls = 'w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo'
 const cellCls = 'w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-md text-[var(--fg-1)] text-sm font-mono text-right focus:outline-none focus:border-phopy-indigo'
@@ -45,7 +42,6 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
   const [ssEmployerInput, setSsEmployerInput] = useState('')
   const [payAccountId, setPayAccountId] = useState(() => (payChoices.find(a => a.code?.startsWith('1102')) ?? payChoices[0])?.id ?? '')
   const [otherAccountId, setOtherAccountId] = useState(() => accounts.find(a => a.code === '2102')?.id ?? '')
-  const [businessUnit, setBusinessUnit] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -92,7 +88,6 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
         ssEmployer: ssEr,
         payAccountId,
         otherDeductionAccountId: other > 0 ? otherAccountId : undefined,
-        businessUnit: businessUnit || undefined,
         notes: notes.trim() || undefined,
       })
       if (res.data.success) {
@@ -139,7 +134,7 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
 
         <div className="overflow-y-auto p-5 space-y-5">
           {/* งวด + วันที่จ่าย + บัญชีจ่าย */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid sm:grid-cols-3 gap-3">
             <label className="block text-xs text-[var(--fg-3)]">งวดเดือน *
               <input type="month" value={period} onChange={e => setPeriod(e.target.value)} className={`${inputCls} mt-1.5`} />
             </label>
@@ -150,11 +145,6 @@ export function PayrollModal({ accounts, onClose, onSuccess }: {
               <select value={payAccountId} onChange={e => setPayAccountId(e.target.value)} className={`${inputCls} mt-1.5`}>
                 <option value="">— เลือกบัญชี —</option>
                 {payChoices.map(a => <option key={a.id} value={a.id}>{a.code} – {a.name}</option>)}
-              </select>
-            </label>
-            <label className="block text-xs text-[var(--fg-3)]">หน่วยธุรกิจ
-              <select value={businessUnit} onChange={e => setBusinessUnit(e.target.value)} className={`${inputCls} mt-1.5`}>
-                {BUSINESS_UNITS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
             </label>
           </div>
