@@ -182,6 +182,7 @@ import { startBackupScheduler } from './services/backup.scheduler'
 import qcRoutes from './routes/qc.routes'
 import subcontractRoutes from './routes/subcontract.routes'
 import hrRoutes from './routes/hr.routes'
+import hrAttendanceRoutes from './routes/hr.attendance.routes'
 
 
 import { setupMcpRoutes } from './mcp/server'
@@ -401,6 +402,7 @@ app.use(['/mcp', '/mcp/*'], express.json({ limit: '15mb' }))
 // กันคนนอกยิงบอดี้ 10MB ให้ parse ก่อนโดนปฏิเสธ 401 (413 handler ภาษาไทยยังใช้ได้ตามเดิม)
 const largeJsonParser = express.json({ limit: '10mb' })
 app.use(['/api/settings/company', '/api/bank-accounts'], (req, res, next) => (req.headers.authorization ? largeJsonParser(req, res, next) : next()))
+app.use('/api/hr/attendance/import', express.json({ limit: '6mb' }))
 app.use('/qr/api', express.json({ limit: '16kb' }))  // หน้าลูกค้า QR ส่งแค่ตะกร้าเล็ก ๆ
 app.use(express.json({ limit: '1mb' }))
 
@@ -642,6 +644,7 @@ app.use('/api/kanban', kanbanSsoRoutes)
 app.use('/api/qc', qcRoutes)
 app.use('/api/subcontracts', subcontractRoutes)
 app.use('/api/hr', hrRoutes)
+app.use('/api/hr', hrAttendanceRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)

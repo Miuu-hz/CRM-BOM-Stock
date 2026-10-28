@@ -68,9 +68,10 @@ router.get('/me', (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId
     const userId = (req.user as any)?.id || req.user!.userId
     const row = db.prepare(`
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
+      LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id
       WHERE e.tenant_id = ? AND e.user_id = ?
     `).get(tenantId, userId)
     if (!row) {
@@ -276,9 +277,10 @@ router.get('/employees', requirePermission('hr', 'read'), (req: Request, res: Re
     const { status, org_unit_id, q } = req.query
 
     let sql = `
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
+      LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id
       WHERE e.tenant_id = ?
     `
     const params: any[] = [tenantId]
@@ -312,9 +314,10 @@ router.get('/employees/:id', requirePermission('hr', 'read'), (req: Request, res
     const tenantId = req.user!.tenantId
     const canWrite = userCan(req.user!, 'hr', 'write')
     const row = db.prepare(`
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
+      LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id
       WHERE e.id = ? AND e.tenant_id = ?
     `).get(req.params.id, tenantId)
 
@@ -392,6 +395,14 @@ router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: 
       }
     }
 
+    const shiftId = body.shift_id != null && String(body.shift_id).trim() !== '' ? String(body.shift_id).trim() : null
+    if (shiftId) {
+      const sh = db.prepare('SELECT id FROM shifts WHERE id = ? AND tenant_id = ?').get(shiftId, tenantId)
+      if (!sh) {
+        return res.status(400).json({ success: false, message: 'ไม่พบกะงานในบริษัทนี้' })
+      }
+    }
+
     const userId = body.user_id != null && String(body.user_id).trim() !== '' ? String(body.user_id).trim() : null
     if (userId) {
       const u = db.prepare('SELECT id FROM users WHERE id = ? AND tenant_id = ?').get(userId, tenantId)
@@ -441,19 +452,20 @@ router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: 
         id, tenant_id, code, first_name, last_name, nickname, org_unit_id, position,
         employment_type, base_wage, start_date, end_date, status,
         national_id, bank_name, bank_account, phone, email, address,
-        sso_enrolled, tax_allowances, user_id, device_pin, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        sso_enrolled, tax_allowances, user_id, device_pin, shift_id, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, tenantId, code, firstName, lastName, nickname, orgUnitId, position,
       employmentType, baseWage, startDate, endDate, status,
       nationalId, bankName, bankAccount, phone, email, address,
-      ssoEnrolled, taxAllowances, userId, devicePin, notes, now, now
+      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, notes, now, now
     )
 
     const created = db.prepare(`
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
+      LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id
       WHERE e.id = ? AND e.tenant_id = ?
     `).get(id, tenantId)
 
@@ -537,6 +549,16 @@ router.put('/employees/:id', requirePermission('hr', 'write'), (req: Request, re
       }
     }
 
+    const shiftId = body.shift_id !== undefined
+      ? (body.shift_id != null && String(body.shift_id).trim() !== '' ? String(body.shift_id).trim() : null)
+      : (existing.shift_id ?? null)
+    if (shiftId) {
+      const sh = db.prepare('SELECT id FROM shifts WHERE id = ? AND tenant_id = ?').get(shiftId, tenantId)
+      if (!sh) {
+        return res.status(400).json({ success: false, message: 'ไม่พบกะงานในบริษัทนี้' })
+      }
+    }
+
     const userId = body.user_id !== undefined
       ? (body.user_id != null && String(body.user_id).trim() !== '' ? String(body.user_id).trim() : null)
       : existing.user_id
@@ -581,20 +603,21 @@ router.put('/employees/:id', requirePermission('hr', 'write'), (req: Request, re
         code = ?, first_name = ?, last_name = ?, nickname = ?, org_unit_id = ?, position = ?,
         employment_type = ?, base_wage = ?, start_date = ?, end_date = ?, status = ?,
         national_id = ?, bank_name = ?, bank_account = ?, phone = ?, email = ?, address = ?,
-        sso_enrolled = ?, tax_allowances = ?, user_id = ?, device_pin = ?, notes = ?, updated_at = ?
+        sso_enrolled = ?, tax_allowances = ?, user_id = ?, device_pin = ?, shift_id = ?, notes = ?, updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(
       code, firstName, optStr('last_name'), optStr('nickname'), orgUnitId, optStr('position'),
       employmentType, baseWage, startDate, endDate, status,
       optStr('national_id'), optStr('bank_name'), optStr('bank_account'), optStr('phone'), optStr('email'), optStr('address'),
-      ssoEnrolled, taxAllowances, userId, devicePin, optStr('notes'), now,
+      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, optStr('notes'), now,
       id, tenantId
     )
 
     const updated = db.prepare(`
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
+      LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id
       WHERE e.id = ? AND e.tenant_id = ?
     `).get(id, tenantId)
 

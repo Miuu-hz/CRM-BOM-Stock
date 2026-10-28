@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, Plus, Search, Pencil, UserMinus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, OrgUnit } from '../../services/hr.service'
+import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, OrgUnit, Shift } from '../../services/hr.service'
 
 const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   MONTHLY: 'รายเดือน',
@@ -39,6 +39,7 @@ interface FormState {
   address: string
   sso_enrolled: boolean
   device_pin: string
+  shift_id: string
   notes: string
 }
 
@@ -62,12 +63,14 @@ const emptyForm = (): FormState => ({
   address: '',
   sso_enrolled: true,
   device_pin: '',
+  shift_id: '',
   notes: '',
 })
 
 export default function Employees() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([])
+  const [shifts, setShifts] = useState<Shift[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterOrgUnit, setFilterOrgUnit] = useState('')
@@ -86,16 +89,18 @@ export default function Employees() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [emps, units] = await Promise.all([
+      const [emps, units, shiftList] = await Promise.all([
         hrService.getEmployees({
           status: filterStatus || undefined,
           org_unit_id: filterOrgUnit || undefined,
           q: search.trim() || undefined,
         }),
         hrService.getOrgUnits(),
+        typeof hrService.getShifts === 'function' ? hrService.getShifts().catch(() => []) : Promise.resolve([]),
       ])
       setEmployees(emps)
       setOrgUnits(units)
+      setShifts(shiftList)
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.response?.data?.error || 'โหลดข้อมูลพนักงานไม่สำเร็จ')
     } finally {
@@ -133,6 +138,7 @@ export default function Employees() {
       address: emp.address || '',
       sso_enrolled: emp.sso_enrolled !== 0,
       device_pin: emp.device_pin || '',
+      shift_id: emp.shift_id || '',
       notes: emp.notes || '',
     })
     setModalOpen(true)
@@ -164,6 +170,7 @@ export default function Employees() {
         address: form.address.trim() || null,
         sso_enrolled: form.sso_enrolled ? 1 : 0,
         device_pin: form.device_pin.trim() || null,
+        shift_id: form.shift_id || null,
         notes: form.notes.trim() || null,
       }
       if (editing) {
@@ -515,6 +522,22 @@ export default function Employees() {
                     onChange={(e) => setForm({ ...form, device_pin: e.target.value })}
                     className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--fg-2)] mb-1">กะงาน (Shift)</label>
+                  <select
+                    aria-label="กะงาน"
+                    value={form.shift_id}
+                    onChange={(e) => setForm({ ...form, shift_id: e.target.value })}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  >
+                    <option value="">-- ไม่ระบุกะงาน --</option>
+                    {shifts.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.start_time}–{s.end_time})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

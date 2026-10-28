@@ -3043,6 +3043,56 @@ export function runMonthCloseMigrations(db: any): void {
       }
     }
   } catch (e) { console.error('⚠️ HR Phase 1 migration error:', e) }
+
+  // ── HR Phase 3b: shifts, attendance_logs, attendance_imports ────────────────
+  // ponytail: Labour Act s.114 requires wage/time records kept >= 2 years — never delete attendance_logs when an employee leaves; purge-after-retention (>2y cron/job) is deferred.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS shifts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        grace_minutes INTEGER NOT NULL DEFAULT 0,
+        break_minutes INTEGER NOT NULL DEFAULT 60,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT,
+        UNIQUE(tenant_id, name)
+      );
+
+      CREATE TABLE IF NOT EXISTS attendance_logs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        device_pin TEXT NOT NULL,
+        punched_at TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('FILE','MCP','WEB','DEVICE')),
+        import_id TEXT,
+        created_at TEXT,
+        UNIQUE(tenant_id, device_pin, punched_at)
+      );
+      CREATE INDEX IF NOT EXISTS idx_attendance_logs_tenant_punched
+        ON attendance_logs(tenant_id, punched_at);
+
+      CREATE TABLE IF NOT EXISTS attendance_imports (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        filename TEXT,
+        source TEXT,
+        total INTEGER,
+        inserted INTEGER,
+        duplicates INTEGER,
+        skipped INTEGER,
+        created_by TEXT,
+        created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_attendance_imports_tenant_created
+        ON attendance_imports(tenant_id, created_at);
+    `)
+    try {
+      db.exec(`ALTER TABLE employees ADD COLUMN shift_id TEXT NULL`)
+    } catch { /* column already exists */ }
+  } catch (e) { console.error('⚠️ HR Phase 3b migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

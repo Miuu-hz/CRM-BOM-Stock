@@ -6,6 +6,7 @@ import {
   BookOpen,
   Calculator,
   ClipboardCheck,
+  Clock,
   Factory,
   FileText,
   Landmark,
@@ -112,6 +113,7 @@ const menuItems: MenuItem[] = [
     subMenu: [
       { path: '/hr/employees', tKey: 'sidebar.employees', icon: Users },
       { path: '/hr/org', tKey: 'sidebar.orgUnits', icon: Building2 },
+      { path: '/hr/attendance', tKey: 'sidebar.attendance', icon: Clock },
     ],
   },
   { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },

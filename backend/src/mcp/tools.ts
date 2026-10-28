@@ -23,13 +23,14 @@ import { registerBindingTools } from './tools/binding'
 import { registerPurchaseBillingTools } from './tools/purchaseBilling'
 import { registerSalesBillingTools } from './tools/salesBilling'
 import { registerMonthCloseTools } from './tools/monthClose'
+import { registerHrTools } from './tools/hr'
 import { loadPermUser, isBasicUser } from '../services/rbac.service'
 import { isCashierOnly } from '../middleware/cashierScope'
 
 // โหมดอ่านอย่างเดียว (audit) — ผู้ใช้ mcp_scope='readonly' เห็นแค่ tool ใน allowlist นี้
 // allowlist (ไม่ใช่ denylist) เพื่อให้ tool เขียนข้อมูลตัวใหม่ในอนาคตถูกบล็อกโดยปริยาย
 // ต้องเช็คโค้ด handler จริงแล้วว่าไม่มี INSERT/UPDATE/DELETE ก่อนเพิ่มชื่อเข้ามาที่นี่
-const READ_ONLY_TOOLS = new Set([
+export const READ_ONLY_TOOLS = new Set([
   'search', 'get_erp_guide', 'get_summary', 'get_sales', 'get_orders',
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
   'get_stock_movements', 'explode_bom',
@@ -37,6 +38,7 @@ const READ_ONLY_TOOLS = new Set([
   'list_marketing_shops', 'get_customer_insights', 'get_quotations', 'platform_month_status',
   'check_unit_issues', 'get_lead_source_performance',
   'get_close_checklist', 'get_close_pack',
+  'hr_attendance_summary',
 ])
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
@@ -82,6 +84,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerBindingTools(target, tenantId)
   registerPurchaseBillingTools(target, tenantId, userId, callerName, callerRole)
   registerSalesBillingTools(target, tenantId, userId, callerName, callerRole)
+  registerHrTools(target, tenantId, userId, callerName, callerRole)
 }
 
 export default registerTools

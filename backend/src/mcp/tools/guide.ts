@@ -28,6 +28,7 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - marketing: list_marketing_shops(...)
 - platform_month: platform_submit_file(...), platform_month_status(...), platform_propose_sku_mapping(...)
 - month_close: get_close_checklist(...), get_close_pack(...), submit_close_adjustments(...)
+- hr: hr_import_attendance(...), hr_attendance_summary(...)
 - guide: get_erp_guide(...)
 (b) Role & scope gating:
 - Cashiers: cashier-only roles use POS; MCP registers zero tools.
@@ -218,7 +219,15 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - Receipts that match a sales invoice: send UNRECORDED_RECEIPT with invoice_id (the normal receive-payment service runs on approval), not an income account.
 - Lines posted to a header account (e.g. 1102 while 1102-01 exists): WRONG_ACCOUNT with ref_line_id and the sub-account as account_code.
 - In-transit deposits / payments the bank has not cleared yet: TIMING with ref_line_id (not posted, only explains the difference).
-- Never invent statement figures; if a statement is missing, ask the user.`
+- Never invent statement figures; if a statement is missing, ask the user.`,
+
+  hr: `(a) Tools & call order:
+1. hr_import_attendance(filename, content) -> parse ZKTeco .dat / CSV punches, deduplicate into attendance_logs, and return inserted, duplicates, skipped, and unmappedPins.
+2. Map any unmapped device PINs and assign employee work shifts in the HR web UI.
+3. hr_attendance_summary(from, to) -> compute per-employee attendance totals for a date range up to 62 days: daysWorked, lateMinutes, earlyLeaveMinutes, otCandidateMinutes, absentDays, plus noShift and unmappedPins.
+(b) Server guards & rules:
+- Requires tenant HR feature and hr:write for hr_import_attendance(...) or hr:read for hr_attendance_summary(...).
+- OT minutes are candidates that need supervisor approval before payroll.`
 }
 
 const TOPICS = Object.keys(GUIDE_TOPICS) as [string, ...string[]]
