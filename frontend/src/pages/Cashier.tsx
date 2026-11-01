@@ -1629,7 +1629,7 @@ export default function Cashier() {
 
       {/* Digital Receipt QR Modal — customer scans instead of taking a paper slip */}
       {showReceiptQR && currentBill?.receipt_qr && (
-        <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowReceiptQR(false)}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowReceiptQR(false)}>
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -1710,7 +1710,7 @@ export default function Cashier() {
 
       {/* Pay Action Issues Modal */}
       {payActionIssues && payActionIssues.length > 0 && (
-        <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -1942,7 +1942,7 @@ function CreateBillModal({ isOpen, onClose, onCreate }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -2045,7 +2045,7 @@ function AssignMemberModal({ onClose, onAssign }: {
   }, [query])
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -2214,7 +2214,7 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -2433,7 +2433,7 @@ function EditNameModal({ isOpen, onClose, currentName, onSave }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -2520,7 +2520,7 @@ function ItemNoteModal({ isOpen, onClose, itemName, initialNote, onSave }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -2687,7 +2687,7 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -2947,7 +2947,7 @@ function PriceOverrideModal({
 
   return (
     <div
-      className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <motion.div
@@ -2955,7 +2955,7 @@ function PriceOverrideModal({
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4"
       >
         {/* Header */}
         <div className="flex items-start justify-between">
@@ -3179,13 +3179,13 @@ function DiscountReasonModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4"
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4"
       >
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -3311,7 +3311,7 @@ function PaymentModal({ isOpen, onClose, total, totalWithRedeem, onPay, loyalty,
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -3523,7 +3523,7 @@ function ShiftModal({ mode, shift, blocking = false, hasOpenBills = false, onMan
   }
 
   return (
-    <div className={`fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm flex items-center justify-center p-4 ${blocking ? 'z-[60]' : 'z-50'}`} onClick={onClose}>
+    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 ${blocking ? 'z-[60]' : 'z-50'}`} onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-sm p-6 max-h-[85vh] overflow-y-auto">
@@ -3745,7 +3745,7 @@ function CashMovementModal({ shift, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
