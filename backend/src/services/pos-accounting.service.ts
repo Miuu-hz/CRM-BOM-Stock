@@ -240,6 +240,13 @@ class POSAccountingService {
       // เงินจากบิล POS ยังไม่ถึงบัญชีบริษัท ณ ตอนปิดบิล — ลงบัญชีพัก 1180 ไว้ก่อน
       // ทั้งบิลเงินสดและบิลโอน/QR แล้วไปปิดเป็นเงินสด/ธนาคารทีเดียวตอนปิดกะ
       // ponytail: บิลยอด 0 (ฟรีทั้งบิล) ไม่มีบรรทัดให้ลง — postJournal จะโยน จึงข้าม
+      const hasOverride = db.prepare(`
+        SELECT 1 FROM pos_bill_items
+        WHERE bill_id = ? AND original_price IS NOT NULL
+        LIMIT 1
+      `).get(bill.id)
+      const overrideNote = hasOverride ? ' (มีปรับราคา)' : ''
+
       let journalEntryId: string | undefined
       if (r2(bill.total_amount) !== 0 || r2(taxAmount) !== 0) {
         journalEntryId = postJournal({
@@ -247,7 +254,7 @@ class POSAccountingService {
           date: today,
           referenceType: 'POS_SALE',
           referenceId: bill.id,
-          description: `ขายหน้าร้าน - ${bill.bill_number} (${bill.display_name})`,
+          description: `ขายหน้าร้าน - ${bill.bill_number} (${bill.display_name})${overrideNote}`,
           createdBy: userId,
           businessUnit: 'RETAIL',
           lines: [

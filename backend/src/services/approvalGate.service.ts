@@ -17,6 +17,8 @@ import { can, Role, Department } from './rbac.service'
 export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_order' | 'pos_invoice'
   // หมวดบันทึกความเคลื่อนไหว POS — pos_discount มีเพดานใน approval_settings, ที่เหลือเป็น log อย่างเดียว
   | 'pos_discount' | 'pos_item_void' | 'pos_cash_move' | 'pos_shift_close'
+  // ปรับราคาขายรายรายการหน้า POS — log อย่างเดียว ไม่ต้องอนุมัติ (AUTO)
+  | 'pos_price_override'
   // ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ — log อย่างเดียว ไม่ต้องอนุมัติ แต่ต้องเห็นทุกรายการ (+ LINE)
   | 'pos_shift_expense'
   // ยกเลิก/void เอกสารขาย (SO, ใบแจ้งหนี้, ใบเสร็จ, ใบลดหนี้) — ต้องขออนุมัติเสมอ ไม่ขึ้นกับ approval_settings
@@ -59,6 +61,7 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   pos_cash_move: 'orders',
   pos_shift_close: 'orders',
   pos_shift_expense: 'orders',
+  pos_price_override: 'orders',
   sales_cancel: 'orders',
   purchase_cancel: 'purchase',
   close_adjust: 'accounting',

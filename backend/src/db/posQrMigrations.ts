@@ -160,6 +160,13 @@ export function runPosQrMigrations(db: any): void {
     // ยังดัน 950 → 990 ทุกครั้งที่บูต ตัวนี้รันต่อจากนั้นจึงได้ 950 เสมอ
     // ponytail: วางไว้ที่นี่เพราะ migrations.ts มีงานค้างของ session อื่น — ตอนเขา commit แล้วให้ลบบรรทัด 990 ที่โน่นแทน
     "UPDATE subscription_plans SET price_monthly = 950, price_yearly = 9500 WHERE code = 'business_plus' AND price_monthly = 990",
+
+    // ==================== ปรับราคาขายรายรายการ (POS price override) ====================
+    // เก็บราคาเดิมก่อนปรับ (NULL = ไม่เคยปรับราคา ใช้ unit_price ตามเมนู)
+    'ALTER TABLE pos_bill_items ADD COLUMN original_price REAL',
+    'ALTER TABLE pos_bill_items ADD COLUMN price_override_reason TEXT',
+    'ALTER TABLE pos_bill_items ADD COLUMN price_overridden_by TEXT',
+    'ALTER TABLE pos_bill_items ADD COLUMN price_overridden_at TEXT',
   ].forEach(sql => {
     try { db.exec(sql) } catch (e: any) {
       // ADD COLUMN ซ้ำ = รันไปแล้ว · error อื่นต้องเห็น ไม่งั้นตารางหายเงียบ ๆ

@@ -9,7 +9,7 @@ import { mintQrToken } from '../services/posQr.service'
 import { verifyBillMember } from '../services/posMember.service'
 import { recordPaidBill } from '../services/posGuest.service'
 import { billRewardConflict, useBillRewards, reservedPoints, availablePoints, InsufficientPointsError } from '../services/qrRewards.service'
-import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass, findPendingRequest, createRequest, posDiscountApprovalPct } from '../services/approvalGate.service'
+import { gateOrCreate, recordAutoAction, isApprovalRequired, hasBypass, findPendingRequest, createRequest, posDiscountApprovalPct, type Severity } from '../services/approvalGate.service'
 
 export { InsufficientPointsError }
 
@@ -529,6 +529,7 @@ router.post('/bills/:id/items', (req, res) => {
       WHERE bill_id = ? AND tenant_id = ? AND pos_menu_id = ?
         AND (sent_to_kds = 0 OR sent_to_kds IS NULL)
         AND COALESCE(TRIM(special_instructions), '') = ?
+        AND original_price IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM pos_redemptions r
           WHERE r.bill_item_id = pos_bill_items.id AND r.tenant_id = ?
@@ -639,8 +640,10 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     if ((item as any).sent_to_kds && Number(newQty) > (item as any).quantity) {
       const extra = Number(newQty) - (item as any).quantity
       db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name,
-          quantity, unit_price, total_price, special_instructions, created_by)
-        SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, ?, ?
+          quantity, unit_price, total_price, special_instructions, created_by,
+          original_price, price_override_reason, price_overridden_by, price_overridden_at)
+        SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, ?, ?,
+          original_price, price_override_reason, price_overridden_by, price_overridden_at
         FROM pos_bill_items WHERE id = ?`).run(generateId(), extra, extra, finalInstructions, (req as any).user!.userId, itemId)
       recalculateBillTotals(billId)
       return res.json({ success: true, message: 'Item updated successfully' })
@@ -707,6 +710,131 @@ router.delete('/bills/:billId/items/:itemId', (req, res) => {
   } catch (error) {
     console.error('Error deleting item:', error)
     res.status(500).json({ success: false, message: 'Failed to delete item' })
+  }
+})
+
+// ปรับราคาขายรายรายการ (Cashier price override)
+router.patch('/bills/:billId/items/:itemId/price', (req, res) => {
+  try {
+    const tenantId = (req as any).user!.tenantId
+    const { billId, itemId } = req.params
+    const { unit_price, reason } = req.body
+
+    const numPrice = Number(unit_price)
+    if (unit_price === undefined || unit_price === null || !Number.isFinite(numPrice) || numPrice < 0) {
+      return res.status(400).json({ success: false, message: 'Valid unit price (>= 0) required' })
+    }
+
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : ''
+    if (!trimmedReason || trimmedReason.length > 200) {
+      return res.status(400).json({ success: false, message: 'Reason is required (max 200 characters)' })
+    }
+
+    if (!findOpenBill(billId, tenantId)) {
+      return res.status(409).json(BILL_NOT_OPEN)
+    }
+
+    // Get current item scoped to tenant/bill
+    const itemStmt = db.prepare(`
+      SELECT bi.* FROM pos_bill_items bi
+      JOIN pos_running_bills b ON bi.bill_id = b.id
+      WHERE bi.id = ? AND bi.bill_id = ? AND b.tenant_id = ?
+    `)
+    const item = itemStmt.get(itemId, billId, tenantId) as any
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Item not found' })
+    }
+
+    // รายการของแถมจากการแลกแต้ม ห้ามปรับราคา
+    const isReward = db.prepare(`
+      SELECT 1 FROM pos_redemptions
+      WHERE tenant_id = ? AND bill_id = ? AND bill_item_id = ? AND status = 'RESERVED'
+    `).get(tenantId, billId, itemId)
+
+    if (isReward) {
+      return res.status(409).json({
+        success: false,
+        code: 'REWARD_ITEM_LOCKED',
+        message: 'รายการของแถมจากการแลกแต้มไม่สามารถปรับราคาได้',
+      })
+    }
+
+    const oldPrice = Number(item.unit_price)
+    const origPrice = item.original_price != null ? Number(item.original_price) : oldPrice
+    const isReset = numPrice === origPrice
+
+    const updatedOriginalPrice = isReset ? null : origPrice
+    const updatedReason = isReset ? null : trimmedReason
+    const updatedBy = isReset ? null : ((req as any).user?.name || (req as any).user?.email || (req as any).user?.userId || 'cashier')
+    const updatedAt = isReset ? null : new Date().toISOString()
+    const newTotal = item.quantity * numPrice
+
+    db.prepare(`
+      UPDATE pos_bill_items
+      SET unit_price = ?,
+          total_price = ?,
+          original_price = ?,
+          price_override_reason = ?,
+          price_overridden_by = ?,
+          price_overridden_at = ?
+      WHERE id = ? AND bill_id = ? AND (tenant_id = ? OR tenant_id IS NULL)
+    `).run(
+      numPrice,
+      newTotal,
+      updatedOriginalPrice,
+      updatedReason,
+      updatedBy,
+      updatedAt,
+      itemId,
+      billId,
+      tenantId
+    )
+
+    // Recalculate bill totals
+    recalculateBillTotals(billId)
+
+    // บันทึกความเคลื่อนไหวลงระบบ approval (สถานะ AUTO)
+    const difference = Math.abs((numPrice - oldPrice) * item.quantity)
+    const decrease = numPrice < oldPrice
+    const decreasePct = oldPrice > 0 ? ((oldPrice - numPrice) / oldPrice) * 100 : 0
+    const severity: Severity = (decreasePct >= 20 || numPrice === 0) ? 'high' : decrease ? 'medium' : 'info'
+
+    const bill = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ?').get(billId) as any
+    const billNumber = bill?.bill_number ?? billId
+    const gateUser = (req as any).user
+
+    recordAutoAction({
+      tenantId,
+      user: gateUser,
+      category: 'pos_price_override',
+      refType: 'pos_running_bills',
+      refId: billId,
+      amount: difference,
+      description: `บิล ${billNumber} ปรับราคา ${item.product_name} ฿${oldPrice} → ฿${numPrice} (x ${item.quantity}) เหตุผล: ${trimmedReason}`,
+      payload: {
+        severity,
+        billId,
+        itemId,
+        oldPrice,
+        newPrice: numPrice,
+        originalPrice: updatedOriginalPrice,
+        reason: trimmedReason,
+      },
+    })
+
+    return res.json({
+      success: true,
+      data: {
+        id: itemId,
+        unit_price: numPrice,
+        original_price: updatedOriginalPrice,
+        total_price: newTotal,
+      },
+    })
+  } catch (error) {
+    console.error('Error updating item price:', error)
+    return res.status(500).json({ success: false, message: 'Failed to update item price' })
   }
 })
 

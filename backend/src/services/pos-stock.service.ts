@@ -433,6 +433,10 @@ class POSStockService {
             `)
             updateStock.run(deductQtyInBase, now(), ing.stock_item_id, tenantId)
 
+            const priceNote = item.original_price != null && item.original_price !== item.unit_price
+              ? ` (ปรับราคา ฿${item.original_price}→฿${item.unit_price})`
+              : ''
+
             const movementId = generateId()
             const movementStmt = db.prepare(`
               INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_by, created_at)
@@ -446,7 +450,7 @@ class POSStockService {
               ingredientUnit,
               Number(ing.quantity_used) * item.quantity,
               bill.bill_number,
-              `POS Sale - ${item.product_name}`,
+              `POS Sale - ${item.product_name}${priceNote}`,
               userId,
               now()
             )
@@ -527,7 +531,7 @@ class POSStockService {
 
       // Get all deductions for this bill
       const deductionsStmt = db.prepare(`
-        SELECT psd.*, bi.product_name
+        SELECT psd.*, bi.product_name, bi.unit_price, bi.original_price
         FROM pos_stock_deductions psd
         JOIN pos_bill_items bi ON psd.bill_item_id = bi.id
         WHERE bi.bill_id = ? AND psd.returned = 0
@@ -546,6 +550,10 @@ class POSStockService {
           `)
           returnStock.run(deduction.quantity_deducted, now(), deduction.stock_item_id, tenantId)
 
+          const priceNote = deduction.original_price != null && deduction.original_price !== deduction.unit_price
+            ? ` (ปรับราคา ฿${deduction.original_price}→฿${deduction.unit_price})`
+            : ''
+
           const movementId = generateId()
           const movementStmt = db.prepare(`
             INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_by, created_at)
@@ -557,7 +565,7 @@ class POSStockService {
             deduction.stock_item_id,
             deduction.quantity_deducted,
             bill.bill_number,
-            `Cancelled - ${deduction.product_name}${reason ? ': ' + reason : ''}`,
+            `Cancelled - ${deduction.product_name}${priceNote}${reason ? ': ' + reason : ''}`,
             userId,
             now()
           )
