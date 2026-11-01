@@ -65,6 +65,19 @@ interface BillItem {
   total_price: number
   special_instructions?: string
   sent_to_kds: boolean
+  is_reward?: boolean
+  original_price?: number | null
+  price_override_reason?: string | null
+  price_overridden_by?: string | null
+  price_overridden_at?: string | null
+}
+
+const isRewardItem = (item: BillItem) => {
+  return Boolean(
+    item.is_reward ||
+    item.product_name?.startsWith('🎁') ||
+    (item.unit_price === 0 && item.special_instructions?.includes('แต้ม'))
+  )
 }
 
 interface CRMCustomer {
@@ -178,6 +191,8 @@ export default function Cashier() {
   const [discount, setDiscount] = useState<{ type: 'pct' | 'fixed'; value: number }>({ type: 'pct', value: 0 })
   const [discountReason, setDiscountReason] = useState('')
   const [showDiscountReasonModal, setShowDiscountReasonModal] = useState(false)
+  const [editingItemPrice, setEditingItemPrice] = useState<BillItem | null>(null)
+  const [isSavingPrice, setIsSavingPrice] = useState(false)
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
   const [expandedRow, setExpandedRow] = useState<'discount' | 'extra' | null>(null)
   const [billing, setBilling] = useState<BillingConfig>(loadBillingConfig)
@@ -572,6 +587,28 @@ export default function Cashier() {
     const t = billTotals(bill, billing, { extraCharge: extraCharge.amount })
     return Math.round((t.subtotal + t.serviceChargeAmount + t.extraCharge) * pct / 100)
   }
+  const handleSaveItemPrice = async (newUnitPrice: number, reason: string) => {
+    if (!currentBill || !editingItemPrice) return
+    setIsSavingPrice(true)
+    try {
+      const res = await posBillService.updateItemPrice(currentBill.id, editingItemPrice.id, {
+        unit_price: newUnitPrice,
+        reason,
+      })
+      if (res.success) {
+        toast.success(reason === 'คืนราคาเดิม' ? 'คืนราคาเดิมสำเร็จ' : 'ปรับราคาต่อหน่วยสำเร็จ')
+        setEditingItemPrice(null)
+        const billRes = await posBillService.getBill(currentBill.id)
+        if (billRes.success) setCurrentBill(billRes.data)
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดในการปรับราคา'
+      toast.error(msg)
+    } finally {
+      setIsSavingPrice(false)
+    }
+  }
+
   const handleSaveDiscountReason = async (newReason: string) => {
     setDiscountReason(newReason)
     if (currentBill?.id) {
@@ -1196,7 +1233,7 @@ export default function Cashier() {
                               </button>
                             )}
                           </div>
-                          <div className="flex items-center gap-4 mt-2">
+                          <div className="flex items-center justify-between gap-2 mt-2">
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => updateQuantity(item.id, -1, item.quantity)}
@@ -1214,9 +1251,57 @@ export default function Cashier() {
                                 <Plus className="w-3 h-3" />
                               </button>
                             </div>
-                            <span className="text-sm text-success">
-                              ฿{item.total_price.toLocaleString()}
-                            </span>
+
+                            <div className="flex items-center gap-2">
+                              <div className="text-right">
+                                {item.original_price != null && item.original_price !== item.unit_price ? (
+                                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                    <span className="text-xs text-[var(--fg-4)] line-through">
+                                      ฿{item.original_price.toLocaleString()}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      disabled={!isBillEditable(currentBill) || isRewardItem(item)}
+                                      onClick={() => setEditingItemPrice(item)}
+                                      className="text-xs font-semibold text-warning hover:underline disabled:no-underline disabled:cursor-default"
+                                      title={item.price_override_reason || 'ปรับราคา'}
+                                    >
+                                      ฿{item.unit_price.toLocaleString()}
+                                    </button>
+                                    <span
+                                      title={item.price_override_reason || 'ปรับราคา'}
+                                      className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-500/15 text-amber-500 border border-amber-500/30 cursor-help"
+                                    >
+                                      ปรับราคา
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={!isBillEditable(currentBill) || isRewardItem(item)}
+                                    onClick={() => setEditingItemPrice(item)}
+                                    className="text-xs text-[var(--fg-4)] hover:text-phopy-indigo transition-colors disabled:hover:text-[var(--fg-4)] disabled:cursor-default"
+                                    title="แตะเพื่อปรับราคาต่อหน่วย"
+                                  >
+                                    @ ฿{item.unit_price.toLocaleString()}
+                                  </button>
+                                )}
+                                <div className="text-sm font-semibold text-success">
+                                  ฿{item.total_price.toLocaleString()}
+                                </div>
+                              </div>
+
+                              {isBillEditable(currentBill) && !isRewardItem(item) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingItemPrice(item)}
+                                  title="ปรับราคาต่อหน่วย"
+                                  className="p-1.5 rounded-lg text-[var(--fg-4)] hover:text-phopy-indigo hover:bg-[var(--surface-2)] transition-colors opacity-70 group-hover:opacity-100"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1584,6 +1669,15 @@ export default function Cashier() {
         onClose={() => setShowEditNameModal(false)}
         currentName={currentBill?.display_name || ''}
         onSave={updateBillName}
+      />
+
+      {/* Price Override Modal */}
+      <PriceOverrideModal
+        isOpen={!!editingItemPrice}
+        item={editingItemPrice}
+        onClose={() => setEditingItemPrice(null)}
+        onSave={handleSaveItemPrice}
+        isSaving={isSavingPrice}
       />
 
       {/* Discount Reason Modal */}
@@ -2786,6 +2880,255 @@ function CategoryManagerModal({ isOpen, onClose, categories, onRefresh }: {
   )
 }
 
+
+// ==================== Price Override Modal ====================
+
+interface PriceOverrideModalProps {
+  isOpen: boolean
+  item: BillItem | null
+  onClose: () => void
+  onSave: (unitPrice: number, reason: string) => Promise<void>
+  isSaving: boolean
+}
+
+const PRESET_OVERRIDE_REASONS = [
+  'ราคาพิเศษลูกค้าประจำ',
+  'สินค้ามีตำหนิ',
+  'ราคาโปรโมชั่น',
+  'แก้ราคาผิด',
+]
+
+function PriceOverrideModal({
+  isOpen,
+  item,
+  onClose,
+  onSave,
+  isSaving,
+}: PriceOverrideModalProps) {
+  useModalClose(onClose)
+  const [unitPriceInput, setUnitPriceInput] = useState<string>('')
+  const [reason, setReason] = useState<string>('')
+
+  const basePrice = item ? (item.original_price != null ? item.original_price : item.unit_price) : 0
+  const isOverridden = item ? (item.original_price != null && item.original_price !== item.unit_price) : false
+
+  useEffect(() => {
+    if (isOpen && item) {
+      setUnitPriceInput(String(item.unit_price))
+      setReason(item.price_override_reason || '')
+    }
+  }, [isOpen, item])
+
+  if (!isOpen || !item) return null
+
+  const parsedPrice = parseFloat(unitPriceInput)
+  const isValidPrice = !isNaN(parsedPrice) && parsedPrice >= 0
+  const newLineTotal = isValidPrice ? parsedPrice * item.quantity : 0
+  const baseLineTotal = basePrice * item.quantity
+  const totalDiff = newLineTotal - baseLineTotal
+
+  const handleSave = () => {
+    if (!isValidPrice) {
+      toast.error('กรุณาระบุราคาที่ถูกต้อง (ต้องไม่น้อยกว่า 0)')
+      return
+    }
+    if (!reason.trim()) {
+      toast.error('กรุณาระบุเหตุผลการปรับราคา')
+      return
+    }
+    onSave(parsedPrice, reason.trim())
+  }
+
+  const handleResetToOriginal = () => {
+    if (item.original_price != null) {
+      onSave(item.original_price, 'คืนราคาเดิม')
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--surface-1)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-500">
+              <Tag className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[var(--fg-1)]">ปรับราคาต่อหน่วย</h3>
+              <p className="text-xs text-[var(--fg-3)] truncate max-w-[240px]">
+                {item.product_name}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-[var(--fg-4)] hover:text-[var(--fg-1)] hover:bg-[var(--surface-2)]"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Price Info Cards */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="p-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
+            <span className="text-[var(--fg-4)] block">ราคาตั้งต้น / เมนู</span>
+            <span className="text-sm font-semibold text-[var(--fg-1)]">
+              ฿{basePrice.toLocaleString()}
+            </span>
+          </div>
+          <div className="p-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
+            <span className="text-[var(--fg-4)] block">ราคาปัจจุบัน</span>
+            <span className="text-sm font-semibold text-[var(--fg-1)] flex items-center gap-1">
+              ฿{item.unit_price.toLocaleString()}
+              {isOverridden && (
+                <span className="text-[10px] text-amber-500 font-normal">
+                  (ปรับแล้ว)
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Presets */}
+        <div>
+          <label className="text-xs font-medium text-[var(--fg-2)] block mb-1.5">
+            ปรับด่วน:
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: 'ฟรี (฿0)', price: 0 },
+              { label: '-10%', price: Math.max(0, Math.round(basePrice * 0.9)) },
+              { label: '-20%', price: Math.max(0, Math.round(basePrice * 0.8)) },
+              { label: '-50%', price: Math.max(0, Math.round(basePrice * 0.5)) },
+            ].map((p, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setUnitPriceInput(String(p.price))}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-[var(--surface-2)] border border-[var(--border)] hover:border-phopy-indigo hover:bg-[var(--primary-soft)] text-[var(--fg-2)] transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* New Unit Price Input */}
+        <div>
+          <label className="text-xs font-medium text-[var(--fg-2)] block mb-1.5">
+            ราคาต่อหน่วยใหม่ (฿): <span className="text-danger">*</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={unitPriceInput}
+            onChange={e => setUnitPriceInput(e.target.value)}
+            placeholder="ระบุราคาใหม่ต่อหน่วย"
+            className="w-full px-3 py-2.5 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)] font-medium"
+            autoFocus
+          />
+        </div>
+
+        {/* Line Total Live Preview */}
+        <div className="p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]/70 flex items-center justify-between text-xs">
+          <div>
+            <span className="text-[var(--fg-3)]">ยอดรวมรายการ ({item.quantity} ชิ้น):</span>
+            <div className="text-sm font-bold text-success mt-0.5">
+              ฿{newLineTotal.toLocaleString()}
+            </div>
+          </div>
+          {totalDiff !== 0 && isValidPrice && (
+            <div className="text-right">
+              <span className="text-[var(--fg-4)]">ผลต่างจากราคาเมนู:</span>
+              <div className={`text-xs font-semibold mt-0.5 ${totalDiff < 0 ? 'text-amber-500' : 'text-blue-500'}`}>
+                {totalDiff < 0 ? `ลดลง ฿${Math.abs(totalDiff).toLocaleString()}` : `เพิ่มขึ้น ฿${totalDiff.toLocaleString()}`}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Reason Quick Chips */}
+        <div>
+          <label className="text-xs font-medium text-[var(--fg-2)] block mb-1.5">
+            เหตุผลการปรับราคา: <span className="text-danger">*</span>
+          </label>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {PRESET_OVERRIDE_REASONS.map(r => {
+              const active = reason.trim() === r
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setReason(r)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                    active
+                      ? 'bg-[var(--primary)] text-white border-[var(--primary)] shadow-sm'
+                      : 'bg-[var(--surface-2)] text-[var(--fg-2)] border-[var(--border)] hover:border-phopy-indigo hover:bg-[var(--primary-soft)]'
+                  }`}
+                >
+                  {r}
+                </button>
+              )
+            })}
+          </div>
+          <input
+            type="text"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="หรือพิมพ์ระบุเหตุผล (จำเป็น)"
+            className="w-full px-3 py-2 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-xs text-[var(--fg-1)] placeholder-[var(--fg-4)] focus:outline-none focus:border-[var(--primary)]"
+          />
+        </div>
+
+        {/* Restore Original Button if Overridden */}
+        {isOverridden && (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={handleResetToOriginal}
+              disabled={isSaving}
+              className="w-full py-2 px-3 rounded-xl border border-dashed border-amber-500/40 text-amber-500 hover:bg-amber-500/10 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              คืนราคาเดิม (฿{item.original_price?.toLocaleString()})
+            </button>
+          </div>
+        )}
+
+        {/* Modal Actions */}
+        <div className="flex gap-2 pt-2 border-t border-[var(--border)]">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border)] text-sm text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-40"
+          >
+            ยกเลิก
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!isValidPrice || !reason.trim() || isSaving}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+          >
+            {isSaving ? 'กำลังบันทึก...' : 'บันทึกราคา'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
 
 // ==================== Discount Reason Modal ====================
 

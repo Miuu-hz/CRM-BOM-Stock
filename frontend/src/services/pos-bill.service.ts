@@ -100,6 +100,14 @@ const posBillService = {
     return response.data
   },
 
+  updateItemPrice: async (billId: string, itemId: string, data: {
+    unit_price: number
+    reason: string
+  }) => {
+    const response = await api.patch(`/pos/bills/${billId}/items/${itemId}/price`, data)
+    return response.data
+  },
+
   // ==================== Payment ====================
   
   payBill: async (billId: string, data: {

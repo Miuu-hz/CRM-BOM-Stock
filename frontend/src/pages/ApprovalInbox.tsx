@@ -32,6 +32,7 @@ const MODULE_LABELS: Record<string, string> = {
   work_orders:       'ใบสั่งผลิต',
   stock_adjustments: 'ปรับสต็อก',
   pos_discount:      'ส่วนลดหน้าร้าน',
+  pos_price_override:'ปรับราคาหน้าร้าน',
   pos_item_void:     'ลด/ลบรายการหลังส่งครัว',
   pos_cash_move:     'เงินเข้า/ออกลิ้นชัก',
   pos_shift_close:   'ปิดกะ',
@@ -41,7 +42,7 @@ const MODULE_LABELS: Record<string, string> = {
 }
 
 const MODULE_ICON: Record<string, string> = {
-  pos_void: '🧾', pos_discount: '🏷️', pos_item_void: '🍳', pos_cash_move: '💵', pos_shift_close: '🔒',
+  pos_void: '🧾', pos_discount: '🏷️', pos_price_override: '💲', pos_item_void: '🍳', pos_cash_move: '💵', pos_shift_close: '🔒',
   pos_invoice: '🧾', stock_adjust: '📦', stock_adjustments: '📦', doc_edit: '✏️',
   purchase_request: '📝', purchase_order: '🛒', sales_order: '📄', work_orders: '🏭',
   pos_shift_expense: '💸', sales_cancel: '🚫', purchase_cancel: '🚫',
@@ -56,7 +57,7 @@ const SEVERITY = {
 } as const
 const severityOf = (req: ApprovalRequest): keyof typeof SEVERITY =>
   req.severity ?? (req.module_type === 'pos_void' ? 'medium'
-    : ['stock_adjust', 'stock_adjustments', 'doc_edit', 'pos_discount'].includes(req.module_type) ? 'low' : 'info')
+    : ['stock_adjust', 'stock_adjustments', 'doc_edit', 'pos_discount', 'pos_price_override'].includes(req.module_type) ? 'low' : 'info')
 
 function fmt(amount: number) {
   if (!amount) return '—'
