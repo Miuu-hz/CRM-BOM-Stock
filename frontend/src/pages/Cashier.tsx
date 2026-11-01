@@ -76,7 +76,7 @@ const isRewardItem = (item: BillItem) => {
   return Boolean(
     item.is_reward ||
     item.product_name?.startsWith('🎁') ||
-    (item.unit_price === 0 && item.special_instructions?.includes('แต้ม'))
+    (item.original_price == null && item.unit_price === 0 && item.special_instructions?.includes('แต้ม'))
   )
 }
 
