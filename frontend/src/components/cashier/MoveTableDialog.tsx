@@ -49,7 +49,7 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
 
   return (
     <div
-      className="fixed inset-0 bg-[var(--fg-1)]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div

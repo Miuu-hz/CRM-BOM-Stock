@@ -455,7 +455,7 @@ router.get('/available-products', (req, res) => {
     query += ' ORDER BY p.name ASC'
     
     const stmt = db.prepare(query)
-    const products = stmt.all(...params)
+    const products = (stmt.all(...params) as any[]).filter(p => isSellableItem(p))
     
     res.json({ success: true, data: products })
   } catch (error) {
@@ -474,30 +474,16 @@ router.get('/menu-configs/:id/stock', (req, res) => {
     const { quantity } = req.query
     const qty = parseInt(quantity as string) || 1
     
-    // Get menu with bom_id
-    const menuStmt = db.prepare('SELECT bom_id FROM pos_menu_configs WHERE id = ? AND tenant_id = ?')
+    // Get menu with bom_id + product_id
+    const menuStmt = db.prepare('SELECT bom_id, product_id FROM pos_menu_configs WHERE id = ? AND tenant_id = ?')
     const menu = menuStmt.get(id, tenantId) as any
     
     let ingredients: any[] = []
+    const menuBomId = menu ? resolveMenuBomId(tenantId, menu.bom_id, menu.product_id) : null
     
-    if (menu?.bom_id) {
-      // ดึงจาก BOM
-      const stmt = db.prepare(`
-        SELECT 
-          bi.id,
-          bi.quantity as quantity_used,
-          bi.unit as ingredient_unit,
-          0 as is_optional,
-          si.id as stock_item_id,
-          si.name as stock_item_name,
-          si.quantity as current_stock,
-          si.base_unit as stock_base_unit,
-          si.unit as stock_unit
-        FROM bom_items bi
-        JOIN stock_items si ON bi.material_id = si.id
-        WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
-      `)
-      ingredients = stmt.all(menu.bom_id, tenantId)
+    if (menuBomId) {
+      // ดึงจาก BOM (รองรับทั้ง BOM ที่ผูกกับเมนู/สินค้า และสูตรย่อย CHILD_BOM)
+      ingredients = getBomIngredientsRecursive(menuBomId, tenantId, 1)
     } else {
       // ดึงจาก pos_menu_ingredients
       const stmt = db.prepare(`

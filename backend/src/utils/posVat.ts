@@ -38,7 +38,7 @@ export function billTotals(bill: any, cfg: PosBillingConfig, adj: PosAdjustments
     const lineTotal = bill.items.reduce((n: number, i: any) => n + (i.total_price || 0), 0)
     return calcPosTotals(lineTotal, cfg, adj)
   }
-  if (bill && typeof bill.total_amount === 'number' && bill.total_amount > 0) {
+  if (bill && typeof bill.total_amount === 'number' && (bill.total_amount > 0 || bill.discount_amount > 0 || (bill.subtotal ?? 0) === 0)) {
     return {
       subtotal: bill.subtotal || 0,
       serviceChargeAmount: bill.service_charge_amount || 0,

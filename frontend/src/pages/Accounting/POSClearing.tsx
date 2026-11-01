@@ -389,7 +389,7 @@ function BillGroup({
     <div className={`border-b last:border-b-0 ${borderColor}`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--bg)]/30 ${bgColor}`}
+        className={`w-full px-5 py-3 flex items-center justify-between hover:bg-[var(--surface-2)] ${bgColor}`}
       >
         <div className="flex items-center gap-2">
           {icon}
@@ -410,7 +410,7 @@ function BillGroup({
             className="overflow-hidden"
           >
             {bills.map((bill) => (
-              <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)]/50 bg-[var(--bg)]/20">
+              <div key={bill.id} className="px-5 py-2.5 flex justify-between items-center border-t border-[var(--border)] bg-[var(--bg)]/20">
                 <div>
                   <p className="text-sm text-[var(--fg-1)]">{bill.display_name || bill.bill_number}</p>
                   <p className="text-xs text-[var(--fg-4)]">
@@ -507,7 +507,7 @@ function DepositModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}

@@ -185,11 +185,18 @@ router.get('/bills/:id', async (req, res) => {
         bi.*,
         pmc.pos_price as current_price
       FROM pos_bill_items bi
-      LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
-      WHERE bi.bill_id = ?
+      LEFT JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id AND pmc.tenant_id = bi.tenant_id
+      WHERE bi.bill_id = ? AND bi.tenant_id = ?
       ORDER BY bi.added_at ASC
     `)
-    const items = itemsStmt.all(id)
+    const items = itemsStmt.all(id, tenantId)
+
+    const lastPayment = db.prepare(`
+      SELECT payment_method, received_amount
+      FROM pos_payments
+      WHERE bill_id = ? AND tenant_id = ?
+      ORDER BY paid_at DESC LIMIT 1
+    `).get(id, tenantId) as any
 
     // Paperless receipt: lazily mint/reuse a public share token + QR for this bill
     const receiptToken = getOrCreateReceiptToken('pos_bill', id, tenantId)
@@ -206,7 +213,7 @@ router.get('/bills/:id', async (req, res) => {
       ? reservedPoints(tenantId, (bill as any).customer_id)
       : 0
 
-    res.json({ success: true, data: { ...bill, customer_reserved_points, items, receipt_url, receipt_qr, invoice } })
+    res.json({ success: true, data: { ...bill, payment_method: lastPayment?.payment_method || null, cash_received: lastPayment?.received_amount ?? null, customer_reserved_points, items, receipt_url, receipt_qr, invoice } })
   } catch (error) {
     console.error('Error fetching bill:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch bill' })
@@ -639,12 +646,33 @@ router.put('/bills/:billId/items/:itemId', (req, res) => {
     // (ส่งครัวหยิบเฉพาะ sent_to_kds = 0 — เดิมกด + บนรายการเก่าแล้วยอดบิลขึ้น แต่ครัวทำจำนวนเดิม)
     if ((item as any).sent_to_kds && Number(newQty) > (item as any).quantity) {
       const extra = Number(newQty) - (item as any).quantity
-      db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name,
-          quantity, unit_price, total_price, special_instructions, created_by,
-          original_price, price_override_reason, price_overridden_by, price_overridden_at)
-        SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, ?, ?,
-          original_price, price_override_reason, price_overridden_by, price_overridden_at
-        FROM pos_bill_items WHERE id = ?`).run(generateId(), extra, extra, finalInstructions, (req as any).user!.userId, itemId)
+      const existingUnsent = db.prepare(`
+        SELECT id, quantity, unit_price FROM pos_bill_items
+        WHERE bill_id = ? AND tenant_id = ? AND pos_menu_id = ?
+          AND (sent_to_kds = 0 OR sent_to_kds IS NULL)
+          AND COALESCE(TRIM(special_instructions), '') = ?
+          AND unit_price = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM pos_redemptions r
+            WHERE r.bill_item_id = pos_bill_items.id AND r.tenant_id = ?
+          )
+        ORDER BY added_at ASC LIMIT 1
+      `).get(billId, tenantId, (item as any).pos_menu_id, finalInstructions || '', (item as any).unit_price, tenantId) as any
+
+      if (existingUnsent) {
+        const mergedQty = existingUnsent.quantity + extra
+        db.prepare(`
+          UPDATE pos_bill_items SET quantity = ?, total_price = ?
+          WHERE id = ? AND bill_id = ? AND tenant_id = ?
+        `).run(mergedQty, mergedQty * existingUnsent.unit_price, existingUnsent.id, billId, tenantId)
+      } else {
+        db.prepare(`INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name,
+            quantity, unit_price, total_price, special_instructions, created_by,
+            original_price, price_override_reason, price_overridden_by, price_overridden_at)
+          SELECT ?, tenant_id, bill_id, pos_menu_id, product_name, ?, unit_price, unit_price * ?, ?, ?,
+            original_price, price_override_reason, price_overridden_by, price_overridden_at
+          FROM pos_bill_items WHERE id = ? AND tenant_id = ?`).run(generateId(), extra, extra, finalInstructions, (req as any).user!.userId, itemId, tenantId)
+      }
       recalculateBillTotals(billId)
       return res.json({ success: true, message: 'Item updated successfully' })
     }
@@ -761,6 +789,18 @@ router.patch('/bills/:billId/items/:itemId/price', (req, res) => {
     }
 
     const oldPrice = Number(item.unit_price)
+    if (numPrice === oldPrice) {
+      return res.json({
+        success: true,
+        message: 'Price is unchanged',
+        data: {
+          id: itemId,
+          unit_price: numPrice,
+          original_price: item.original_price ?? null,
+          total_price: Number(item.total_price),
+        }
+      })
+    }
     const origPrice = item.original_price != null ? Number(item.original_price) : oldPrice
     const isReset = numPrice === origPrice
 
@@ -800,7 +840,7 @@ router.patch('/bills/:billId/items/:itemId/price', (req, res) => {
     const decreasePct = oldPrice > 0 ? ((oldPrice - numPrice) / oldPrice) * 100 : 0
     const severity: Severity = (decreasePct >= 20 || numPrice === 0) ? 'high' : decrease ? 'medium' : 'info'
 
-    const bill = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ?').get(billId) as any
+    const bill = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ? AND tenant_id = ?').get(billId, tenantId) as any
     const billNumber = bill?.bill_number ?? billId
     const gateUser = (req as any).user
 

@@ -94,6 +94,7 @@ export function getBomIngredientsRecursive(
       si.quantity as current_stock,
       si.unit as stock_unit,
       si.base_unit as stock_base_unit,
+      si.unit_cost as unit_cost,
       0 as is_optional
     FROM bom_items bi
     LEFT JOIN stock_items si ON bi.material_id = si.id
@@ -522,8 +523,8 @@ class POSStockService {
   ): Promise<{ success: boolean; returns: any[]; errors: string[] }> {
     try {
       // Get bill info
-      const billStmt = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ?')
-      const bill = billStmt.get(billId) as any
+      const billStmt = db.prepare('SELECT bill_number FROM pos_running_bills WHERE id = ? AND tenant_id = ?')
+      const bill = billStmt.get(billId, tenantId) as any
 
       if (!bill) {
         throw new Error('Bill not found')
@@ -533,10 +534,10 @@ class POSStockService {
       const deductionsStmt = db.prepare(`
         SELECT psd.*, bi.product_name, bi.unit_price, bi.original_price
         FROM pos_stock_deductions psd
-        JOIN pos_bill_items bi ON psd.bill_item_id = bi.id
-        WHERE bi.bill_id = ? AND psd.returned = 0
+        JOIN pos_bill_items bi ON psd.bill_item_id = bi.id AND bi.tenant_id = psd.tenant_id
+        WHERE bi.bill_id = ? AND bi.tenant_id = ? AND psd.returned = 0
       `)
-      const deductions = deductionsStmt.all(billId) as any[]
+      const deductions = deductionsStmt.all(billId, tenantId) as any[]
 
       const returns: any[] = []
 

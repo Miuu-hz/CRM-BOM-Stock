@@ -802,7 +802,6 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
     }
 
     try {
-      const { lineBotService } = require('../../services/line-bot.service')
       lineBotService.notifyShiftClosed(tenantId, buildShiftSummary(tenantId, id))
         .catch((err: any) => console.error('[ปิดกะ] ส่งสรุปเข้า LINE ไม่สำเร็จ:', err))
     } catch (err) {

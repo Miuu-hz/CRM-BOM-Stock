@@ -84,9 +84,8 @@ router.get('/clearing/pending-bills', (req, res) => {
     let query = `
       SELECT
         b.*,
-        p.payment_method
+        (SELECT GROUP_CONCAT(DISTINCT payment_method) FROM pos_payments p WHERE p.bill_id = b.id AND p.tenant_id = b.tenant_id) as payment_method
       FROM pos_running_bills b
-      LEFT JOIN pos_payments p ON b.id = p.bill_id
       WHERE b.tenant_id = ?
         AND b.status = 'PAID'
         AND b.id NOT IN (

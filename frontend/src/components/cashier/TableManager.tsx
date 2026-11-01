@@ -79,7 +79,7 @@ export default function TableManager({ tables, settings, onClose, onChanged }: P
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="table-manager-title" onClick={e => e.stopPropagation()}
         className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-5 shadow-xl">
         <div className="flex items-center justify-between">

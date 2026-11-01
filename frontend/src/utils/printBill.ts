@@ -83,7 +83,12 @@ function toItems(raw: any[]): BillItem[] {
       id: String(it.id ?? i),
       no: i + 1,
       name: String(it.product_name || it.material_name || it.name || it.description || '-'),
-      description: (it.special_instructions || it.note || it.notes || (it.description && it.description !== it.product_name ? it.description : undefined)) ? String(it.special_instructions || it.note || it.notes || it.description) : undefined,
+      description: (() => {
+        const baseDesc = (it.special_instructions || it.note || it.notes || (it.description && it.description !== it.product_name ? it.description : undefined)) ? String(it.special_instructions || it.note || it.notes || it.description) : ''
+        const overrideDesc = (it.original_price != null && Number(it.original_price) !== price && it.price_override_reason) ? `(ปรับราคา: ${it.price_override_reason})` : ''
+        const combined = [baseDesc, overrideDesc].filter(Boolean).join(' ')
+        return combined || undefined
+      })(),
       sku: it.sku || it.code || undefined,
       quantity: qty,
       unit: String(it.unit || ''),

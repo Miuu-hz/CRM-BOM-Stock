@@ -41,9 +41,10 @@ export async function cancelPosBill(
       const voidNote = reason ? `[VOID] ${reason}` : '[VOID]'
       db.prepare(`
         UPDATE pos_running_bills
-        SET status = 'VOID', notes = TRIM(COALESCE(notes, '') || ' ' || ?)
+        SET status = 'VOID', closed_at = COALESCE(closed_at, ?), closed_by = COALESCE(closed_by, ?),
+            notes = TRIM(COALESCE(notes, '') || ' ' || ?)
         WHERE id = ? AND tenant_id = ?
-      `).run(voidNote, billId, tenantId)
+      `).run(now, userId, voidNote, billId, tenantId)
     } else {
       const cancelReason = reason || 'No reason'
       db.prepare(`

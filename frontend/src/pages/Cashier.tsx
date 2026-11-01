@@ -10,7 +10,7 @@ import posBillService from '../services/pos-bill.service'
 import kdsService from '../services/kds.service'
 import { loadBillingConfig, type BillingConfig, loadLoyaltyConfig, type LoyaltyConfig, loadShopConfig } from './Settings'
 import { billTotals } from '../utils/posVat'
-import { printPOSReceipt } from '../utils/printBill'
+import { printPOSReceipt, printBill } from '../utils/printBill'
 import { useModalClose } from '../hooks/useModalClose'
 import { VatModeField } from '../components/common/VatModeSelector'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
@@ -193,6 +193,7 @@ export default function Cashier() {
   const [showDiscountReasonModal, setShowDiscountReasonModal] = useState(false)
   const [editingItemPrice, setEditingItemPrice] = useState<BillItem | null>(null)
   const [isSavingPrice, setIsSavingPrice] = useState(false)
+  const [isPaying, setIsPaying] = useState(false)
   const [extraCharge, setExtraCharge] = useState<{ label: string; amount: number }>({ label: 'ค่าบริการอื่น', amount: 0 })
   const [expandedRow, setExpandedRow] = useState<'discount' | 'extra' | null>(null)
   const [billing, setBilling] = useState<BillingConfig>(loadBillingConfig)
@@ -501,6 +502,7 @@ export default function Cashier() {
         setDiscountReason(res.data?.discount_reason || '')
         setExtraCharge({ label: res.data?.extra_charge_label || 'ค่าบริการอื่น', amount: savedExtra })
         setExpandedRow(null)
+        setEditingItemPrice(null)
         setView('menu')
       }
     } catch (error) {
@@ -668,9 +670,17 @@ export default function Cashier() {
     }
   }
 
+  const resetLocalBillAdjustments = () => {
+    setDiscount({ type: 'pct', value: 0 })
+    setDiscountReason('')
+    setExtraCharge({ label: 'ค่าบริการอื่น', amount: 0 })
+    setExpandedRow(null)
+    setEditingItemPrice(null)
+  }
+
   // Process payment
   const processPayment = async (method: 'CASH' | 'QR_CODE' | 'CREDIT_CARD', redeemPoints?: number, cashReceived?: number, bankAccountId?: string) => {
-    if (!isBillEditable(currentBill)) return
+    if (!isBillEditable(currentBill) || isPaying) return
 
     if (billDiscountAmount(currentBill) > 0 && billDiscountPct(currentBill) >= 20 && !discountReason.trim()) {
       toast.error('กรุณาระบุสาเหตุส่วนลด ≥ 20% (เช่น ยอด Shopee, LINE MAN, Grab)')
@@ -679,6 +689,7 @@ export default function Cashier() {
       return
     }
 
+    setIsPaying(true)
     try {
       const res = await posBillService.payBill(currentBill.id, {
         payment_method: method,
@@ -719,7 +730,7 @@ export default function Cashier() {
         const receiptData = buildReceiptData(currentBill, method, cashReceived, billDiscountAmount(currentBill) + (res.data?.redeem_discount || 0))
         printPOSReceipt(receiptData, 'thermal')
         setCurrentBill(null)
-        setDiscountReason('')
+        resetLocalBillAdjustments()
         setShowPaymentModal(false)
         setView('bills')
         await fetchData()
@@ -727,6 +738,8 @@ export default function Cashier() {
     } catch (error: any) {
       if (handleShiftGuardError(error)) return
       toast.error(error.response?.data?.message || 'Failed to process payment')
+    } finally {
+      setIsPaying(false)
     }
   }
 
@@ -743,7 +756,7 @@ export default function Cashier() {
       if (approvalGate.handleResponse(res)) return
       toast.success('ยกเลิกบิลแล้ว')
       setCurrentBill(null)
-      setDiscountReason('')
+      resetLocalBillAdjustments()
       setView('bills')
       await fetchData()
     } catch (error) {
@@ -1123,7 +1136,7 @@ export default function Cashier() {
                     </p>
                   </div>
                   <button
-                    onClick={() => { setCurrentBill(null); setDiscountReason(''); setView('bills') }}
+                    onClick={() => { setCurrentBill(null); resetLocalBillAdjustments(); setView('bills') }}
                     aria-label="ปิดบิลนี้ กลับไปหน้าบิลทั้งหมด"
                     className="p-2 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
                   >
@@ -1337,7 +1350,7 @@ export default function Cashier() {
                       )}
 
                       {/* Discount row */}
-                      <div className="border-t border-[var(--border)]/50 pt-1">
+                      <div className="border-t border-[var(--border)] pt-1">
                         <button
                           className="w-full flex items-center justify-between py-1 text-warning hover:text-warning transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           onClick={() => setExpandedRow(expandedRow === 'discount' ? null : 'discount')}
@@ -1542,7 +1555,7 @@ export default function Cashier() {
                       </button>
                       <button
                         onClick={() => {
-                          const rd = buildReceiptData(currentBill, 'CASH', 0, discountAmt)
+                          const rd = buildReceiptData(currentBill, (currentBill as any).payment_method || 'CASH', (currentBill as any).cash_received || 0, discountAmt)
                           printPOSReceipt(rd, 'thermal')
                         }}
                         disabled={currentBill.items.length === 0}
@@ -1728,7 +1741,7 @@ export default function Cashier() {
 
             <div className="space-y-3 mb-6">
               {payActionIssues.map((issue, idx) => (
-                <div key={idx} className="p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]/50">
+                <div key={idx} className="p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-lg bg-[var(--danger-soft)] flex items-center justify-center shrink-0 mt-0.5">
                       {issue.type === 'INSUFFICIENT_STOCK' ? (
@@ -2192,8 +2205,23 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
   }
 
   const handlePrint = () => {
-    const rd = buildReceiptData(bill, 'CASH', 0, discountAmt)
+    const rd = buildReceiptData(bill, (bill as any).payment_method || 'CASH', (bill as any).cash_received || 0, discountAmt)
     printPOSReceipt(rd, 'a4')
+  }
+
+  const handlePrintTaxInvoice = () => {
+    const rd = buildReceiptData(bill, (bill as any).payment_method || 'CASH', (bill as any).cash_received || 0, discountAmt)
+    if (bill.invoice?.invoice_number) {
+      printBill('inv', {
+        ...rd,
+        _supersededBy: undefined,
+        invoice_number: bill.invoice.invoice_number,
+        invoice_date: (bill as any).closed_at || (bill as any).created_at,
+        so_number: bill.bill_number,
+      }, 'a4')
+    } else {
+      printPOSReceipt(rd, 'a4')
+    }
   }
 
   const issueInvoice = async () => {
@@ -2391,7 +2419,7 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
 
             {hasInvoice ? (
               <button
-                onClick={handlePrint}
+                onClick={handlePrintTaxInvoice}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-success/15 text-success font-semibold text-sm hover:bg-success/25"
               >
                 <Printer className="w-4 h-4" /> พิมพ์ใบกำกับภาษี
@@ -3041,7 +3069,7 @@ function PriceOverrideModal({
         </div>
 
         {/* Line Total Live Preview */}
-        <div className="p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]/70 flex items-center justify-between text-xs">
+        <div className="p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] flex items-center justify-between text-xs">
           <div>
             <span className="text-[var(--fg-3)]">ยอดรวมรายการ ({item.quantity} ชิ้น):</span>
             <div className="text-sm font-bold text-success mt-0.5">

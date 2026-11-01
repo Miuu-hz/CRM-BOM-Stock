@@ -92,8 +92,16 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.discount_amount > 0
       AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at BETWEEN ? AND ?))
   `).all(tenantId, shiftId, s.opened_at, s.closed_at) as any[]
+  const itemOverrideDiscount = (db.prepare(`
+    SELECT COALESCE(SUM((bi.original_price - bi.unit_price) * bi.quantity), 0) AS amt
+    FROM pos_bill_items bi
+    JOIN pos_running_bills b ON b.id = bi.bill_id AND b.tenant_id = bi.tenant_id
+    WHERE b.tenant_id = ? AND b.status = 'PAID'
+      AND bi.original_price IS NOT NULL AND bi.original_price > bi.unit_price
+      AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at BETWEEN ? AND ?))
+  `).get(tenantId, shiftId, s.opened_at, s.closed_at) as any)?.amt || 0
   const discountTotal = discountBills.reduce((t, b) =>
-    t + Math.max(0, b.discount - Math.floor(Math.max(0, b.counter_points) / redeemRate)), 0)
+    t + Math.max(0, b.discount - Math.floor(Math.max(0, b.counter_points) / redeemRate)), 0) + itemOverrideDiscount
 
   // สรุปยอดขายตามแท็กช่องทาง / บิลที่ลดเกิน 20% (Shopee, LINE MAN, Grab ฯลฯ)
   const deliveryBills = db.prepare(`

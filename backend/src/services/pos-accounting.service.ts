@@ -5,6 +5,7 @@ import { ACC, resolveBankAccountGL } from '../config/accountCodes'
 import { ensurePeriod } from '../routes/tax.routes'
 import { convertQuantityBidirectional, normalizeUnit } from './unitConversion.service'
 import { isServiceItem } from './stockItem.service'
+import { resolveMenuBomId, getBomIngredientsRecursive } from './pos-stock.service'
 import type { POSBill, POSPayment } from '../types'
 
 const now = () => new Date().toISOString()
@@ -122,32 +123,21 @@ class POSAccountingService {
     for (const item of items) {
       let itemCost = 0
 
-      if (item.bom_id) {
-        // Calculate cost from BOM items
-        const bomItemsStmt = db.prepare(`
-          SELECT
-            bi.quantity,
-            bi.unit as ingredient_unit,
-            bi.material_id,
-            si.unit_cost,
-            si.base_unit as stock_base_unit,
-            si.unit as stock_unit
-          FROM bom_items bi
-          JOIN stock_items si ON bi.material_id = si.id
-          WHERE bi.bom_id = ? AND bi.tenant_id = ? AND bi.item_type = 'MATERIAL'
-        `)
-        const bomItems = bomItemsStmt.all(item.bom_id, tenantId) as BomCostItem[]
+      const resolvedBomId = resolveMenuBomId(tenantId, item.bom_id, item.product_id)
+      if (resolvedBomId) {
+        // Calculate cost from BOM items (recursive: supports product BOM fallback, CHILD_BOM, and output_qty)
+        const bomItems = getBomIngredientsRecursive(resolvedBomId, tenantId, 1)
 
         for (const bomItem of bomItems) {
           const qty = this.toBaseQty(
-            bomItem.quantity,
+            bomItem.quantity_used,
             bomItem.ingredient_unit,
             bomItem.stock_base_unit || bomItem.stock_unit,
             tenantId,
-            bomItem.material_id,
-            `bill ${billId} bom ${item.bom_id} material ${bomItem.material_id}`
+            bomItem.stock_item_id,
+            `bill ${billId} bom ${resolvedBomId} material ${bomItem.stock_item_id}`
           )
-          itemCost += (qty * bomItem.unit_cost)
+          itemCost += (qty * (Number(bomItem.unit_cost) || 0))
         }
       } else {
         // Fallback: use pos_menu_ingredients
@@ -242,9 +232,9 @@ class POSAccountingService {
       // ponytail: บิลยอด 0 (ฟรีทั้งบิล) ไม่มีบรรทัดให้ลง — postJournal จะโยน จึงข้าม
       const hasOverride = db.prepare(`
         SELECT 1 FROM pos_bill_items
-        WHERE bill_id = ? AND original_price IS NOT NULL
+        WHERE bill_id = ? AND tenant_id = ? AND original_price IS NOT NULL
         LIMIT 1
-      `).get(bill.id)
+      `).get(bill.id, tenantId)
       const overrideNote = hasOverride ? ' (มีปรับราคา)' : ''
 
       let journalEntryId: string | undefined
