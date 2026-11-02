@@ -1,4 +1,5 @@
 import db from '../db/sqlite'
+import { convertQuantityBidirectional, normalizeUnit } from './unitConversion.service'
 
 /**
  * ต้นทุนและประวัติราคาของสินค้าในคลัง
@@ -63,20 +64,36 @@ export function getCostBasis(tenantId: string, stockItemId: string): CostBasis {
 
   const rows = db.prepare(SOURCE_SQL).all(stockItemId, tenantId) as any[]
 
-  // แถวที่ไม่มี stock_qty แปลงกลับเป็นหน่วยฐานไม่ได้ ถ้าเอามารวมจะทำให้ตัวหารเพี้ยน
-  // (ของจริงมี 47 แถว null + 11 แถว 0 จาก 197 แถว) — ตัดออกแล้วรายงานจำนวนที่ตัด
-  const usable = rows.filter(r => Number(r.baseQty) > 0)
-  const sources: CostSource[] = usable.map(r => ({
-    supplier: r.supplier ?? null,
-    doc: r.doc,
-    date: r.date,
-    qty: Number(r.qty) || 0,
-    unit: r.unit ?? null,
-    unitPrice: Number(r.unitPrice) || 0,
-    baseQty: Number(r.baseQty),
-    value: (Number(r.qty) || 0) * (Number(r.unitPrice) || 0),
-    name: r.name ?? null,
-  }))
+  // แถวที่ไม่มี stock_qty แปลงกลับเป็นหน่วยฐานไม่ได้ ถ้าเอามารวมจะทำให้ตัวหารเพี้ยน (ของจริงมี 47 แถว null + 11 แถว 0 จาก 197 แถว)
+  // แต่ถ้ามีสูตรแปลงจาก r.unit (หน่วยซื้อบน PO) -> baseUnit ในปัจจุบัน ให้แปลงค่าเป็น baseQty ปัจจุบัน
+  // เพื่อป้องกันกรณีสินค้ามีการเปลี่ยน base_unit ทีหลัง (เช่น เปลี่ยนจากขวดเป็นกรัม)
+  const sources: CostSource[] = []
+  let skipped = 0
+
+  for (const r of rows) {
+    let baseQty = Number(r.baseQty) || 0
+    if (baseUnit && r.unit && normalizeUnit(baseUnit) !== normalizeUnit(r.unit)) {
+      const conv = convertQuantityBidirectional(Number(r.qty) || 0, r.unit, baseUnit, tenantId, stockItemId, r.name)
+      if (conv && conv.converted > 0) {
+        baseQty = conv.converted
+      }
+    }
+    if (baseQty <= 0) {
+      skipped++
+      continue
+    }
+    sources.push({
+      supplier: r.supplier ?? null,
+      doc: r.doc,
+      date: r.date,
+      qty: Number(r.qty) || 0,
+      unit: r.unit ?? null,
+      unitPrice: Number(r.unitPrice) || 0,
+      baseQty,
+      value: (Number(r.qty) || 0) * (Number(r.unitPrice) || 0),
+      name: r.name ?? null,
+    })
+  }
 
   const totalBaseQty = sources.reduce((t, r) => t + r.baseQty, 0)
   const totalValue = sources.reduce((t, r) => t + r.value, 0)
@@ -98,7 +115,7 @@ export function getCostBasis(tenantId: string, stockItemId: string): CostBasis {
     totalValue,
     basis: 'weighted',
     baseUnit,
-    skipped: rows.length - usable.length,
+    skipped,
   }
 }
 

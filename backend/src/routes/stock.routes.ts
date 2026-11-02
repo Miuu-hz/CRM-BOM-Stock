@@ -471,6 +471,29 @@ router.put('/:id', async (req: Request, res: Response) => {
         }
         finalUnitCost = priceToBaseUnitCost(priceNum, converted.factor, `update stock item ${normPurchaseUnit}→${effBaseUnit}`)
       }
+    } else {
+      // ถ้ามีการเปลี่ยน base_unit แต่ไม่ได้ส่ง purchasePrice มาใหม่
+      // ต้องแปลง unit_cost ตามอัตราส่วน ไม่งั้นราคาเดิม (เช่น 255 บาท/ขวด) จะกลายเป็น 255 บาท/กรัม ทันที
+      const oldBaseUnit = normalizeUnit(currentItem.base_unit || currentItem.unit || '')
+      if (syncedUnit && oldBaseUnit && syncedUnit !== oldBaseUnit && finalUnitCost === undefined) {
+        if (currentItem.purchase_price && currentItem.purchase_unit) {
+          const normPUnit = normalizeUnit(currentItem.purchase_unit)
+          if (normPUnit === syncedUnit) {
+            finalUnitCost = Number(currentItem.purchase_price)
+          } else {
+            const conv = convertQuantityBidirectional(1, normPUnit, syncedUnit, tenantId, currentItem.id)
+            if (conv && conv.factor > 0) {
+              finalUnitCost = priceToBaseUnitCost(Number(currentItem.purchase_price), conv.factor, `rebase purchase_unit ${normPUnit}→${syncedUnit}`)
+            }
+          }
+        }
+        if (finalUnitCost === undefined && currentItem.unit_cost) {
+          const conv = convertQuantityBidirectional(1, oldBaseUnit, syncedUnit, tenantId, currentItem.id)
+          if (conv && conv.factor > 0) {
+            finalUnitCost = priceToBaseUnitCost(Number(currentItem.unit_cost), conv.factor, `rebase unit_cost ${oldBaseUnit}→${syncedUnit}`)
+          }
+        }
+      }
     }
 
     db.prepare(`
