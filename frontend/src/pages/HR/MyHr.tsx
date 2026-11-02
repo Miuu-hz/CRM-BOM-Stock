@@ -14,6 +14,8 @@ import {
   X,
   Send,
   Ban,
+  Banknote,
+  GraduationCap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, {
@@ -25,6 +27,11 @@ import hrService, {
   PayrollRunLine,
   CheckinLocation,
   CheckinResult,
+  EmployeeAdvance,
+  AdvanceKind,
+  AdvanceStatus,
+  MyAdvanceInput,
+  TrainingRecord,
 } from '../../services/hr.service'
 import PayslipPrint from './PayslipPrint'
 
@@ -35,6 +42,33 @@ const getTodayStr = () => {
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+const getNextMonthStr = () => {
+  const d = new Date()
+  d.setDate(1)
+  d.setMonth(d.getMonth() + 1)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+const ADVANCE_STATUS_LABELS: Record<AdvanceStatus, string> = {
+  PENDING: 'รออนุมัติ',
+  APPROVED: 'อนุมัติแล้ว รอรับเงิน',
+  ACTIVE: 'กำลังหักเงินเดือน',
+  CLOSED: 'ครบแล้ว',
+  REJECTED: 'ไม่อนุมัติ',
+  CANCELLED: 'ยกเลิก',
+}
+
+const ADVANCE_STATUS_BADGE: Record<AdvanceStatus, string> = {
+  PENDING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  APPROVED: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+  ACTIVE: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  CLOSED: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
+  REJECTED: 'bg-red-500/15 text-red-600 dark:text-red-400',
+  CANCELLED: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
 }
 
 const fmt = (n: number | undefined | null) =>
@@ -57,6 +91,10 @@ export default function MyHr() {
   const endDateInputId = useId()
   const daysInputId = useId()
   const reasonInputId = useId()
+  const advanceAmountId = useId()
+  const advanceInstallmentsId = useId()
+  const advanceStartPeriodId = useId()
+  const advanceReasonId = useId()
 
   const [loading, setLoading] = useState(true)
   const [notLinked, setNotLinked] = useState(false)
@@ -79,6 +117,27 @@ export default function MyHr() {
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([])
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [slips, setSlips] = useState<PayrollRunLine[]>([])
+
+  // Advance & Training state
+  const [myAdvances, setMyAdvances] = useState<EmployeeAdvance[]>([])
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false)
+  const [submittingAdvance, setSubmittingAdvance] = useState(false)
+  const [advanceSuccessBanner, setAdvanceSuccessBanner] = useState<string | null>(null)
+  const [advanceModalError, setAdvanceModalError] = useState<string | null>(null)
+  const [advanceForm, setAdvanceForm] = useState<{
+    kind: AdvanceKind
+    amount: string
+    installments: string
+    start_period: string
+    reason: string
+  }>({
+    kind: 'ADVANCE',
+    amount: '',
+    installments: '1',
+    start_period: getNextMonthStr(),
+    reason: '',
+  })
+  const [myTraining, setMyTraining] = useState<TrainingRecord[]>([])
 
   // Leave modal state
   const [showLeaveModal, setShowLeaveModal] = useState(false)
@@ -109,14 +168,16 @@ export default function MyHr() {
       setMe(meData)
       setNotLinked(false)
 
-      // Concurrently load checkin location, attendance, leaves, slips
-      const [loc, att, types, balances, requests, mySlips] = await Promise.all([
+      // Concurrently load checkin location, attendance, leaves, slips, advances, training
+      const [loc, att, types, balances, requests, mySlips, advances, training] = await Promise.all([
         hrService.getCheckinLocation().catch(() => null),
         hrService.getMyAttendance().catch(() => null),
         hrService.getLeaveTypes({ active: 1 }).catch(() => []),
         hrService.getLeaveBalances({ employee_id: meData.id }).catch(() => []),
         hrService.getLeaveRequests({ employee_id: meData.id }).catch(() => []),
         hrService.getMySlips().catch(() => []),
+        hrService.getMyAdvances().catch(() => []),
+        hrService.getMyTraining().catch(() => []),
       ])
 
       setCheckinLocation(loc)
@@ -125,6 +186,8 @@ export default function MyHr() {
       setLeaveBalances(balances || [])
       setLeaveRequests(requests || [])
       setSlips(mySlips || [])
+      setMyAdvances(advances || [])
+      setMyTraining(training || [])
     } catch (err: any) {
       if (err?.response?.status === 404 || err?.status === 404) {
         setNotLinked(true)
@@ -278,6 +341,76 @@ export default function MyHr() {
     }
   }
 
+  // Reload advances
+  const reloadAdvances = async () => {
+    try {
+      const adv = await hrService.getMyAdvances()
+      setMyAdvances(adv || [])
+    } catch {
+      // non-blocking
+    }
+  }
+
+  // Handle advance submit
+  const handleAdvanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAdvanceModalError(null)
+
+    const amt = Number(advanceForm.amount)
+    if (!amt || amt <= 0) {
+      toast.error('กรุณาระบุจำนวนเงินที่ถูกต้อง')
+      return
+    }
+
+    const inst = advanceForm.kind === 'LOAN' ? Number(advanceForm.installments) : 1
+    if (advanceForm.kind === 'LOAN' && (!inst || inst < 1 || inst > 24)) {
+      toast.error('จำนวนงวดผ่อนชำระต้องอยู่ระหว่าง 1 ถึง 24 งวด')
+      return
+    }
+
+    setSubmittingAdvance(true)
+    try {
+      const payload: MyAdvanceInput = {
+        kind: advanceForm.kind,
+        amount: amt,
+        installments: inst,
+        start_period: advanceForm.start_period,
+        reason: advanceForm.reason.trim() || undefined,
+      }
+      await hrService.createMyAdvance(payload)
+      setShowAdvanceModal(false)
+      const successMsg = 'ส่งคำขอแล้ว รอหัวหน้าอนุมัติ'
+      setAdvanceSuccessBanner(successMsg)
+      toast.success(successMsg)
+      reloadAdvances()
+      setAdvanceForm({
+        kind: 'ADVANCE',
+        amount: '',
+        installments: '1',
+        start_period: getNextMonthStr(),
+        reason: '',
+      })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'ส่งคำขอไม่สำเร็จ'
+      setAdvanceModalError(msg)
+      toast.error(msg)
+    } finally {
+      setSubmittingAdvance(false)
+    }
+  }
+
+  // Handle advance cancel
+  const handleCancelAdvance = async (advanceId: string) => {
+    if (window.confirm && !window.confirm('ต้องการยกเลิกคำขอนี้ใช่หรือไม่?')) return
+    try {
+      await hrService.cancelAdvance(advanceId)
+      toast.success('ยกเลิกคำขอเรียบร้อยแล้ว')
+      reloadAdvances()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'ยกเลิกคำขอไม่สำเร็จ')
+    }
+  }
+
   // If user is not linked to an employee row (404)
   if (notLinked) {
     return (
@@ -304,6 +437,9 @@ export default function MyHr() {
   }
 
   const todayStr = getTodayStr()
+  const instCount = advanceForm.kind === 'LOAN' ? Math.max(1, Number(advanceForm.installments) || 1) : 1
+  const amtVal = Number(advanceForm.amount) || 0
+  const installmentPreview = Math.ceil((amtVal * 100) / instCount) / 100
 
   return (
     <div className="max-w-xl mx-auto px-4 py-6 space-y-6">
@@ -742,6 +878,188 @@ export default function MyHr() {
         )}
       </div>
 
+      {/* 5. เบิก / ยืมเงิน Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+            <Banknote className="w-4 h-4 text-phopy-indigo" />
+            <span>เบิก / ยืมเงิน</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAdvanceModalError(null)
+              setShowAdvanceModal(true)
+            }}
+            className="phopy-btn-primary px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 min-h-[36px]"
+          >
+            <Plus className="w-4 h-4" />
+            <span>ขอเบิก / ยืมเงิน</span>
+          </button>
+        </div>
+
+        {/* Advance Success Banner */}
+        {advanceSuccessBanner && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm font-semibold text-center flex items-center justify-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{advanceSuccessBanner}</span>
+          </div>
+        )}
+
+        {/* Advances List */}
+        {myAdvances.length > 0 ? (
+          <div className="space-y-2.5">
+            {myAdvances.map((adv) => {
+              const kindLabel = adv.kind === 'ADVANCE' ? 'เบิกค่าจ้างล่วงหน้า' : 'เงินยืม'
+              const statusText = ADVANCE_STATUS_LABELS[adv.status] || adv.status
+              const badgeClass = ADVANCE_STATUS_BADGE[adv.status] || 'bg-[var(--surface-2)] text-[var(--fg-3)]'
+
+              return (
+                <div
+                  key={adv.id}
+                  className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 space-y-2 text-xs sm:text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-[var(--fg)]">
+                      {kindLabel}
+                      {adv.kind === 'LOAN' && adv.installments > 1 && (
+                        <span className="text-xs font-normal text-[var(--fg-3)] ml-1.5">
+                          ({adv.installments} งวด)
+                        </span>
+                      )}
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeClass}`}>
+                      {statusText}
+                    </span>
+                  </div>
+
+                  <div className="text-[var(--fg-2)] flex flex-wrap gap-x-3 gap-y-1">
+                    <span>
+                      ยอด <span className="font-mono font-medium text-[var(--fg)]">{fmt(adv.amount)} ฿</span>
+                    </span>
+                    <span>·</span>
+                    <span>
+                      คงค้าง <span className="font-mono font-medium text-[var(--fg)]">{fmt(adv.outstanding)} ฿</span>
+                    </span>
+                    {adv.start_period && (
+                      <>
+                        <span>·</span>
+                        <span className="text-[var(--fg-3)]">งวด {adv.start_period}</span>
+                      </>
+                    )}
+                    {adv.reason && (
+                      <>
+                        <span>·</span>
+                        <span className="text-[var(--fg-3)] italic">"{adv.reason}"</span>
+                      </>
+                    )}
+                  </div>
+
+                  {adv.status === 'PENDING' && (
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleCancelAdvance(adv.id)}
+                        className="px-2.5 py-1 rounded-lg text-xs border border-red-300 dark:border-red-900 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition flex items-center gap-1"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                        <span>ยกเลิก</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">
+            ยังไม่มีรายการเบิกหรือยืมเงิน
+          </div>
+        )}
+      </div>
+
+      {/* 6. อบรมของฉัน Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+            <GraduationCap className="w-4 h-4 text-phopy-indigo" />
+            <span>อบรมของฉัน</span>
+          </div>
+        </div>
+
+        {myTraining.length > 0 ? (
+          <div className="space-y-2.5">
+            {myTraining.map((rec) => {
+              let pill = (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--surface-2)] text-[var(--fg-3)]">
+                  ไม่หมดอายุ
+                </span>
+              )
+
+              if (rec.days_left != null) {
+                if (rec.days_left < 0) {
+                  pill = (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-500/15 text-red-600 dark:text-red-400">
+                      หมดแล้ว
+                    </span>
+                  )
+                } else if (rec.days_left <= 30) {
+                  pill = (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                      เหลือ {rec.days_left} วัน
+                    </span>
+                  )
+                } else {
+                  pill = (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                      เหลือ {rec.days_left} วัน
+                    </span>
+                  )
+                }
+              }
+
+              return (
+                <div
+                  key={rec.id}
+                  className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 space-y-2 text-xs sm:text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-[var(--fg)]">
+                      {rec.course_name}
+                    </div>
+                    {pill}
+                  </div>
+
+                  <div className="text-[var(--fg-2)] flex flex-wrap gap-x-3 gap-y-1">
+                    <span>
+                      วันที่อบรม <span className="font-mono">{rec.trained_on}</span>
+                    </span>
+                    {rec.expires_on && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          หมดอายุ <span className="font-mono">{rec.expires_on}</span>
+                        </span>
+                      </>
+                    )}
+                    {rec.provider && (
+                      <>
+                        <span>·</span>
+                        <span className="text-[var(--fg-3)]">{rec.provider}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">
+            ยังไม่มีประวัติการอบรม
+          </div>
+        )}
+      </div>
+
       {/* Leave Request Modal */}
       {showLeaveModal && (
         <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto p-4 flex items-center justify-center">
@@ -871,6 +1189,177 @@ export default function MyHr() {
                     <>
                       <Send className="w-4 h-4" />
                       <span>ส่งคำขอลา</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Advance Request Modal */}
+      {showAdvanceModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto p-4 flex items-center justify-center">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <h3 className="font-bold text-base sm:text-lg text-[var(--fg)] flex items-center gap-2">
+                <Banknote className="w-5 h-5 text-phopy-indigo" />
+                <span>ขอเบิก / ยืมเงิน</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAdvanceModal(false)}
+                className="p-1 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg)]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {advanceModalError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{advanceModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAdvanceSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-[var(--fg-2)] mb-1.5">
+                  ประเภทคำขอ <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label
+                    className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer text-xs sm:text-sm font-medium transition ${
+                      advanceForm.kind === 'ADVANCE'
+                        ? 'border-phopy-indigo bg-phopy-indigo/10 text-phopy-indigo'
+                        : 'border-[var(--border)] bg-[var(--surface-2)]/40 text-[var(--fg-2)]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="advance_kind"
+                      value="ADVANCE"
+                      checked={advanceForm.kind === 'ADVANCE'}
+                      onChange={() => setAdvanceForm({ ...advanceForm, kind: 'ADVANCE', installments: '1' })}
+                      className="text-phopy-indigo"
+                    />
+                    <span>เบิกค่าจ้างล่วงหน้า</span>
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer text-xs sm:text-sm font-medium transition ${
+                      advanceForm.kind === 'LOAN'
+                        ? 'border-phopy-indigo bg-phopy-indigo/10 text-phopy-indigo'
+                        : 'border-[var(--border)] bg-[var(--surface-2)]/40 text-[var(--fg-2)]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="advance_kind"
+                      value="LOAN"
+                      checked={advanceForm.kind === 'LOAN'}
+                      onChange={() => setAdvanceForm({ ...advanceForm, kind: 'LOAN' })}
+                      className="text-phopy-indigo"
+                    />
+                    <span>ยืมเงินผ่อนหลายงวด</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor={advanceAmountId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  จำนวนเงิน (บาท) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id={advanceAmountId}
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={advanceForm.amount}
+                  onChange={(e) => setAdvanceForm({ ...advanceForm, amount: e.target.value })}
+                  placeholder="เช่น 3000"
+                  required
+                  className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg)]"
+                />
+              </div>
+
+              {advanceForm.kind === 'LOAN' && (
+                <div>
+                  <label htmlFor={advanceInstallmentsId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    จำนวนงวด (1–24 งวด) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id={advanceInstallmentsId}
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={advanceForm.installments}
+                    onChange={(e) => setAdvanceForm({ ...advanceForm, installments: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg)]"
+                  />
+                </div>
+              )}
+
+              {advanceForm.kind === 'LOAN' && (
+                <div className="p-3.5 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs sm:text-sm flex items-center justify-between">
+                  <span className="text-[var(--fg-2)]">ประมาณการยอดผ่อน:</span>
+                  <span className="font-semibold font-mono text-[var(--fg)]">
+                    ผ่อนงวดละ {fmt(installmentPreview)} บาท
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor={advanceStartPeriodId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  งวดแรกที่เริ่มหักเงินเดือน <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id={advanceStartPeriodId}
+                  type="month"
+                  value={advanceForm.start_period}
+                  onChange={(e) => setAdvanceForm({ ...advanceForm, start_period: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg)]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor={advanceReasonId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  เหตุผลความจำเป็น
+                </label>
+                <textarea
+                  id={advanceReasonId}
+                  value={advanceForm.reason}
+                  onChange={(e) => setAdvanceForm({ ...advanceForm, reason: e.target.value })}
+                  rows={2}
+                  placeholder="ระบุเหตุผล (ถ้ามี)"
+                  className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg)]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanceModal(false)}
+                  className="px-4 py-2 rounded-xl text-sm border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingAdvance}
+                  className="phopy-btn-primary px-5 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
+                >
+                  {submittingAdvance ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>กำลังส่ง...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>ส่งคำขอ</span>
                     </>
                   )}
                 </button>

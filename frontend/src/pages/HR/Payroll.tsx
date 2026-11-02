@@ -23,6 +23,7 @@ import hrService, {
   OtEntry,
   ExtraPayItemInput,
   OtherDeductionInput,
+  AdvanceDeduction,
   EmploymentType,
   EmployeePayItem,
 } from '../../services/hr.service'
@@ -170,6 +171,7 @@ export default function Payroll() {
       ot: [...(inp.ot || [])],
       extraPayItems: [...(inp.extraPayItems || [])],
       otherDeductions: [...(inp.otherDeductions || [])],
+      advanceDeductions: inp.advanceDeductions ? inp.advanceDeductions.map((a) => ({ ...a })) : [],
     })
     setEmpRecurringItems([])
     if (hrService.getEmployeePayItems) {
@@ -985,6 +987,38 @@ export default function Payroll() {
                 </div>
               ))}
             </div>
+
+            {/* Advance Deductions */}
+            {Boolean(editInputs.advanceDeductions && editInputs.advanceDeductions.length > 0) && (
+              <div className="border-t border-[var(--border)] pt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-[var(--fg-2)]">หักเบิก/เงินยืม</span>
+                </div>
+                {editInputs.advanceDeductions!.map((adv: AdvanceDeduction, idx: number) => (
+                  <div key={adv.advance_id || idx} className="flex items-center gap-2">
+                    <div className="flex-1 px-2 py-1.5 rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)] flex items-center justify-between text-xs sm:text-sm">
+                      <span>{adv.name}</span>
+                      <span className="text-[10px] text-[var(--fg-3)] px-1.5 py-0.5 rounded bg-[var(--surface)]">
+                        {adv.kind === 'ADVANCE' ? 'เบิกล่วงหน้า' : 'เงินยืม'}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      disabled={!isDraft}
+                      value={adv.amount}
+                      onChange={(e) => {
+                        const next = [...(editInputs.advanceDeductions || [])]
+                        next[idx] = { ...adv, amount: Number(e.target.value) }
+                        setEditInputs({ ...editInputs, advanceDeductions: next })
+                      }}
+                      className="w-24 px-2 py-1.5 text-right rounded bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
 
             {isDraft && (
               <div className="pt-3 border-t border-[var(--border)] flex justify-end gap-2">

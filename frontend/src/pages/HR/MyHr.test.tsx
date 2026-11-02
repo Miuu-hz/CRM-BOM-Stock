@@ -17,6 +17,10 @@ vi.mock('../../services/hr.service', () => ({
     getLeaveRequests: vi.fn(),
     createLeaveRequest: vi.fn(),
     cancelLeaveRequest: vi.fn(),
+    getMyAdvances: vi.fn(),
+    createMyAdvance: vi.fn(),
+    cancelAdvance: vi.fn(),
+    getMyTraining: vi.fn(),
   },
 }))
 
@@ -43,6 +47,10 @@ const mockHr = hrService as unknown as {
   getLeaveRequests: ReturnType<typeof vi.fn>
   createLeaveRequest: ReturnType<typeof vi.fn>
   cancelLeaveRequest: ReturnType<typeof vi.fn>
+  getMyAdvances: ReturnType<typeof vi.fn>
+  createMyAdvance: ReturnType<typeof vi.fn>
+  cancelAdvance: ReturnType<typeof vi.fn>
+  getMyTraining: ReturnType<typeof vi.fn>
 }
 
 beforeEach(() => {
@@ -58,6 +66,8 @@ beforeEach(() => {
   mockHr.getLeaveTypes.mockResolvedValue([])
   mockHr.getLeaveBalances.mockResolvedValue([])
   mockHr.getLeaveRequests.mockResolvedValue([])
+  mockHr.getMyAdvances.mockResolvedValue([])
+  mockHr.getMyTraining.mockResolvedValue([])
 })
 
 describe('หน้าของฉัน /hr/me (MyHr)', () => {
@@ -344,5 +354,144 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
     // Close modal
     fireEvent.click(screen.getByText('ปิดหน้าต่าง'))
     expect(screen.queryByTestId('payslip-print-modal')).toBeNull()
+  })
+
+  it('ผู้ใช้ที่ผูกแล้วเปิด ขอเบิก / ยืมเงิน เลือก LOAN 3000 x 3 → แสดง preview ผ่อนงวดละ 1,000.00 → ส่งคำขอสำเร็จ', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.createMyAdvance.mockResolvedValue({
+      id: 'adv-1',
+      employee_id: 'emp-1',
+      kind: 'LOAN',
+      amount: 3000,
+      installments: 3,
+      installment_amount: 1000,
+      start_period: '2026-12',
+      status: 'PENDING',
+      outstanding: 3000,
+      repaid: 0,
+      created_at: '2026-11-02T10:00:00Z',
+    })
+
+    render(<MyHr />)
+
+    const openBtn = await screen.findByRole('button', { name: /ขอเบิก \/ ยืมเงิน/ })
+    fireEvent.click(openBtn)
+
+    // Radio pick LOAN
+    const loanRadio = screen.getByLabelText(/ยืมเงินผ่อนหลายงวด/)
+    fireEvent.click(loanRadio)
+
+    // Fill amount 3000
+    const amountInput = screen.getByLabelText(/จำนวนเงิน/)
+    fireEvent.change(amountInput, { target: { value: '3000' } })
+
+    // Fill installments 3
+    const installmentsInput = screen.getByLabelText(/จำนวนงวด/)
+    fireEvent.change(installmentsInput, { target: { value: '3' } })
+
+    // Preview
+    expect(await screen.findByText(/ผ่อนงวดละ 1,000\.00/)).toBeTruthy()
+
+    // Submit
+    const submitBtn = screen.getByRole('button', { name: /ส่งคำขอ/ })
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(mockHr.createMyAdvance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'LOAN',
+          amount: 3000,
+          installments: 3,
+        })
+      )
+    })
+
+    expect(await screen.findByText('ส่งคำขอแล้ว รอหัวหน้าอนุมัติ')).toBeTruthy()
+  })
+
+  it('การ์ด อบรมของฉัน แสดงป้าย หมดแล้ว สำหรับรายการที่มี days_left: -1', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getMyTraining.mockResolvedValue([
+      {
+        id: 'tr-1',
+        course_id: 'c-1',
+        course_name: 'ความปลอดภัยในการทำงาน',
+        course_kind: 'INTERNAL',
+        employee_id: 'emp-1',
+        employee_code: 'EMP-001',
+        employee_name: 'สมชาย ใจดี',
+        trained_on: '2025-01-01',
+        expires_on: '2026-01-01',
+        provider: 'สถาบันความปลอดภัย',
+        notes: null,
+        days_left: -1,
+        attachment_count: 0,
+        created_at: '2025-01-01T00:00:00Z',
+      },
+    ])
+
+    render(<MyHr />)
+
+    expect(await screen.findByText('ความปลอดภัยในการทำงาน')).toBeTruthy()
+    expect(screen.getByText('หมดแล้ว')).toBeTruthy()
+  })
+
+  it('การ์ด เบิก / ยืมเงิน แสดงรายการ PENDING และสามารถกดยกเลิกได้', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getMyAdvances.mockResolvedValue([
+      {
+        id: 'adv-99',
+        employee_id: 'emp-1',
+        employee_code: 'EMP-001',
+        employee_name: 'สมชาย ใจดี',
+        kind: 'ADVANCE',
+        amount: 2500,
+        installments: 1,
+        installment_amount: 2500,
+        start_period: '2026-12',
+        reason: 'ค่ารักษาพยาบาล',
+        status: 'PENDING',
+        approval_request_id: null,
+        decided_at: null,
+        disbursed_on: null,
+        disburse_je_id: null,
+        repaid: 0,
+        outstanding: 2500,
+        created_at: '2026-11-02T10:00:00Z',
+      },
+    ])
+    mockHr.cancelAdvance.mockResolvedValue({
+      id: 'adv-99',
+      status: 'CANCELLED',
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<MyHr />)
+
+    expect(await screen.findByText('เบิกค่าจ้างล่วงหน้า')).toBeTruthy()
+    expect(screen.getByText('รออนุมัติ')).toBeTruthy()
+    expect(screen.getAllByText(/2,500.00 ฿/).length).toBeGreaterThanOrEqual(1)
+
+    const cancelBtn = screen.getByRole('button', { name: /ยกเลิก/ })
+    fireEvent.click(cancelBtn)
+
+    await waitFor(() => {
+      expect(mockHr.cancelAdvance).toHaveBeenCalledWith('adv-99')
+    })
   })
 })
