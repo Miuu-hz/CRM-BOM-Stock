@@ -27,6 +27,8 @@ export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_ord
   | 'purchase_cancel'
   // รายการปรับปรุงปิดเดือน (AI ส่งมาเป็นร่างทาง MCP) — post ได้หลังคนอนุมัติเท่านั้น ไม่ขึ้นกับ approval_settings
   | 'close_adjust'
+  // คำขอลาของพนักงาน (HR Phase 4) — อนุมัติแล้ว leave_requests → APPROVED ใน executeApprovedAction
+  | 'leave'
 
 /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
 export type Severity = 'high' | 'medium' | 'low' | 'info'
@@ -65,6 +67,7 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   sales_cancel: 'orders',
   purchase_cancel: 'purchase',
   close_adjust: 'accounting',
+  leave: 'hr',
 }
 
 /** GM ตามที่เจ้าของกำหนด (2026-10-24) = ADMIN/MASTER/OWNER หรือแผนก CEO */

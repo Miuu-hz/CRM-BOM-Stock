@@ -119,7 +119,9 @@
     "orgUnits": "Org Units",
     "attendance": "Attendance",
     "payroll": "Payroll",
-    "hrSettings": "Payroll Settings"
+    "hrSettings": "Payroll Settings",
+    "myHr": "My HR",
+    "leave": "Leave"
   },
   "dashboard": {
     "title": "Executive Dashboard",

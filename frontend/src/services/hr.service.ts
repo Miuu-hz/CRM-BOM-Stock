@@ -46,6 +46,7 @@ export interface Employee {
   device_pin?: string | null
   shift_id?: string | null
   shift_name?: string | null
+  has_checkin_pin?: boolean
   notes?: string | null
   created_at?: string
   updated_at?: string
@@ -74,6 +75,7 @@ export interface EmployeeInput {
   user_id?: string | null
   device_pin?: string | null
   shift_id?: string | null
+  checkin_pin?: string | null
   notes?: string | null
 }
 
@@ -146,6 +148,8 @@ export interface PeriodTotals {
   lateMinutes: number
   earlyLeaveMinutes: number
   otCandidateMinutes: number
+  leaveDays?: number
+  holidayDays?: number
 }
 
 export interface EmployeeAttendanceSummary extends PeriodTotals {
@@ -421,6 +425,111 @@ export interface Pnd1ExportResponse {
   }
 }
 
+// ==================== HR Phase 4 — สัญญากลาง docs/contracts/hr-phase4.md (ห้ามแก้รูปร่างโดยไม่แก้สัญญา) ====================
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export interface LeaveType {
+  id: string
+  code: string
+  name: string
+  paid: boolean
+  days_per_year: number | null
+  is_active: boolean
+}
+
+export interface LeaveTypeInput {
+  code: string
+  name: string
+  paid: boolean
+  days_per_year: number | null
+  is_active?: boolean
+}
+
+export interface LeaveRequest {
+  id: string
+  employee_id: string
+  employee_code: string
+  employee_name: string
+  org_unit_name: string | null
+  leave_type_id: string
+  leave_type_code: string
+  leave_type_name: string
+  paid: boolean
+  start_date: string
+  end_date: string
+  days: number
+  reason: string | null
+  status: LeaveStatus
+  approval_request_id: string | null
+  requested_by: string | null
+  decided_by: string | null
+  decided_at: string | null
+  created_at: string
+}
+
+export interface LeaveRequestInput {
+  employee_id: string
+  leave_type_id: string
+  start_date: string
+  end_date: string
+  days: number
+  reason?: string
+}
+
+export interface LeaveBalance {
+  leave_type_id: string
+  code: string
+  name: string
+  paid: boolean
+  quota: number | null
+  used: number
+  pending: number
+  remaining: number | null
+}
+
+export interface PublicHoliday {
+  id: string
+  date: string
+  name: string
+}
+
+export interface CheckinLocation {
+  lat: number
+  lng: number
+  radius_m: number
+}
+
+export interface CheckinGeo {
+  lat?: number
+  lng?: number
+  accuracy?: number
+}
+
+export interface CheckinPinInput extends CheckinGeo {
+  employee_code: string
+  pin: string
+}
+
+export interface CheckinResult {
+  punched_at: string
+  kind: 'IN' | 'OUT'
+  employee_name: string
+  distance_m: number | null
+}
+
+export interface MyAttendanceLog {
+  punched_at: string
+  source: 'FILE' | 'MCP' | 'WEB' | 'DEVICE'
+  distance_m: number | null
+}
+
+export interface MyAttendance {
+  employee: { id: string; code: string; name: string; device_pin: string | null; shift_name: string | null }
+  logs: MyAttendanceLog[]
+  days: DaySummary[]
+  totals: PeriodTotals | null
+}
+
 export const hrService = {
   async getOrgUnits(): Promise<OrgUnit[]> {
     const res = await api.get('/hr/org-units')
@@ -645,6 +754,85 @@ export const hrService = {
 
   async getPnd1Csv(period: string): Promise<string> {
     return this.exportPnd1Csv(period)
+  },
+  // ---------- HR Phase 4 (สัญญากลาง docs/contracts/hr-phase4.md) ----------
+  async getLeaveTypes(params?: { active?: 1 }): Promise<LeaveType[]> {
+    const res = await api.get('/hr/leave-types', { params })
+    return res.data.data || []
+  },
+
+  async createLeaveType(data: LeaveTypeInput): Promise<LeaveType> {
+    const res = await api.post('/hr/leave-types', data)
+    return res.data.data
+  },
+
+  async updateLeaveType(id: string, data: Partial<LeaveTypeInput>): Promise<LeaveType> {
+    const res = await api.put(`/hr/leave-types/${id}`, data)
+    return res.data.data
+  },
+
+  async createStarterLeaveTypes(): Promise<{ created: number }> {
+    const res = await api.post('/hr/leave-types/starter')
+    return res.data.data
+  },
+
+  async getHolidays(year?: number): Promise<PublicHoliday[]> {
+    const res = await api.get('/hr/holidays', { params: year ? { year } : undefined })
+    return res.data.data || []
+  },
+
+  async createHoliday(data: { date: string; name: string }): Promise<PublicHoliday> {
+    const res = await api.post('/hr/holidays', data)
+    return res.data.data
+  },
+
+  async deleteHoliday(id: string): Promise<void> {
+    await api.delete(`/hr/holidays/${id}`)
+  },
+
+  async getLeaveRequests(params?: { status?: LeaveStatus; employee_id?: string; from?: string; to?: string }): Promise<LeaveRequest[]> {
+    const res = await api.get('/hr/leave-requests', { params })
+    return res.data.data || []
+  },
+
+  async createLeaveRequest(data: LeaveRequestInput): Promise<LeaveRequest> {
+    const res = await api.post('/hr/leave-requests', data)
+    return res.data.data
+  },
+
+  async cancelLeaveRequest(id: string): Promise<LeaveRequest> {
+    const res = await api.post(`/hr/leave-requests/${id}/cancel`)
+    return res.data.data
+  },
+
+  async getLeaveBalances(params: { employee_id: string; year?: number }): Promise<LeaveBalance[]> {
+    const res = await api.get('/hr/leave-balances', { params })
+    return res.data.data || []
+  },
+
+  async getCheckinLocation(): Promise<CheckinLocation | null> {
+    const res = await api.get('/hr/checkin/location')
+    return res.data.data ?? null
+  },
+
+  async setCheckinLocation(data: CheckinLocation | null): Promise<CheckinLocation | null> {
+    const res = await api.put('/hr/checkin/location', data)
+    return res.data.data ?? null
+  },
+
+  async checkin(geo: CheckinGeo): Promise<CheckinResult> {
+    const res = await api.post('/hr/checkin', geo)
+    return res.data.data
+  },
+
+  async checkinWithPin(data: CheckinPinInput): Promise<CheckinResult> {
+    const res = await api.post('/hr/checkin/pin', data)
+    return res.data.data
+  },
+
+  async getMyAttendance(params?: { from?: string; to?: string }): Promise<MyAttendance> {
+    const res = await api.get('/hr/me/attendance', { params })
+    return res.data.data
   },
 }
 

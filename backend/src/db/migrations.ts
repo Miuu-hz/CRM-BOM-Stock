@@ -3155,6 +3155,60 @@ export function runMonthCloseMigrations(db: any): void {
       );
     `)
   } catch (e) { console.error('⚠️ HR Phase 2b migration error:', e) }
+
+  // ==================== HR Phase 4 — การลา / วันหยุด / เช็คอินเว็บ (สัญญากลาง docs/contracts/hr-phase4.md) ====================
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS leave_types (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        paid INTEGER NOT NULL DEFAULT 1,
+        days_per_year REAL NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT,
+        UNIQUE(tenant_id, code)
+      );
+      CREATE TABLE IF NOT EXISTS leave_requests (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        leave_type_id TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        days REAL NOT NULL,
+        reason TEXT,
+        status TEXT NOT NULL CHECK (status IN ('PENDING','APPROVED','REJECTED','CANCELLED')),
+        approval_request_id TEXT,
+        requested_by TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_leave_requests_tenant_emp ON leave_requests(tenant_id, employee_id, start_date);
+      CREATE TABLE IF NOT EXISTS public_holidays (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TEXT,
+        UNIQUE(tenant_id, date)
+      );
+      CREATE TABLE IF NOT EXISTS hr_checkin_locations (
+        tenant_id TEXT PRIMARY KEY,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        radius_m INTEGER NOT NULL DEFAULT 150,
+        updated_at TEXT
+      );
+    `)
+    for (const [col, def] of [['lat', 'REAL'], ['lng', 'REAL'], ['distance_m', 'REAL']] as const) {
+      try { db.exec(`ALTER TABLE attendance_logs ADD COLUMN ${col} ${def}`) } catch { /* มีแล้ว */ }
+    }
+    try { db.exec(`ALTER TABLE employees ADD COLUMN checkin_pin_hash TEXT`) } catch { /* มีแล้ว */ }
+  } catch (e) { console.error('⚠️ HR Phase 4 migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

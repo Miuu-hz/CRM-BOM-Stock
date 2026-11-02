@@ -34,6 +34,9 @@ import OrgUnits from './pages/HR/OrgUnits'
 import Attendance from './pages/HR/Attendance'
 import Payroll from './pages/HR/Payroll'
 import HrSettings from './pages/HR/HrSettings'
+import Leave from './pages/HR/Leave'
+import MyHr from './pages/HR/MyHr'
+import CheckinKiosk from './pages/HR/CheckinKiosk'
 import PayslipPrint from './pages/HR/PayslipPrint'
 
 // Blocks direct-URL access to a route whose menu is restricted in
@@ -125,6 +128,9 @@ function AppContent() {
         <Route path="/hr/payroll" element={<Guard path="/hr/payroll"><Payroll /></Guard>} />
         <Route path="/hr/payroll/:id/print" element={<Guard path="/hr/payroll"><PayslipPrint /></Guard>} />
         <Route path="/hr/settings" element={<Guard path="/hr/settings"><HrSettings /></Guard>} />
+        <Route path="/hr/leave" element={<Guard path="/hr/leave"><Leave /></Guard>} />
+        <Route path="/hr/me" element={<Guard path="/hr/me"><MyHr /></Guard>} />
+        <Route path="/hr/kiosk" element={<Guard path="/hr/kiosk"><CheckinKiosk /></Guard>} />
 
         {/* Cashier & KDS Route */}
         <Route path="/cashier" element={<Cashier />} />

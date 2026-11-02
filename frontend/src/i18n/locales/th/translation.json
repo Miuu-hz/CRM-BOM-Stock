@@ -87,7 +87,9 @@
     "orgUnits": "ผังองค์กร",
     "attendance": "เวลาเข้าออก",
     "payroll": "เงินเดือน",
-    "hrSettings": "ตั้งค่าเงินเดือน"
+    "hrSettings": "ตั้งค่าเงินเดือน",
+    "myHr": "ของฉัน",
+    "leave": "การลา"
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",
