@@ -337,6 +337,41 @@ export function getAttendanceSummary(
   const toBound = `${toBuffer} 23:59:59`
   const dates = listDates(from, to)
 
+  // B3: Load public holidays and approved leave requests for the range
+  const holidayRows = db.prepare(
+    'SELECT date FROM public_holidays WHERE tenant_id = ? AND date >= ? AND date <= ?'
+  ).all(tenantId, from, to) as { date: string }[]
+  const holidayDates = new Set(holidayRows.map((r) => r.date))
+
+  let leaveSql = `
+    SELECT employee_id, start_date, end_date
+    FROM leave_requests
+    WHERE tenant_id = ?
+      AND status = 'APPROVED'
+      AND start_date <= ?
+      AND end_date >= ?
+  `
+  const leaveParams: any[] = [tenantId, to, from]
+  if (employeeId && employeeId.trim()) {
+    leaveSql += ' AND employee_id = ?'
+    leaveParams.push(employeeId.trim())
+  }
+  const leaveRows = db.prepare(leaveSql).all(...leaveParams) as { employee_id: string; start_date: string; end_date: string }[]
+
+  const empLeaveDates = new Map<string, Set<string>>()
+  for (const lr of leaveRows) {
+    let set = empLeaveDates.get(lr.employee_id)
+    if (!set) {
+      set = new Set<string>()
+      empLeaveDates.set(lr.employee_id, set)
+    }
+    const rStart = lr.start_date < from ? from : lr.start_date
+    const rEnd = lr.end_date > to ? to : lr.end_date
+    for (const d of listDates(rStart, rEnd)) {
+      set.add(d)
+    }
+  }
+
   for (const emp of empRows) {
     const fullName = `${emp.first_name}${emp.last_name ? ' ' + emp.last_name : ''}`
     if (!emp.shift_id || !emp.start_time || !emp.end_time) {
@@ -408,6 +443,30 @@ export function getAttendanceSummary(
         daysWorked: 0,
       }
     }
+
+    // ponytail: B3 holiday and approved leave days are not absent; holiday wins when both
+    const leaveDates = empLeaveDates.get(emp.id) ?? new Set<string>()
+    let holidayDays = 0
+    let leaveDays = 0
+
+    for (const day of days) {
+      const isHoliday = holidayDates.has(day.workDate)
+      const isLeave = leaveDates.has(day.workDate)
+      if (isHoliday) {
+        holidayDays++
+        day.absent = false
+      } else if (isLeave) {
+        leaveDays++
+        day.absent = false
+      }
+    }
+
+    totals = {
+      ...totals,
+      absentDays: days.filter((d) => d.absent).length,
+    }
+    if (holidayDays > 0) totals.holidayDays = holidayDays
+    if (leaveDays > 0) totals.leaveDays = leaveDays
 
     employees.push({
       employeeId: emp.id,

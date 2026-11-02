@@ -3,7 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { deductStockForSO, soStockAlreadyDeducted } from './sales/shared'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
-import { approvalDenyReason, canApprove as canApproveRequests, gmActsOn, isGm } from '../services/approvalGate.service'
+import { approvalDenyReason, canApprove as canApproveRequests, gmActsOn, isGm, isLeaveManagerFor } from '../services/approvalGate.service'
 import { applyStockMovement, applyManualUnpack, StockMovementError } from '../services/stockMovement.service'
 import { cancelPosBill } from '../services/posBillCancel.service'
 import { recalculateBillTotals } from './pos-bill.routes'
@@ -290,13 +290,12 @@ router.get('/pending', async (req: Request, res: Response) => {
     // GM (แผนก CEO) อนุมัติหมวดยกเลิกเอกสารได้โดยไม่ต้องมอบสิทธิ์ — ต้องเห็นคำขอในกล่องด้วย
     if (!isBlanketApprover && isGm(req.user! as any)) moduleTypes.push('sales_cancel', 'purchase_cancel')
 
-    if (!isBlanketApprover && moduleTypes.length === 0) {
-      return res.json({ success: true, data: [] })
-    }
+    const hasLeavePerm = isBlanketApprover || moduleTypes.includes('leave')
+    const queryModules = hasLeavePerm ? moduleTypes : [...moduleTypes, 'leave']
 
     // Get pending requests for these modules
-    const placeholders = moduleTypes.map(() => '?').join(',')
-    const requests = db.prepare(`
+    const placeholders = queryModules.map(() => '?').join(',')
+    const rows = db.prepare(`
       SELECT ar.*, 
         CASE ar.reference_type
           WHEN 'work_orders' THEN (SELECT wo_number FROM work_orders WHERE id = ar.reference_id)
@@ -309,7 +308,11 @@ router.get('/pending', async (req: Request, res: Response) => {
         ${isBlanketApprover ? '' : `AND ar.module_type IN (${placeholders})`}
         AND ar.status = 'PENDING'
       ORDER BY ar.created_at DESC
-    `).all(tenantId, ...(isBlanketApprover ? [] : moduleTypes))
+    `).all(tenantId, ...(isBlanketApprover ? [] : queryModules)) as any[]
+
+    const requests = hasLeavePerm
+      ? rows
+      : rows.filter(r => r.module_type !== 'leave' || isLeaveManagerFor(tenantId, userId, r.reference_id))
 
     res.json({ success: true, data: requests })
   } catch (error) {
@@ -394,7 +397,7 @@ router.get('/requests/:id/detail', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Approval request not found' })
     }
 
-    const canUserApprove = isPrivileged || canApproveRequests(tenantId, req.user! as any, request.module_type, Number(request.amount) || 0)
+    const canUserApprove = isPrivileged || canApproveRequests(tenantId, req.user! as any, request.module_type, Number(request.amount) || 0, request.reference_id)
     if (!canUserApprove && request.requester_id !== req.user!.userId) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ดูคำขอนี้' })
     }
@@ -455,8 +458,8 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'วงเงินคำขอเกินสิทธิ์การอนุมัติ (จำกัดไม่เกิน 5,000 บาท ต้องให้ Admin หรือ Owner อนุมัติ)' })
     }
 
-    // ADMIN/MASTER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน
-    if (!canApproveRequests(tenantId, req.user! as any, request.module_type, requestAmount)) {
+    // ADMIN/MASTER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน (หมวด leave เพิ่มหัวหน้าแผนกตรง)
+    if (!canApproveRequests(tenantId, req.user! as any, request.module_type, requestAmount, request.reference_id)) {
       return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์อนุมัติรายการนี้' })
     }
 
@@ -515,7 +518,7 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
       if (decision === 'APPROVED') {
         executeApprovedAction(request, req.user!.userId, req.user!.email, now)
       } else {
-        revertReferenceStatus(request)
+        revertReferenceStatus(request, req.user!.userId, now)
       }
     })
 
@@ -628,6 +631,10 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
       .run(discountAmt, request.reference_id, request.tenant_id)
     // บิลปิดไปแล้ว/ไม่ใช่ของ tenant นี้ ห้ามคำนวณยอดใหม่ (recalculate กรองแค่ id)
     if (upd.changes > 0) recalculateBillTotals(request.reference_id)
+  } else if (request.reference_type === 'leave_requests') {
+    db.prepare(
+      "UPDATE leave_requests SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(executorId, now, now, request.reference_id, request.tenant_id)
   }
 
   // Log execution
@@ -669,7 +676,7 @@ function executePurchaseCancel(request: any, executorId: string, executorName: s
 }
 
 // Helper function to revert reference status when rejected
-function revertReferenceStatus(request: any) {
+function revertReferenceStatus(request: any, actorId?: string, now = new Date().toISOString()) {
   // ปฏิเสธคำขอยกเลิกเอกสารขาย/ซื้อ = เอกสารคงสถานะเดิม ไม่ต้องย้อนอะไร (ห้ามตก branch supplier_payments/receipts ด้านล่าง)
   if (request.module_type === 'sales_cancel' || request.module_type === 'purchase_cancel') return
   if (request.module_type === 'close_adjust') return revertCloseApproval(request.tenant_id, request.id)
@@ -686,6 +693,10 @@ function revertReferenceStatus(request: any) {
     const upd = db.prepare("UPDATE pos_running_bills SET discount_amount = 0 WHERE id = ? AND tenant_id = ? AND status = 'OPEN'")
       .run(request.reference_id, request.tenant_id)
     if (upd.changes > 0) recalculateBillTotals(request.reference_id)
+  } else if (request.reference_type === 'leave_requests') {
+    db.prepare(
+      "UPDATE leave_requests SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)
   }
 }
 

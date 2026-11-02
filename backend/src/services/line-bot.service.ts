@@ -796,11 +796,11 @@ class LineBotService {
     private async handlePendingApprovals(tenantId: string, me: any, replyToken: string, client: any) {
         // ponytail: ดึง 200 แถวล่าสุดแล้วกรองด้วย canApprove ทีละแถว — พอสำหรับร้านเล็ก ถ้าค้างเกินนี้ให้ย้ายเงื่อนไขไปใน SQL
         const rows = (getDb().prepare(`
-            SELECT request_number, module_type, requester_name, amount, created_at
+            SELECT request_number, module_type, reference_id, requester_name, amount, created_at
             FROM approval_requests WHERE tenant_id = ? AND status = 'PENDING'
             ORDER BY created_at DESC LIMIT 200
         `).all(tenantId) as any[])
-            .filter(r => canApprove(tenantId, { userId: me.user_id, email: me.email ?? '', role: me.role }, r.module_type, Number(r.amount) || 0))
+            .filter(r => canApprove(tenantId, { userId: me.user_id, email: me.email ?? '', role: me.role }, r.module_type, Number(r.amount) || 0, r.reference_id))
         await client.replyMessage(replyToken, flexTemplates.pendingApprovalsCard({
             company: companyName(tenantId), total: rows.length,
             rows: rows.slice(0, 6).map(r => ({ requestNumber: r.request_number, moduleType: r.module_type, requesterName: r.requester_name,

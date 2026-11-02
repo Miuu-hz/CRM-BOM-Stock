@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import bcrypt from 'bcryptjs'
 import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import { userCan } from '../services/rbac.service'
 import db from '../db/sqlite'
@@ -12,6 +13,7 @@ const ALLOWED_EMPLOYMENT_TYPES = ['MONTHLY', 'DAILY', 'HOURLY'] as const
 const ALLOWED_STATUSES = ['ACTIVE', 'RESIGNED', 'TERMINATED'] as const
 const SENSITIVE_FIELDS = ['national_id', 'bank_account', 'base_wage', 'tax_allowances'] as const
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const PIN_RE = /^\d{4,6}$/
 
 function isValidDate(val: unknown): val is string {
   if (typeof val !== 'string' || !DATE_RE.test(val)) return false
@@ -23,9 +25,12 @@ function isUniqueConstraintError(err: any): boolean {
   return err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || String(err?.message || '').includes('UNIQUE constraint failed')
 }
 
-function sanitizeEmployee(row: any, canWrite: boolean) {
+// B5: ทุก endpoint แปลง checkin_pin_hash -> has_checkin_pin และไม่ leak hash ออก API
+function sanitizeEmployee(row: any, canWrite = true) {
   if (!row) return row
   const out = { ...row }
+  out.has_checkin_pin = 'checkin_pin_hash' in row ? Boolean(row.checkin_pin_hash) : Boolean(row.has_checkin_pin)
+  delete out.checkin_pin_hash
   if (!canWrite) {
     for (const f of SENSITIVE_FIELDS) delete out[f]
   }
@@ -77,7 +82,7 @@ router.get('/me', (req: Request, res: Response) => {
     if (!row) {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลพนักงานที่ผูกกับบัญชีผู้ใช้นี้' })
     }
-    res.json({ success: true, data: row })
+    res.json({ success: true, data: sanitizeEmployee(row) })
   } catch (error: any) {
     console.error('Get HR me error:', error)
     res.status(500).json({ success: false, message: error.message })
@@ -348,7 +353,7 @@ function normalizeTaxAllowances(raw: unknown): string | null {
 }
 
 // POST /api/hr/employees
-router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: Response) => {
+router.post('/employees', requirePermission('hr', 'write'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const body = req.body || {}
@@ -423,6 +428,14 @@ router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: 
       }
     }
 
+    let checkinPinHash: string | null = null
+    if (body.checkin_pin !== undefined && body.checkin_pin !== null) {
+      if (typeof body.checkin_pin !== 'string' || !PIN_RE.test(body.checkin_pin)) {
+        return res.status(400).json({ success: false, message: 'PIN ต้องเป็นตัวเลข 4–6 หลัก' })
+      }
+      checkinPinHash = await bcrypt.hash(body.checkin_pin, 10)
+    }
+
     const taxAllowances = normalizeTaxAllowances(body.tax_allowances)
     if (taxAllowances === null) {
       return res.status(400).json({ success: false, message: 'ข้อมูลลดหย่อนภาษีต้องเป็น JSON object' })
@@ -452,13 +465,15 @@ router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: 
         id, tenant_id, code, first_name, last_name, nickname, org_unit_id, position,
         employment_type, base_wage, start_date, end_date, status,
         national_id, bank_name, bank_account, phone, email, address,
-        sso_enrolled, tax_allowances, user_id, device_pin, shift_id, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        sso_enrolled, tax_allowances, user_id, device_pin, shift_id, notes,
+        checkin_pin_hash, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, tenantId, code, firstName, lastName, nickname, orgUnitId, position,
       employmentType, baseWage, startDate, endDate, status,
       nationalId, bankName, bankAccount, phone, email, address,
-      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, notes, now, now
+      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, notes,
+      checkinPinHash, now, now
     )
 
     const created = db.prepare(`
@@ -469,7 +484,7 @@ router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: 
       WHERE e.id = ? AND e.tenant_id = ?
     `).get(id, tenantId)
 
-    res.status(201).json({ success: true, data: created })
+    res.status(201).json({ success: true, data: sanitizeEmployee(created) })
   } catch (error: any) {
     if (isUniqueConstraintError(error)) {
       return res.status(409).json({ success: false, message: 'ข้อมูลพนักงานซ้ำกับที่มีอยู่ในระบบ' })
@@ -480,7 +495,7 @@ router.post('/employees', requirePermission('hr', 'write'), (req: Request, res: 
 })
 
 // PUT /api/hr/employees/:id
-router.put('/employees/:id', requirePermission('hr', 'write'), (req: Request, res: Response) => {
+router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const id = req.params.id
@@ -583,6 +598,17 @@ router.put('/employees/:id', requirePermission('hr', 'write'), (req: Request, re
       }
     }
 
+    let checkinPinHash = existing.checkin_pin_hash
+    if (body.checkin_pin !== undefined) {
+      if (body.checkin_pin === null) {
+        checkinPinHash = null
+      } else if (typeof body.checkin_pin === 'string' && PIN_RE.test(body.checkin_pin)) {
+        checkinPinHash = await bcrypt.hash(body.checkin_pin, 10)
+      } else {
+        return res.status(400).json({ success: false, message: 'PIN ต้องเป็นตัวเลข 4–6 หลัก' })
+      }
+    }
+
     const taxAllowances = body.tax_allowances !== undefined
       ? normalizeTaxAllowances(body.tax_allowances)
       : existing.tax_allowances
@@ -603,13 +629,15 @@ router.put('/employees/:id', requirePermission('hr', 'write'), (req: Request, re
         code = ?, first_name = ?, last_name = ?, nickname = ?, org_unit_id = ?, position = ?,
         employment_type = ?, base_wage = ?, start_date = ?, end_date = ?, status = ?,
         national_id = ?, bank_name = ?, bank_account = ?, phone = ?, email = ?, address = ?,
-        sso_enrolled = ?, tax_allowances = ?, user_id = ?, device_pin = ?, shift_id = ?, notes = ?, updated_at = ?
+        sso_enrolled = ?, tax_allowances = ?, user_id = ?, device_pin = ?, shift_id = ?, notes = ?,
+        checkin_pin_hash = ?, updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(
       code, firstName, optStr('last_name'), optStr('nickname'), orgUnitId, optStr('position'),
       employmentType, baseWage, startDate, endDate, status,
       optStr('national_id'), optStr('bank_name'), optStr('bank_account'), optStr('phone'), optStr('email'), optStr('address'),
-      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, optStr('notes'), now,
+      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, optStr('notes'),
+      checkinPinHash, now,
       id, tenantId
     )
 
@@ -621,7 +649,7 @@ router.put('/employees/:id', requirePermission('hr', 'write'), (req: Request, re
       WHERE e.id = ? AND e.tenant_id = ?
     `).get(id, tenantId)
 
-    res.json({ success: true, data: updated })
+    res.json({ success: true, data: sanitizeEmployee(updated) })
   } catch (error: any) {
     if (isUniqueConstraintError(error)) {
       return res.status(409).json({ success: false, message: 'ข้อมูลพนักงานซ้ำกับที่มีอยู่ในระบบ' })
@@ -662,7 +690,7 @@ router.post('/employees/:id/offboard', requirePermission('hr', 'write'), (req: R
       WHERE e.id = ? AND e.tenant_id = ?
     `).get(id, tenantId)
 
-    res.json({ success: true, data: updated })
+    res.json({ success: true, data: sanitizeEmployee(updated) })
   } catch (error: any) {
     console.error('Offboard employee error:', error)
     res.status(500).json({ success: false, message: error.message })

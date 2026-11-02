@@ -80,9 +80,31 @@ export function gmActsOn(user: GateUser, category?: string): boolean {
   return !!category && ALWAYS_REQUIRED.has(category as GateCategory) && isGm(user)
 }
 
-/** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท */
-export function canApprove(tenantId: string, user: GateUser, moduleType?: string, amount = 0): boolean {
+/**
+ * หัวหน้าแผนกตรง (org_units.manager_employee_id) ของพนักงานที่ขอลา — ห้ามอนุมัติใบลาของตัวเอง
+ * ponytail: เช็คเฉพาะแผนกตรง (e.org_unit_id) ไม่ไล่ขึ้นแผนกแม่ (parent_id) — ถ้ามีหลายชั้นค่อยใช้ recursive CTE
+ */
+export function isLeaveManagerFor(tenantId: string, userId: string, leaveRequestId: string): boolean {
+  if (!tenantId || !userId || !leaveRequestId) return false
+  const row = db.prepare(`
+    SELECT 1
+    FROM leave_requests lr
+    JOIN employees e ON e.id = lr.employee_id AND e.tenant_id = lr.tenant_id
+    JOIN org_units ou ON ou.id = e.org_unit_id AND ou.tenant_id = lr.tenant_id
+    JOIN employees m ON m.id = ou.manager_employee_id AND m.tenant_id = lr.tenant_id
+    WHERE lr.tenant_id = ? AND lr.id = ?
+      AND m.user_id = ?
+      AND e.id <> m.id
+      AND COALESCE(e.user_id, '') <> ?
+    LIMIT 1
+  `).get(tenantId, leaveRequestId, userId, userId)
+  return !!row
+}
+
+/** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท (หมวด leave เพิ่มหัวหน้าแผนกตรง) */
+export function canApprove(tenantId: string, user: GateUser, moduleType?: string, amount = 0, referenceId?: string): boolean {
   if (APPROVER_ROLES.has(user.role) || gmActsOn(user, moduleType)) return true
+  if (moduleType === 'leave' && referenceId && isLeaveManagerFor(tenantId, user.userId, referenceId)) return true
   // Non-admins capped at 5,000 THB max
   if (amount > 5000) return false
 

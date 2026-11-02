@@ -118,6 +118,8 @@ export function registerHrTools(
           lateMinutes: e.totals.lateMinutes,
           earlyLeaveMinutes: e.totals.earlyLeaveMinutes,
           otCandidateMinutes: e.totals.otCandidateMinutes,
+          ...(e.totals.holidayDays !== undefined ? { holidayDays: e.totals.holidayDays } : {}),
+          ...(e.totals.leaveDays !== undefined ? { leaveDays: e.totals.leaveDays } : {}),
           totals: e.totals,
         }))
         return ok({

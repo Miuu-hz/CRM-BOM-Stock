@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Settings as SettingsIcon, Plus, Sparkles, Pencil, Save, X } from 'lucide-react'
+import { Settings as SettingsIcon, Plus, Sparkles, Pencil, Save, X, MapPin, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import hrService, { HrSettingsData, PayItem, PayItemCalc } from '../../services/hr.service'
+import hrService, { HrSettingsData, PayItem, PayItemCalc, CheckinLocation } from '../../services/hr.service'
 
 const DEFAULT_SETTINGS: HrSettingsData = {
   workHoursPerDay: 8,
@@ -23,6 +23,13 @@ export default function HrSettings() {
   const [savingSettings, setSavingSettings] = useState(false)
   const [creatingStarter, setCreatingStarter] = useState(false)
 
+  // Checkin location
+  const [checkinLoc, setCheckinLoc] = useState<CheckinLocation | null>(null)
+  const [locLat, setLocLat] = useState('')
+  const [locLng, setLocLng] = useState('')
+  const [locRadius, setLocRadius] = useState('150')
+  const [savingLoc, setSavingLoc] = useState(false)
+
   // Pay item form
   const [editingItem, setEditingItem] = useState<PayItem | null>(null)
   const [itemName, setItemName] = useState('')
@@ -36,9 +43,24 @@ export default function HrSettings() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [s, items] = await Promise.all([hrService.getSettings(), hrService.getPayItems()])
+      const [s, items, loc] = await Promise.all([
+        hrService.getSettings(),
+        hrService.getPayItems(),
+        typeof hrService.getCheckinLocation === 'function' ? hrService.getCheckinLocation().catch(() => null) : Promise.resolve(null),
+      ])
       if (s) setSettings({ ...DEFAULT_SETTINGS, ...s })
       setPayItems(items || [])
+      if (loc) {
+        setCheckinLoc(loc)
+        setLocLat(String(loc.lat))
+        setLocLng(String(loc.lng))
+        setLocRadius(String(loc.radius_m ?? 150))
+      } else {
+        setCheckinLoc(null)
+        setLocLat('')
+        setLocLng('')
+        setLocRadius('150')
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'โหลดการตั้งค่าเงินเดือนไม่สำเร็จ')
     } finally {
@@ -127,6 +149,70 @@ export default function HrSettings() {
       toast.error(err?.response?.data?.error || 'บันทึกรายการไม่สำเร็จ')
     } finally {
       setSavingItem(false)
+    }
+  }
+
+  const handleUseCurrentPosition = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast.error('เบราว์เซอร์ไม่รองรับ GPS')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocLat(pos.coords.latitude.toFixed(6))
+        setLocLng(pos.coords.longitude.toFixed(6))
+        toast.success('ดึงพิกัดปัจจุบันแล้ว')
+      },
+      (err) => {
+        toast.error(err?.message || 'ไม่สามารถดึงตำแหน่งพิกัดได้')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  const handleSaveLocation = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const latNum = parseFloat(locLat)
+    const lngNum = parseFloat(locLng)
+    const radiusNum = parseFloat(locRadius) || 150
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      toast.error('กรุณาระบุพิกัดละติจูดและลองจิจูดให้ถูกต้อง')
+      return
+    }
+    setSavingLoc(true)
+    try {
+      const updated = await hrService.setCheckinLocation({
+        lat: latNum,
+        lng: lngNum,
+        radius_m: radiusNum,
+      })
+      setCheckinLoc(updated)
+      if (updated) {
+        setLocLat(String(updated.lat))
+        setLocLng(String(updated.lng))
+        setLocRadius(String(updated.radius_m ?? 150))
+      }
+      toast.success('บันทึกจุดเช็คอินแล้ว')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'บันทึกจุดเช็คอินไม่สำเร็จ')
+    } finally {
+      setSavingLoc(false)
+    }
+  }
+
+  const handleDeleteLocation = async () => {
+    setSavingLoc(true)
+    try {
+      await hrService.setCheckinLocation(null)
+      setCheckinLoc(null)
+      setLocLat('')
+      setLocLng('')
+      setLocRadius('150')
+      toast.success('ลบจุดเช็คอินแล้ว')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'ลบจุดเช็คอินไม่สำเร็จ')
+    } finally {
+      setSavingLoc(false)
     }
   }
 
@@ -447,6 +533,101 @@ export default function HrSettings() {
                 </table>
               </div>
             )}
+          </div>
+
+          {/* จุดเช็คอิน (GPS) */}
+          <div className="phopy-card p-5 space-y-4 lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-2">
+              <div>
+                <h2 className="text-base font-bold text-[var(--fg-1)]">จุดเช็คอิน (GPS)</h2>
+                <p className="text-xs text-[var(--fg-3)]">
+                  ไม่ตั้งจุด = เช็คอินได้จากทุกที่
+                </p>
+              </div>
+              {checkinLoc && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--success-soft)] text-[var(--success-strong)]">
+                  ตั้งจุดแล้ว ({checkinLoc.lat.toFixed(4)}, {checkinLoc.lng.toFixed(4)} · รัศมี {checkinLoc.radius_m} ม.)
+                </span>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveLocation} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    ละติจูด (Latitude)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={locLat}
+                    onChange={(e) => setLocLat(e.target.value)}
+                    placeholder="เช่น 13.7563"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    ลองจิจูด (Longitude)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={locLng}
+                    onChange={(e) => setLocLng(e.target.value)}
+                    placeholder="เช่น 100.5018"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    รัศมี (เมตร, ค่าเริ่มต้น 150)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={locRadius}
+                    onChange={(e) => setLocRadius(e.target.value)}
+                    placeholder="150"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentPosition}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-[var(--surface-2)] hover:bg-[var(--surface-sunken)] text-[var(--fg-1)] border border-[var(--border)] flex items-center gap-1.5"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-[var(--primary)]" />
+                    ใช้ตำแหน่งปัจจุบัน
+                  </button>
+                  {checkinLoc && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteLocation}
+                      disabled={savingLoc}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--danger)] hover:bg-[var(--danger-soft)] flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      ลบจุดเช็คอิน
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingLoc}
+                  className="phopy-btn-primary px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {savingLoc ? 'กำลังบันทึก...' : 'บันทึกจุดเช็คอิน'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

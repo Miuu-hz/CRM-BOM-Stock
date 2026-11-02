@@ -82,6 +82,8 @@ export default function Employees() {
   const [saving, setSaving] = useState(false)
   const [payItems, setPayItems] = useState<PayItem[]>([])
   const [empPayItems, setEmpPayItems] = useState<Record<string, { checked: boolean; amount: string }>>({})
+  const [checkinPin, setCheckinPin] = useState('')
+  const [deletePin, setDeletePin] = useState(false)
 
   const [offboardTarget, setOffboardTarget] = useState<Employee | null>(null)
   const [offboardDate, setOffboardDate] = useState(todayStr())
@@ -118,12 +120,16 @@ export default function Employees() {
     setEditing(null)
     setForm(emptyForm())
     setEmpPayItems({})
+    setCheckinPin('')
+    setDeletePin(false)
     hrService.getPayItems?.().then((items) => setPayItems((items || []).filter((i) => i.is_active !== 0))).catch(() => {})
     setModalOpen(true)
   }
 
   const openEdit = (emp: Employee) => {
     setEditing(emp)
+    setCheckinPin('')
+    setDeletePin(false)
     setForm({
       code: emp.code || '',
       first_name: emp.first_name || '',
@@ -170,6 +176,10 @@ export default function Employees() {
       toast.error('กรุณาระบุชื่อพนักงาน')
       return
     }
+    if (checkinPin.trim() && !/^\d{4,6}$/.test(checkinPin.trim())) {
+      toast.error('PIN เช็คอินต้องเป็นตัวเลข 4–6 หลัก')
+      return
+    }
     setSaving(true)
     try {
       const payload: EmployeeInput = {
@@ -192,6 +202,11 @@ export default function Employees() {
         device_pin: form.device_pin.trim() || null,
         shift_id: form.shift_id || null,
         notes: form.notes.trim() || null,
+      }
+      if (deletePin) {
+        payload.checkin_pin = null
+      } else if (checkinPin.trim()) {
+        payload.checkin_pin = checkinPin.trim()
       }
       const selectedPayItems = Object.entries(empPayItems)
         .filter(([, v]) => v.checked)
@@ -323,9 +338,17 @@ export default function Employees() {
                   <tr key={emp.id} className="hover:bg-[var(--surface-2)]/60">
                     <td className="py-3 px-4 font-mono text-xs font-semibold text-[var(--fg-2)]">{emp.code}</td>
                     <td className="py-3 px-4">
-                      <div className="font-medium text-[var(--fg-1)]">
-                        {emp.first_name} {emp.last_name || ''}
-                        {emp.nickname ? <span className="ml-1 text-xs text-[var(--fg-3)]">({emp.nickname})</span> : null}
+                      <div className="font-medium text-[var(--fg-1)] flex items-center gap-1.5 flex-wrap">
+                        <span>{emp.first_name} {emp.last_name || ''}</span>
+                        {emp.nickname ? <span className="text-xs text-[var(--fg-3)]">({emp.nickname})</span> : null}
+                        {emp.has_checkin_pin ? (
+                          <span
+                            className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--primary-soft)] text-[var(--primary)]"
+                            title="ตั้ง PIN เช็คอินหน้าร้านแล้ว"
+                          >
+                            PIN
+                          </span>
+                        ) : null}
                       </div>
                       {emp.phone && <div className="text-xs text-[var(--fg-3)]">{emp.phone}</div>}
                     </td>
@@ -570,6 +593,53 @@ export default function Employees() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-[var(--fg-2)]">
+                      PIN เช็คอิน (แท็บเล็ตหน้าร้าน)
+                    </label>
+                    {editing?.has_checkin_pin && !deletePin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeletePin(true)
+                          setCheckinPin('')
+                        }}
+                        className="text-[11px] text-[var(--danger)] hover:underline"
+                      >
+                        ลบ PIN
+                      </button>
+                    )}
+                    {deletePin && (
+                      <button
+                        type="button"
+                        onClick={() => setDeletePin(false)}
+                        className="text-[11px] text-[var(--fg-3)] hover:underline"
+                      >
+                        ยกเลิกลบ PIN
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    disabled={deletePin}
+                    value={deletePin ? '' : checkinPin}
+                    onChange={(e) => {
+                      setCheckinPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                      setDeletePin(false)
+                    }}
+                    placeholder={
+                      deletePin
+                        ? 'เตรียมลบ PIN เมื่อบันทึก'
+                        : editing?.has_checkin_pin
+                        ? 'ตั้งแล้ว — เว้นว่างถ้าไม่เปลี่ยน'
+                        : 'ตัวเลข 4–6 หลัก'
+                    }
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)] disabled:opacity-50"
+                  />
                 </div>
               </div>
 

@@ -38,6 +38,8 @@ export interface PeriodTotals {
   otCandidateMinutes: number;
   absentDays: number;
   daysWorked: number;
+  leaveDays?: number;
+  holidayDays?: number;
 }
 
 export interface EmployeePeriodSummary {

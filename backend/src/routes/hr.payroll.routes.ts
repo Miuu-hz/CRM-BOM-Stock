@@ -25,6 +25,14 @@ function getPeriodBounds(period: string): { startDate: string; endDate: string }
   return { startDate: `${period}-01`, endDate: `${period}-${String(lastDay).padStart(2, '0')}` }
 }
 
+function countCalendarDays(from: string, to: string): number {
+  const [fy, fm, fd] = from.split('-').map(Number)
+  const [ty, tm, td] = to.split('-').map(Number)
+  const fromUtc = Date.UTC(fy, fm - 1, fd)
+  const toUtc = Date.UTC(ty, tm - 1, td)
+  return Math.max(0, Math.round((toUtc - fromUtc) / 86400000) + 1)
+}
+
 function safeJsonParse<T>(raw: unknown, fallback: T): T {
   if (typeof raw !== 'string' || !raw.trim()) return fallback
   try { return JSON.parse(raw) as T } catch { return fallback }
@@ -468,8 +476,32 @@ router.post('/payroll-runs', requirePermission('hr', 'write'), (req: Request, re
     const insertLine = db.prepare(
       `INSERT INTO payroll_run_lines (id, tenant_id, run_id, employee_id, inputs, result, gross, late, sso_employee, sso_employer, wht, other_deduction, net) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
+    // ponytail: B3 default unpaidLeaveDays from prorated sum of approved unpaid leave requests overlapping the period, rounded to 0.5
+    const unpaidRequests = db.prepare(`
+      SELECT lr.employee_id, lr.start_date, lr.end_date, lr.days
+      FROM leave_requests lr
+      JOIN leave_types lt ON lt.id = lr.leave_type_id AND lt.tenant_id = lr.tenant_id
+      WHERE lr.tenant_id = ?
+        AND lr.status = 'APPROVED'
+        AND lt.paid = 0
+        AND lr.start_date <= ?
+        AND lr.end_date >= ?
+    `).all(tenantId, endDate, startDate) as Array<{ employee_id: string; start_date: string; end_date: string; days: number }>
+
+    const unpaidByEmp = new Map<string, number>()
+    for (const r of unpaidRequests) {
+      const totalCal = countCalendarDays(r.start_date, r.end_date)
+      const overlapStart = r.start_date > startDate ? r.start_date : startDate
+      const overlapEnd = r.end_date < endDate ? r.end_date : endDate
+      const overlapCal = countCalendarDays(overlapStart, overlapEnd)
+      const prorated = totalCal > 0 ? (Number(r.days || 0) * overlapCal) / totalCal : 0
+      const rounded = Math.round(prorated * 2) / 2
+      unpaidByEmp.set(r.employee_id, (unpaidByEmp.get(r.employee_id) || 0) + rounded)
+    }
+
     for (const emp of activeEmployees) {
-      const inputs: LineInputs = { ...DEFAULT_LINE_INPUTS }
+      const unpaidLeaveDays = Math.round((unpaidByEmp.get(emp.id) || 0) * 2) / 2
+      const inputs: LineInputs = { ...DEFAULT_LINE_INPUTS, unpaidLeaveDays }
       const c = computeEmployeeLine(tenantId, emp, inputs, settings)
       insertLine.run(generateId(), tenantId, runId, emp.id, JSON.stringify(inputs), JSON.stringify(c),
         c.gross, c.lateDeduction, c.ssoEmployee, c.ssoEmployer, c.wht, c.otherDeductionsTotal, c.net)
