@@ -193,7 +193,6 @@ const PLAN_BADGE_CLS: Record<string, string> = {
   enterprise_ai: 'bg-[var(--success-soft)] text-[var(--success)]',
   // แพ็กเก่า (ลูกค้าเดิม)
   starter: 'bg-[var(--primary-soft)] text-[var(--primary)]',
-  enterprise: 'bg-[var(--success-soft)] text-[var(--success)]',
 }
 
 function QuotaBar({ used, limit }: { used: number; limit: number | null }) {

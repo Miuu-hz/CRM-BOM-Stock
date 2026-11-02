@@ -1423,25 +1423,23 @@ export function runMigrations(db: any): void {
         JSON.stringify(['stock', 'sales', 'crm', 'pos', 'reports']), 2],
       ['plan_business', 'business', 'Business', 'ครบทั้งผลิตและบัญชี', 2490, 24900, 15, null, null,
         JSON.stringify(['stock', 'sales', 'crm', 'pos', 'reports', 'bom', 'work_orders', 'purchase', 'kds', 'accounting', 'tax', 'ai']), 3],
-      ['plan_enterprise', 'enterprise', 'Enterprise', 'ไม่จำกัดทุกอย่าง + API access', 5990, 59900, null, null, null,
-        JSON.stringify(['stock', 'sales', 'crm', 'pos', 'reports', 'bom', 'work_orders', 'purchase', 'kds', 'accounting', 'tax', 'ai', 'api_access']), 4],
     ]
     for (const p of plans) insertPlan.run(...p)
-    console.log('✅ Migration: subscription plans seeded (4 plans)')
+    console.log('✅ Migration: subscription plans seeded')
   } catch (e) { console.error('⚠️ subscription plans seed error:', e) }
 
-  // Backfill tenant เดิม (จาก company_settings) ที่ยังไม่มี subscription → ACTIVE/enterprise
+  // Backfill tenant เดิม (จาก company_settings) ที่ยังไม่มี subscription → ACTIVE/enterprise_ai
   // grandfather ไว้ไม่ให้ฟีเจอร์หาย — MASTER ค่อยปรับแพ็กเกจทีหลัง
   try {
     const backfill = db.prepare(`
       INSERT OR IGNORE INTO tenant_subscriptions
         (id, tenant_id, plan_code, status, current_period_start, current_period_end)
-      SELECT lower(hex(randomblob(8))), cs.tenant_id, 'enterprise', 'ACTIVE',
+      SELECT lower(hex(randomblob(8))), cs.tenant_id, 'enterprise_ai', 'ACTIVE',
              datetime('now'), datetime('now', '+100 years')
       FROM company_settings cs
     `).run()
     if (backfill.changes > 0) {
-      console.log(`✅ Migration: backfilled ${backfill.changes} tenant subscription(s) as ACTIVE/enterprise`)
+      console.log(`✅ Migration: backfilled ${backfill.changes} tenant subscription(s) as ACTIVE/enterprise_ai`)
     }
   } catch (e) { console.error('⚠️ tenant subscription backfill error:', e) }
 
@@ -1501,19 +1499,17 @@ export function runMigrations(db: any): void {
         for (const [id, code, name, desc, pm, py, users, products, shifts, features, sort] of v2) {
           upsert.run(id, code, name, desc, pm, py, users, products, shifts, JSON.stringify(features), sort)
         }
-        db.prepare(`UPDATE subscription_plans SET is_active = 0, sort_order = 90 WHERE code IN ('starter', 'enterprise')`).run()
-        // gate กระทบยอด Shopee/Lazada ย้ายจาก 'accounting' เป็น 'platform_settlement' (Pack Online)
-        // → แพ็ก enterprise เดิมต้องได้ key ใหม่ด้วย ไม่งั้นลูกค้าเก่าเข้าหน้าเดิมไม่ได้
-        const ent = db.prepare(`SELECT features FROM subscription_plans WHERE code = 'enterprise'`).get() as any
-        if (ent) {
-          const f = new Set<string>(JSON.parse(ent.features || '[]'))
-          f.add('platform_settlement')
-          db.prepare(`UPDATE subscription_plans SET features = ? WHERE code = 'enterprise'`).run(JSON.stringify([...f]))
-        }
+        db.prepare(`UPDATE subscription_plans SET is_active = 0, sort_order = 90 WHERE code = 'starter'`).run()
       })()
       console.log('✅ Migration: subscription plans v2 seeded (free/solo/business/business_plus/pro/enterprise_ai)')
     }
   } catch (e) { console.error('⚠️ subscription plans v2 seed error:', e) }
+
+  // 2026-11-02: เลิกแพ็ก Enterprise เก่า (5,990) ใช้ Enterprise AI ตัวเดียว — ลบเฉพาะเมื่อไม่มี tenant ค้างอยู่บนแพ็กนั้น
+  try {
+    db.prepare(`DELETE FROM subscription_plans WHERE code = 'enterprise'
+      AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions WHERE plan_code = 'enterprise')`).run()
+  } catch (e) { console.error('⚠️ drop legacy enterprise plan error:', e) }
 
   // 2026-10-13: Business ได้ 2 Pack (เดิม 1), Business+ ได้ 3 Pack (เดิม 2) — จำนวนจริงอยู่ที่ billing.catalog.ts
   // แก้เฉพาะคำอธิบายที่ยังเป็นข้อความเดิม (ถ้า MASTER แก้เองแล้วไม่ทับ)

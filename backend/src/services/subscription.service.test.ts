@@ -17,7 +17,7 @@ describe('แพ็กเกจ v2 (Base + Pack + Add-on)', () => {
     const active = (db.prepare('SELECT code FROM subscription_plans WHERE is_active = 1 ORDER BY sort_order').all() as any[])
       .map(r => r.code)
     expect(active).toEqual(['free', 'solo', 'business', 'business_plus', 'pro', 'enterprise_ai'])
-    const legacy = db.prepare(`SELECT is_active FROM subscription_plans WHERE code IN ('starter','enterprise')`).all() as any[]
+    const legacy = db.prepare(`SELECT is_active FROM subscription_plans WHERE code = 'starter'`).all() as any[]
     expect(legacy.every(r => r.is_active === 0)).toBe(true)
   })
 
@@ -55,11 +55,6 @@ describe('แพ็กเกจ v2 (Base + Pack + Add-on)', () => {
     const sub = getSubscription(subscribe('pro'))
     expect(sub.features).toEqual(expect.arrayContaining(['kds', 'platform_settlement', 'bom', 'accounting', 'tax', 'ai']))
     expect(sub.maxUsers).toBe(8)
-  })
-
-  it('แพ็ก enterprise เดิม (ลูกค้าเก่า) ยังเข้าหน้ากระทบยอด Shopee/Lazada ได้หลังเปลี่ยน gate', () => {
-    const sub = getSubscription(subscribe('enterprise'))
-    expect(sub.features).toContain('platform_settlement')
   })
 })
 
