@@ -89,7 +89,9 @@
     "payroll": "เงินเดือน",
     "hrSettings": "ตั้งค่าเงินเดือน",
     "myHr": "ของฉัน",
-    "leave": "การลา"
+    "leave": "การลา",
+    "training": "อบรม",
+    "advances": "เบิก/เงินยืม"
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",

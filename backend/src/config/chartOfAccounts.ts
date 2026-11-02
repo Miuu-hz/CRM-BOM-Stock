@@ -32,6 +32,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   // ปิดบัญชีรายเดือน (2026-10-26) — รหัสต้องตรงกับ ACC ใน accountCodes.ts
   { code: '1113', name: 'เงินสดย่อย', type: 'ASSET', category: 'CASH', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
   { code: '1114', name: 'เงินให้กู้ยืมแก่กรรมการ/หุ้นส่วน', type: 'ASSET', category: 'DIRECTOR_LOAN', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
+  // HR Phase 6 — เงินเบิกล่วงหน้า/เงินยืมของพนักงาน ล้างด้วยการหักในรอบเงินเดือน
+  { code: '1115', name: 'ลูกหนี้พนักงาน (เบิกล่วงหน้า/เงินยืม)', type: 'ASSET', category: 'RECEIVABLE', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
   { code: '1190', name: 'บัญชีพักรอตรวจสอบ', type: 'ASSET', category: 'SUSPENSE', level: 2, parent_code: '11', normal_balance: 'DEBIT' },
 
   { code: '12', name: 'สินทรัพย์ไม่หมุนเวียน', type: 'ASSET', category: 'FIXED_ASSET', level: 1, parent_code: '1', normal_balance: 'DEBIT' },

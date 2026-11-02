@@ -121,7 +121,9 @@
     "payroll": "Payroll",
     "hrSettings": "Payroll Settings",
     "myHr": "My HR",
-    "leave": "Leave"
+    "leave": "Leave",
+    "training": "Training",
+    "advances": "Advances & Loans"
   },
   "dashboard": {
     "title": "Executive Dashboard",

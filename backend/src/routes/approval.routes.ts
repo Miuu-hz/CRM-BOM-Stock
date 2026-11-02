@@ -634,6 +634,9 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
   } else if (request.reference_type === 'leave_requests') {
     db.prepare(
       "UPDATE leave_requests SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(executorId, now, now, request.reference_id, request.tenant_id)  } else if (request.reference_type === 'employee_advances') {
+    db.prepare(
+      "UPDATE employee_advances SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
     ).run(executorId, now, now, request.reference_id, request.tenant_id)
   }
 
@@ -696,6 +699,9 @@ function revertReferenceStatus(request: any, actorId?: string, now = new Date().
   } else if (request.reference_type === 'leave_requests') {
     db.prepare(
       "UPDATE leave_requests SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)  } else if (request.reference_type === 'employee_advances') {
+    db.prepare(
+      "UPDATE employee_advances SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
     ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)
   }
 }

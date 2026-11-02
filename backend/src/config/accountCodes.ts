@@ -10,6 +10,7 @@ export const ACC = {
   BANK:              '1102',
   AR:                '1104',  // ลูกหนี้การค้า
   OTHER_RECEIVABLE:  '1105',
+  EMPLOYEE_RECEIVABLE: '1115', // ลูกหนี้พนักงาน (HR Phase 6)
   INVENTORY:         '1106',  // สต็อกสินค้า
   RAW_MATERIAL:      '1107',  // สต็อกวัตถุดิบ
   PREPAID:           '1109',
@@ -108,6 +109,7 @@ export const ACC_META: Record<string, AccountMeta> = {
   [ACC.BANK]:             { name: 'เงินฝากธนาคาร', type: 'ASSET', category: 'CASH', normalBalance: 'DEBIT' },
   [ACC.AR]:               { name: 'ลูกหนี้การค้า', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
   [ACC.OTHER_RECEIVABLE]: { name: 'ลูกหนี้อื่น', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
+  [ACC.EMPLOYEE_RECEIVABLE]: { name: 'ลูกหนี้พนักงาน (เบิกล่วงหน้า/เงินยืม)', type: 'ASSET', category: 'RECEIVABLE', normalBalance: 'DEBIT' },
   [ACC.INVENTORY]:        { name: 'สต็อกสินค้า', type: 'ASSET', category: 'INVENTORY', normalBalance: 'DEBIT' },
   [ACC.RAW_MATERIAL]:     { name: 'สต็อกวัตถุดิบ', type: 'ASSET', category: 'INVENTORY', normalBalance: 'DEBIT' },
   [ACC.SUBCON_MATERIAL]:  { name: 'วัตถุดิบที่ผู้รับจ้างช่วง', type: 'ASSET', category: 'INVENTORY', normalBalance: 'DEBIT' },

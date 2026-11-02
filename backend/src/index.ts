@@ -186,6 +186,8 @@ import hrAttendanceRoutes from './routes/hr.attendance.routes'
 import hrPayrollRoutes from './routes/hr.payroll.routes'
 import hrLeaveRoutes from './routes/hr.leave.routes'
 import hrCheckinRoutes from './routes/hr.checkin.routes'
+import hrTrainingRoutes from './routes/hr.training.routes'
+import hrAdvanceRoutes from './routes/hr.advance.routes'
 
 
 import { setupMcpRoutes } from './mcp/server'
@@ -651,6 +653,8 @@ app.use('/api/hr', hrAttendanceRoutes)
 app.use('/api/hr', hrPayrollRoutes)
 app.use('/api/hr', hrLeaveRoutes)
 app.use('/api/hr', hrCheckinRoutes)
+app.use('/api/hr', hrTrainingRoutes)
+app.use('/api/hr', hrAdvanceRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)

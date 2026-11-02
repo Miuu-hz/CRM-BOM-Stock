@@ -33,6 +33,8 @@ import {
   Building2,
   Box,
   UserCircle,
+  GraduationCap,
+  Banknote,
   CalendarDays,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -119,6 +121,8 @@ const menuItems: MenuItem[] = [
       { path: '/hr/attendance', tKey: 'sidebar.attendance', icon: Clock },
       { path: '/hr/leave', tKey: 'sidebar.leave', icon: CalendarDays },
       { path: '/hr/payroll', tKey: 'sidebar.payroll', icon: Wallet },
+      { path: '/hr/advances', tKey: 'sidebar.advances', icon: Banknote },
+      { path: '/hr/training', tKey: 'sidebar.training', icon: GraduationCap },
       { path: '/hr/settings', tKey: 'sidebar.hrSettings', icon: Settings },
     ],
   },

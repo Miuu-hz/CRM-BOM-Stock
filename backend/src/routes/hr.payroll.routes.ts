@@ -48,14 +48,18 @@ export function getTenantHrSettings(tenantId: string): HrSettings {
   return merged
 }
 
+// หักเบิกล่วงหน้า/เงินยืม (HR Phase 6) — แยกจาก otherDeductions เพราะตอนลงบัญชีต้องเครดิต 1115 และเขียน advance_repayments
+export interface AdvanceDeduction { advance_id: string; kind: 'ADVANCE' | 'LOAN'; name: string; amount: number }
+
 export interface LineInputs {
   daysWorked: number; hoursWorked: number; unpaidLeaveDays: number; lateMinutes: number
   ot: OtEntry[]; extraPayItems: PayItem[]; otherDeductions: OtherDeduction[]; disabledPayItemIds?: string[]
+  advanceDeductions?: AdvanceDeduction[]
 }
 
 const DEFAULT_LINE_INPUTS: LineInputs = {
   daysWorked: 0, hoursWorked: 0, unpaidLeaveDays: 0, lateMinutes: 0,
-  ot: [], extraPayItems: [], otherDeductions: [], disabledPayItemIds: [],
+  ot: [], extraPayItems: [], otherDeductions: [], disabledPayItemIds: [], advanceDeductions: [],
 }
 
 function normalizeLineInputs(raw: any): LineInputs {
@@ -78,7 +82,12 @@ function normalizeLineInputs(raw: any): LineInputs {
   const otherDeductions: OtherDeduction[] = Array.isArray(raw?.otherDeductions)
     ? raw.otherDeductions.map((d: any) => ({ name: String(d?.name ?? '').trim(), amount: Number(d?.amount ?? 0) })) : []
   const disabledPayItemIds: string[] = Array.isArray(raw?.disabledPayItemIds) ? raw.disabledPayItemIds.map((id: any) => String(id)) : []
-  return { daysWorked, hoursWorked, unpaidLeaveDays, lateMinutes, ot, extraPayItems, otherDeductions, disabledPayItemIds }
+  const advanceDeductions: AdvanceDeduction[] = Array.isArray(raw?.advanceDeductions)
+    ? raw.advanceDeductions.map((d: any) => ({
+        advance_id: String(d?.advance_id ?? ''), kind: d?.kind === 'LOAN' ? 'LOAN' : 'ADVANCE',
+        name: String(d?.name ?? '').trim() || 'หักเบิกล่วงหน้า', amount: round2(nonNeg(d?.amount, 'ยอดหักเบิก/เงินยืม')),
+      })) : []
+  return { daysWorked, hoursWorked, unpaidLeaveDays, lateMinutes, ot, extraPayItems, otherDeductions, disabledPayItemIds, advanceDeductions }
 }
 
 interface EmployeeRecurringItemRow {
@@ -115,9 +124,71 @@ function computeEmployeeLine(
     daysWorked: inputs.daysWorked, hoursWorked: inputs.hoursWorked,
     unpaidLeaveDays: inputs.unpaidLeaveDays, lateMinutes: inputs.lateMinutes, ot: inputs.ot,
     payItems: [...recurringPayItems, ...(inputs.extraPayItems ?? [])],
-    otherDeductions: inputs.otherDeductions, ssoEnrolled: Boolean(emp.sso_enrolled),
+    otherDeductions: [
+      ...inputs.otherDeductions,
+      ...(inputs.advanceDeductions ?? []).filter(d => d.amount > 0).map(d => ({ name: d.name, amount: d.amount })),
+    ],
+    ssoEnrolled: Boolean(emp.sso_enrolled),
     taxAllowances: safeJsonParse<TaxAllowances>(emp.tax_allowances, {}),
   }, settings)
+}
+
+// ==================== เบิกล่วงหน้า / เงินยืม (HR Phase 6) ====================
+
+const advanceTotal = (inputs: LineInputs) => round2((inputs.advanceDeductions ?? []).reduce((s: number, d) => s + d.amount, 0))
+
+export function advanceOutstanding(tenantId: string, advanceId: string): number {
+  const row = db.prepare(
+    `SELECT a.amount - COALESCE((SELECT SUM(r.amount) FROM advance_repayments r WHERE r.advance_id = a.id AND r.tenant_id = a.tenant_id), 0) AS outstanding
+     FROM employee_advances a WHERE a.id = ? AND a.tenant_id = ?`
+  ).get(advanceId, tenantId) as { outstanding: number } | undefined
+  return row ? Math.max(0, round2(Number(row.outstanding))) : 0
+}
+
+/** เพดาน ม.76: หักหนี้ (เงินยืม) ได้ไม่เกิน 10% ของค่าจ้างงวดนั้น · เบิกค่าจ้างที่ทำแล้วไม่นับเพดานนี้ */
+const loanCapFor = (c: PayrollCalcResult) => Math.floor(round2(c.gross - c.lateDeduction) * 0.10 * 100 + 1e-6) / 100
+
+/**
+ * ยอดหักเบิก/เงินยืมของงวดนี้: ทุกรายการ ACTIVE ที่ start_period <= งวด หักงวดละ installment_amount (ไม่เกินยอดคงค้าง)
+ * เงินยืมรวมกันไม่เกิน 10% ของค่าจ้าง และทั้งหมดรวมกันไม่ทำให้เงินสุทธิติดลบ ส่วนที่หักไม่หมดยกไปงวดหน้าเอง
+ */
+function planAdvanceDeductions(tenantId: string, employeeId: string, period: string, before: PayrollCalcResult): AdvanceDeduction[] {
+  const rows = db.prepare(
+    `SELECT id, kind, installment_amount FROM employee_advances
+     WHERE tenant_id = ? AND employee_id = ? AND status = 'ACTIVE' AND start_period <= ?
+     ORDER BY kind ASC, disbursed_on ASC, created_at ASC`
+  ).all(tenantId, employeeId, period) as Array<{ id: string; kind: 'ADVANCE' | 'LOAN'; installment_amount: number }>
+  let loanRoom = loanCapFor(before)
+  let netRoom = Math.max(0, before.net)
+  const out: AdvanceDeduction[] = []
+  for (const r of rows) {
+    let amt = Math.min(round2(Number(r.installment_amount)), advanceOutstanding(tenantId, r.id), netRoom)
+    if (r.kind === 'LOAN') amt = Math.min(amt, loanRoom)
+    amt = round2(amt)
+    if (amt <= 0) continue
+    if (r.kind === 'LOAN') loanRoom = round2(loanRoom - amt)
+    netRoom = round2(netRoom - amt)
+    out.push({ advance_id: r.id, kind: r.kind, name: r.kind === 'LOAN' ? 'หักผ่อนเงินยืม' : 'หักเบิกล่วงหน้า', amount: amt })
+  }
+  return out
+}
+
+/** ตรวจยอดหักที่ผู้ใช้แก้เอง — throw ข้อความไทย */
+function validateAdvanceDeductions(tenantId: string, employeeId: string, inputs: LineInputs, c: PayrollCalcResult) {
+  const seen = new Set<string>()
+  let loanSum = 0
+  for (const d of inputs.advanceDeductions ?? []) {
+    if (seen.has(d.advance_id)) throw new Error('รายการหักเบิกซ้ำกัน')
+    seen.add(d.advance_id)
+    const adv = db.prepare('SELECT kind, status FROM employee_advances WHERE id = ? AND tenant_id = ? AND employee_id = ?')
+      .get(d.advance_id, tenantId, employeeId) as { kind: 'ADVANCE' | 'LOAN'; status: string } | undefined
+    if (!adv || adv.status !== 'ACTIVE') throw new Error('ไม่พบรายการเบิก/เงินยืมที่ยังค้างของพนักงานคนนี้')
+    d.kind = adv.kind
+    if (d.amount > advanceOutstanding(tenantId, d.advance_id)) throw new Error('ยอดหักเกินยอดคงค้างของรายการเบิก/เงินยืม')
+    if (adv.kind === 'LOAN') loanSum = round2(loanSum + d.amount)
+  }
+  if (loanSum > loanCapFor(c)) throw new Error(`หักเงินยืมเกิน 10% ของค่าจ้างงวดนี้ (ไม่เกิน ${loanCapFor(c).toFixed(2)} บาท ตาม ม.76)`)
+  if (c.net < 0) throw new Error('ยอดหักทำให้เงินได้สุทธิติดลบ')
 }
 
 function formatRunLine(tenantId: string, row: any) {
@@ -150,6 +221,7 @@ function formatRunLine(tenantId: string, row: any) {
     gross: round2(Number(row.gross ?? 0)), late: round2(Number(row.late ?? 0)),
     sso_employee: round2(Number(row.sso_employee ?? 0)), sso_employer: round2(Number(row.sso_employer ?? 0)),
     wht: round2(Number(row.wht ?? 0)), other_deduction: round2(Number(row.other_deduction ?? 0)),
+    advance_deduction: advanceTotal(inputs),
     net: round2(Number(row.net ?? 0)),
   }
 }
@@ -502,7 +574,9 @@ router.post('/payroll-runs', requirePermission('hr', 'write'), (req: Request, re
     for (const emp of activeEmployees) {
       const unpaidLeaveDays = Math.round((unpaidByEmp.get(emp.id) || 0) * 2) / 2
       const inputs: LineInputs = { ...DEFAULT_LINE_INPUTS, unpaidLeaveDays }
-      const c = computeEmployeeLine(tenantId, emp, inputs, settings)
+      const before = computeEmployeeLine(tenantId, emp, inputs, settings)
+      inputs.advanceDeductions = planAdvanceDeductions(tenantId, emp.id, period, before)
+      const c = inputs.advanceDeductions.length ? computeEmployeeLine(tenantId, emp, inputs, settings) : before
       insertLine.run(generateId(), tenantId, runId, emp.id, JSON.stringify(inputs), JSON.stringify(c),
         c.gross, c.lateDeduction, c.ssoEmployee, c.ssoEmployer, c.wht, c.otherDeductionsTotal, c.net)
     }
@@ -538,6 +612,7 @@ router.put('/payroll-runs/:id/lines/:lineId', requirePermission('hr', 'write'), 
   try {
     nextInputs = normalizeLineInputs({ ...prevInputs, ...rawInputPayload })
     calcResult = computeEmployeeLine(tenantId, emp, nextInputs, getTenantHrSettings(tenantId))
+    validateAdvanceDeductions(tenantId, emp.id, nextInputs, calcResult)
   } catch (err: any) {
     return res.status(400).json({ error: err.message || 'ไม่สามารถคำนวณเงินเดือนได้' })
   }
@@ -622,7 +697,8 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
   const detail = getRunDetail(tenantId, id)!
   if (detail.lines.length === 0) return res.status(400).json({ error: 'ไม่มีรายการพนักงานในรอบเงินเดือนนี้' })
 
-  const totalOtherDed = round2(detail.lines.reduce((s: number, l: FormattedRunLine) => s + l.other_deduction, 0))
+  // หักเบิก/เงินยืมเครดิต 1115 เอง บัญชีที่ผู้ใช้เลือกใช้กับรายการหักอื่นที่เหลือเท่านั้น
+  const totalOtherDed = round2(detail.lines.reduce((s: number, l: FormattedRunLine) => s + l.other_deduction - l.advance_deduction, 0))
   const otherDeductionAccountId = req.body?.otherDeductionAccountId ? String(req.body.otherDeductionAccountId).trim() : null
   if (totalOtherDed > 0) {
     if (!otherDeductionAccountId) return res.status(400).json({ error: 'กรุณาเลือกบัญชีสำหรับรายการหักอื่นๆ' })
@@ -652,7 +728,23 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
       const accruedAccountId = getOrCreateAccount(tenantId, ACC.ACCRUED)
       const ssoPayableAccountId = getOrCreateAccount(tenantId, ACC.SSO_PAYABLE)
       const whtPayableAccountId = getOrCreateAccount(tenantId, ACC.WHT_PAYABLE)
+      const employeeReceivableId = detail.lines.some((l: FormattedRunLine) => l.advance_deduction > 0) ? getOrCreateAccount(tenantId, ACC.EMPLOYEE_RECEIVABLE) : null
       const now = nowIso()
+
+      const insertRepayment = db.prepare('INSERT INTO advance_repayments (id, tenant_id, advance_id, run_id, period, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      for (const line of detail.lines) {
+        for (const d of line.inputs.advanceDeductions ?? []) {
+          if (d.amount <= 0) continue
+          const adv = db.prepare('SELECT status FROM employee_advances WHERE id = ? AND tenant_id = ?').get(d.advance_id, tenantId) as { status: string } | undefined
+          if (!adv || adv.status !== 'ACTIVE' || d.amount > advanceOutstanding(tenantId, d.advance_id)) {
+            throw new Error(`ยอดหักเบิก/เงินยืมของ ${line.full_name} เกินยอดคงค้างแล้ว กรุณาแก้บรรทัดนี้ก่อนลงบัญชี`)
+          }
+          insertRepayment.run(generateId(), tenantId, d.advance_id, run.id, run.period, d.amount, now)
+          if (advanceOutstanding(tenantId, d.advance_id) <= 0) {
+            db.prepare("UPDATE employee_advances SET status = 'CLOSED', updated_at = ? WHERE id = ? AND tenant_id = ?").run(now, d.advance_id, tenantId)
+          }
+        }
+      }
 
       for (const [bu, groupLines] of groups.entries()) {
         const count = groupLines.length
@@ -661,7 +753,8 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
         const ssoEmp = sumG(l => l.sso_employee)
         const ssoEmpr = sumG(l => l.sso_employer)
         const wht = sumG(l => l.wht)
-        const otherDed = sumG(l => l.other_deduction)
+        const advDed = sumG(l => l.advance_deduction)
+        const otherDed = round2(sumG(l => l.other_deduction) - advDed)
         const net = sumG(l => l.net)
         if (wagesExpense <= 0 && ssoEmpr <= 0 && net <= 0) continue
 
@@ -672,6 +765,7 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
         const totalSso = round2(ssoEmp + ssoEmpr)
         if (totalSso > 0) jeLines.push({ accountId: ssoPayableAccountId, debit: 0, credit: totalSso, description: `ประกันสังคมค้างจ่าย (ลูกจ้าง+นายจ้าง) งวด ${periodLabel}` })
         if (wht > 0) jeLines.push({ accountId: whtPayableAccountId, debit: 0, credit: wht, description: `ภาษีหัก ณ ที่จ่ายค้างจ่าย (ภ.ง.ด.1) งวด ${periodLabel}` })
+        if (advDed > 0 && employeeReceivableId) jeLines.push({ accountId: employeeReceivableId, debit: 0, credit: advDed, description: `หักเบิกล่วงหน้า/เงินยืมพนักงาน งวด ${periodLabel}` })
         if (otherDed > 0 && otherDeductionAccountId) jeLines.push({ accountId: otherDeductionAccountId, debit: 0, credit: otherDed, description: `รายการหักอื่นๆ งวด ${periodLabel}` })
 
         const totalDebit = round2(jeLines.reduce((s: number, l: JournalLineInput) => s + (l.debit ?? 0), 0))
@@ -769,6 +863,12 @@ router.post('/payroll-runs/:id/void', requirePermission('hr', 'write'), (req: Re
         const entryDate = String(entryRow.date).slice(0, 10)
         const rev = reverseJournalEntry(tenantId, actor, jeId, reason, entryDate > today ? entryDate : today)
         reversalIds.push(rev.id)
+      }
+      // ยอดที่หักในรอบนี้กลับไปเป็นยอดค้าง (JE ฝั่ง 1115 ถูกกลับรายการพร้อม accrual ด้านบนแล้ว)
+      const advIds = (db.prepare('SELECT advance_id FROM advance_repayments WHERE run_id = ? AND tenant_id = ?').all(id, tenantId) as { advance_id: string }[]).map(r => r.advance_id)
+      db.prepare('DELETE FROM advance_repayments WHERE run_id = ? AND tenant_id = ?').run(id, tenantId)
+      for (const advId of advIds) {
+        db.prepare("UPDATE employee_advances SET status = 'ACTIVE', updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'CLOSED'").run(nowIso(), advId, tenantId)
       }
       db.prepare("UPDATE payroll_runs SET status = 'VOID', updated_at = ? WHERE id = ? AND tenant_id = ?").run(nowIso(), id, tenantId)
     })()

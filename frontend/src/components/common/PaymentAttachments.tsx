@@ -11,6 +11,8 @@ export type AttachmentRefType =
   | 'PURCHASE_REQUEST' | 'PURCHASE_ORDER' | 'GOODS_RECEIPT' | 'PURCHASE_INVOICE'
   // หลังบ้านรองรับสองตัวนี้อยู่แล้ว (REF_TYPE_TABLES) แต่ type ฝั่งนี้ตกไป
   | 'POS_PAYMENT' | 'STOCK_ADJUSTMENT'
+  // HR Phase 5 — ใบรับรองอบรม
+  | 'TRAINING_RECORD'
 
 interface AttachmentRow {
   id: string

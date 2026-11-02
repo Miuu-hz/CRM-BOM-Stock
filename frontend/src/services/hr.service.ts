@@ -293,6 +293,7 @@ export interface PayrollLineInputs {
   extraPayItems: ExtraPayItemInput[]
   otherDeductions: OtherDeductionInput[]
   disabledPayItemIds?: string[]
+  advanceDeductions?: AdvanceDeduction[]
 }
 
 export type PayrollRunLineInputs = Partial<PayrollLineInputs>
@@ -362,6 +363,7 @@ export interface PayrollRunLine {
   sso_employer: number
   wht: number
   other_deduction: number
+  advance_deduction?: number
   net: number
   period?: string
   status?: PayrollRunStatus
@@ -528,6 +530,118 @@ export interface MyAttendance {
   logs: MyAttendanceLog[]
   days: DaySummary[]
   totals: PeriodTotals | null
+}
+
+// ==================== HR Phase 5-6 — สัญญากลาง docs/contracts/hr-phase5-6.md (ห้ามแก้รูปร่างโดยไม่แก้สัญญา) ====================
+export type TrainingKind = 'INTERNAL' | 'EXTERNAL'
+
+export interface TrainingCourse {
+  id: string
+  name: string
+  kind: TrainingKind
+  mandatory: boolean
+  validity_months: number | null
+  is_active: boolean
+  record_count: number
+}
+
+export interface TrainingCourseInput {
+  name: string
+  kind: TrainingKind
+  mandatory: boolean
+  validity_months: number | null
+  is_active?: boolean
+}
+
+export interface TrainingRecord {
+  id: string
+  course_id: string
+  course_name: string
+  course_kind: TrainingKind
+  employee_id: string
+  employee_code: string
+  employee_name: string
+  trained_on: string
+  expires_on: string | null
+  provider: string | null
+  notes: string | null
+  days_left: number | null
+  attachment_count: number
+  created_at: string
+}
+
+export interface TrainingRecordInput {
+  course_id: string
+  employee_ids: string[]
+  trained_on: string
+  expires_on?: string | null
+  provider?: string | null
+  notes?: string | null
+}
+
+export interface TrainingRecordUpdate {
+  trained_on?: string
+  expires_on?: string | null
+  provider?: string | null
+  notes?: string | null
+}
+
+export type AdvanceKind = 'ADVANCE' | 'LOAN'
+export type AdvanceStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'ACTIVE' | 'CLOSED'
+
+export interface EmployeeAdvance {
+  id: string
+  employee_id: string
+  employee_code: string
+  employee_name: string
+  kind: AdvanceKind
+  amount: number
+  installments: number
+  installment_amount: number
+  start_period: string
+  reason: string | null
+  status: AdvanceStatus
+  approval_request_id: string | null
+  decided_at: string | null
+  disbursed_on: string | null
+  disburse_je_id: string | null
+  repaid: number
+  outstanding: number
+  created_at: string
+}
+
+export interface AdvanceRepayment {
+  run_id: string
+  period: string
+  amount: number
+  created_at: string
+}
+
+export interface EmployeeAdvanceDetail extends EmployeeAdvance {
+  repayments: AdvanceRepayment[]
+}
+
+export interface AdvanceInput {
+  employee_id: string
+  kind: AdvanceKind
+  amount: number
+  installments?: number
+  start_period: string
+  reason?: string
+}
+
+export type MyAdvanceInput = Omit<AdvanceInput, 'employee_id'>
+
+export interface AdvanceDisburseInput {
+  pay_account_id: string
+  date: string
+}
+
+export interface AdvanceDeduction {
+  advance_id: string
+  kind: AdvanceKind
+  name: string
+  amount: number
 }
 
 export const hrService = {
@@ -832,6 +946,85 @@ export const hrService = {
 
   async getMyAttendance(params?: { from?: string; to?: string }): Promise<MyAttendance> {
     const res = await api.get('/hr/me/attendance', { params })
+    return res.data.data
+  },
+  // ---------- HR Phase 5-6 (สัญญากลาง docs/contracts/hr-phase5-6.md) ----------
+  async getTrainingCourses(params?: { active?: 1 }): Promise<TrainingCourse[]> {
+    const res = await api.get('/hr/training/courses', { params })
+    return res.data.data || []
+  },
+
+  async createTrainingCourse(data: TrainingCourseInput): Promise<TrainingCourse> {
+    const res = await api.post('/hr/training/courses', data)
+    return res.data.data
+  },
+
+  async updateTrainingCourse(id: string, data: Partial<TrainingCourseInput>): Promise<TrainingCourse> {
+    const res = await api.put(`/hr/training/courses/${id}`, data)
+    return res.data.data
+  },
+
+  async getTrainingRecords(params?: { employee_id?: string; course_id?: string }): Promise<TrainingRecord[]> {
+    const res = await api.get('/hr/training/records', { params })
+    return res.data.data || []
+  },
+
+  async createTrainingRecords(data: TrainingRecordInput): Promise<TrainingRecord[]> {
+    const res = await api.post('/hr/training/records', data)
+    return res.data.data || []
+  },
+
+  async updateTrainingRecord(id: string, data: TrainingRecordUpdate): Promise<TrainingRecord> {
+    const res = await api.put(`/hr/training/records/${id}`, data)
+    return res.data.data
+  },
+
+  async deleteTrainingRecord(id: string): Promise<void> {
+    await api.delete(`/hr/training/records/${id}`)
+  },
+
+  async getExpiringTraining(days = 60): Promise<TrainingRecord[]> {
+    const res = await api.get('/hr/training/expiring', { params: { days } })
+    return res.data.data || []
+  },
+
+  async getMyTraining(): Promise<TrainingRecord[]> {
+    const res = await api.get('/hr/me/training')
+    return res.data.data || []
+  },
+
+  async getAdvances(params?: { employee_id?: string; status?: AdvanceStatus }): Promise<EmployeeAdvance[]> {
+    const res = await api.get('/hr/advances', { params })
+    return res.data.data || []
+  },
+
+  async getAdvance(id: string): Promise<EmployeeAdvanceDetail> {
+    const res = await api.get(`/hr/advances/${id}`)
+    return res.data.data
+  },
+
+  async createAdvance(data: AdvanceInput): Promise<EmployeeAdvance> {
+    const res = await api.post('/hr/advances', data)
+    return res.data.data
+  },
+
+  async getMyAdvances(): Promise<EmployeeAdvance[]> {
+    const res = await api.get('/hr/me/advances')
+    return res.data.data || []
+  },
+
+  async createMyAdvance(data: MyAdvanceInput): Promise<EmployeeAdvance> {
+    const res = await api.post('/hr/me/advances', data)
+    return res.data.data
+  },
+
+  async cancelAdvance(id: string): Promise<EmployeeAdvance> {
+    const res = await api.post(`/hr/advances/${id}/cancel`)
+    return res.data.data
+  },
+
+  async disburseAdvance(id: string, data: AdvanceDisburseInput): Promise<EmployeeAdvance> {
+    const res = await api.post(`/hr/advances/${id}/disburse`, data)
     return res.data.data
   },
 }

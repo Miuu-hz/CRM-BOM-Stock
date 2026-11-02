@@ -3209,6 +3209,93 @@ export function runMonthCloseMigrations(db: any): void {
     }
     try { db.exec(`ALTER TABLE employees ADD COLUMN checkin_pin_hash TEXT`) } catch { /* มีแล้ว */ }
   } catch (e) { console.error('⚠️ HR Phase 4 migration error:', e) }
+
+  // ==================== HR Phase 5-6 — อบรม / เบิกล่วงหน้า-เงินกู้ (สัญญากลาง docs/contracts/hr-phase5-6.md) ====================
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS training_courses (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'INTERNAL' CHECK (kind IN ('INTERNAL','EXTERNAL')),
+        mandatory INTEGER NOT NULL DEFAULT 0,
+        validity_months INTEGER NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT,
+        UNIQUE(tenant_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS training_records (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        trained_on TEXT NOT NULL,
+        expires_on TEXT NULL,
+        provider TEXT,
+        notes TEXT,
+        created_by TEXT,
+        created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_training_records_tenant_emp ON training_records(tenant_id, employee_id, course_id);
+      CREATE TABLE IF NOT EXISTS employee_advances (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('ADVANCE','LOAN')),
+        amount REAL NOT NULL,
+        installments INTEGER NOT NULL DEFAULT 1,
+        installment_amount REAL NOT NULL,
+        start_period TEXT NOT NULL,
+        reason TEXT,
+        status TEXT NOT NULL CHECK (status IN ('PENDING','APPROVED','REJECTED','CANCELLED','ACTIVE','CLOSED')),
+        approval_request_id TEXT,
+        requested_by TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        disbursed_on TEXT,
+        pay_account_id TEXT,
+        disburse_je_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_employee_advances_tenant_emp ON employee_advances(tenant_id, employee_id, status);
+      CREATE TABLE IF NOT EXISTS advance_repayments (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        advance_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        period TEXT NOT NULL,
+        amount REAL NOT NULL,
+        created_at TEXT,
+        UNIQUE(advance_id, run_id)
+      );
+    `)
+  } catch (e) { console.error('⚠️ HR Phase 5-6 migration error:', e) }
+  // ใบรับรองอบรมใช้ระบบแนบไฟล์กลาง → ต้องเพิ่ม TRAINING_RECORD ใน CHECK (rebuild แบบเดียวกับรอบ TAX_PERIOD)
+  try {
+    const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='payment_attachments'").get() as any)?.sql || ''
+    if (cur && !cur.includes('TRAINING_RECORD')) {
+      const cols = (db.prepare('PRAGMA table_info(payment_attachments)').all() as any[]).map((c: any) => c.name).join(', ')
+      const ddl = cur
+        .replace(/CREATE TABLE\s+"?payment_attachments"?/i, 'CREATE TABLE payment_attachments_new')
+        .replace(/CHECK\s*\(\s*ref_type\s+IN\s*\([^)]*\)\s*\)/i,
+          "CHECK(ref_type IN ('RECEIPT','SUPPLIER_PAYMENT','POS_PAYMENT','INVOICE','PURCHASE_REQUEST','PURCHASE_ORDER','GOODS_RECEIPT','PURCHASE_INVOICE','STOCK_ADJUSTMENT','JOURNAL_ENTRY','TAX_PERIOD','TRAINING_RECORD'))")
+      const idx = (db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='payment_attachments' AND sql IS NOT NULL").all() as any[]).map((r: any) => r.sql)
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(ddl)
+        db.exec(`INSERT INTO payment_attachments_new (${cols}) SELECT ${cols} FROM payment_attachments`)
+        db.exec('DROP TABLE payment_attachments')
+        db.exec('ALTER TABLE payment_attachments_new RENAME TO payment_attachments')
+        for (const sql of idx) db.exec(sql)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+      console.log('✅ Migration: payment_attachments รองรับใบรับรองอบรมแล้ว')
+    }
+  } catch (e) {
+    console.error('⚠️ payment_attachments TRAINING_RECORD migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
