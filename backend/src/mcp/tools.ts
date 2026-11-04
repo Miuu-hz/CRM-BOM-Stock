@@ -41,6 +41,10 @@ export const READ_ONLY_TOOLS = new Set([
   'hr_attendance_summary',
 ])
 
+// อ่านอย่างเดียวจริง แต่ไม่ติด readOnlyHint เพราะ client จะเก็บผลไว้ในเครื่องได้
+// ข้อมูลเวลาทำงานเป็นข้อมูลส่วนบุคคลของพนักงาน ไม่ควรค้างในมือถือ · ไม่กระทบสิทธิ์ของ READ_ONLY_TOOLS
+export const NO_READONLY_HINT = new Set(['hr_attendance_summary'])
+
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
   // Resolve display name + role for audit trail and approval-permission checks
   const callerRow = db.prepare(`SELECT name, email, role, mcp_scope FROM users WHERE id = ? LIMIT 1`).get(userId) as any
@@ -64,7 +68,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
       const isReadOnly = READ_ONLY_TOOLS.has(name)
       if (readonly && !isReadOnly) return
       const registered = server.tool(name, description, inputSchema, handler) as unknown as IRegisteredTool | undefined
-      if (isReadOnly) registered?.update?.({ annotations: { readOnlyHint: true } })
+      if (isReadOnly && !NO_READONLY_HINT.has(name)) registered?.update?.({ annotations: { readOnlyHint: true } })
     },
     connect: (transport) => server.connect(transport),
     close: () => server.close(),

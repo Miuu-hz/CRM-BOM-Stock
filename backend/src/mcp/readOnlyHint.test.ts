@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { McpServer } from './sdk-compat'
-import { registerTools, READ_ONLY_TOOLS } from './tools'
+import { registerTools, READ_ONLY_TOOLS, NO_READONLY_HINT } from './tools'
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js')
@@ -24,10 +24,18 @@ async function listedTools() {
 }
 
 describe('readOnlyHint', () => {
-  it('marks exactly the tools in READ_ONLY_TOOLS', async () => {
+  it('marks exactly the tools in READ_ONLY_TOOLS, minus the ones a client must not keep', async () => {
     const tools = await listedTools()
     const marked = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()
-    expect(marked).toEqual([...READ_ONLY_TOOLS].sort())
+    expect(marked).toEqual([...READ_ONLY_TOOLS].filter((n) => !NO_READONLY_HINT.has(n)).sort())
+  })
+
+  it('keeps employee attendance listed but unmarked, and still in the read-only scope', async () => {
+    const tools = await listedTools()
+    const hr = tools.find((t) => t.name === 'hr_attendance_summary')
+    expect(hr).toBeDefined()
+    expect(hr?.annotations?.readOnlyHint).not.toBe(true)
+    expect(READ_ONLY_TOOLS.has('hr_attendance_summary')).toBe(true)
   })
 
   it('never marks a tool that writes', async () => {
