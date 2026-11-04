@@ -6,7 +6,7 @@
 // → AND search (fallback OR) → precise results without a Thai NLP library.
 
 import db from '../db/sqlite'
-import { IMcpServer } from './sdk-compat'
+import { IMcpServer, IRegisteredTool } from './sdk-compat'
 import { registerSearchTool } from './tools/search'
 import { registerGuideTool } from './tools/guide'
 import { registerSummaryTools } from './tools/summary'
@@ -58,15 +58,17 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   const readonly = userId !== 'master' && callerRow?.mcp_scope === 'readonly'
   // ponytail: ห่อ server.tool() ชั้นเดียวตรงนี้ — ทุก transport (SSE/streamable/countTools/test) เรียก registerTools()
   // อยู่แล้วจึงได้ผลทันทีไม่ต้องแก้ที่อื่น · session ที่ connect ไปแล้วก่อนเปลี่ยน scope ยังใช้สิทธิ์เดิมจน TTL หมด (2 ชม., ดู mcp/server.ts)
-  const target: IMcpServer = readonly
-    ? {
-        tool: (name, description, inputSchema, handler) => {
-          if (READ_ONLY_TOOLS.has(name)) server.tool(name, description, inputSchema, handler)
-        },
-        connect: (transport) => server.connect(transport),
-        close: () => server.close(),
-      }
-    : server
+  // รายการเดียวกันบอก client ด้วย readOnlyHint ว่าตอบจากผลที่จำไว้ได้ไหม · fake server ในเทสต์คืน undefined จึงข้ามไป
+  const target: IMcpServer = {
+    tool: (name, description, inputSchema, handler) => {
+      const isReadOnly = READ_ONLY_TOOLS.has(name)
+      if (readonly && !isReadOnly) return
+      const registered = server.tool(name, description, inputSchema, handler) as unknown as IRegisteredTool | undefined
+      if (isReadOnly) registered?.update?.({ annotations: { readOnlyHint: true } })
+    },
+    connect: (transport) => server.connect(transport),
+    close: () => server.close(),
+  }
 
   registerSearchTool(target, tenantId)
   registerGuideTool(target, tenantId)

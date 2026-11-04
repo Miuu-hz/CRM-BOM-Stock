@@ -13,6 +13,11 @@ export interface IMcpServer {
   close(): Promise<void>
 }
 
+/** What McpServer.tool() returns; only the part we use. */
+export interface IRegisteredTool {
+  update(updates: { annotations?: { readOnlyHint?: boolean } }): void
+}
+
 export interface ISSETransport {
   sessionId: string
   start(): Promise<void>
