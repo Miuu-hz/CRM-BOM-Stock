@@ -26,7 +26,7 @@ export function calcWhtBase(paymentAmount: number, invoice?: InvoiceVatInfo | nu
   if (invoiceTax > 0) {
     // จ่ายเต็มยอดใบแจ้งหนี้
     if (Math.abs(amount - invoiceTotal) < 0.005) {
-      return invoiceSubtotal > 0 ? invoiceSubtotal : r2(invoiceTotal - invoiceTax)
+      return r2(invoiceTotal - invoiceTax) // ponytail: total-tax, subtotal may be before discount/service
     }
     // จ่ายบางส่วน: ถอด VAT ตามสัดส่วนภาษีของใบแจ้งหนี้
     const vatRatio = invoiceTax / invoiceTotal

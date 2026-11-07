@@ -22,7 +22,7 @@ export function calcWhtBase(paymentAmount: number, invoice?: InvoiceVatInfo | nu
 
   if (invoiceTax > 0) {
     if (Math.abs(amount - invoiceTotal) < 0.005) {
-      return invoiceSubtotal > 0 ? invoiceSubtotal : r2(invoiceTotal - invoiceTax)
+      return r2(invoiceTotal - invoiceTax) // ponytail: total-tax, subtotal may be before discount/service
     }
     const vatRatio = invoiceTax / invoiceTotal
     return r2(amount * (1 - vatRatio))
