@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
+import { calcWhtBase } from '../utils/wht'
 
 const router = Router()
 router.use(authenticate)
@@ -190,7 +191,7 @@ function syncVatOutputFromSalesInvoices(tenantId: string) {
   }
 }
 
-function syncWhtFromSupplierPayments(tenantId: string) {
+export function syncWhtFromSupplierPayments(tenantId: string) {
   const tableExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='supplier_payments'"
   ).get() as { name: string } | undefined
@@ -198,9 +199,12 @@ function syncWhtFromSupplierPayments(tenantId: string) {
 
   const rows = db.prepare(
     `SELECT sp.id, sp.payment_number, sp.payment_date, sp.amount, sp.withholding_tax, sp.net_amount,
+            sp.purchase_invoice_id,
+            pi.subtotal as invoice_subtotal, pi.tax_amount as invoice_tax_amount, pi.total_amount as invoice_total_amount, pi.tax_rate as invoice_tax_rate,
             s.id as supplier_id, s.name as supplier_name, s.tax_id as supplier_tax_id
      FROM supplier_payments sp
      LEFT JOIN suppliers s ON sp.supplier_id = s.id
+     LEFT JOIN purchase_invoices pi ON sp.purchase_invoice_id = pi.id
      WHERE sp.tenant_id = ? AND sp.withholding_tax > 0 AND (sp.status IS NULL OR sp.status != 'CANCELLED')`
   ).all(tenantId) as any[]
 
@@ -208,7 +212,12 @@ function syncWhtFromSupplierPayments(tenantId: string) {
     const periodId = ensurePeriod(tenantId, p.payment_date)
     if (!periodId || transactionExists(tenantId, 'SUPPLIER_PAYMENT', p.id)) continue
 
-    const baseAmount = p.amount ?? 0
+    const baseAmount = calcWhtBase(p.amount ?? 0, p.purchase_invoice_id ? {
+      subtotal: p.invoice_subtotal,
+      tax_amount: p.invoice_tax_amount,
+      total_amount: p.invoice_total_amount,
+      tax_rate: p.invoice_tax_rate,
+    } : null)
     const whtAmount = p.withholding_tax ?? 0
     const whtRate = baseAmount > 0 ? Math.round((whtAmount / baseAmount) * 1000) / 10 : 0
     const whtForm = inferWhtForm(p.supplier_tax_id)

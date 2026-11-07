@@ -12,7 +12,7 @@ export interface VatConfig {
   rate: number
   /**
    * ปัดภาษีเป็นบาทเต็มหรือทศนิยม 2 ตำแหน่ง
-   * 'baht'   = เครื่องคิดเงินหน้าร้าน ไม่ทอนสตางค์ (พฤติกรรมเดิมของ POS)
+   * 'baht'   = เครื่องคิดเงินหน้าร้าน ไม่ทอนสตางค์ (ตั้งใจปัดภาษีขาย POS เป็นบาทเต็มเพื่อให้ลูกค้าจ่ายง่าย (เจ้าของระบบตัดสินใจแล้ว) ห้ามเปลี่ยนเป็นปัดสตางค์)
    * 'satang' = เอกสารทั่วไป (ค่าตั้งต้น — สูตรเดิมไม่ปัดเลย ทำให้มีเศษ float ติดมา เช่น 6.230000000000001)
    */
   roundTax?: 'baht' | 'satang'
@@ -56,6 +56,7 @@ export function calcVat(lineTotal: number, cfg: VatConfig): VatTotals {
   const discount = Math.min(cfg.discountAmount || 0, lineTotal + service + extraCharge)
 
   const base = lineTotal + service + extraCharge - discount
+  // ตั้งใจปัดภาษีขาย POS เป็นบาทเต็มเพื่อให้ลูกค้าจ่ายง่าย (เจ้าของระบบตัดสินใจแล้ว) ห้ามเปลี่ยนเป็นปัดสตางค์
   const round = cfg.roundTax === 'baht' ? Math.round : r2
   const taxAmount = rate
     ? round(cfg.inclusive ? base * rate / (100 + rate) : base * rate / 100)

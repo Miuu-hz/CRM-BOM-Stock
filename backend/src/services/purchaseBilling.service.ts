@@ -3,6 +3,7 @@ import { generateId, formatDocumentNumber, docYear } from '../utils/id'
 import { ACC, ACC_META, resolveBankAccountGL, defaultBankAccountGL } from '../config/accountCodes'
 import { getOrCreateAccount, isVatRegistered, rememberContactVatMode, postJournal, isHeaderAccountError, type JournalLineInput } from './accounting.service'
 import { calcVat, vatModeOf } from '../utils/vat'
+import { calcWhtBase } from '../utils/wht'
 import { closedPeriodLabel } from '../routes/journal.routes'
 
 /**
@@ -866,6 +867,7 @@ export interface PaySupplierPayload {
   paymentReference?: string
   amount: number
   withholdingTax?: number
+  whtRate?: number
   notes?: string
   bankAccountId?: string | null
   /** วิธีจ่าย POS_CASH — รายการเงินออกจากลิ้นชัก (pos_shift_cash_movements บัญชี 1182) ที่บิลนี้จับคู่ */
@@ -924,14 +926,12 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   const r2 = (n: number) => Math.round(n * 100) / 100
   // ยอดเงินมาจาก client — ปัดสตางค์ และต้องเป็นบวก (เดิม amount ติดลบผ่าน !amount ไปลดยอดจ่ายของใบได้)
   const amount = r2(Number(payload.amount))
-  const wht = r2(Number(payload.withholdingTax) || 0)
   const isPosCash = paymentMethod === POS_CASH_METHOD
   // เงินจาก POS ไม่ได้ออกจากบัญชีธนาคาร — ไม่สนใจ bankAccountId ที่ติดมาจากฟอร์ม
   const bankAccountId = isPosCash ? null : payload.bankAccountId
   const posCashMovementId = isPosCash ? (payload.posCashMovementId || null) : null
   if (!supplierId) throw new PurchaseBillingError('SUPPLIER_REQUIRED', 'Supplier and amount are required')
   if (!(amount > 0)) throw new PurchaseBillingError('AMOUNT_REQUIRED', 'ยอดจ่ายต้องมากกว่า 0')
-  if (!(wht >= 0 && wht < amount)) throw new PurchaseBillingError('WHT_INVALID', 'ภาษีหัก ณ ที่จ่ายต้องไม่ติดลบ และน้อยกว่ายอดจ่าย')
 
   let invoice: any = null
   if (purchaseInvoiceId) {
@@ -945,6 +945,13 @@ export function paySupplier(tenantId: string, actorEmail: string, payload: PaySu
   } else if (!db.prepare('SELECT 1 FROM suppliers WHERE id = ? AND tenant_id = ?').get(supplierId, tenantId)) {
     throw new PurchaseBillingError('SUPPLIER_MISMATCH', 'ไม่พบผู้ขายนี้ในกิจการ')
   }
+
+  let wht = r2(Number(payload.withholdingTax) || 0)
+  if ((payload.withholdingTax === undefined || payload.withholdingTax === null) && payload.whtRate !== undefined && payload.whtRate !== null && Number(payload.whtRate) > 0) {
+    const base = calcWhtBase(amount, invoice)
+    wht = r2(base * Number(payload.whtRate) / 100)
+  }
+  if (!(wht >= 0 && wht < amount)) throw new PurchaseBillingError('WHT_INVALID', 'ภาษีหัก ณ ที่จ่ายต้องไม่ติดลบ และน้อยกว่ายอดจ่าย')
 
   // งวดปิดบัญชี — กติกาเดียวกับ updatePurchaseInvoice
   const closedLabel = closedPeriodLabel(tenantId, paymentDate || new Date().toISOString())

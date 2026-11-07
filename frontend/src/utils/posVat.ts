@@ -21,7 +21,7 @@ export interface PosAdjustments {
 export function calcPosTotals(lineTotal: number, cfg: PosBillingConfig, adj: PosAdjustments = {}): VatTotals {
   return calcVat(lineTotal, {
     rate: cfg.vatEnabled ? (cfg.vatRate || 0) : 0,
-    roundTax: 'baht',  // เครื่องคิดเงินหน้าร้านไม่ทอนสตางค์
+    roundTax: 'baht',  // ตั้งใจปัดภาษีขาย POS เป็นบาทเต็มเพื่อให้ลูกค้าจ่ายง่าย (เจ้าของระบบตัดสินใจแล้ว) ห้ามเปลี่ยนเป็นปัดสตางค์
     inclusive: cfg.vatInclusive,
     serviceRate: cfg.serviceEnabled ? (cfg.serviceRate || 0) : 0,
     discountAmount: adj.discount,

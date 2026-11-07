@@ -22,7 +22,10 @@ export default defineConfig({
     //
     // ส่ง SQLITE_DB_PATH มาเองได้ (เช่นหลาย agent รันพร้อมกันคนละไฟล์) — เดิมค่าใน config ทับทิ้ง
     // แต่ห้ามชี้ dev.db เด็ดขาด ไม่งั้นย้อนกลับไปเขียนใส่ production อย่างที่ว่าไว้ข้างบน
-    env: { SQLITE_DB_PATH: testDbPath },
+    env: {
+      SQLITE_DB_PATH: testDbPath,
+      JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret-for-vitest',
+    },
     setupFiles: [path.resolve(__dirname, 'vitest.setup.ts')],
     fileParallelism: false,
     isolate: false,

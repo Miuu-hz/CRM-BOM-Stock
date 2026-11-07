@@ -32,7 +32,20 @@ interface TaxTransactionLite {
   tax_amount: number
 }
 
-const INCOME_SECTIONS = ['40(2)', '40(3)', '40(4)', '40(6)', '40(7)', '40(8)']
+const INCOME_SECTIONS = ['40(2)', '40(3)', '40(4)', '40(5)', '40(6)', '40(7)', '40(8)']
+
+export function defaultIncomeSection(incomeType: string): string {
+  const t = (incomeType || '').trim().toLowerCase()
+  if (!t) return '40(8)'
+  if (/ค่าเช่า|เช่า|rent/i.test(t)) return '40(5)'
+  if (/วิชาชีพ|professional/i.test(t)) return '40(6)'
+  if (/สัมภาระ|จัดหาสัมภาระ|contractor.*material/i.test(t)) return '40(7)'
+  if (/ธรรมเนียม|นายหน้า|fee|commission/i.test(t)) return '40(2)'
+  if (/โฆษณา|advertis/i.test(t)) return '40(8)'
+  if (/ขนส่ง|transport/i.test(t)) return '40(8)'
+  if (/บริการ|รับจ้าง|service|hire/i.test(t)) return '40(8)'
+  return '40(8)'
+}
 
 const fmt = (n: number) =>
   (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -90,7 +103,7 @@ export function WhtCertActionButton({
 }) {
   const [open, setOpen] = useState(false)
   const [incomeType, setIncomeType] = useState('ค่าบริการ')
-  const [incomeSection, setIncomeSection] = useState('40(2)')
+  const [incomeSection, setIncomeSection] = useState('40(8)')
   const [saving, setSaving] = useState(false)
 
   const existing = certs.find((c) => c.tax_transaction_id === txn.id && c.status !== 'CANCELLED')
@@ -142,7 +155,11 @@ export function WhtCertActionButton({
                   <label className="text-sm text-[var(--fg-3)]">ประเภทเงินได้</label>
                   <input
                     value={incomeType}
-                    onChange={(e) => setIncomeType(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setIncomeType(val)
+                      setIncomeSection(defaultIncomeSection(val))
+                    }}
                     className="phopy-input w-full mt-1"
                     placeholder="เช่น ค่าบริการ, ค่าเช่า"
                   />

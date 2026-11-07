@@ -184,6 +184,7 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
       payment_date: z.string().optional().describe('วันที่จ่าย (YYYY-MM-DD) — default วันนี้'),
       payment_reference: z.string().optional().describe('เลขอ้างอิง เช่น เลขที่เช็คหรือ transaction'),
       withholding_tax: z.number().min(0).optional().describe('ภาษีหัก ณ ที่จ่าย (บาท) ถ้ามี — amount ที่ส่งมาต้องรวมส่วนนี้แล้ว'),
+      wht_rate: z.number().min(0).max(100).optional().describe('อัตราภาษีหัก ณ ที่จ่าย (%) เช่น 1, 3, 5 — ระบบจะคำนวณจากฐานก่อน VAT ให้อัตโนมัติ'),
       bank_account_id: z.string().optional().describe('ID บัญชีธนาคารที่จ่ายออก ถ้าระบุจะลงบัญชี GL ที่ผูกกับบัญชีนั้น'),
       notes: z.string().optional().describe('หมายเหตุ'),
     },
@@ -192,7 +193,7 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
         return ok({ success: false, message: 'ไม่มีสิทธิ์จ่ายเงินผู้ขาย — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
       }
 
-      const { purchase_invoice_id, amount, payment_method, payment_date, payment_reference, withholding_tax, bank_account_id, notes } = args
+      const { purchase_invoice_id, amount, payment_method, payment_date, payment_reference, withholding_tax, wht_rate, bank_account_id, notes } = args
 
       const invoice = findPurchaseInvoice(tenantId, purchase_invoice_id)
       if (!invoice) return ok({ success: false, message: `ไม่พบใบแจ้งหนี้ซื้อ: ${purchase_invoice_id}` })
@@ -207,6 +208,7 @@ export function registerPurchaseBillingTools(server: IMcpServer, tenantId: strin
           paymentDate: payment_date,
           paymentReference: payment_reference,
           withholdingTax: withholding_tax,
+          whtRate: wht_rate,
           bankAccountId: bank_account_id,
           notes,
         }) as any

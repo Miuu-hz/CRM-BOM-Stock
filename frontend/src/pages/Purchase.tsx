@@ -54,12 +54,13 @@ import {
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import { fetchStockAliases, type StockAlias } from '../services/sales.service'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
-import { calcWht, buildPurchaseRequestPayload } from '../utils/purchaseHelpers'
+import { calcWht, calcWhtBase, buildPurchaseRequestPayload } from '../utils/purchaseHelpers'
 
 /** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — toISOString เป็น UTC ทำให้ตี 0–7 โมงได้วันเมื่อวาน */
 const todayStr = () => new Date().toLocaleDateString('sv-SE')
 const round2 = (n: number) => Math.round(n * 100) / 100
-const effWht = (f: { amount: number; withholding_tax: number; wht_rate: number }) => f.wht_rate > 0 ? calcWht(f.amount, f.wht_rate) : round2(f.withholding_tax)
+const effWht = (f: { amount: number; withholding_tax: number; wht_rate: number }, inv?: any) =>
+  f.wht_rate > 0 ? calcWht(calcWhtBase(f.amount, inv), f.wht_rate) : round2(f.withholding_tax)
 
 // ร้านจด VAT แล้วหรือยัง — ใบขายใหม่ ใบซื้อใหม่ ใช้ตัดสินโหมด VAT เริ่มต้น
 const vatRegisteredCo = () => {
@@ -2427,7 +2428,7 @@ const Purchase = () => {
 
   const handleCreatePayment = async () => {
     const selInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
-    const wht = effWht(paymentForm)
+    const wht = effWht(paymentForm, selInv)
     if (!(paymentForm.amount > 0)) { toast.error('ระบุจำนวนเงิน'); return }
     if (wht < 0 || wht > paymentForm.amount) { toast.error('ภาษีหัก ณ ที่จ่ายต้องไม่เกินจำนวนเงิน'); return }
     if (selInv && paymentForm.amount > selInv.balance_amount + 0.005) { toast.error('จำนวนเงินเกินยอดคงเหลือ'); return }
@@ -5509,7 +5510,7 @@ const Purchase = () => {
   // ─── 5. Payment Modal ────────────────────────────────────────────────────────
   const PaymentModal = () => {
     const selectedInv = invoices.find(i => i.id === paymentForm.purchase_invoice_id)
-    const wht         = effWht(paymentForm)
+    const wht         = effWht(paymentForm, selectedInv)
     const netPay      = round2(paymentForm.amount - wht)
     const isNonCash = paymentForm.payment_method !== 'CASH' && paymentForm.payment_method !== 'POS_CASH'
     const activeBankAccounts = bankAccounts.filter(b => Boolean(b.is_active))

@@ -6,7 +6,45 @@ import { generateId, formatDocumentNumber } from '../utils/id'
 const router = Router()
 router.use(authenticate)
 
-const VALID_SECTIONS = ['40(2)', '40(3)', '40(4)', '40(6)', '40(7)', '40(8)']
+export const VALID_SECTIONS = ['40(2)', '40(3)', '40(4)', '40(5)', '40(6)', '40(7)', '40(8)']
+
+/**
+ * กำหนดมาตราประเภทเงินได้ (ภ.ง.ด.) เริ่มต้นตามประเภทเงินได้:
+ * - rent (ค่าเช่า) = 40(5)
+ * - professional (วิชาชีพอิสระ) = 40(6)
+ * - contractor supplies materials (รับเหมาที่ผู้รับจ้างจัดหาสัมภาระ) = 40(7)
+ * - fees / commission (ค่าธรรมเนียม ค่านายหน้า) = 40(2)
+ * - advertising (ค่าโฆษณา) = 40(8)
+ * - transport (ค่าขนส่ง) = 40(8)
+ * - service / hire of work (ค่าบริการ, รับจ้างทำของ) = 40(8) by default
+ */
+export function defaultIncomeSection(incomeType: string): string {
+  const t = (incomeType || '').trim().toLowerCase()
+  if (!t) return '40(8)'
+
+  if (/ค่าเช่า|เช่า|rent/i.test(t)) {
+    return '40(5)'
+  }
+  if (/วิชาชีพ|professional/i.test(t)) {
+    return '40(6)'
+  }
+  if (/สัมภาระ|จัดหาสัมภาระ|contractor.*material/i.test(t)) {
+    return '40(7)'
+  }
+  if (/ธรรมเนียม|นายหน้า|fee|commission/i.test(t)) {
+    return '40(2)'
+  }
+  if (/โฆษณา|advertis/i.test(t)) {
+    return '40(8)'
+  }
+  if (/ขนส่ง|transport/i.test(t)) {
+    return '40(8)'
+  }
+  if (/บริการ|รับจ้าง|service|hire/i.test(t)) {
+    return '40(8)'
+  }
+  return '40(8)'
+}
 
 // Additive table: WHT certificate (หนังสือรับรองหัก ณ ที่จ่าย 50 ทวิ) — an immutable snapshot
 // taken at issue time from the WHT tax_transaction + company_settings + supplier. Created here
@@ -61,10 +99,14 @@ router.post('/from-transaction/:taxTransactionId', async (req: Request, res: Res
   try {
     const tenantId = req.user!.tenantId
     const userName = req.user!.email
-    const { incomeType, incomeSection, issueDate } = req.body
+    const { incomeType, issueDate } = req.body
+    let { incomeSection } = req.body
 
     if (!incomeType || typeof incomeType !== 'string' || !incomeType.trim()) {
       return res.status(400).json({ success: false, message: 'กรุณาระบุประเภทเงินได้' })
+    }
+    if (!incomeSection) {
+      incomeSection = defaultIncomeSection(incomeType)
     }
     if (!VALID_SECTIONS.includes(incomeSection)) {
       return res.status(400).json({ success: false, message: 'มาตราประเภทเงินได้ไม่ถูกต้อง' })

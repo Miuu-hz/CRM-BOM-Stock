@@ -1481,7 +1481,7 @@ router.post('/payments', async (req: Request, res: Response) => {
     if (!canHandleBilling(req.user!, 'purchase')) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ทำรายการนี้ — ต้องอยู่ฝ่ายจัดซื้อ/ฝ่ายบัญชี หรือเป็น ADMIN/MASTER' })
     }
-    const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, notes, bankAccountId, posCashMovementId } = req.body
+    const { supplierId, purchaseInvoiceId, paymentDate, paymentMethod, paymentReference, amount, withholdingTax, whtRate, notes, bankAccountId, posCashMovementId } = req.body
 
     const payment = paySupplier(tenantId, req.user!.email, {
       posCashMovementId,
@@ -1492,6 +1492,7 @@ router.post('/payments', async (req: Request, res: Response) => {
       paymentReference,
       amount,
       withholdingTax,
+      whtRate,
       notes,
       bankAccountId,
     })
