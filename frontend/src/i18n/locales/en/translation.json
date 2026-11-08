@@ -1442,7 +1442,8 @@
       "invoiceCancelled": "Invoice cancelled",
       "invoiceCancelFailed": "Failed to cancel invoice",
       "receiptVoided": "Receipt reversed",
-      "receiptVoidFailed": "Failed to reverse receipt"
+      "receiptVoidFailed": "Failed to reverse receipt",
+      "loadProductsFailed": "Failed to load products"
     },
     "error": {
       "loadQuotations": "Failed to load quotations",
@@ -1658,7 +1659,9 @@
       "toastShiftStale": "The previous day's shift is still open — please close it before selling",
       "openBillsList": "Unpaid bills: {{bills}}",
       "manageOpenBills": "Handle unpaid bills",
-      "staleBillsBanner": "Stale shift — pay/cancel the unpaid bills, then close the shift ({{count}} bills)"
+      "staleBillsBanner": "Stale shift — pay/cancel the unpaid bills, then close the shift ({{count}} bills)",
+      "loadShiftFailed": "Failed to load latest shift",
+      "loadingShift": "Loading latest shift..."
     },
     "validation": {
       "cancelReason": "Please specify cancellation reason",
@@ -1668,7 +1671,10 @@
       "selectInvoice": "Please select an invoice",
       "creditReason": "Please enter credit note reason",
       "amountRequired": "Please enter amount",
-      "fileTooLarge": "File too large (max 10MB)"
+      "fileTooLarge": "File too large (max 10MB)",
+      "amountExceedsBalance": "Payment amount exceeds remaining balance",
+      "cashAmount": "Please enter a valid cash amount (0 or more)",
+      "itemValues": "Quantity must be > 0, price/discount cannot be negative (discount % max 100)"
     },
     "paymentMethod": {
       "cash": "Cash",
@@ -1828,7 +1834,8 @@
       "noReturnItems": "No items found on this invoice",
       "selectReturnItems": "Please select at least 1 returned item",
       "remainingHint": "Remaining creditable amount: ฿{{amount}}",
-      "exceedsRemaining": "Amount exceeds the invoice's remaining creditable value"
+      "exceedsRemaining": "Amount exceeds the invoice's remaining creditable value",
+      "discountAmountLabel": "Credit Note Amount"
     },
     "creditNoteStatus": {
       "draft": "Draft",

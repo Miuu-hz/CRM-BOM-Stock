@@ -1443,7 +1443,8 @@
       "invoiceCancelled": "ยกเลิกใบแจ้งหนี้แล้ว",
       "invoiceCancelFailed": "ไม่สามารถยกเลิกใบแจ้งหนี้ได้",
       "receiptVoided": "ยกเลิกใบเสร็จรับเงินแล้ว",
-      "receiptVoidFailed": "ไม่สามารถยกเลิกใบเสร็จรับเงินได้"
+      "receiptVoidFailed": "ไม่สามารถยกเลิกใบเสร็จรับเงินได้",
+      "loadProductsFailed": "โหลดรายการสินค้าไม่สำเร็จ"
     },
     "error": {
       "loadQuotations": "ไม่สามารถดึงข้อมูลใบเสนอราคาได้",
@@ -1659,7 +1660,9 @@
       "toastShiftStale": "กะของวันก่อนยังไม่ได้ปิด — กรุณาปิดกะเก่าก่อนขายต่อ",
       "openBillsList": "บิลที่ยังไม่ชำระ: {{bills}}",
       "manageOpenBills": "จัดการบิลค้าง",
-      "staleBillsBanner": "กะค้าง — ชำระ/ยกเลิกบิลค้างแล้วปิดกะ ({{count}} บิล)"
+      "staleBillsBanner": "กะค้าง — ชำระ/ยกเลิกบิลค้างแล้วปิดกะ ({{count}} บิล)",
+      "loadShiftFailed": "โหลดยอดกะล่าสุดไม่สำเร็จ",
+      "loadingShift": "กำลังโหลดยอดกะล่าสุด..."
     },
     "validation": {
       "cancelReason": "กรุณาระบุสาเหตุการยกเลิก",
@@ -1669,7 +1672,10 @@
       "selectInvoice": "กรุณาเลือกใบแจ้งหนี้",
       "creditReason": "กรุณาระบุเหตุผลการลดหนี้",
       "amountRequired": "กรุณาระบุจำนวนเงิน",
-      "fileTooLarge": "ไฟล์ใหญ่เกิน 10MB"
+      "fileTooLarge": "ไฟล์ใหญ่เกิน 10MB",
+      "amountExceedsBalance": "ยอดชำระเกินยอดคงค้าง",
+      "cashAmount": "กรุณากรอกยอดเงินสดเป็นตัวเลขตั้งแต่ 0 ขึ้นไป",
+      "itemValues": "จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)"
     },
     "paymentMethod": {
       "cash": "เงินสด",
@@ -1829,7 +1835,8 @@
       "noReturnItems": "ไม่พบรายการสินค้าในใบแจ้งหนี้นี้",
       "selectReturnItems": "กรุณาเลือกสินค้าที่รับคืนอย่างน้อย 1 รายการ",
       "remainingHint": "ลดได้อีกไม่เกิน ฿{{amount}}",
-      "exceedsRemaining": "ยอดลดหนี้เกินมูลค่าใบแจ้งหนี้ที่เหลือ"
+      "exceedsRemaining": "ยอดลดหนี้เกินมูลค่าใบแจ้งหนี้ที่เหลือ",
+      "discountAmountLabel": "ยอดลดหนี้"
     },
     "creditNoteStatus": {
       "draft": "ร่าง",

@@ -402,7 +402,7 @@ const OpenShiftModal = ({ onClose, onOpened }: { onClose: () => void; onOpened?:
     try {
       const { data } = await api.post('/sales/pos-shifts/open', { opening_cash: opening })
       if (data.success) {
-        toast.success(`${t('sales.toast.shiftOpened')}: ${data.data.shift_number}`)
+        toast.success(t('sales.toast.shiftOpened', { number: data.data.shift_number }))
         onOpened?.()
         onClose()
       }
@@ -1698,7 +1698,7 @@ const Sales = () => {
                         </div>
                         <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label ?? t((STATUS_CONFIG[order.status]?.labelKey ?? order.status) as any)}</p>
                         {(order.pending_qty ?? 0) > 0 && (
-                          <p className="text-xs text-center text-warning">{t('sales.statusBadge.pendingDelivery')} {order.pending_qty}</p>
+                          <p className="text-xs text-center text-warning">{t('sales.statusBadge.pendingDelivery', { count: order.pending_qty })}</p>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center hidden lg:table-cell">
@@ -1796,7 +1796,7 @@ const Sales = () => {
                       <div key={s.status} className={`h-1.5 rounded-full flex-1 ${idx <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} />
                     ))}
                   </div>
-                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label ?? t((STATUS_CONFIG[order.status]?.labelKey ?? order.status) as any)}{(order.pending_qty ?? 0) > 0 ? ` · ${t('sales.statusBadge.pendingDelivery')} ${order.pending_qty}` : ''}</p>
+                  <p className={`text-xs font-medium mb-2 ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label ?? t((STATUS_CONFIG[order.status]?.labelKey ?? order.status) as any)}{(order.pending_qty ?? 0) > 0 ? ` · ${t('sales.statusBadge.pendingDelivery', { count: order.pending_qty })}` : ''}</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.orderDate')} <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
                     <span>{t('sales.common.deliveryDate')} <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}</span></span>
@@ -2442,7 +2442,7 @@ const Sales = () => {
           <div className="px-5 py-3 bg-success/10 border-b border-success/30 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-success font-medium text-sm">{t('sales.pos.shiftOpen')}</span>
-            <span className="ml-auto text-[var(--fg-3)] text-xs">{posCurrentShift.shift_number} · {t('sales.pos.openSince')} {fmtDT(posCurrentShift.opened_at)}</span>
+            <span className="ml-auto text-[var(--fg-3)] text-xs">{posCurrentShift.shift_number} · {t('sales.pos.openSince', { time: fmtDT(posCurrentShift.opened_at) })}</span>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-3 gap-3">
@@ -3660,7 +3660,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-purple-400" />
-            {isEdit ? t('sales.orderModal.titleEdit', { number: editData.so_number }) : sourceQuotation ? t('sales.orderModal.titleConvert', { number: sourceQuotation.quotation_number }) : t('sales.orderModal.titleCreate')}
+            {isEdit ? t('sales.orderModal.titleEdit', { number: editData.so_number }) : sourceQuotation ? t('sales.orderModal.titleConvert', { quotation: sourceQuotation.quotation_number, number: sourceQuotation.quotation_number }) : t('sales.orderModal.titleCreate')}
           </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"><X className="w-4 h-4" /></button>
         </div>
@@ -4172,7 +4172,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                     <>
                       {(detail.withholdingTax as any[]).map((w: any) => (
                         <div key={w.id} className="flex justify-between text-warning text-xs">
-                          <span>{t('sales.invoiceDetail.withholdingTax')} {w.tax_type} {w.tax_rate}%</span>
+                          <span>{t('sales.invoiceDetail.withholdingTax', { type: w.tax_type, rate: w.tax_rate })}</span>
                           <span>-{fmt(w.tax_amount)}</span>
                         </div>
                       ))}
