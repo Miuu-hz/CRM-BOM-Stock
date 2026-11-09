@@ -149,7 +149,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
 
       // ── 1) บล็อกบิลซ้ำจากไฟล์รูปภาพสลิป/ใบเสร็จ (ถ้าแนบมา) ──────────────────
       if (image_base64) {
-        const dupImg = findDuplicateAttachment(tenantId, image_base64)
+        const dupImg = await findDuplicateAttachment(tenantId, image_base64)
         if (dupImg) {
           return ok({
             success: false,
@@ -311,7 +311,7 @@ export function registerPurchaseTools(server: IMcpServer, tenantId: string, user
       let attachedEvidence: any = null
       if (image_base64) {
         try {
-          attachedEvidence = saveBase64Attachment({
+          attachedEvidence = await saveBase64Attachment({
             tenantId,
             userId,
             refType: 'PURCHASE_ORDER',
@@ -1015,7 +1015,7 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
         })
       }
 
-      const dupImg = findDuplicateAttachment(tenantId, image_base64)
+      const dupImg = await findDuplicateAttachment(tenantId, image_base64)
       if (dupImg) {
         return ok({
           success: false,
@@ -1026,7 +1026,7 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
       }
 
       try {
-        const att = saveBase64Attachment({
+        const att = await saveBase64Attachment({
           tenantId,
           userId,
           refType: doc_type,

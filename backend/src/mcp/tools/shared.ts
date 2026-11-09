@@ -3,6 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import db from '../../db/sqlite'
 import { invoiceUploadDir } from '../../routes/sales/shared'
+import { compressImage } from '../../utils/compressImage'
 import { approvalDenyReason } from '../../services/approvalGate.service'
 import { normName, findAliasTarget, isSellableItem } from '../../services/stockItem.service'
 
@@ -254,12 +255,14 @@ const ATTACHMENT_DIR = invoiceUploadDir
 
 // ตรวจว่ารูปสลิป/บิลนี้เคยแนบกับเอกสารอื่นที่ยังไม่ถูกยกเลิกในกิจการเดียวกันไปแล้วหรือยัง
 // เทียบเฉพาะแถวที่ file_size เท่ากันก่อน แล้วค่อยเทียบ Buffer.equals บนดิสก์ (ไม่ต้องเพิ่มคอลัมน์ hash)
-export function findDuplicateAttachment(
+// ponytail: ไฟล์บนดิสก์เป็นฉบับบีบแล้ว จึงบีบรูปที่เข้ามาด้วยค่าเดียวกันก่อนเทียบ (sharp ให้ผลเดิมทุกครั้ง) — บีบซ้ำ 2 รอบตอนแนบ ช้าขึ้นราว 0.2 วิ
+export async function findDuplicateAttachment(
   tenantId: string,
   base64Data: string
-): { refType: string; refId: string; docNum: string; label: string } | null {
+): Promise<{ refType: string; refId: string; docNum: string; label: string } | null> {
   const clean = base64Data.trim().replace(/^data:[^;]+;base64,/, '')
-  const buffer = Buffer.from(clean, 'base64')
+  const raw = Buffer.from(clean, 'base64')
+  const buffer = (await compressImage(raw))?.buffer ?? raw
   if (!buffer.length) return null
   const rows = db.prepare(
     'SELECT ref_type, ref_id, file_path FROM payment_attachments WHERE tenant_id = ? AND file_size = ?'
@@ -286,7 +289,7 @@ export function findDuplicateAttachment(
   return null
 }
 
-export function saveBase64Attachment(params: {
+export async function saveBase64Attachment(params: {
   tenantId: string
   userId: string
   refType: string
@@ -294,7 +297,7 @@ export function saveBase64Attachment(params: {
   base64Data: string
   fileName?: string
   mimeType?: string
-}): {
+}): Promise<{
   id: string
   ref_type: string
   ref_id: string
@@ -303,7 +306,7 @@ export function saveBase64Attachment(params: {
   original_name: string
   file_size: number
   created_at: string
-} {
+}> {
   const { tenantId, userId, refType, refId, base64Data, fileName, mimeType } = params
   if (!fs.existsSync(ATTACHMENT_DIR)) {
     fs.mkdirSync(ATTACHMENT_DIR, { recursive: true })
@@ -333,11 +336,12 @@ export function saveBase64Attachment(params: {
 
   const safeRefType = refType.replace(/[^a-zA-Z0-9_-]/g, '')
   const safeRefId = refId.replace(/[^a-zA-Z0-9_-]/g, '')
+  const raw = Buffer.from(cleanBase64, 'base64')
+  const small = await compressImage(raw)
+  const buffer = small?.buffer ?? raw
+  if (small) ext = small.ext
   const storageFileName = `pay-${safeRefType}-${safeRefId}-${Date.now()}${ext}`
-  const targetPath = path.join(ATTACHMENT_DIR, storageFileName)
-
-  const buffer = Buffer.from(cleanBase64, 'base64')
-  fs.writeFileSync(targetPath, buffer)
+  fs.writeFileSync(path.join(ATTACHMENT_DIR, storageFileName), buffer)
 
   const attachmentId = randomUUID().replace(/-/g, '').substring(0, 25)
   const now = new Date().toISOString()

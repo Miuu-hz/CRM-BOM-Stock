@@ -5,6 +5,7 @@ import multer from 'multer'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { invoiceUploadDir } from './sales/shared'
+import { compressImage } from '../utils/compressImage'
 import { getSubscription } from '../services/subscription.service'
 import {
   isValidAttachmentFile,
@@ -324,7 +325,7 @@ router.post('/:refType/:refId', (req: Request, res: Response, next: any) => {
     if (err) return res.status(400).json({ success: false, message: err.message })
     next()
   })
-}, (req: Request, res: Response) => {
+}, async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { refType, refId } = req.params
@@ -335,6 +336,16 @@ router.post('/:refType/:refId', (req: Request, res: Response, next: any) => {
     if (!isValidAttachmentFile(fullPath)) {
       try { fs.unlinkSync(fullPath) } catch { /* ignore */ }
       return res.status(400).json({ success: false, message: 'Invalid file' })
+    }
+
+    // รูปใหญ่ → บีบเป็น JPEG ไม่เกิน ~350KB แล้วแทนไฟล์เดิม (PDF/รูปเล็กเก็บตามเดิม)
+    const small = await compressImage(fs.readFileSync(fullPath))
+    if (small) {
+      const jpgName = path.parse(file.filename).name + small.ext
+      fs.writeFileSync(path.join(invoiceUploadDir, jpgName), small.buffer)
+      if (jpgName !== file.filename) fs.unlinkSync(fullPath)
+      file.filename = jpgName
+      file.size = small.buffer.length
     }
 
     const attachmentId = generateId()
