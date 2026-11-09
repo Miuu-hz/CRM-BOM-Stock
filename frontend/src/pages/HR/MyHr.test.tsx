@@ -21,6 +21,13 @@ vi.mock('../../services/hr.service', () => ({
     createMyAdvance: vi.fn(),
     cancelAdvance: vi.fn(),
     getMyTraining: vi.fn(),
+    getMyRoster: vi.fn(),
+    getColleagueShifts: vi.fn(),
+    getMyShiftSwaps: vi.fn(),
+    createShiftSwap: vi.fn(),
+    acceptShiftSwap: vi.fn(),
+    declineShiftSwap: vi.fn(),
+    cancelShiftSwap: vi.fn(),
   },
 }))
 
@@ -51,6 +58,13 @@ const mockHr = hrService as unknown as {
   createMyAdvance: ReturnType<typeof vi.fn>
   cancelAdvance: ReturnType<typeof vi.fn>
   getMyTraining: ReturnType<typeof vi.fn>
+  getMyRoster: ReturnType<typeof vi.fn>
+  getColleagueShifts: ReturnType<typeof vi.fn>
+  getMyShiftSwaps: ReturnType<typeof vi.fn>
+  createShiftSwap: ReturnType<typeof vi.fn>
+  acceptShiftSwap: ReturnType<typeof vi.fn>
+  declineShiftSwap: ReturnType<typeof vi.fn>
+  cancelShiftSwap: ReturnType<typeof vi.fn>
 }
 
 beforeEach(() => {
@@ -68,6 +82,21 @@ beforeEach(() => {
   mockHr.getLeaveRequests.mockResolvedValue([])
   mockHr.getMyAdvances.mockResolvedValue([])
   mockHr.getMyTraining.mockResolvedValue([])
+  mockHr.getMyRoster.mockResolvedValue({
+    week_start: '2026-11-09',
+    employee_id: 'emp-1',
+    days: [
+      { date: '2026-11-09', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      { date: '2026-11-10', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      { date: '2026-11-11', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      { date: '2026-11-12', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      { date: '2026-11-13', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      { date: '2026-11-14', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      { date: '2026-11-15', shift: null, source: 'NONE', on_leave: false, holiday: false },
+    ],
+  })
+  mockHr.getColleagueShifts.mockResolvedValue([])
+  mockHr.getMyShiftSwaps.mockResolvedValue([])
 })
 
 describe('หน้าของฉัน /hr/me (MyHr)', () => {
@@ -396,6 +425,7 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
 
     // Preview
     expect(await screen.findByText(/ผ่อนงวดละ 1,000\.00/)).toBeTruthy()
+    expect(screen.getByText('* ยอดผ่อนจริงอาจรวมดอกเบี้ยตามที่บริษัทกำหนด')).toBeTruthy()
 
     // Submit
     const submitBtn = screen.getByRole('button', { name: /ส่งคำขอ/ })
@@ -492,6 +522,279 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
 
     await waitFor(() => {
       expect(mockHr.cancelAdvance).toHaveBeenCalledWith('adv-99')
+    })
+  })
+
+  it('การ์ด ตารางกะของฉัน แสดงชื่อกะสำหรับวันที่มีกะ และแสดง หยุด สำหรับวันที่ไม่มีกะ', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getMyRoster.mockResolvedValue({
+      week_start: '2026-11-09',
+      employee_id: 'emp-1',
+      days: [
+        {
+          date: '2026-11-09',
+          shift: {
+            id: 's-1',
+            name: 'กะเช้า',
+            start_time: '08:00',
+            end_time: '17:00',
+            grace_minutes: 15,
+            break_minutes: 60,
+            is_active: 1,
+            hours: 8,
+          },
+          source: 'ASSIGNED',
+          on_leave: false,
+          holiday: false,
+        },
+        {
+          date: '2026-11-10',
+          shift: null,
+          source: 'NONE',
+          on_leave: false,
+          holiday: false,
+        },
+        { date: '2026-11-11', shift: null, source: 'NONE', on_leave: false, holiday: false },
+        { date: '2026-11-12', shift: null, source: 'NONE', on_leave: false, holiday: false },
+        { date: '2026-11-13', shift: null, source: 'NONE', on_leave: false, holiday: false },
+        { date: '2026-11-14', shift: null, source: 'NONE', on_leave: false, holiday: false },
+        { date: '2026-11-15', shift: null, source: 'NONE', on_leave: false, holiday: false },
+      ],
+    })
+
+    render(<MyHr />)
+
+    expect(await screen.findByText('ตารางกะของฉัน')).toBeTruthy()
+    expect(screen.getByText('กะเช้า')).toBeTruthy()
+    expect(screen.getByText('08:00–17:00')).toBeTruthy()
+    expect(screen.getAllByText('หยุด').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('ขอแลกกะ: เลือกวันที่ → แสดง radio เพื่อนร่วมงาน → เลือกเพื่อน → กดส่งคำขอ → เรียก createShiftSwap', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getColleagueShifts.mockResolvedValue([
+      {
+        employee_id: 'emp-2',
+        name: 'สมศรี มีสุข',
+        org_unit_name: 'หน้าร้าน',
+        shift: {
+          id: 's-2',
+          name: 'กะบ่าย',
+          start_time: '13:00',
+          end_time: '22:00',
+          grace_minutes: 15,
+          break_minutes: 60,
+          is_active: 1,
+          hours: 8,
+        },
+      },
+    ])
+    mockHr.createShiftSwap.mockResolvedValue({
+      id: 'swap-1',
+      work_date: '2026-11-10',
+      requester_employee_id: 'emp-1',
+      requester_name: 'สมชาย ใจดี',
+      target_employee_id: 'emp-2',
+      target_name: 'สมศรี มีสุข',
+      requester_shift: null,
+      target_shift: null,
+      reason: 'ติดธุระ',
+      status: 'PEER_PENDING',
+      approval_request_id: null,
+      created_at: '2026-11-09T10:00:00Z',
+    })
+
+    render(<MyHr />)
+
+    const openSwapBtn = await screen.findByRole('button', { name: /ขอแลกกะ/ })
+    fireEvent.click(openSwapBtn)
+
+    // Pick date
+    const dateInput = screen.getByLabelText(/วันที่ต้องการแลกกะ/)
+    fireEvent.change(dateInput, { target: { value: '2026-11-10' } })
+
+    await waitFor(() => {
+      expect(mockHr.getColleagueShifts).toHaveBeenCalledWith('2026-11-10')
+    })
+
+    // Colleague radio appears
+    const colleagueRadio = await screen.findByRole('radio', { name: /สมศรี มีสุข/ })
+    fireEvent.click(colleagueRadio)
+
+    // Optional reason
+    const reasonInput = screen.getByLabelText(/เหตุผล/)
+    fireEvent.change(reasonInput, { target: { value: 'ติดธุระ' } })
+
+    // Submit
+    const submitBtn = screen.getByRole('button', { name: /ส่งคำขอแลกกะ/ })
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(mockHr.createShiftSwap).toHaveBeenCalledWith({
+        target_employee_id: 'emp-2',
+        work_date: '2026-11-10',
+        reason: 'ติดธุระ',
+      })
+    })
+
+    expect(await screen.findByText('ส่งคำขอแล้ว รอเพื่อนตอบรับ')).toBeTruthy()
+  })
+
+  it('คำขอสถานะ PEER_PENDING ที่พนักงานที่ผูกไว้เป็นผู้ถูกขอ จะแสดงปุ่ม ตกลงแลก และเมื่อคลิกจะเรียก acceptShiftSwap', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getMyShiftSwaps.mockResolvedValue([
+      {
+        id: 'swap-101',
+        work_date: '2026-11-15',
+        requester_employee_id: 'emp-2',
+        requester_name: 'สมศรี มีสุข',
+        requester_shift: { name: 'กะบ่าย' } as any,
+        target_employee_id: 'emp-1',
+        target_name: 'สมชาย ใจดี',
+        target_shift: { name: 'กะเช้า' } as any,
+        reason: 'ขอสลับกะ',
+        status: 'PEER_PENDING',
+        approval_request_id: null,
+        created_at: '2026-11-09T10:00:00Z',
+      },
+    ])
+    mockHr.acceptShiftSwap.mockResolvedValue({
+      id: 'swap-101',
+      status: 'PENDING',
+    })
+
+    render(<MyHr />)
+
+    expect(await screen.findByText('2026-11-15')).toBeTruthy()
+    expect(screen.getByText('รอเพื่อนตอบ')).toBeTruthy()
+    expect(screen.getByText(/สมศรี มีสุข \(กะบ่าย\) ⇄ สมชาย ใจดี \(กะเช้า\)/)).toBeTruthy()
+
+    const acceptBtn = screen.getByRole('button', { name: /ตกลงแลก/ })
+    expect(acceptBtn).toBeTruthy()
+
+    fireEvent.click(acceptBtn)
+
+    await waitFor(() => {
+      expect(mockHr.acceptShiftSwap).toHaveBeenCalledWith('swap-101')
+    })
+  })
+
+  it('คำขอสถานะ PEER_PENDING ที่พนักงานเป็นผู้ถูกขอ สามารถกด ปฏิเสธ ได้', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getMyShiftSwaps.mockResolvedValue([
+      {
+        id: 'swap-102',
+        work_date: '2026-11-15',
+        requester_employee_id: 'emp-2',
+        requester_name: 'สมศรี มีสุข',
+        requester_shift: null,
+        target_employee_id: 'emp-1',
+        target_name: 'สมชาย ใจดี',
+        target_shift: null,
+        reason: null,
+        status: 'PEER_PENDING',
+        approval_request_id: null,
+        created_at: '2026-11-09T10:00:00Z',
+      },
+    ])
+    mockHr.declineShiftSwap.mockResolvedValue({
+      id: 'swap-102',
+      status: 'DECLINED',
+    })
+
+    render(<MyHr />)
+
+    const declineBtn = await screen.findByRole('button', { name: /ปฏิเสธ/ })
+    fireEvent.click(declineBtn)
+
+    await waitFor(() => {
+      expect(mockHr.declineShiftSwap).toHaveBeenCalledWith('swap-102')
+    })
+  })
+
+  it('คำขอสถานะ PEER_PENDING หรือ PENDING ที่พนักงานเป็นผู้ขอ สามารถกด ยกเลิก ได้', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    mockHr.getMyShiftSwaps.mockResolvedValue([
+      {
+        id: 'swap-103',
+        work_date: '2026-11-16',
+        requester_employee_id: 'emp-1',
+        requester_name: 'สมชาย ใจดี',
+        requester_shift: null,
+        target_employee_id: 'emp-2',
+        target_name: 'สมศรี มีสุข',
+        target_shift: null,
+        reason: null,
+        status: 'PENDING',
+        approval_request_id: null,
+        created_at: '2026-11-09T10:00:00Z',
+      },
+    ])
+    mockHr.cancelShiftSwap.mockResolvedValue({
+      id: 'swap-103',
+      status: 'CANCELLED',
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<MyHr />)
+
+    expect(await screen.findByText('2026-11-16')).toBeTruthy()
+    expect(screen.getByText('รอหัวหน้าอนุมัติ')).toBeTruthy()
+
+    // Find the cancel button in the swap card
+    const cancelButtons = screen.getAllByRole('button', { name: /ยกเลิก/ })
+    fireEvent.click(cancelButtons[0])
+
+    await waitFor(() => {
+      expect(mockHr.cancelShiftSwap).toHaveBeenCalledWith('swap-103')
+    })
+  })
+
+  it('สามารถกดปุ่ม ‹ และ › เพื่อเลื่อนสัปดาห์ในตารางกะได้', async () => {
+    mockHr.getMe.mockResolvedValue({
+      id: 'emp-1',
+      code: 'EMP-001',
+      first_name: 'สมชาย',
+      last_name: 'ใจดี',
+    })
+    render(<MyHr />)
+
+    const prevWeekBtn = await screen.findByRole('button', { name: /‹/ })
+    const nextWeekBtn = screen.getByRole('button', { name: /›/ })
+
+    fireEvent.click(prevWeekBtn)
+    await waitFor(() => {
+      expect(mockHr.getMyRoster).toHaveBeenCalled()
+    })
+
+    fireEvent.click(nextWeekBtn)
+    await waitFor(() => {
+      expect(mockHr.getMyRoster).toHaveBeenCalled()
     })
   })
 })

@@ -52,6 +52,7 @@ export const MENU_PERMISSIONS: Record<string, Role[]> = {
   '/hr/kiosk': ALL_ROLES,
   '/hr/training': ALL_ROLES,
   '/hr/advances': ALL_ROLES,
+  '/hr/roster': ALL_ROLES,
   '/approvals': NOT_USER,
   '/users': MASTER_ONLY,
   '/cashier': ALL_ROLES,
@@ -129,6 +130,7 @@ export const MENU_REQUIRED_FEATURES: Record<string, string> = {
   '/hr/kiosk': 'hr',
   '/hr/training': 'hr',
   '/hr/advances': 'hr',
+  '/hr/roster': 'hr',
   '/kds': 'kds',
 }
 

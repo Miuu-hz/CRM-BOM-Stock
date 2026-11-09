@@ -3,8 +3,6 @@ import { generateId } from '../../utils/id'
 import {
   parseAttendanceFile,
   summarizeDay,
-  summarizePeriod,
-  Punch,
   Shift,
   DaySummary,
   PeriodTotals,
@@ -372,9 +370,31 @@ export function getAttendanceSummary(
     }
   }
 
+  // HR Phase 7: ตารางกะรายวัน (shift_assignments) ชนะกะประจำของพนักงาน · shift_id NULL = วันหยุดประจำสัปดาห์
+  const toShiftInfo = (r: any): ShiftInfo => {
+    const graceMinutes = Number(r.grace_minutes ?? 0)
+    const breakMinutes = Number(r.break_minutes ?? 60)
+    return {
+      id: r.shift_id, name: r.shift_name, start: r.start_time, end: r.end_time, graceMinutes, breakMinutes,
+      start_time: r.start_time, end_time: r.end_time, grace_minutes: graceMinutes, break_minutes: breakMinutes,
+    }
+  }
+  const assignStmt = db.prepare(`
+    SELECT a.work_date, a.shift_id, s.name AS shift_name, s.start_time, s.end_time, s.grace_minutes, s.break_minutes
+    FROM shift_assignments a
+    LEFT JOIN shifts s ON s.id = a.shift_id AND s.tenant_id = a.tenant_id
+    WHERE a.tenant_id = ? AND a.employee_id = ? AND a.work_date >= ? AND a.work_date <= ?
+  `)
+
   for (const emp of empRows) {
     const fullName = `${emp.first_name}${emp.last_name ? ' ' + emp.last_name : ''}`
-    if (!emp.shift_id || !emp.start_time || !emp.end_time) {
+    const assigned = new Map<string, ShiftInfo | null>()
+    for (const a of assignStmt.all(tenantId, emp.id, from, to) as any[]) {
+      assigned.set(a.work_date, a.shift_id && a.start_time && a.end_time ? toShiftInfo(a) : null)
+    }
+    const defaultShift = emp.shift_id && emp.start_time && emp.end_time ? toShiftInfo(emp) : null
+    const firstAssigned = [...assigned.values()].find((v): v is ShiftInfo => !!v) ?? null
+    if (!defaultShift && !firstAssigned) {
       noShift.push({
         employeeId: emp.id,
         employee_id: emp.id,
@@ -392,57 +412,30 @@ export function getAttendanceSummary(
       })
       continue
     }
-
-    const graceMinutes = Number(emp.grace_minutes ?? 0)
-    const breakMinutes = Number(emp.break_minutes ?? 60)
-
-    const shift: ShiftInfo = {
-      id: emp.shift_id,
-      name: emp.shift_name,
-      start: emp.start_time,
-      end: emp.end_time,
-      graceMinutes,
-      breakMinutes,
-      start_time: emp.start_time,
-      end_time: emp.end_time,
-      grace_minutes: graceMinutes,
-      break_minutes: breakMinutes,
-    }
+    const shift: ShiftInfo = defaultShift ?? firstAssigned!
 
     const pin: string | null = emp.device_pin ?? null
-    const punches: Punch[] = pin
-      ? (logStmt.all(tenantId, pin, fromBound, toBound) as { punched_at: string }[]).map((r) => ({
-          devicePin: pin,
-          at: r.punched_at,
-        }))
+    const punchTimes: string[] = pin
+      ? (logStmt.all(tenantId, pin, fromBound, toBound) as { punched_at: string }[]).map((r) => r.punched_at)
       : []
 
-    let days: DaySummary[]
-    let totals: PeriodTotals
-
-    if (pin && punches.length > 0) {
-      const periodResult = summarizePeriod(punches, () => shift, from, to)
-      const empPeriod = periodResult.byPin[pin]
-      days = empPeriod ? empPeriod.days : dates.map((d) => summarizeDay([], shift, d))
-      totals = empPeriod
-        ? empPeriod.totals
-        : {
-            lateMinutes: 0,
-            earlyLeaveMinutes: 0,
-            otCandidateMinutes: 0,
-            absentDays: dates.length,
-            daysWorked: 0,
-          }
-    } else {
-      days = dates.map((d) => summarizeDay([], shift, d))
-      totals = {
-        lateMinutes: 0,
-        earlyLeaveMinutes: 0,
-        otCandidateMinutes: 0,
-        absentDays: dates.length,
-        daysWorked: 0,
+    const days: DaySummary[] = dates.map((d) => {
+      const dayShift = assigned.has(d) ? assigned.get(d)! : defaultShift
+      if (!dayShift) {
+        return { workDate: d, lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: 0, otCandidateMinutes: 0, missingOut: false, absent: false, dayOff: true }
       }
+      return summarizeDay(punchTimes, dayShift, d)
+    })
+    const sum = (f: (x: DaySummary) => number) => days.reduce((t, x) => t + f(x), 0)
+    let totals: PeriodTotals = {
+      lateMinutes: sum((x) => x.lateMinutes),
+      earlyLeaveMinutes: sum((x) => x.earlyLeaveMinutes),
+      otCandidateMinutes: sum((x) => x.otCandidateMinutes),
+      absentDays: days.filter((x) => x.absent).length,
+      daysWorked: days.filter((x) => !x.absent && !x.missingOut && !x.dayOff).length,
     }
+    const offDays = days.filter((x) => x.dayOff).length
+    if (offDays > 0) totals.offDays = offDays
 
     // ponytail: B3 holiday and approved leave days are not absent; holiday wins when both
     const leaveDates = empLeaveDates.get(emp.id) ?? new Set<string>()
@@ -482,17 +475,17 @@ export function getAttendanceSummary(
       org_unit_name: emp.org_unit_name ?? null,
       device_pin: pin,
       devicePin: pin,
-      shift_id: emp.shift_id,
-      shiftId: emp.shift_id,
-      shift_name: emp.shift_name,
-      shiftName: emp.shift_name,
+      shift_id: shift.id,
+      shiftId: shift.id,
+      shift_name: shift.name,
+      shiftName: shift.name,
       employee: {
         id: emp.id,
         code: emp.code,
         first_name: emp.first_name,
         last_name: emp.last_name,
         device_pin: pin,
-        shift_id: emp.shift_id,
+        shift_id: shift.id,
       },
       shift,
       days,

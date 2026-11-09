@@ -43,7 +43,7 @@ const STATUS_BADGE: Record<AdvanceStatus, string> = {
 const fmt = (n: number | undefined | null) =>
   Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = () => new Date().toLocaleDateString('sv-SE') // YYYY-MM-DD เวลาเครื่อง (toISOString เพี้ยนเป็นเมื่อวานช่วงตี 0–7)
 
 function nextMonthPeriod(): string {
   const now = new Date()
@@ -70,6 +70,8 @@ export default function Advances() {
   const [newKind, setNewKind] = useState<AdvanceKind>('ADVANCE')
   const [newAmount, setNewAmount] = useState('')
   const [newInstallments, setNewInstallments] = useState('3')
+  const [newInterestRate, setNewInterestRate] = useState('0')
+  const [defaultLoanInterestRate, setDefaultLoanInterestRate] = useState(0)
   const [newStartPeriod, setNewStartPeriod] = useState(nextMonthPeriod())
   const [newReason, setNewReason] = useState('')
   const [creating, setCreating] = useState(false)
@@ -81,6 +83,14 @@ export default function Advances() {
   const [payAccountId, setPayAccountId] = useState('')
   const [assetAccounts, setAssetAccounts] = useState<Account[]>([])
   const [disbursing, setDisbursing] = useState(false)
+
+  // Repay Cash Modal State
+  const [repayCashModalOpen, setRepayCashModalOpen] = useState(false)
+  const [repayingAdvance, setRepayingAdvance] = useState<EmployeeAdvance | null>(null)
+  const [repayAmount, setRepayAmount] = useState('')
+  const [repayDate, setRepayDate] = useState(todayStr())
+  const [repayPayAccountId, setRepayPayAccountId] = useState('')
+  const [repaying, setRepaying] = useState(false)
 
   // Cancel Modal State
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
@@ -109,6 +119,17 @@ export default function Advances() {
         setAssetAccounts(bankList)
       })
       .catch(() => {})
+
+    hrService
+      .getSettings()
+      .then((s) => {
+        const rate = s?.loanInterestRatePct ?? 0
+        setDefaultLoanInterestRate(rate)
+        setNewInterestRate((prev) => (prev === '0' || prev === '' ? String(rate) : prev))
+      })
+      .catch(() => {
+        setDefaultLoanInterestRate(0)
+      })
   }, [])
 
   // Load Advances list
@@ -140,20 +161,27 @@ export default function Advances() {
     loadAdvances()
   }, [loadAdvances])
 
-  // Live preview for LOAN: Math.ceil(amount * 100 / installments) / 100
-  const installmentPreview = useMemo(() => {
+  // Live preview for LOAN: interest and installment with interest
+  const loanCalc = useMemo(() => {
     const amt = parseFloat(newAmount)
     const inst = parseInt(newInstallments, 10)
-    if (!amt || isNaN(amt) || !inst || isNaN(inst) || inst <= 0) return 0
-    return Math.ceil((amt * 100) / inst) / 100
-  }, [newAmount, newInstallments])
+    const rate = parseFloat(newInterestRate)
+    const safeRate = isNaN(rate) || rate < 0 ? 0 : rate
+    if (!amt || isNaN(amt) || !inst || isNaN(inst) || inst <= 0) {
+      return { interest: 0, installment: 0 }
+    }
+    const interest = Math.round(((amt * safeRate) / 100) * (inst / 12) * 100) / 100
+    const installment = Math.ceil(Math.round((amt + interest) * 100) / inst) / 100
+    return { interest, installment }
+  }, [newAmount, newInstallments, newInterestRate])
 
   // Repayment running balance calculation for detail modal
   const repaymentsWithBalance = useMemo(() => {
     if (!selectedDetail) return []
     const list = [...(selectedDetail.repayments || [])]
     list.sort((a, b) => a.period.localeCompare(b.period))
-    let remaining = selectedDetail.amount
+    // ponytail: total starting debt includes interest when set
+    let remaining = Math.round(((selectedDetail.amount || 0) + (selectedDetail.interest_amount || 0)) * 100) / 100
     return list.map((item) => {
       remaining = Math.max(0, Math.round((remaining - item.amount) * 100) / 100)
       return {
@@ -168,6 +196,7 @@ export default function Advances() {
     setNewKind('ADVANCE')
     setNewAmount('')
     setNewInstallments('3')
+    setNewInterestRate(String(defaultLoanInterestRate))
     setNewStartPeriod(nextMonthPeriod())
     setNewReason('')
     setCreateModalOpen(true)
@@ -189,6 +218,15 @@ export default function Advances() {
       toast.error('จำนวนงวดต้องอยู่ระหว่าง 1 ถึง 24 งวด')
       return
     }
+    let interestRate: number | undefined = undefined
+    if (newKind === 'LOAN') {
+      const rate = parseFloat(newInterestRate)
+      if (isNaN(rate) || rate < 0 || rate > 15) {
+        toast.error('ดอกเบี้ยต้องอยู่ระหว่าง 0–15% ต่อปี')
+        return
+      }
+      interestRate = rate
+    }
     if (!newStartPeriod) {
       toast.error('กรุณาระบุงวดเริ่มต้น')
       return
@@ -196,14 +234,18 @@ export default function Advances() {
 
     setCreating(true)
     try {
-      await hrService.createAdvance({
+      const payload: any = {
         employee_id: newEmpId,
         kind: newKind,
         amount: amt,
         installments: inst,
         start_period: newStartPeriod,
         reason: newReason.trim() || undefined,
-      })
+      }
+      if (newKind === 'LOAN') {
+        payload.interest_rate = interestRate ?? 0
+      }
+      await hrService.createAdvance(payload)
       toast.success('ส่งคำขอแล้ว รออนุมัติในกล่องอนุมัติ')
       setCreateModalOpen(false)
       loadAdvances()
@@ -211,6 +253,64 @@ export default function Advances() {
       toast.error(err?.response?.data?.message || err?.message || 'สร้างคำขอไม่สำเร็จ')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const openRepayCashModal = async (adv: EmployeeAdvance) => {
+    setRepayingAdvance(adv)
+    setRepayAmount(String(adv.outstanding))
+    setRepayDate(todayStr())
+    let bankList = assetAccounts
+    if (bankList.length === 0) {
+      try {
+        const res = await accountsApi.getAll({ active: true })
+        const all: Account[] = res.data?.data || res.data || []
+        bankList = all.filter(
+          (a: Account) => a.code.startsWith('111') || a.code === '1110' || a.type === 'ASSET'
+        )
+        setAssetAccounts(bankList)
+      } catch {
+        // ignore account loading failure
+      }
+    }
+    if (bankList.length > 0) {
+      const preferred = bankList.find((a: Account) => a.code === '1112' || a.code === '1111') || bankList[0]
+      setRepayPayAccountId(preferred.id)
+    }
+    setRepayCashModalOpen(true)
+  }
+
+  const handleRepayCash = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!repayingAdvance) return
+    const amt = parseFloat(repayAmount)
+    if (isNaN(amt) || amt <= 0 || amt > repayingAdvance.outstanding) {
+      toast.error('ยอดเงินต้องมากกว่า 0 และไม่เกินยอดคงค้าง')
+      return
+    }
+    if (!repayPayAccountId) {
+      toast.error('กรุณาเลือกบัญชีรับเงิน')
+      return
+    }
+    if (!repayDate) {
+      toast.error('กรุณาระบุวันที่รับเงิน')
+      return
+    }
+    setRepaying(true)
+    try {
+      await hrService.repayCashAdvance(repayingAdvance.id, {
+        amount: amt,
+        date: repayDate,
+        pay_account_id: repayPayAccountId,
+      })
+      toast.success('บันทึกรับคืนแล้ว')
+      setRepayCashModalOpen(false)
+      setRepayingAdvance(null)
+      loadAdvances()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'บันทึกรับคืนไม่สำเร็จ')
+    } finally {
+      setRepaying(false)
     }
   }
 
@@ -415,7 +515,12 @@ export default function Advances() {
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right font-medium text-[var(--fg-1)]">
-                      {fmt(r.amount)}
+                      <div>{fmt(r.amount)}</div>
+                      {Number(r.interest_amount || 0) > 0 && (
+                        <div className="text-[11px] font-normal text-[var(--fg-3)]">
+                          ดอกเบี้ย {r.interest_rate}% ({fmt(r.interest_amount)})
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3 text-[var(--fg-2)]">
                       {r.kind === 'ADVANCE'
@@ -444,6 +549,15 @@ export default function Advances() {
                             className="phopy-btn-primary px-2.5 py-1 rounded text-xs font-medium"
                           >
                             จ่ายเงิน
+                          </button>
+                        )}
+                        {r.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => openRepayCashModal(r)}
+                            className="px-2.5 py-1 rounded text-xs font-medium border border-blue-500/40 text-blue-600 hover:bg-blue-500/10"
+                          >
+                            รับคืนเงินสด
                           </button>
                         )}
                         {(r.status === 'PENDING' || r.status === 'APPROVED') && (
@@ -590,10 +704,31 @@ export default function Advances() {
               )}
 
               {newKind === 'LOAN' && (
+                <div>
+                  <label
+                    htmlFor="create-advance-interest-rate"
+                    className="block text-xs font-medium text-[var(--fg-2)] mb-1"
+                  >
+                    ดอกเบี้ย (% ต่อปี)
+                  </label>
+                  <input
+                    id="create-advance-interest-rate"
+                    type="number"
+                    min="0"
+                    max="15"
+                    step="any"
+                    value={newInterestRate}
+                    onChange={(e) => setNewInterestRate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                </div>
+              )}
+
+              {newKind === 'LOAN' && (
                 <div className="p-3 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--fg-2)] flex items-center justify-between">
-                  <span>ประมาณการผ่อนต่องวด:</span>
+                  <span>ประมาณการผ่อน:</span>
                   <span className="font-bold text-blue-600 dark:text-blue-400">
-                    ผ่อนงวดละ {fmt(installmentPreview)} บาท
+                    ดอกเบี้ยรวม {fmt(loanCalc.interest)} บาท · ผ่อนงวดละ {fmt(loanCalc.installment)} บาท
                   </span>
                 </div>
               )}
@@ -880,6 +1015,14 @@ export default function Advances() {
                       {fmt(selectedDetail.outstanding)} บาท
                     </span>
                   </div>
+                  {Number(selectedDetail.interest_amount || 0) > 0 && (
+                    <div>
+                      <span className="text-[var(--fg-3)]">ดอกเบี้ย:</span>{' '}
+                      <span className="text-[var(--fg-1)]">
+                        {selectedDetail.interest_rate}% ({fmt(selectedDetail.interest_amount)} บาท)
+                      </span>
+                    </div>
+                  )}
                   {selectedDetail.reason && (
                     <div className="col-span-2">
                       <span className="text-[var(--fg-3)]">เหตุผล:</span>{' '}
@@ -913,7 +1056,9 @@ export default function Advances() {
                         <thead className="bg-[var(--surface-2)] text-left text-[var(--fg-3)]">
                           <tr className="border-b border-[var(--border)]">
                             <th className="py-2 px-3">งวด</th>
+                            <th className="py-2 px-3">ช่องทาง</th>
                             <th className="py-2 px-3 text-right">หัก</th>
+                            <th className="py-2 px-3 text-right">ดอกเบี้ย</th>
                             <th className="py-2 px-3 text-right">คงค้างหลังหัก</th>
                           </tr>
                         </thead>
@@ -921,7 +1066,11 @@ export default function Advances() {
                           {repaymentsWithBalance.map((item, idx) => (
                             <tr key={item.run_id || idx} className="hover:bg-[var(--surface-2)]/40">
                               <td className="py-2 px-3 font-medium text-[var(--fg-1)]">{item.period}</td>
+                              <td className="py-2 px-3 text-[var(--fg-2)]">
+                                {item.source === 'CASH' ? 'รับคืนเงินสด' : 'หักเงินเดือน'}
+                              </td>
                               <td className="py-2 px-3 text-right text-[var(--fg-2)]">{fmt(item.amount)}</td>
+                              <td className="py-2 px-3 text-right text-[var(--fg-2)]">{fmt(item.interest)}</td>
                               <td className="py-2 px-3 text-right font-medium text-[var(--fg-1)]">
                                 {fmt(item.runningBalance)}
                               </td>
@@ -947,6 +1096,125 @@ export default function Advances() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal 5: รับคืนเงินสด */}
+      {repayCashModalOpen && repayingAdvance && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="phopy-card w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <h2 className="text-base font-bold text-[var(--fg-1)]">บันทึกรับคืนเงินสด</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setRepayCashModalOpen(false)
+                  setRepayingAdvance(null)
+                }}
+                className="p-1 rounded-lg hover:bg-[var(--surface-2)]"
+              >
+                <X className="w-4 h-4 text-[var(--fg-3)]" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[var(--surface-2)] space-y-1 text-xs">
+              <div>
+                <span className="text-[var(--fg-3)]">พนักงาน:</span>{' '}
+                <span className="font-semibold text-[var(--fg-1)]">
+                  {repayingAdvance.employee_name} ({repayingAdvance.employee_code})
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--fg-3)]">ประเภท:</span>{' '}
+                <span className="font-medium text-[var(--fg-1)]">
+                  {repayingAdvance.kind === 'ADVANCE' ? 'เบิกล่วงหน้า' : 'เงินยืม'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--fg-3)]">ยอดคงค้าง:</span>{' '}
+                <span className="font-bold text-blue-600 dark:text-blue-400">
+                  {fmt(repayingAdvance.outstanding)} บาท
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleRepayCash} className="space-y-4 text-xs">
+              <div>
+                <label htmlFor="repay-amount" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  ยอดเงินรับคืน (บาท) *
+                </label>
+                <input
+                  id="repay-amount"
+                  type="number"
+                  min="0.01"
+                  max={repayingAdvance.outstanding}
+                  step="0.01"
+                  required
+                  value={repayAmount}
+                  onChange={(e) => setRepayAmount(e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="repay-date" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  วันที่รับเงิน *
+                </label>
+                <input
+                  id="repay-date"
+                  type="date"
+                  required
+                  value={repayDate}
+                  onChange={(e) => setRepayDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="repay-account" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  บัญชีรับเงิน (เงินสด / เงินฝากธนาคาร - สินทรัพย์) *
+                </label>
+                <select
+                  id="repay-account"
+                  required
+                  value={repayPayAccountId}
+                  onChange={(e) => setRepayPayAccountId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                >
+                  <option value="">-- เลือกบัญชีสินทรัพย์ --</option>
+                  {assetAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.code} - {acc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <p className="text-[11px] text-[var(--fg-3)]">
+                ใช้เมื่อพนักงานคืนเงินเองหรือยกเลิกหลังจ่ายแล้ว · ลงบัญชี Dr เงินสด / Cr ลูกหนี้พนักงาน (+ ดอกเบี้ยรับ)
+              </p>
+
+              <div className="pt-3 border-t border-[var(--border)] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRepayCashModalOpen(false)
+                    setRepayingAdvance(null)
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)]"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={repaying}
+                  className="phopy-btn-primary px-4 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {repaying ? 'กำลังบันทึก...' : 'บันทึกรับคืน'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

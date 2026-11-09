@@ -20,6 +20,8 @@ vi.mock('../../services/hr.service', () => {
     createAdvance: vi.fn(),
     cancelAdvance: vi.fn(),
     disburseAdvance: vi.fn(),
+    getSettings: vi.fn(),
+    repayCashAdvance: vi.fn(),
   }
   return {
     default: service,
@@ -39,6 +41,8 @@ const mockHr = hrService as unknown as {
   createAdvance: ReturnType<typeof vi.fn>
   cancelAdvance: ReturnType<typeof vi.fn>
   disburseAdvance: ReturnType<typeof vi.fn>
+  getSettings: ReturnType<typeof vi.fn>
+  repayCashAdvance: ReturnType<typeof vi.fn>
 }
 
 const mockAccounts = accountsApi as unknown as {
@@ -79,6 +83,8 @@ const sampleAdvances = [
     amount: 2000,
     installments: 1,
     installment_amount: 2000,
+    interest_rate: 0,
+    interest_amount: 0,
     start_period: '2026-04',
     reason: 'ค่ารักษาพยาบาล',
     status: 'PENDING',
@@ -99,6 +105,8 @@ const sampleAdvances = [
     amount: 6000,
     installments: 3,
     installment_amount: 2000,
+    interest_rate: 12,
+    interest_amount: 90,
     start_period: '2026-04',
     reason: 'ซ่อมแซมบ้าน',
     status: 'APPROVED',
@@ -119,6 +127,8 @@ const sampleAdvances = [
     amount: 10000,
     installments: 5,
     installment_amount: 2000,
+    interest_rate: 0,
+    interest_amount: 0,
     start_period: '2026-01',
     reason: null,
     status: 'ACTIVE',
@@ -150,6 +160,8 @@ describe('หน้าเบิกล่วงหน้าและเงิน�
     vi.clearAllMocks()
     mockHr.getEmployees.mockResolvedValue(sampleEmployees)
     mockHr.getAdvances.mockResolvedValue(sampleAdvances)
+    mockHr.getSettings.mockResolvedValue({ loanInterestRatePct: 0 })
+    mockHr.repayCashAdvance.mockResolvedValue({})
     mockAccounts.getAll.mockResolvedValue({ data: { data: sampleAccounts } })
   })
 
@@ -180,6 +192,7 @@ describe('หน้าเบิกล่วงหน้าและเงิน�
     expect(within(table).getAllByText('เบิกล่วงหน้า').length).toBeGreaterThan(0)
     expect(within(table).getAllByText('เงินยืม').length).toBeGreaterThan(0)
     expect(within(table).getAllByText('รออนุมัติ').length).toBeGreaterThan(0)
+    expect(within(table).getByText('ดอกเบี้ย 12% (90.00)')).toBeTruthy()
   })
 
   it('แถวที่ APPROVED แสดงปุ่ม "จ่ายเงิน" และส่งฟอร์มจ่ายเงินเรียก disburseAdvance สำเร็จ', async () => {
@@ -262,6 +275,7 @@ describe('หน้าเบิกล่วงหน้าและเงิน�
         installments: 3,
         start_period: expect.any(String),
         reason: 'ยืมซ่อมรถ',
+        interest_rate: 0,
       })
     })
 
@@ -324,8 +338,8 @@ describe('หน้าเบิกล่วงหน้าและเงิน�
     mockHr.getAdvance.mockResolvedValueOnce({
       ...sampleAdvances[2],
       repayments: [
-        { run_id: 'run-1', period: '2026-01', amount: 2000, created_at: '2026-01-31' },
-        { run_id: 'run-2', period: '2026-02', amount: 2000, created_at: '2026-02-28' },
+        { run_id: 'run-1', period: '2026-01', amount: 2000, interest: 100, source: 'PAYROLL', created_at: '2026-01-31' },
+        { run_id: 'run-2', period: '2026-02', amount: 2000, interest: 0, source: 'CASH', created_at: '2026-02-28' },
       ],
     })
 
@@ -342,6 +356,9 @@ describe('หน้าเบิกล่วงหน้าและเงิน�
     // ตรวจสอบเซลล์ในตารางประวัติการหักชำระ
     expect(screen.getByRole('cell', { name: '2026-01' })).toBeTruthy()
     expect(screen.getByRole('cell', { name: '2026-02' })).toBeTruthy()
+    expect(screen.getByText('หักเงินเดือน')).toBeTruthy()
+    expect(screen.getAllByText('รับคืนเงินสด').length).toBeGreaterThan(0)
+    expect(screen.getByText('100.00')).toBeTruthy()
 
     // งวด 2026-01 ยอดหัก 2,000.00 ยอดคงค้างหลังหัก 8,000.00
     expect(screen.getByText('8,000.00')).toBeTruthy()
@@ -372,5 +389,84 @@ describe('หน้าเบิกล่วงหน้าและเงิน�
         employee_id: 'emp-1',
       })
     })
+  })
+
+  it('สร้างคำขอ LOAN 3000 × 3 ดอกเบี้ย 12 แสดง "ดอกเบี้ยรวม 90.00" และ "ผ่อนงวดละ 1,030.00" และเรียก createAdvance พร้อม interest_rate: 12', async () => {
+    renderPage()
+
+    const createBtn = await screen.findByRole('button', { name: /สร้างคำขอ/ })
+    fireEvent.click(createBtn)
+
+    expect(await screen.findByRole('heading', { name: 'สร้างคำขอเบิก / เงินยืม' })).toBeTruthy()
+
+    // เลือกพนักงาน
+    const empSelect = screen.getByLabelText(/พนักงาน \*/)
+    fireEvent.change(empSelect, { target: { value: 'emp-1' } })
+
+    // เลือกประเภท LOAN
+    const loanRadio = screen.getByLabelText('เงินยืม')
+    fireEvent.click(loanRadio)
+
+    // กรอกยอดเงิน 3000
+    const amountInput = screen.getByLabelText(/ยอดเงิน \(บาท\) \*/)
+    fireEvent.change(amountInput, { target: { value: '3000' } })
+
+    // กรอกงวด 3
+    const installmentsInput = screen.getByLabelText(/จำนวนงวดผ่อน/)
+    fireEvent.change(installmentsInput, { target: { value: '3' } })
+
+    // กรอกดอกเบี้ย 12
+    const interestInput = screen.getByLabelText(/ดอกเบี้ย \(% ต่อปี\)/)
+    fireEvent.change(interestInput, { target: { value: '12' } })
+
+    // แสดง live preview: ดอกเบี้ยรวม 90.00 และ ผ่อนงวดละ 1,030.00
+    expect(await screen.findByText(/ดอกเบี้ยรวม 90\.00/)).toBeTruthy()
+    expect(screen.getByText(/ผ่อนงวดละ 1,030\.00/)).toBeTruthy()
+
+    // ส่งคำขอ
+    const submitBtn = screen.getByRole('button', { name: 'ส่งคำขอ' })
+    fireEvent.click(submitBtn)
+
+    await waitFor(() => {
+      expect(mockHr.createAdvance).toHaveBeenCalledWith({
+        employee_id: 'emp-1',
+        kind: 'LOAN',
+        amount: 3000,
+        installments: 3,
+        start_period: expect.any(String),
+        interest_rate: 12,
+      })
+    })
+
+    expect(mockToast.success).toHaveBeenCalledWith('ส่งคำขอแล้ว รออนุมัติในกล่องอนุมัติ')
+  })
+
+  it('แถวที่ ACTIVE แสดงปุ่ม "รับคืนเงินสด" และส่งฟอร์มเรียก repayCashAdvance พร้อม amount เท่ากับยอดคงค้าง', async () => {
+    renderPage()
+
+    const repayBtn = await screen.findByRole('button', { name: 'รับคืนเงินสด' })
+    expect(repayBtn).toBeTruthy()
+
+    fireEvent.click(repayBtn)
+
+    expect(await screen.findByRole('heading', { name: 'บันทึกรับคืนเงินสด' })).toBeTruthy()
+
+    // รอให้ options บัญชีโหลดและแสดงผล
+    const option1112 = await screen.findByRole('option', { name: /1112/ })
+    expect(option1112).toBeTruthy()
+
+    // กดยืนยันบันทึกรับคืน (default: amount = 6000, date = วันนี้, pay_account_id = acc-1 (บัญชีแรก))
+    const confirmBtn = screen.getByRole('button', { name: 'บันทึกรับคืน' })
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(mockHr.repayCashAdvance).toHaveBeenCalledWith('adv-3', {
+        amount: 6000,
+        date: expect.any(String),
+        pay_account_id: 'acc-1',
+      })
+    })
+
+    expect(mockToast.success).toHaveBeenCalledWith('บันทึกรับคืนแล้ว')
   })
 })

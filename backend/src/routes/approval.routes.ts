@@ -291,7 +291,8 @@ router.get('/pending', async (req: Request, res: Response) => {
     if (!isBlanketApprover && isGm(req.user! as any)) moduleTypes.push('sales_cancel', 'purchase_cancel')
 
     const hasLeavePerm = isBlanketApprover || moduleTypes.includes('leave')
-    const queryModules = hasLeavePerm ? moduleTypes : [...moduleTypes, 'leave']
+    const hasSwapPerm = isBlanketApprover || moduleTypes.includes('shift_swap')
+    const queryModules = [...moduleTypes, ...(hasLeavePerm ? [] : ['leave']), ...(hasSwapPerm ? [] : ['shift_swap'])]
 
     // Get pending requests for these modules
     const placeholders = queryModules.map(() => '?').join(',')
@@ -310,9 +311,10 @@ router.get('/pending', async (req: Request, res: Response) => {
       ORDER BY ar.created_at DESC
     `).all(tenantId, ...(isBlanketApprover ? [] : queryModules)) as any[]
 
-    const requests = hasLeavePerm
-      ? rows
-      : rows.filter(r => r.module_type !== 'leave' || isLeaveManagerFor(tenantId, userId, r.reference_id))
+    // หมวดลา/แลกกะ: ไม่มีสิทธิ์รวม → เห็นเฉพาะของลูกทีมแผนกตรง
+    const requests = rows.filter(r =>
+      (r.module_type !== 'leave' || hasLeavePerm || isLeaveManagerFor(tenantId, userId, r.reference_id)) &&
+      (r.module_type !== 'shift_swap' || hasSwapPerm || isLeaveManagerFor(tenantId, userId, r.reference_id, 'shift_swap')))
 
     res.json({ success: true, data: requests })
   } catch (error) {
@@ -638,6 +640,24 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     db.prepare(
       "UPDATE employee_advances SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
     ).run(executorId, now, now, request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'shift_swaps') {
+    // สลับกะที่มีผลจริงของสองคนในวันนั้น (แถว shift_assignments ชนะกะประจำ; ไม่มีแถว = กะประจำ)
+    const sw = db.prepare("SELECT * FROM shift_swaps WHERE id = ? AND tenant_id = ? AND status = 'PENDING'").get(request.reference_id, request.tenant_id) as any
+    if (sw) {
+      const effective = (empId: string): string | null => {
+        const a = db.prepare('SELECT shift_id FROM shift_assignments WHERE tenant_id = ? AND employee_id = ? AND work_date = ?').get(sw.tenant_id, empId, sw.work_date) as { shift_id: string | null } | undefined
+        if (a) return a.shift_id
+        return (db.prepare('SELECT shift_id FROM employees WHERE id = ? AND tenant_id = ?').get(empId, sw.tenant_id) as { shift_id: string | null } | undefined)?.shift_id ?? null
+      }
+      const r = effective(sw.requester_employee_id)
+      const t = effective(sw.target_employee_id)
+      const upsert = db.prepare(`INSERT INTO shift_assignments (id, tenant_id, employee_id, work_date, shift_id, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(tenant_id, employee_id, work_date) DO UPDATE SET shift_id = excluded.shift_id, updated_at = excluded.updated_at`)
+      upsert.run(randomUUID(), sw.tenant_id, sw.requester_employee_id, sw.work_date, t, executorId, now, now)
+      upsert.run(randomUUID(), sw.tenant_id, sw.target_employee_id, sw.work_date, r, executorId, now, now)
+      db.prepare("UPDATE shift_swaps SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ?").run(executorId, now, now, sw.id)
+    }
   }
 
   // Log execution
@@ -702,6 +722,10 @@ function revertReferenceStatus(request: any, actorId?: string, now = new Date().
     ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)  } else if (request.reference_type === 'employee_advances') {
     db.prepare(
       "UPDATE employee_advances SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'shift_swaps') {
+    db.prepare(
+      "UPDATE shift_swaps SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
     ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)
   }
 }

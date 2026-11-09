@@ -26,6 +26,7 @@ afterEach(() => {
       'journal_entries',
       'advance_repayments',
       'employee_advances',
+      'hr_settings',
       'tax_periods',
       'employees',
       'accounts',
@@ -289,5 +290,208 @@ describe('HR Phase 6 — เบิกล่วงหน้า / เงินย�
       .set(otherAuth)
       .send({ pay_account_id: 'any', date: '2026-10-05' })
     expect(crossDisburse.status).toBe(404)
+  })
+
+  it('7–9: ดอกเบี้ยเงินยืม (interest_rate / interest_amount / ม.76 รวมดอกเบี้ย) และรับคืนเงินสด (A8 repay-cash)', async () => {
+    const { auth, tenantId, cash, expense, empId } = setup()
+    const currentPeriod = thaiDateStr().slice(0, 7)
+
+    // interest_rate: 20 → 400
+    const badRate = await request(app).post('/api/hr/advances').set(auth).send({
+      employee_id: empId,
+      kind: 'LOAN',
+      amount: 1000,
+      installments: 2,
+      interest_rate: 20,
+      start_period: currentPeriod,
+    })
+    expect(badRate.status).toBe(400)
+    expect(badRate.body.message).toBe('ดอกเบี้ยต้องอยู่ระหว่าง 0–15% ต่อปี')
+
+    // เพดาน ม.76 ต้องตรวจจาก installment_amount ที่รวมดอกเบี้ยแล้ว:
+    // พนักงาน MONTHLY 10,000 (10% = 1,000) ขอยืม 3,000 × 3 ที่ดอกเบี้ย 12% → installment_amount 1,030 > 1,000 → 400 ม.76
+    const overWithInterest = await request(app).post('/api/hr/advances').set(auth).send({
+      employee_id: empId,
+      kind: 'LOAN',
+      amount: 3000,
+      installments: 3,
+      interest_rate: 12,
+      start_period: currentPeriod,
+    })
+    expect(overWithInterest.status).toBe(400)
+    expect(overWithInterest.body.message).toContain('ม.76')
+
+    // ปรับฐานเงินเดือนเป็น 12,000 (เพดาน 10% = 1,200) แล้วสร้าง LOAN 3,000 × 3 ดอกเบี้ย 12%
+    db.prepare('UPDATE employees SET base_wage = 12000 WHERE id = ? AND tenant_id = ?').run(empId, tenantId)
+
+    const loanRes = await request(app).post('/api/hr/advances').set(auth).send({
+      employee_id: empId,
+      kind: 'LOAN',
+      amount: 3000,
+      installments: 3,
+      interest_rate: 12,
+      start_period: currentPeriod,
+      reason: 'ยืมมีดอกเบี้ย',
+    })
+    expect(loanRes.status).toBe(201)
+    const loan = loanRes.body.data
+    expect(loan).toMatchObject({
+      kind: 'LOAN',
+      amount: 3000,
+      installments: 3,
+      interest_rate: 12,
+      interest_amount: 90,
+      installment_amount: 1030,
+      outstanding: 3090,
+    })
+
+    // ADVANCE with interest_rate: 12 → stored 0
+    const advWithRate = await request(app).post('/api/hr/advances').set(auth).send({
+      employee_id: empId,
+      kind: 'ADVANCE',
+      amount: 1000,
+      interest_rate: 12,
+      start_period: currentPeriod,
+    })
+    expect(advWithRate.status).toBe(201)
+    expect(advWithRate.body.data).toMatchObject({
+      kind: 'ADVANCE',
+      interest_rate: 0,
+      interest_amount: 0,
+      installment_amount: 1000,
+      outstanding: 1000,
+    })
+
+    // Self request via /me/advances with tenant hr_settings JSON {"loanInterestRatePct":6} → interest_rate 6
+    db.prepare(
+      'INSERT INTO hr_settings (tenant_id, settings, updated_at) VALUES (?, ?, ?)'
+    ).run(tenantId, JSON.stringify({ loanInterestRatePct: 6 }), new Date().toISOString())
+
+    const selfUser = createTestUser({ role: 'USER', tenantId })
+    const selfAuth = { Authorization: `Bearer ${selfUser.token}` }
+    const emp2Id = generateId()
+    db.prepare(`
+      INSERT INTO employees (id, tenant_id, code, first_name, last_name, employment_type, base_wage, sso_enrolled, start_date, status, user_id)
+      VALUES (?, ?, 'EMP-002', 'สมชาย', 'ใจดี', 'MONTHLY', 15000, 0, '2026-01-01', 'ACTIVE', ?)
+    `).run(emp2Id, tenantId, selfUser.userId)
+
+    const selfLoanRes = await request(app).post('/api/hr/me/advances').set(selfAuth).send({
+      kind: 'LOAN',
+      amount: 3000,
+      installments: 3,
+      interest_rate: 15, // /me/advances ไม่รับฟิลด์นี้ ต้องใช้ค่าจาก hr_settings (6%)
+      start_period: currentPeriod,
+    })
+    expect(selfLoanRes.status).toBe(201)
+    expect(selfLoanRes.body.data).toMatchObject({
+      kind: 'LOAN',
+      interest_rate: 6,
+      interest_amount: 45,
+      installment_amount: 1015,
+      outstanding: 3045,
+    })
+
+    // Set APPROVED by SQL + disburse → ACTIVE, outstanding 3090
+    db.prepare("UPDATE employee_advances SET status = 'APPROVED' WHERE id = ? AND tenant_id = ?")
+      .run(loan.id, tenantId)
+
+    const disbursed = await request(app)
+      .post(`/api/hr/advances/${loan.id}/disburse`)
+      .set(auth)
+      .send({ pay_account_id: cash, date: '2026-10-05' })
+    expect(disbursed.status).toBe(200)
+    expect(disbursed.body.data).toMatchObject({
+      id: loan.id,
+      status: 'ACTIVE',
+      repaid: 0,
+      outstanding: 3090,
+      interest_rate: 12,
+      interest_amount: 90,
+    })
+
+    // Validation before cash repayment: amount 0 → 400, amount > outstanding → 400, EXPENSE account → 400
+    const zeroRepay = await request(app)
+      .post(`/api/hr/advances/${loan.id}/repay-cash`)
+      .set(auth)
+      .send({ amount: 0, date: '2026-10-15', pay_account_id: cash })
+    expect(zeroRepay.status).toBe(400)
+
+    const overRepay = await request(app)
+      .post(`/api/hr/advances/${loan.id}/repay-cash`)
+      .set(auth)
+      .send({ amount: 3100, date: '2026-10-15', pay_account_id: cash })
+    expect(overRepay.status).toBe(400)
+
+    const expenseRepay = await request(app)
+      .post(`/api/hr/advances/${loan.id}/repay-cash`)
+      .set(auth)
+      .send({ amount: 1030, date: '2026-10-15', pay_account_id: expense })
+    expect(expenseRepay.status).toBe(400)
+
+    // 2. Repay cash 1030 on that ACTIVE loan to 1101 → Dr 1101 1030 / Cr 1115 1000 / Cr 4202 30, is_posted = 1
+    const repay1 = await request(app)
+      .post(`/api/hr/advances/${loan.id}/repay-cash`)
+      .set(auth)
+      .send({ amount: 1030, date: '2026-10-15', pay_account_id: cash })
+    expect(repay1.status).toBe(200)
+    expect(repay1.body.data).toMatchObject({
+      id: loan.id,
+      status: 'ACTIVE',
+      repaid: 1030,
+      outstanding: 2060,
+    })
+    expect(repay1.body.data.repayments).toHaveLength(1)
+    const r1 = repay1.body.data.repayments[0]
+    expect(r1).toMatchObject({
+      period: '2026-10',
+      amount: 1030,
+      interest: 30,
+      source: 'CASH',
+    })
+    expect(r1.run_id).toBeTruthy()
+
+    const je1 = db.prepare('SELECT * FROM journal_entries WHERE id = ? AND tenant_id = ?')
+      .get(r1.run_id, tenantId) as any
+    expect(je1).toBeTruthy()
+    expect(je1.is_posted).toBe(1)
+    expect(je1.reference_type).toBe('EMPLOYEE_ADVANCE')
+    expect(je1.reference_id).toBe(loan.id)
+
+    const lines1 = db.prepare(
+      `SELECT a.code, jl.debit, jl.credit
+       FROM journal_lines jl
+       JOIN accounts a ON a.id = jl.account_id
+       WHERE jl.journal_entry_id = ? AND jl.tenant_id = ?`
+    ).all(r1.run_id, tenantId) as any[]
+    expect(lines1.find((l) => l.code === '1101')).toMatchObject({ debit: 1030, credit: 0 })
+    expect(lines1.find((l) => l.code === '1115')).toMatchObject({ debit: 0, credit: 1000 })
+    expect(lines1.find((l) => l.code === '4202')).toMatchObject({ debit: 0, credit: 30 })
+
+    // 3. Repay cash the remaining 2060 → interest = 60, loan CLOSED; repay on CLOSED loan → 409
+    const repay2 = await request(app)
+      .post(`/api/hr/advances/${loan.id}/repay-cash`)
+      .set(auth)
+      .send({ amount: 2060, date: '2026-11-15', pay_account_id: cash })
+    expect(repay2.status).toBe(200)
+    expect(repay2.body.data).toMatchObject({
+      id: loan.id,
+      status: 'CLOSED',
+      repaid: 3090,
+      outstanding: 0,
+    })
+    expect(repay2.body.data.repayments).toHaveLength(2)
+    const r2 = repay2.body.data.repayments[1]
+    expect(r2).toMatchObject({
+      period: '2026-11',
+      amount: 2060,
+      interest: 60,
+      source: 'CASH',
+    })
+
+    const closedRepay = await request(app)
+      .post(`/api/hr/advances/${loan.id}/repay-cash`)
+      .set(auth)
+      .send({ amount: 100, date: '2026-11-16', pay_account_id: cash })
+    expect(closedRepay.status).toBe(409)
   })
 })
