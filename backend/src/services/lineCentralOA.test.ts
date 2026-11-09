@@ -45,6 +45,19 @@ describe('LINE OA กลาง', () => {
         expect(used, 'รหัสใช้ได้ครั้งเดียว').toBeUndefined()
     })
 
+    it('LINE เดียวกันผูกด้วยรหัสของอีกบัญชีในร้านเดียวกัน → ย้ายมาบัญชีใหม่ ไม่ตอบ "เชื่อมแล้ว"', async () => {
+        const a = setup('ADMIN')
+        const otherUser = generateId()
+        db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'อีกบัญชี', 'USER', ?, 'active')`)
+            .run(otherUser, `${otherUser}@example.com`, a.tenantId)
+        const lineUserId = 'U' + generateId()
+        await a.say(lineBotService.generateLinkToken(a.tenantId, a.userId), { type: 'user', userId: lineUserId })
+        await a.say(lineBotService.generateLinkToken(a.tenantId, otherUser), { type: 'user', userId: lineUserId })
+        expect(a.replies.at(-1).text).toContain('สำเร็จ')
+        const rows = db.prepare('SELECT user_id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?').all(a.tenantId, lineUserId) as any[]
+        expect(rows.map(r => r.user_id)).toEqual([otherUser])
+    })
+
     it('บอทเข้ากลุ่ม → ไม่ผูกเอง · รหัสพนักงานผูกกลุ่มไม่ได้ · รหัสผู้ดูแลผูกได้', async () => {
         const staff = setup('USER')
         const groupId = 'C' + generateId()

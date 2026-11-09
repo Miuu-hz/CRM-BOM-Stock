@@ -466,13 +466,12 @@ class LineBotService {
             db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
             return { result: 'expired', tenantId }
         }
-        const existing = db.prepare(
-            'SELECT user_id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
-        ).get(tenantId, lineUserId) as any
-        if (existing && existing.user_id !== row.user_id) return { result: 'already_linked', tenantId }
+        // LINE นี้เคยผูกกับบัญชีอื่นในร้านเดียวกัน → ย้ายมาบัญชีเจ้าของรหัส (รหัสพิสูจน์ว่าถือทั้งบัญชีเว็บและ LINE)
+        // เดิมตอบ "เชื่อมแล้ว" แล้วตัน: ลบผูกจากบัญชีหนึ่งแล้วผูกใหม่ด้วยอีกบัญชีไม่ได้เลย
         const user = db.prepare('SELECT role FROM users WHERE id = ?').get(row.user_id) as any
         const role = effectiveRole({ user_id: row.user_id, role: 'USER', user_role: user?.role ?? null })
         db.transaction(() => {
+            db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ? AND user_id != ?').run(tenantId, lineUserId, row.user_id)
             db.prepare(`
                 INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
                 VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?)
