@@ -5,6 +5,7 @@ import { getLimits } from '../services/subscription.service'
 import { randomUUID } from 'crypto'
 import { isValidImageFile, isAllowedImageExt, isAllowedImageMimetype, getSafeImageExtension } from '../utils/upload'
 import multer from 'multer'
+import { compressImage, PRODUCT_IMAGE } from '../utils/compressImage'
 import path from 'path'
 import fs from 'fs'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit, getUnitDisplayName } from '../services/unitConversion.service'
@@ -773,6 +774,15 @@ router.post('/:id/image', (req: Request, res: Response, next: any) => {
     if (!isValidImageFile(fullPath)) {
       try { fs.unlinkSync(fullPath) } catch { /* ignore */ }
       return res.status(400).json({ success: false, message: 'Invalid image file' })
+    }
+
+    // รูปจากมือถือ 3-5MB → เหลือ ≤150KB ด้านยาว 800px (ชื่อไฟล์เป็น uuid เปลี่ยนนามสกุลเป็น .jpg ได้เลย)
+    const small = await compressImage(fs.readFileSync(fullPath), PRODUCT_IMAGE)
+    if (small) {
+      const jpgName = path.parse(file.filename).name + small.ext
+      fs.writeFileSync(path.join(uploadDir, jpgName), small.buffer)
+      if (jpgName !== file.filename) fs.unlinkSync(fullPath)
+      file.filename = jpgName
     }
 
     if (existing.image_url) {

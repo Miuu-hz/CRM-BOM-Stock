@@ -34,3 +34,13 @@ describe('compressImage', () => {
     expect(await compressImage(small)).toBeNull()
   })
 })
+
+describe('compressImage — รูปสินค้า', () => {
+  it('ย่อรูปสินค้าเหลือด้านยาว 800px ไม่เกิน 150KB', async () => {
+    const { PRODUCT_IMAGE } = await import('./compressImage')
+    const out = await compressImage(await a4Photo(), PRODUCT_IMAGE)
+    expect(out!.buffer.length).toBeLessThanOrEqual(PRODUCT_IMAGE.maxBytes)
+    const meta = await sharp(out!.buffer).metadata()
+    expect(Math.max(meta.width!, meta.height!)).toBeLessThanOrEqual(800)
+  }, 30000)
+})
