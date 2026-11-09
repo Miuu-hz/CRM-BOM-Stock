@@ -30,6 +30,8 @@ export interface DaySummary {
   otCandidateMinutes: number;
   missingOut: boolean;
   absent: boolean;
+  /** HR Phase 7: วันหยุดตามตารางกะ / ไม่มีกะ — ไม่นับขาด */
+  dayOff?: boolean;
 }
 
 export interface PeriodTotals {
@@ -40,6 +42,7 @@ export interface PeriodTotals {
   daysWorked: number;
   leaveDays?: number;
   holidayDays?: number;
+  offDays?: number;
 }
 
 export interface EmployeePeriodSummary {

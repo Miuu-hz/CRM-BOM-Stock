@@ -3296,6 +3296,48 @@ export function runMonthCloseMigrations(db: any): void {
     console.error('⚠️ payment_attachments TRAINING_RECORD migration error:', e)
     try { db.exec('PRAGMA foreign_keys=ON') } catch {}
   }
+
+  // ==================== HR Phase 7 — ตารางกะรายวัน / แลกกะ + ดอกเบี้ยเงินยืม/รับคืนเงินสด (สัญญากลาง docs/contracts/hr-phase7.md) ====================
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS shift_assignments (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        work_date TEXT NOT NULL,
+        shift_id TEXT NULL,
+        created_by TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(tenant_id, employee_id, work_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_shift_assignments_tenant_date ON shift_assignments(tenant_id, work_date);
+      CREATE TABLE IF NOT EXISTS shift_swaps (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        work_date TEXT NOT NULL,
+        requester_employee_id TEXT NOT NULL,
+        target_employee_id TEXT NOT NULL,
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'PEER_PENDING' CHECK (status IN ('PEER_PENDING','PENDING','APPROVED','REJECTED','DECLINED','CANCELLED')),
+        approval_request_id TEXT,
+        requested_by TEXT,
+        peer_decided_at TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_shift_swaps_tenant_status ON shift_swaps(tenant_id, status);
+    `)
+    for (const sql of [
+      'ALTER TABLE employee_advances ADD COLUMN interest_rate REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE employee_advances ADD COLUMN interest_amount REAL NOT NULL DEFAULT 0',
+      'ALTER TABLE advance_repayments ADD COLUMN interest REAL NOT NULL DEFAULT 0',
+      // ponytail: run_id NOT NULL เดิม — แถวรับคืนเงินสด (source CASH) เก็บ id ของ JE รับเงินไว้ใน run_id แทนการ rebuild ตาราง
+      "ALTER TABLE advance_repayments ADD COLUMN source TEXT NOT NULL DEFAULT 'PAYROLL'",
+    ]) { try { db.exec(sql) } catch { /* column already exists */ } }
+  } catch (e) { console.error('⚠️ HR Phase 7 migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

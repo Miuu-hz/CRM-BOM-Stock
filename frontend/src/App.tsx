@@ -39,6 +39,7 @@ import MyHr from './pages/HR/MyHr'
 import CheckinKiosk from './pages/HR/CheckinKiosk'
 import Training from './pages/HR/Training'
 import Advances from './pages/HR/Advances'
+import Roster from './pages/HR/Roster'
 import PayslipPrint from './pages/HR/PayslipPrint'
 
 // Blocks direct-URL access to a route whose menu is restricted in
@@ -135,6 +136,7 @@ function AppContent() {
         <Route path="/hr/kiosk" element={<Guard path="/hr/kiosk"><CheckinKiosk /></Guard>} />
         <Route path="/hr/training" element={<Guard path="/hr/training"><Training /></Guard>} />
         <Route path="/hr/advances" element={<Guard path="/hr/advances"><Advances /></Guard>} />
+        <Route path="/hr/roster" element={<Guard path="/hr/roster"><Roster /></Guard>} />
 
         {/* Cashier & KDS Route */}
         <Route path="/cashier" element={<Cashier />} />

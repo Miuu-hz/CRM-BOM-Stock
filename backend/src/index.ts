@@ -188,6 +188,8 @@ import hrLeaveRoutes from './routes/hr.leave.routes'
 import hrCheckinRoutes from './routes/hr.checkin.routes'
 import hrTrainingRoutes from './routes/hr.training.routes'
 import hrAdvanceRoutes from './routes/hr.advance.routes'
+import hrRosterRoutes from './routes/hr.roster.routes'
+import hrSwapRoutes from './routes/hr.swap.routes'
 
 
 import { setupMcpRoutes } from './mcp/server'
@@ -655,6 +657,8 @@ app.use('/api/hr', hrLeaveRoutes)
 app.use('/api/hr', hrCheckinRoutes)
 app.use('/api/hr', hrTrainingRoutes)
 app.use('/api/hr', hrAdvanceRoutes)
+app.use('/api/hr', hrRosterRoutes)
+app.use('/api/hr', hrSwapRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)

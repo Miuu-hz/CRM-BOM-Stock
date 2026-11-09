@@ -16,6 +16,7 @@ import {
   Ban,
   Banknote,
   GraduationCap,
+  ArrowLeftRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, {
@@ -32,6 +33,11 @@ import hrService, {
   AdvanceStatus,
   MyAdvanceInput,
   TrainingRecord,
+  MyRosterWeek,
+  MyRosterDay,
+  ColleagueShift,
+  ShiftSwap,
+  ShiftSwapStatus,
 } from '../../services/hr.service'
 import PayslipPrint from './PayslipPrint'
 
@@ -51,6 +57,58 @@ const getNextMonthStr = () => {
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')
   return `${year}-${month}`
+}
+
+// ponytail: local-time Monday calculation without toISOString() to avoid timezone offsets
+const getMondayStr = (d: Date = new Date()): string => {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const day = date.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  date.setDate(date.getDate() + diff)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const dateNum = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${dateNum}`
+}
+
+const addDaysLocal = (dateStr: string, days: number): string => {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(y, m - 1, d + days)
+  const year = dt.getFullYear()
+  const month = String(dt.getMonth() + 1).padStart(2, '0')
+  const dateNum = String(dt.getDate()).padStart(2, '0')
+  return `${year}-${month}-${dateNum}`
+}
+
+const THAI_DAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+
+const formatThaiDayLabel = (dateStr?: string | null): string => {
+  if (!dateStr || typeof dateStr !== 'string' || !dateStr.includes('-')) return '-'
+  const [y, m, d] = dateStr.split('-').map(Number)
+  if (!y || !m || !d) return dateStr
+  const dt = new Date(y, m - 1, d)
+  const dayName = THAI_DAYS[dt.getDay()]
+  const monthName = THAI_MONTHS[m - 1] || ''
+  return `${dayName} ${d} ${monthName}`
+}
+
+const SWAP_STATUS_LABELS: Record<ShiftSwapStatus, string> = {
+  PEER_PENDING: 'รอเพื่อนตอบ',
+  PENDING: 'รอหัวหน้าอนุมัติ',
+  APPROVED: 'อนุมัติแล้ว',
+  REJECTED: 'ไม่อนุมัติ',
+  DECLINED: 'เพื่อนปฏิเสธ',
+  CANCELLED: 'ยกเลิก',
+}
+
+const SWAP_STATUS_BADGE: Record<ShiftSwapStatus, string> = {
+  PEER_PENDING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  PENDING: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+  APPROVED: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  REJECTED: 'bg-red-500/15 text-red-600 dark:text-red-400',
+  DECLINED: 'bg-red-500/15 text-red-600 dark:text-red-400',
+  CANCELLED: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
 }
 
 const ADVANCE_STATUS_LABELS: Record<AdvanceStatus, string> = {
@@ -95,6 +153,8 @@ export default function MyHr() {
   const advanceInstallmentsId = useId()
   const advanceStartPeriodId = useId()
   const advanceReasonId = useId()
+  const swapDateInputId = useId()
+  const swapReasonId = useId()
 
   const [loading, setLoading] = useState(true)
   const [notLinked, setNotLinked] = useState(false)
@@ -139,6 +199,20 @@ export default function MyHr() {
   })
   const [myTraining, setMyTraining] = useState<TrainingRecord[]>([])
 
+  // Roster & Shift Swap state
+  const [weekStart, setWeekStart] = useState<string>(getMondayStr())
+  const [myRoster, setMyRoster] = useState<MyRosterWeek | null>(null)
+  const [myShiftSwaps, setMyShiftSwaps] = useState<ShiftSwap[]>([])
+  const [showSwapModal, setShowSwapModal] = useState(false)
+  const [swapDate, setSwapDate] = useState<string>(getTodayStr())
+  const [colleagues, setColleagues] = useState<ColleagueShift[]>([])
+  const [loadingColleagues, setLoadingColleagues] = useState(false)
+  const [selectedColleagueId, setSelectedColleagueId] = useState<string>('')
+  const [swapReason, setSwapReason] = useState<string>('')
+  const [submittingSwap, setSubmittingSwap] = useState(false)
+  const [swapModalError, setSwapModalError] = useState<string | null>(null)
+  const [swapSuccessBanner, setSwapSuccessBanner] = useState<string | null>(null)
+
   // Leave modal state
   const [showLeaveModal, setShowLeaveModal] = useState(false)
   const [submittingLeave, setSubmittingLeave] = useState(false)
@@ -168,8 +242,11 @@ export default function MyHr() {
       setMe(meData)
       setNotLinked(false)
 
-      // Concurrently load checkin location, attendance, leaves, slips, advances, training
-      const [loc, att, types, balances, requests, mySlips, advances, training] = await Promise.all([
+      const initialMonday = getMondayStr()
+      setWeekStart(initialMonday)
+
+      // Concurrently load checkin location, attendance, leaves, slips, advances, training, roster, swaps
+      const [loc, att, types, balances, requests, mySlips, advances, training, roster, swaps] = await Promise.all([
         hrService.getCheckinLocation().catch(() => null),
         hrService.getMyAttendance().catch(() => null),
         hrService.getLeaveTypes({ active: 1 }).catch(() => []),
@@ -178,6 +255,8 @@ export default function MyHr() {
         hrService.getMySlips().catch(() => []),
         hrService.getMyAdvances().catch(() => []),
         hrService.getMyTraining().catch(() => []),
+        hrService.getMyRoster(initialMonday).catch(() => null),
+        hrService.getMyShiftSwaps().catch(() => []),
       ])
 
       setCheckinLocation(loc)
@@ -188,6 +267,8 @@ export default function MyHr() {
       setSlips(mySlips || [])
       setMyAdvances(advances || [])
       setMyTraining(training || [])
+      setMyRoster(roster)
+      setMyShiftSwaps(swaps || [])
     } catch (err: any) {
       if (err?.response?.status === 404 || err?.status === 404) {
         setNotLinked(true)
@@ -411,6 +492,139 @@ export default function MyHr() {
     }
   }
 
+  // Reload swaps
+  const reloadSwaps = async () => {
+    try {
+      const swaps = await hrService.getMyShiftSwaps()
+      setMyShiftSwaps(swaps || [])
+    } catch {
+      // non-blocking
+    }
+  }
+
+  // Reload roster
+  const reloadRoster = async (ws: string) => {
+    try {
+      const roster = await hrService.getMyRoster(ws)
+      setMyRoster(roster)
+    } catch {
+      // non-blocking
+    }
+  }
+
+  // Load colleagues for swap modal
+  const loadColleagues = async (date: string) => {
+    setLoadingColleagues(true)
+    try {
+      const list = await hrService.getColleagueShifts(date)
+      setColleagues(list || [])
+    } catch {
+      setColleagues([])
+    } finally {
+      setLoadingColleagues(false)
+    }
+  }
+
+  const handlePrevWeek = () => {
+    const prev = addDaysLocal(weekStart, -7)
+    setWeekStart(prev)
+    reloadRoster(prev)
+  }
+
+  const handleNextWeek = () => {
+    const next = addDaysLocal(weekStart, 7)
+    setWeekStart(next)
+    reloadRoster(next)
+  }
+
+  const handleOpenSwapModal = () => {
+    setSwapModalError(null)
+    const today = getTodayStr()
+    setSwapDate(today)
+    setSelectedColleagueId('')
+    setSwapReason('')
+    setShowSwapModal(true)
+    loadColleagues(today)
+  }
+
+  const handleSwapDateChange = (newDate: string) => {
+    setSwapDate(newDate)
+    setSelectedColleagueId('')
+    if (newDate) {
+      loadColleagues(newDate)
+    } else {
+      setColleagues([])
+    }
+  }
+
+  const handleSwapSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSwapModalError(null)
+
+    if (!selectedColleagueId) {
+      toast.error('กรุณาเลือกเพื่อนร่วมงานที่ต้องการแลกกะ')
+      return
+    }
+    if (!swapDate) {
+      toast.error('กรุณาเลือกวันที่ต้องการแลกกะ')
+      return
+    }
+
+    setSubmittingSwap(true)
+    try {
+      await hrService.createShiftSwap({
+        target_employee_id: selectedColleagueId,
+        work_date: swapDate,
+        reason: swapReason.trim() || undefined,
+      })
+      setShowSwapModal(false)
+      const successMsg = 'ส่งคำขอแล้ว รอเพื่อนตอบรับ'
+      setSwapSuccessBanner(successMsg)
+      toast.success(successMsg)
+      reloadSwaps()
+      setSelectedColleagueId('')
+      setSwapReason('')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'ส่งคำขอไม่สำเร็จ'
+      setSwapModalError(msg)
+      toast.error(msg)
+    } finally {
+      setSubmittingSwap(false)
+    }
+  }
+
+  const handleAcceptSwap = async (swapId: string) => {
+    try {
+      await hrService.acceptShiftSwap(swapId)
+      toast.success('ตกลงแลกกะเรียบร้อยแล้ว')
+      reloadSwaps()
+      reloadRoster(weekStart)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'ทำรายการไม่สำเร็จ')
+    }
+  }
+
+  const handleDeclineSwap = async (swapId: string) => {
+    try {
+      await hrService.declineShiftSwap(swapId)
+      toast.success('ปฏิเสธการแลกกะแล้ว')
+      reloadSwaps()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'ทำรายการไม่สำเร็จ')
+    }
+  }
+
+  const handleCancelSwap = async (swapId: string) => {
+    if (window.confirm && !window.confirm('ต้องการยกเลิกคำขอแลกกะนี้ใช่หรือไม่?')) return
+    try {
+      await hrService.cancelShiftSwap(swapId)
+      toast.success('ยกเลิกคำขอเรียบร้อยแล้ว')
+      reloadSwaps()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'ยกเลิกคำขอไม่สำเร็จ')
+    }
+  }
+
   // If user is not linked to an employee row (404)
   if (notLinked) {
     return (
@@ -440,6 +654,17 @@ export default function MyHr() {
   const instCount = advanceForm.kind === 'LOAN' ? Math.max(1, Number(advanceForm.installments) || 1) : 1
   const amtVal = Number(advanceForm.amount) || 0
   const installmentPreview = Math.ceil((amtVal * 100) / instCount) / 100
+
+  const rosterDays: MyRosterDay[] =
+    myRoster?.days && myRoster.days.length > 0
+      ? myRoster.days
+      : Array.from({ length: 7 }, (_, i) => ({
+          date: addDaysLocal(weekStart, i),
+          shift: null,
+          source: 'NONE' as const,
+          on_leave: false,
+          holiday: false,
+        }))
 
   return (
     <div className="max-w-xl mx-auto px-4 py-6 space-y-6">
@@ -554,6 +779,207 @@ export default function MyHr() {
         <p className="text-xs text-center text-[var(--fg-3)]">
           ระบบเก็บตำแหน่งเฉพาะตอนกดบันทึกเวลา
         </p>
+      </div>
+
+      {/* ตารางกะของฉัน Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+            <Calendar className="w-4 h-4 text-phopy-indigo" />
+            <span>ตารางกะของฉัน</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center border border-[var(--border)] rounded-lg overflow-hidden bg-[var(--surface-2)]/40">
+              <button
+                type="button"
+                onClick={handlePrevWeek}
+                title="สัปดาห์ก่อนหน้า"
+                className="px-2.5 py-1 text-sm font-bold text-[var(--fg-2)] hover:text-[var(--fg)] hover:bg-[var(--surface-2)] transition"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                onClick={handleNextWeek}
+                title="สัปดาห์ถัดไป"
+                className="px-2.5 py-1 text-sm font-bold text-[var(--fg-2)] hover:text-[var(--fg)] hover:bg-[var(--surface-2)] transition"
+              >
+                ›
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenSwapModal}
+              className="phopy-btn-primary px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 min-h-[36px]"
+            >
+              <ArrowLeftRight className="w-4 h-4" />
+              <span>ขอแลกกะ</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 7 rows of roster */}
+        <div className="space-y-2">
+          {rosterDays.map((day) => {
+            const isToday = day.date === todayStr
+            const label = formatThaiDayLabel(day.date)
+
+            let statusBadge = 'bg-[var(--surface-2)] text-[var(--fg-3)]'
+            let statusText = 'หยุด'
+            let timeStr: string | null = null
+
+            if (day.on_leave) {
+              statusBadge = 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+              statusText = 'ลา'
+            } else if (day.shift) {
+              statusBadge = 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+              statusText = day.shift.name
+              timeStr = `${day.shift.start_time}–${day.shift.end_time}`
+            } else if (day.holiday) {
+              statusBadge = 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+              statusText = 'วันหยุดบริษัท'
+            }
+
+            return (
+              <div
+                key={day.date}
+                className={`p-3 rounded-xl border flex items-center justify-between text-xs sm:text-sm transition ${
+                  isToday
+                    ? 'border-phopy-indigo/50 bg-phopy-indigo/5 ring-1 ring-phopy-indigo/30'
+                    : 'border-[var(--border)] bg-[var(--surface-2)]/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`font-medium ${isToday ? 'font-bold text-phopy-indigo' : 'text-[var(--fg)]'}`}>
+                    {label}
+                  </span>
+                  {isToday && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-phopy-indigo text-white">
+                      วันนี้
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {timeStr ? (
+                    <div className="text-right flex items-center gap-2">
+                      <span className="font-semibold text-[var(--fg)]">{statusText}</span>
+                      <span className="font-mono text-xs text-[var(--fg-2)]">{timeStr}</span>
+                    </div>
+                  ) : (
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge}`}>
+                      {statusText}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* คำขอแลกกะ Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+            <ArrowLeftRight className="w-4 h-4 text-phopy-indigo" />
+            <span>คำขอแลกกะ</span>
+          </div>
+        </div>
+
+        {/* Swap Success Banner */}
+        {swapSuccessBanner && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm font-semibold text-center flex items-center justify-center gap-2">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <span>{swapSuccessBanner}</span>
+          </div>
+        )}
+
+        {/* Swaps List */}
+        {myShiftSwaps.length > 0 ? (
+          <div className="space-y-2.5">
+            {myShiftSwaps.map((swap) => {
+              const isTarget = me?.id === swap.target_employee_id
+              const isRequester = me?.id === swap.requester_employee_id
+
+              const canRespond = isTarget && swap.status === 'PEER_PENDING'
+              const canCancel = isRequester && (swap.status === 'PEER_PENDING' || swap.status === 'PENDING')
+
+              const reqShiftName = swap.requester_shift ? swap.requester_shift.name : 'หยุด'
+              const targetShiftName = swap.target_shift ? swap.target_shift.name : 'หยุด'
+
+              const statusText = SWAP_STATUS_LABELS[swap.status] || swap.status
+              const badgeClass = SWAP_STATUS_BADGE[swap.status] || 'bg-[var(--surface-2)] text-[var(--fg-3)]'
+
+              return (
+                <div
+                  key={swap.id}
+                  className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 space-y-2 text-xs sm:text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-[var(--fg)] font-mono">
+                      {swap.work_date}
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeClass}`}>
+                      {statusText}
+                    </span>
+                  </div>
+
+                  <div className="text-[var(--fg-2)] flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>
+                      {swap.requester_name} ({reqShiftName}) ⇄ {swap.target_name} ({targetShiftName})
+                    </span>
+                    {swap.reason && (
+                      <>
+                        <span>·</span>
+                        <span className="text-[var(--fg-3)] italic">"{swap.reason}"</span>
+                      </>
+                    )}
+                  </div>
+
+                  {(canRespond || canCancel) && (
+                    <div className="pt-2 flex items-center justify-end gap-2 border-t border-[var(--border)]/60">
+                      {canRespond && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleDeclineSwap(swap.id)}
+                            className="px-2.5 py-1 rounded-lg text-xs border border-red-300 dark:border-red-900 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition flex items-center gap-1"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>ปฏิเสธ</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptSwap(swap.id)}
+                            className="phopy-btn-primary px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 min-h-[32px]"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>ตกลงแลก</span>
+                          </button>
+                        </>
+                      )}
+                      {canCancel && (
+                        <button
+                          type="button"
+                          onClick={() => handleCancelSwap(swap.id)}
+                          className="px-2.5 py-1 rounded-lg text-xs border border-red-300 dark:border-red-900 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition flex items-center gap-1 min-h-[32px]"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          <span>ยกเลิก</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">
+            ยังไม่มีคำขอแลกกะ
+          </div>
+        )}
       </div>
 
       {/* 2. เวลาของฉัน Card */}
@@ -1310,6 +1736,12 @@ export default function MyHr() {
                 </div>
               )}
 
+              {advanceForm.kind === 'LOAN' && (
+                <p className="text-xs text-[var(--fg-3)]">
+                  * ยอดผ่อนจริงอาจรวมดอกเบี้ยตามที่บริษัทกำหนด
+                </p>
+              )}
+
               <div>
                 <label htmlFor={advanceStartPeriodId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
                   งวดแรกที่เริ่มหักเงินเดือน <span className="text-red-500">*</span>
@@ -1360,6 +1792,151 @@ export default function MyHr() {
                     <>
                       <Send className="w-4 h-4" />
                       <span>ส่งคำขอ</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Shift Swap Modal */}
+      {showSwapModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 overflow-y-auto p-4 flex items-center justify-center">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <h3 className="font-bold text-base sm:text-lg text-[var(--fg)] flex items-center gap-2">
+                <ArrowLeftRight className="w-5 h-5 text-phopy-indigo" />
+                <span>ขอแลกกะ</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSwapModal(false)}
+                className="p-1 rounded-lg text-[var(--fg-3)] hover:text-[var(--fg)]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {swapModalError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{swapModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSwapSubmit} className="space-y-4">
+              <div>
+                <label htmlFor={swapDateInputId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  วันที่ต้องการแลกกะ <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id={swapDateInputId}
+                  type="date"
+                  min={todayStr}
+                  value={swapDate}
+                  onChange={(e) => handleSwapDateChange(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg)]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--fg-2)] mb-1.5">
+                  เลือกเพื่อนร่วมงานที่ต้องการแลก <span className="text-red-500">*</span>
+                </label>
+                {loadingColleagues ? (
+                  <div className="py-4 text-center text-xs text-[var(--fg-3)] flex items-center justify-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>กำลังโหลดรายชื่อเพื่อนร่วมงาน...</span>
+                  </div>
+                ) : colleagues.length > 0 ? (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {colleagues.map((c) => {
+                      const isSelected = selectedColleagueId === c.employee_id
+                      const shiftInfo = c.shift
+                        ? `${c.shift.name} (${c.shift.start_time}–${c.shift.end_time})`
+                        : 'หยุด'
+                      return (
+                        <label
+                          key={c.employee_id}
+                          htmlFor={`colleague-${c.employee_id}`}
+                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer text-xs sm:text-sm transition ${
+                            isSelected
+                              ? 'border-phopy-indigo bg-phopy-indigo/10 text-phopy-indigo'
+                              : 'border-[var(--border)] bg-[var(--surface-2)]/40 text-[var(--fg-2)] hover:bg-[var(--surface-2)]'
+                          }`}
+                        >
+                          <input
+                            id={`colleague-${c.employee_id}`}
+                            type="radio"
+                            name="colleague_swap_target"
+                            value={c.employee_id}
+                            checked={isSelected}
+                            onChange={() => setSelectedColleagueId(c.employee_id)}
+                            className="text-phopy-indigo"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-[var(--fg)] flex items-center gap-1.5">
+                              <span>{c.name}</span>
+                              {c.org_unit_name && (
+                                <span className="text-xs font-normal text-[var(--fg-3)]">
+                                  ({c.org_unit_name})
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-[var(--fg-3)] mt-0.5">
+                              กะ: <span className="font-medium text-[var(--fg-2)]">{shiftInfo}</span>
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-4 text-center text-xs text-[var(--fg-3)]">
+                    ไม่พบเพื่อนร่วมงานที่สามารถแลกกะได้ในวันนี้
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor={swapReasonId} className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                  เหตุผล (ถ้ามี)
+                </label>
+                <textarea
+                  id={swapReasonId}
+                  value={swapReason}
+                  onChange={(e) => setSwapReason(e.target.value)}
+                  rows={2}
+                  placeholder="ระบุเหตุผลในการขอแลกกะ"
+                  className="w-full px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--fg)]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => setShowSwapModal(false)}
+                  className="px-4 py-2 rounded-xl text-sm border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingSwap || !selectedColleagueId}
+                  className="phopy-btn-primary px-5 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50"
+                >
+                  {submittingSwap ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>กำลังส่ง...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>ส่งคำขอแลกกะ</span>
                     </>
                   )}
                 </button>

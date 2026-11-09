@@ -139,10 +139,27 @@ const advanceTotal = (inputs: LineInputs) => round2((inputs.advanceDeductions ??
 
 export function advanceOutstanding(tenantId: string, advanceId: string): number {
   const row = db.prepare(
-    `SELECT a.amount - COALESCE((SELECT SUM(r.amount) FROM advance_repayments r WHERE r.advance_id = a.id AND r.tenant_id = a.tenant_id), 0) AS outstanding
+    `SELECT a.amount + a.interest_amount - COALESCE((SELECT SUM(r.amount) FROM advance_repayments r WHERE r.advance_id = a.id AND r.tenant_id = a.tenant_id), 0) AS outstanding
      FROM employee_advances a WHERE a.id = ? AND a.tenant_id = ?`
   ).get(advanceId, tenantId) as { outstanding: number } | undefined
   return row ? Math.max(0, round2(Number(row.outstanding))) : 0
+}
+
+/**
+ * ส่วนที่เป็นดอกเบี้ยของยอดรับชำระ `pay` (เรียกก่อน INSERT advance_repayments) — เฉลี่ยตามสัดส่วนดอกเบี้ย/ยอดรวม
+ * งวดที่ปิดยอดพอดีรับดอกเบี้ยที่เหลือทั้งหมด เศษสตางค์จึงไม่ค้าง
+ */
+export function interestPortion(tenantId: string, advanceId: string, pay: number): number {
+  const a = db.prepare(
+    `SELECT a.amount, a.interest_amount,
+       COALESCE((SELECT SUM(r.interest) FROM advance_repayments r WHERE r.advance_id = a.id AND r.tenant_id = a.tenant_id), 0) AS paid_interest
+     FROM employee_advances a WHERE a.id = ? AND a.tenant_id = ?`
+  ).get(advanceId, tenantId) as { amount: number; interest_amount: number; paid_interest: number } | undefined
+  const ia = round2(Number(a?.interest_amount ?? 0))
+  if (!a || ia <= 0) return 0
+  const remaining = Math.max(0, round2(ia - Number(a.paid_interest)))
+  if (round2(advanceOutstanding(tenantId, advanceId) - pay) <= 0) return remaining
+  return Math.min(remaining, round2(pay * ia / (Number(a.amount) + ia)))
 }
 
 /** เพดาน ม.76: หักหนี้ (เงินยืม) ได้ไม่เกิน 10% ของค่าจ้างงวดนั้น · เบิกค่าจ้างที่ทำแล้วไม่นับเพดานนี้ */
@@ -279,6 +296,9 @@ router.put('/settings', requirePermission('hr', 'write'), (req: Request, res: Re
     { key: 'expenseDeductionCap', label: 'เพดานหักค่าใช้จ่าย', min: 0 },
     { key: 'personalAllowance', label: 'ค่าลดหย่อนส่วนตัว', min: 0 },
     { key: 'ssoDeductionCapPerYear', label: 'เพดานลดหย่อนประกันสังคมต่อปี', min: 0 },
+    { key: 'rosterMinStaff', label: 'จำนวนคนขั้นต่ำต่อวัน', min: 0, max: 500 },
+    { key: 'laborCostTargetPct', label: 'เป้าค่าแรงต่อยอดขาย', min: 0, max: 100 },
+    { key: 'loanInterestRatePct', label: 'อัตราดอกเบี้ยเงินยืม', min: 0, max: 15 },
   ]
   for (const chk of numericChecks) {
     if (raw[chk.key] !== undefined) {
@@ -731,7 +751,8 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
       const employeeReceivableId = detail.lines.some((l: FormattedRunLine) => l.advance_deduction > 0) ? getOrCreateAccount(tenantId, ACC.EMPLOYEE_RECEIVABLE) : null
       const now = nowIso()
 
-      const insertRepayment = db.prepare('INSERT INTO advance_repayments (id, tenant_id, advance_id, run_id, period, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      const insertRepayment = db.prepare('INSERT INTO advance_repayments (id, tenant_id, advance_id, run_id, period, amount, interest, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      const interestByEmployee = new Map<string, number>()
       for (const line of detail.lines) {
         for (const d of line.inputs.advanceDeductions ?? []) {
           if (d.amount <= 0) continue
@@ -739,7 +760,9 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
           if (!adv || adv.status !== 'ACTIVE' || d.amount > advanceOutstanding(tenantId, d.advance_id)) {
             throw new Error(`ยอดหักเบิก/เงินยืมของ ${line.full_name} เกินยอดคงค้างแล้ว กรุณาแก้บรรทัดนี้ก่อนลงบัญชี`)
           }
-          insertRepayment.run(generateId(), tenantId, d.advance_id, run.id, run.period, d.amount, now)
+          const interest = interestPortion(tenantId, d.advance_id, d.amount)
+          if (interest > 0) interestByEmployee.set(line.employee_id, round2((interestByEmployee.get(line.employee_id) ?? 0) + interest))
+          insertRepayment.run(generateId(), tenantId, d.advance_id, run.id, run.period, d.amount, interest, now)
           if (advanceOutstanding(tenantId, d.advance_id) <= 0) {
             db.prepare("UPDATE employee_advances SET status = 'CLOSED', updated_at = ? WHERE id = ? AND tenant_id = ?").run(now, d.advance_id, tenantId)
           }
@@ -754,6 +777,7 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
         const ssoEmpr = sumG(l => l.sso_employer)
         const wht = sumG(l => l.wht)
         const advDed = sumG(l => l.advance_deduction)
+        const advInterest = sumG(l => interestByEmployee.get(l.employee_id) ?? 0)
         const otherDed = round2(sumG(l => l.other_deduction) - advDed)
         const net = sumG(l => l.net)
         if (wagesExpense <= 0 && ssoEmpr <= 0 && net <= 0) continue
@@ -765,7 +789,8 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
         const totalSso = round2(ssoEmp + ssoEmpr)
         if (totalSso > 0) jeLines.push({ accountId: ssoPayableAccountId, debit: 0, credit: totalSso, description: `ประกันสังคมค้างจ่าย (ลูกจ้าง+นายจ้าง) งวด ${periodLabel}` })
         if (wht > 0) jeLines.push({ accountId: whtPayableAccountId, debit: 0, credit: wht, description: `ภาษีหัก ณ ที่จ่ายค้างจ่าย (ภ.ง.ด.1) งวด ${periodLabel}` })
-        if (advDed > 0 && employeeReceivableId) jeLines.push({ accountId: employeeReceivableId, debit: 0, credit: advDed, description: `หักเบิกล่วงหน้า/เงินยืมพนักงาน งวด ${periodLabel}` })
+        if (advDed - advInterest > 0 && employeeReceivableId) jeLines.push({ accountId: employeeReceivableId, debit: 0, credit: round2(advDed - advInterest), description: `หักเบิกล่วงหน้า/เงินยืมพนักงาน งวด ${periodLabel}` })
+        if (advInterest > 0) jeLines.push({ accountId: getOrCreateAccount(tenantId, ACC.INTEREST_INCOME), debit: 0, credit: advInterest, description: `ดอกเบี้ยรับเงินยืมพนักงาน งวด ${periodLabel}` })
         if (otherDed > 0 && otherDeductionAccountId) jeLines.push({ accountId: otherDeductionAccountId, debit: 0, credit: otherDed, description: `รายการหักอื่นๆ งวด ${periodLabel}` })
 
         const totalDebit = round2(jeLines.reduce((s: number, l: JournalLineInput) => s + (l.debit ?? 0), 0))

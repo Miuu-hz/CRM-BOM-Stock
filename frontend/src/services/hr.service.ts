@@ -235,6 +235,10 @@ export interface HrSettings {
   expenseDeductionCap: number
   personalAllowance: number
   ssoDeductionCapPerYear: number
+  /** HR Phase 7 */
+  rosterMinStaff?: number
+  laborCostTargetPct?: number
+  loanInterestRatePct?: number
   taxBrackets?: Array<{ min: number; max: number | null; rate: number }>
 }
 
@@ -598,6 +602,9 @@ export interface EmployeeAdvance {
   amount: number
   installments: number
   installment_amount: number
+  /** HR Phase 7: ดอกเบี้ย % ต่อปี (ADVANCE = 0) และดอกเบี้ยรวมทั้งสัญญา — outstanding รวมดอกเบี้ยแล้ว */
+  interest_rate: number
+  interest_amount: number
   start_period: string
   reason: string | null
   status: AdvanceStatus
@@ -611,9 +618,12 @@ export interface EmployeeAdvance {
 }
 
 export interface AdvanceRepayment {
+  /** source CASH: run_id = id ของ JE รับเงิน */
   run_id: string
   period: string
   amount: number
+  interest: number
+  source: 'PAYROLL' | 'CASH'
   created_at: string
 }
 
@@ -628,9 +638,124 @@ export interface AdvanceInput {
   installments?: number
   start_period: string
   reason?: string
+  /** HR เท่านั้น, LOAN เท่านั้น, 0–15 · ไม่ส่ง = ค่าตั้งต้น hr_settings.loanInterestRatePct */
+  interest_rate?: number
 }
 
-export type MyAdvanceInput = Omit<AdvanceInput, 'employee_id'>
+export type MyAdvanceInput = Omit<AdvanceInput, 'employee_id' | 'interest_rate'>
+
+export interface AdvanceRepayCashInput {
+  amount: number
+  date: string
+  pay_account_id: string
+}
+
+// ==================== HR Phase 7 — สัญญากลาง docs/contracts/hr-phase7.md (ห้ามแก้รูปร่างโดยไม่แก้สัญญา) ====================
+
+export interface RosterShift {
+  id: string
+  name: string
+  start_time: string
+  end_time: string
+  grace_minutes: number
+  break_minutes: number
+  is_active: number
+  hours: number
+}
+
+export interface RosterCell {
+  date: string
+  /** null = วันหยุด (ASSIGNED) หรือไม่มีกะ (NONE) */
+  shift_id: string | null
+  source: 'ASSIGNED' | 'DEFAULT' | 'NONE'
+  on_leave: boolean
+  holiday: boolean
+}
+
+export interface RosterEmployeeRow {
+  id: string
+  code: string
+  name: string
+  org_unit_name: string | null
+  employment_type: EmploymentType
+  default_shift_id: string | null
+  cells: RosterCell[]
+  hours: number
+  labor_cost: number
+  warnings: string[]
+}
+
+export interface RosterDay {
+  date: string
+  staff: number
+  labor_cost: number
+  avg_sales: number | null
+  labor_pct: number | null
+  warnings: string[]
+}
+
+export interface RosterWeek {
+  week_start: string
+  dates: string[]
+  shifts: RosterShift[]
+  employees: RosterEmployeeRow[]
+  days: RosterDay[]
+  settings: { rosterMinStaff: number; laborCostTargetPct: number }
+}
+
+export interface RosterAssignmentInput {
+  employee_id: string
+  work_date: string
+  /** null = วันหยุด */
+  shift_id: string | null
+  /** true = ลบแถว กลับไปใช้กะประจำ (ไม่สน shift_id) */
+  clear?: boolean
+}
+
+export interface MyRosterDay {
+  date: string
+  shift: RosterShift | null
+  source: 'ASSIGNED' | 'DEFAULT' | 'NONE'
+  on_leave: boolean
+  holiday: boolean
+}
+
+export interface MyRosterWeek {
+  week_start: string
+  employee_id: string
+  days: MyRosterDay[]
+}
+
+export interface ColleagueShift {
+  employee_id: string
+  name: string
+  org_unit_name: string | null
+  shift: RosterShift | null
+}
+
+export type ShiftSwapStatus = 'PEER_PENDING' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'DECLINED' | 'CANCELLED'
+
+export interface ShiftSwap {
+  id: string
+  work_date: string
+  requester_employee_id: string
+  requester_name: string
+  target_employee_id: string
+  target_name: string
+  /** กะที่มีผลตอนนี้ของแต่ละคนในวันนั้น (หลังอนุมัติจะสลับกันแล้ว) */
+  requester_shift: RosterShift | null
+  target_shift: RosterShift | null
+  reason: string | null
+  status: ShiftSwapStatus
+  approval_request_id: string | null
+  created_at: string
+}
+
+export interface ShiftSwapInput {
+  target_employee_id: string
+  work_date: string
+  reason?: string
+}
 
 export interface AdvanceDisburseInput {
   pay_account_id: string
@@ -1026,6 +1151,67 @@ export const hrService = {
   async disburseAdvance(id: string, data: AdvanceDisburseInput): Promise<EmployeeAdvance> {
     const res = await api.post(`/hr/advances/${id}/disburse`, data)
     return res.data.data
+  },
+
+  // ---------- HR Phase 7 (สัญญากลาง docs/contracts/hr-phase7.md) ----------
+  async repayCashAdvance(id: string, data: AdvanceRepayCashInput): Promise<EmployeeAdvanceDetail> {
+    const res = await api.post(`/hr/advances/${id}/repay-cash`, data)
+    return res.data.data
+  },
+
+  async getRoster(weekStart: string): Promise<RosterWeek> {
+    const res = await api.get('/hr/roster', { params: { week_start: weekStart } })
+    return res.data.data
+  },
+
+  async saveRosterAssignments(items: RosterAssignmentInput[]): Promise<{ updated: number; cleared: number }> {
+    const res = await api.put('/hr/roster/assignments', { items })
+    return res.data.data
+  },
+
+  async copyRosterWeek(fromWeekStart: string, toWeekStart: string, overwrite = false): Promise<{ copied: number; skipped: number }> {
+    const res = await api.post('/hr/roster/copy', { from_week_start: fromWeekStart, to_week_start: toWeekStart, overwrite })
+    return res.data.data
+  },
+
+  async getMyRoster(weekStart: string): Promise<MyRosterWeek> {
+    const res = await api.get('/hr/me/roster', { params: { week_start: weekStart } })
+    return res.data.data
+  },
+
+  async getColleagueShifts(date: string): Promise<ColleagueShift[]> {
+    const res = await api.get('/hr/me/roster/day', { params: { date } })
+    return res.data.data || []
+  },
+
+  async getMyShiftSwaps(): Promise<ShiftSwap[]> {
+    const res = await api.get('/hr/me/shift-swaps')
+    return res.data.data || []
+  },
+
+  async createShiftSwap(data: ShiftSwapInput): Promise<ShiftSwap> {
+    const res = await api.post('/hr/me/shift-swaps', data)
+    return res.data.data
+  },
+
+  async acceptShiftSwap(id: string): Promise<ShiftSwap> {
+    const res = await api.post(`/hr/me/shift-swaps/${id}/accept`)
+    return res.data.data
+  },
+
+  async declineShiftSwap(id: string): Promise<ShiftSwap> {
+    const res = await api.post(`/hr/me/shift-swaps/${id}/decline`)
+    return res.data.data
+  },
+
+  async cancelShiftSwap(id: string): Promise<ShiftSwap> {
+    const res = await api.post(`/hr/shift-swaps/${id}/cancel`)
+    return res.data.data
+  },
+
+  async getShiftSwaps(status?: ShiftSwapStatus): Promise<ShiftSwap[]> {
+    const res = await api.get('/hr/shift-swaps', { params: status ? { status } : {} })
+    return res.data.data || []
   },
 }
 

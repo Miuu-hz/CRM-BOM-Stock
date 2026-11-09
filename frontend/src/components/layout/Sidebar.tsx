@@ -36,6 +36,7 @@ import {
   GraduationCap,
   Banknote,
   CalendarDays,
+  CalendarRange,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../services/api'
@@ -119,6 +120,7 @@ const menuItems: MenuItem[] = [
       { path: '/hr/employees', tKey: 'sidebar.employees', icon: Users },
       { path: '/hr/org', tKey: 'sidebar.orgUnits', icon: Building2 },
       { path: '/hr/attendance', tKey: 'sidebar.attendance', icon: Clock },
+      { path: '/hr/roster', tKey: 'sidebar.roster', icon: CalendarRange },
       { path: '/hr/leave', tKey: 'sidebar.leave', icon: CalendarDays },
       { path: '/hr/payroll', tKey: 'sidebar.payroll', icon: Wallet },
       { path: '/hr/advances', tKey: 'sidebar.advances', icon: Banknote },

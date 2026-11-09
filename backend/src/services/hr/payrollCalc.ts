@@ -45,6 +45,12 @@ export interface HrSettings {
   expenseDeductionCap: number
   personalAllowance: number
   ssoDeductionCapPerYear: number
+  /** HR Phase 7: คนขั้นต่ำต่อวันในตารางกะ (0 = ไม่เตือน) */
+  rosterMinStaff: number
+  /** HR Phase 7: เป้าค่าแรง/ยอดขาย POS (%) — เกินแล้วขึ้นสีเตือน */
+  laborCostTargetPct: number
+  /** HR Phase 7: ดอกเบี้ยเงินยืมตั้งต้น (% ต่อปี, ไม่เกิน 15 ตาม ป.พ.พ. ม.654) */
+  loanInterestRatePct: number
 }
 
 export const DEFAULT_HR_SETTINGS: HrSettings = {
@@ -68,6 +74,9 @@ export const DEFAULT_HR_SETTINGS: HrSettings = {
   expenseDeductionCap: 100000,
   personalAllowance: 60000,
   ssoDeductionCapPerYear: 17500 * 0.05 * 12, // 10,500
+  rosterMinStaff: 0,
+  laborCostTargetPct: 25,
+  loanInterestRatePct: 0,
 }
 
 export interface PayrollCalcInput {

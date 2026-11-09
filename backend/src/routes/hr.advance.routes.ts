@@ -6,8 +6,8 @@ import { createRequest } from '../services/approvalGate.service'
 import { ACC } from '../config/accountCodes'
 import { getOrCreateAccount, isHeaderAccountError } from '../services/accounting.service'
 import { round2 } from '../services/hr/payrollCalc'
-import { insertJournalEntry, closedPeriodLabel } from './journal.routes'
-import { advanceOutstanding } from './hr.payroll.routes'
+import { insertJournalEntry, closedPeriodLabel, JournalLineInput } from './journal.routes'
+import { advanceOutstanding, interestPortion, getTenantHrSettings } from './hr.payroll.routes'
 
 // สัญญากลาง: docs/contracts/hr-phase5-6.md — เบิกล่วงหน้า / เงินยืม (งาน B6)
 const router = Router()
@@ -47,11 +47,10 @@ const ADVANCE_SELECT = `
 
 function formatAdvance(tenantId: string, r: any) {
   const amount = round2(Number(r.amount))
+  const interest_rate = round2(Number(r.interest_rate ?? 0))
+  const interest_amount = round2(Number(r.interest_amount ?? 0))
   const repaid = round2(Number(r.repaid ?? 0))
-  const outstanding =
-    r.status === 'ACTIVE' || r.status === 'CLOSED'
-      ? advanceOutstanding(tenantId, r.id)
-      : amount
+  const outstanding = advanceOutstanding(tenantId, r.id)
   return {
     id: r.id,
     employee_id: r.employee_id,
@@ -61,6 +60,8 @@ function formatAdvance(tenantId: string, r: any) {
     amount,
     installments: Number(r.installments),
     installment_amount: round2(Number(r.installment_amount)),
+    interest_rate,
+    interest_amount,
     start_period: r.start_period,
     reason: r.reason ?? null,
     status: r.status,
@@ -79,7 +80,79 @@ function getAdvanceById(tenantId: string, id: string) {
   return row ? formatAdvance(tenantId, row) : null
 }
 
-function handleCreateAdvance(req: Request, res: Response, employeeId: string) {
+function getAdvanceDetail(tenantId: string, id: string) {
+  const adv = getAdvanceById(tenantId, id)
+  if (!adv) return null
+  const repayments = (
+    db.prepare(`
+      SELECT run_id, period, amount, interest, source, created_at
+      FROM advance_repayments
+      WHERE tenant_id = ? AND advance_id = ?
+      ORDER BY period ASC, created_at ASC
+    `).all(tenantId, adv.id) as any[]
+  ).map((r) => ({
+    run_id: r.run_id,
+    period: r.period,
+    amount: round2(Number(r.amount)),
+    interest: round2(Number(r.interest ?? 0)),
+    source: (r.source === 'CASH' ? 'CASH' : 'PAYROLL') as 'PAYROLL' | 'CASH',
+    created_at: r.created_at,
+  }))
+  return { ...adv, repayments }
+}
+
+function validateDateAndAssetAccount(
+  tenantId: string,
+  body: any
+): { ok: true; date: string; payAccountId: string } | { ok: false; message: string } {
+  const date = typeof body?.date === 'string' ? body.date.trim() : ''
+  if (!isValidDate(date)) {
+    return { ok: false, message: 'วันที่จ่ายเงินไม่ถูกต้อง' }
+  }
+  const closedPeriod = closedPeriodLabel(tenantId, date)
+  if (closedPeriod) {
+    return { ok: false, message: `งวดบัญชี ${closedPeriod} ปิดแล้ว` }
+  }
+  const payAccountId = typeof body?.pay_account_id === 'string' ? body.pay_account_id.trim() : ''
+  if (!payAccountId) {
+    return { ok: false, message: 'กรุณาเลือกบัญชีจ่ายเงิน' }
+  }
+  const payAcc = db.prepare(
+    'SELECT id, type FROM accounts WHERE id = ? AND tenant_id = ?'
+  ).get(payAccountId, tenantId) as { id: string; type: string } | undefined
+  if (!payAcc || payAcc.type !== 'ASSET') {
+    return { ok: false, message: 'บัญชีจ่ายเงินต้องเป็นหมวดสินทรัพย์ (ASSET) ของกิจการ' }
+  }
+  return { ok: true, date, payAccountId }
+}
+
+function postAdvanceJournal(
+  tenantId: string,
+  actor: string,
+  now: string,
+  date: string,
+  advanceId: string,
+  desc: string,
+  amt: number,
+  lines: JournalLineInput[]
+) {
+  const je = insertJournalEntry(tenantId, actor, {
+    date,
+    description: desc,
+    referenceType: 'EMPLOYEE_ADVANCE',
+    referenceId: advanceId,
+    notes: desc,
+    totalDebit: amt,
+    totalCredit: amt,
+    lines,
+  })
+  db.prepare(
+    'UPDATE journal_entries SET is_posted = 1, posted_at = ?, posted_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
+  ).run(now, actor, now, je.id, tenantId)
+  return je
+}
+
+function handleCreateAdvance(req: Request, res: Response, employeeId: string, allowCustomRate = false) {
   const tenantId = req.user!.tenantId
   const emp = db.prepare(
     'SELECT id, code, first_name, last_name, employment_type, base_wage, status FROM employees WHERE id = ? AND tenant_id = ?'
@@ -111,7 +184,20 @@ function handleCreateAdvance(req: Request, res: Response, employeeId: string) {
     return res.status(400).json({ success: false, message: 'จำนวนงวดต้องเป็นจำนวนเต็ม 1–24 งวด' })
   }
 
-  const installmentAmount = Math.ceil(Math.round(amount * 100) / installments) / 100
+  let interestRate = 0
+  if (kind === 'LOAN') {
+    if (allowCustomRate && req.body?.interest_rate !== undefined && req.body?.interest_rate !== null && req.body?.interest_rate !== '') {
+      const rawRate = Number(req.body.interest_rate)
+      if (!Number.isFinite(rawRate) || rawRate < 0 || rawRate > 15) {
+        return res.status(400).json({ success: false, message: 'ดอกเบี้ยต้องอยู่ระหว่าง 0–15% ต่อปี' })
+      }
+      interestRate = round2(rawRate)
+    } else {
+      interestRate = round2(Number(getTenantHrSettings(tenantId).loanInterestRatePct ?? 0))
+    }
+  }
+  const interestAmount = kind === 'LOAN' ? round2(amount * interestRate / 100 * installments / 12) : 0
+  const installmentAmount = Math.ceil(Math.round((amount + interestAmount) * 100) / installments) / 100
 
   const startPeriod = typeof req.body?.start_period === 'string' ? req.body.start_period.trim() : ''
   if (!PERIOD_RE.test(startPeriod) || startPeriod < thaiDateStr().slice(0, 7)) {
@@ -151,10 +237,12 @@ function handleCreateAdvance(req: Request, res: Response, employeeId: string) {
     db.prepare(`
       INSERT INTO employee_advances (
         id, tenant_id, employee_id, kind, amount, installments, installment_amount,
+        interest_rate, interest_amount,
         start_period, reason, status, approval_request_id, requested_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', NULL, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', NULL, ?, ?, ?)
     `).run(
       id, tenantId, emp.id, kind, amount, installments, installmentAmount,
+      interestRate, interestAmount,
       startPeriod, reason, req.user!.userId, now, now
     )
 
@@ -211,7 +299,7 @@ router.post('/me/advances', (req: Request, res: Response) => {
     if (!selfEmp) {
       return res.status(404).json({ success: false, message: 'บัญชีนี้ยังไม่ได้ผูกกับพนักงาน' })
     }
-    return handleCreateAdvance(req, res, selfEmp.id)
+    return handleCreateAdvance(req, res, selfEmp.id, false)
   } catch (err: any) {
     console.error('Create my advance error:', err)
     res.status(500).json({ success: false, message: err.message })
@@ -259,26 +347,12 @@ router.get('/advances/:id', (req: Request, res: Response) => {
     }
 
     const tenantId = req.user!.tenantId
-    const adv = getAdvanceById(tenantId, req.params.id)
-    if (!adv) {
+    const detail = getAdvanceDetail(tenantId, req.params.id)
+    if (!detail) {
       return res.status(404).json({ success: false, message: 'ไม่พบรายการเบิก/เงินยืม' })
     }
 
-    const repayments = (
-      db.prepare(`
-        SELECT run_id, period, amount, created_at
-        FROM advance_repayments
-        WHERE tenant_id = ? AND advance_id = ?
-        ORDER BY period ASC, created_at ASC
-      `).all(tenantId, adv.id) as any[]
-    ).map((r) => ({
-      run_id: r.run_id,
-      period: r.period,
-      amount: round2(Number(r.amount)),
-      created_at: r.created_at,
-    }))
-
-    res.json({ success: true, data: { ...adv, repayments } })
+    res.json({ success: true, data: detail })
   } catch (err: any) {
     console.error('Get advance detail error:', err)
     res.status(500).json({ success: false, message: err.message })
@@ -297,7 +371,7 @@ router.post('/advances', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'กรุณาระบุรหัสพนักงาน' })
     }
 
-    return handleCreateAdvance(req, res, employeeId)
+    return handleCreateAdvance(req, res, employeeId, true)
   } catch (err: any) {
     console.error('Create advance error:', err)
     res.status(500).json({ success: false, message: err.message })
@@ -395,26 +469,11 @@ router.post('/advances/:id/disburse', (req: Request, res: Response) => {
       return res.status(409).json({ success: false, message: 'จ่ายเงินได้เฉพาะรายการที่อนุมัติแล้ว (APPROVED) เท่านั้น' })
     }
 
-    const date = typeof req.body?.date === 'string' ? req.body.date.trim() : ''
-    if (!isValidDate(date)) {
-      return res.status(400).json({ success: false, message: 'วันที่จ่ายเงินไม่ถูกต้อง' })
+    const check = validateDateAndAssetAccount(tenantId, req.body)
+    if (!check.ok) {
+      return res.status(400).json({ success: false, message: check.message })
     }
-
-    const closedPeriod = closedPeriodLabel(tenantId, date)
-    if (closedPeriod) {
-      return res.status(400).json({ success: false, message: `งวดบัญชี ${closedPeriod} ปิดแล้ว` })
-    }
-
-    const payAccountId = typeof req.body?.pay_account_id === 'string' ? req.body.pay_account_id.trim() : ''
-    if (!payAccountId) {
-      return res.status(400).json({ success: false, message: 'กรุณาเลือกบัญชีจ่ายเงิน' })
-    }
-    const payAcc = db.prepare(
-      'SELECT id, type FROM accounts WHERE id = ? AND tenant_id = ?'
-    ).get(payAccountId, tenantId) as { id: string; type: string } | undefined
-    if (!payAcc || payAcc.type !== 'ASSET') {
-      return res.status(400).json({ success: false, message: 'บัญชีจ่ายเงินต้องเป็นหมวดสินทรัพย์ (ASSET) ของกิจการ' })
-    }
+    const { date, payAccountId } = check
 
     const actor = req.user!.email || req.user!.userId
     const amt = round2(Number(row.amount))
@@ -430,22 +489,10 @@ router.post('/advances/:id/disburse', (req: Request, res: Response) => {
         .run(now, row.id, tenantId)
       if (claimed.changes === 0) throw new Error('ALREADY_DISBURSED')
       const receivableAccountId = getOrCreateAccount(tenantId, ACC.EMPLOYEE_RECEIVABLE)
-      const je = insertJournalEntry(tenantId, actor, {
-        date,
-        description: desc,
-        referenceType: 'EMPLOYEE_ADVANCE',
-        referenceId: row.id,
-        notes: desc,
-        totalDebit: amt,
-        totalCredit: amt,
-        lines: [
-          { accountId: receivableAccountId, debit: amt, credit: 0, description: desc },
-          { accountId: payAccountId, debit: 0, credit: amt, description: desc },
-        ],
-      })
-      db.prepare(
-        'UPDATE journal_entries SET is_posted = 1, posted_at = ?, posted_by = ?, updated_at = ? WHERE id = ? AND tenant_id = ?'
-      ).run(now, actor, now, je.id, tenantId)
+      const je = postAdvanceJournal(tenantId, actor, now, date, row.id, desc, amt, [
+        { accountId: receivableAccountId, debit: amt, credit: 0, description: desc },
+        { accountId: payAccountId, debit: 0, credit: amt, description: desc },
+      ])
 
       db.prepare(`
         UPDATE employee_advances
@@ -463,6 +510,100 @@ router.post('/advances/:id/disburse', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: err.message })
     }
     console.error('Disburse advance error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+// A8: POST /advances/:id/repay-cash (hr:write)
+router.post('/advances/:id/repay-cash', (req: Request, res: Response) => {
+  try {
+    if (!userHasHr(req, 'write')) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
+    }
+
+    const tenantId = req.user!.tenantId
+    const row = db.prepare(`
+      SELECT a.*, e.code AS employee_code
+      FROM employee_advances a
+      JOIN employees e ON e.id = a.employee_id AND e.tenant_id = a.tenant_id
+      WHERE a.id = ? AND a.tenant_id = ?
+    `).get(req.params.id, tenantId) as any
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'ไม่พบรายการเบิก/เงินยืม' })
+    }
+    if (row.status !== 'ACTIVE') {
+      return res.status(409).json({ success: false, message: 'รับคืนเงินสดได้เฉพาะรายการที่กำลังหักชำระ (ACTIVE) เท่านั้น' })
+    }
+
+    const rawAmount = Number(req.body?.amount)
+    const amount = Number.isFinite(rawAmount) ? round2(rawAmount) : NaN
+    const currentOutstanding = advanceOutstanding(tenantId, row.id)
+    if (!Number.isFinite(amount) || amount <= 0 || amount > currentOutstanding) {
+      return res.status(400).json({ success: false, message: 'จำนวนเงินรับคืนต้องมากกว่า 0 และไม่เกินยอดคงค้าง' })
+    }
+
+    const check = validateDateAndAssetAccount(tenantId, req.body)
+    if (!check.ok) {
+      return res.status(400).json({ success: false, message: check.message })
+    }
+    const { date, payAccountId } = check
+
+    const actor = req.user!.email || req.user!.userId
+    const desc =
+      row.kind === 'ADVANCE'
+        ? `รับคืนเงินเบิกล่วงหน้า · ${row.employee_code}`
+        : `รับคืนเงินยืมพนักงาน · ${row.employee_code}`
+    const now = new Date().toISOString()
+
+    db.transaction(() => {
+      const cur = db.prepare('SELECT status FROM employee_advances WHERE id = ? AND tenant_id = ?')
+        .get(row.id, tenantId) as { status: string } | undefined
+      if (!cur || cur.status !== 'ACTIVE') throw new Error('NOT_ACTIVE')
+      if (amount > advanceOutstanding(tenantId, row.id)) throw new Error('OVER_OUTSTANDING')
+
+      // ponytail: ปิดก่อนกำหนดยังเก็บดอกเบี้ยคงที่เต็มจำนวน (ไม่มีส่วนลดดอกเบี้ย)
+      const interest = interestPortion(tenantId, row.id, amount)
+      const principal = round2(amount - interest)
+      const receivableAccountId = getOrCreateAccount(tenantId, ACC.EMPLOYEE_RECEIVABLE)
+      const lines: JournalLineInput[] = [
+        { accountId: payAccountId, debit: amount, credit: 0, description: desc },
+      ]
+      if (principal > 0) {
+        lines.push({ accountId: receivableAccountId, debit: 0, credit: principal, description: desc })
+      }
+      if (interest > 0) {
+        const interestAccountId = getOrCreateAccount(tenantId, ACC.INTEREST_INCOME)
+        lines.push({ accountId: interestAccountId, debit: 0, credit: interest, description: desc })
+      }
+
+      const je = postAdvanceJournal(tenantId, actor, now, date, row.id, desc, amount, lines)
+
+      db.prepare(`
+        INSERT INTO advance_repayments (
+          id, tenant_id, advance_id, run_id, period, amount, interest, source, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CASH', ?)
+      `).run(generateId(), tenantId, row.id, je.id, date.slice(0, 7), amount, interest, now)
+
+      if (advanceOutstanding(tenantId, row.id) <= 0) {
+        db.prepare(
+          "UPDATE employee_advances SET status = 'CLOSED', updated_at = ? WHERE id = ? AND tenant_id = ?"
+        ).run(now, row.id, tenantId)
+      }
+    })()
+
+    res.json({ success: true, data: getAdvanceDetail(tenantId, row.id) })
+  } catch (err: any) {
+    if (err?.message === 'NOT_ACTIVE') {
+      return res.status(409).json({ success: false, message: 'รับคืนเงินสดได้เฉพาะรายการที่กำลังหักชำระ (ACTIVE) เท่านั้น' })
+    }
+    if (err?.message === 'OVER_OUTSTANDING') {
+      return res.status(400).json({ success: false, message: 'จำนวนเงินรับคืนต้องมากกว่า 0 และไม่เกินยอดคงค้าง' })
+    }
+    if (isHeaderAccountError(err)) {
+      return res.status(400).json({ success: false, message: err.message })
+    }
+    console.error('Repay cash advance error:', err)
     res.status(500).json({ success: false, message: err.message })
   }
 })

@@ -14,6 +14,9 @@ const DEFAULT_SETTINGS: HrSettingsData = {
   expenseDeductionRate: 0.5,
   expenseDeductionCap: 100000,
   ssoDeductionCapPerYear: 9000,
+  rosterMinStaff: 0,
+  laborCostTargetPct: 25,
+  loanInterestRatePct: 0,
 }
 
 export default function HrSettings() {
@@ -74,13 +77,20 @@ export default function HrSettings() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (
+      settings.loanInterestRatePct !== undefined &&
+      (settings.loanInterestRatePct < 0 || settings.loanInterestRatePct > 15)
+    ) {
+      toast.error('ดอกเบี้ยเงินยืมต้องอยู่ระหว่าง 0–15% ต่อปี')
+      return
+    }
     setSavingSettings(true)
     try {
       const updated = await hrService.updateSettings(settings)
       setSettings(updated)
       toast.success('บันทึกการตั้งค่าคำนวณเงินเดือนแล้ว')
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'บันทึกการตั้งค่าไม่สำเร็จ')
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'บันทึกการตั้งค่าไม่สำเร็จ')
     } finally {
       setSavingSettings(false)
     }
@@ -357,6 +367,63 @@ export default function HrSettings() {
               <label htmlFor="ssoIncludesOT" className="text-sm text-[var(--fg-2)]">
                 นำค่าล่วงเวลา (OT) มารวมเป็นฐานคำนวณประกันสังคม
               </label>
+            </div>
+
+            {/* ตารางกะ / เงินยืม */}
+            <div className="pt-3 border-t border-[var(--border)] space-y-3">
+              <h3 className="text-sm font-bold text-[var(--fg-1)]">ตารางกะ / เงินยืม</h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label htmlFor="rosterMinStaff" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    คนขั้นต่ำต่อวัน (คน)
+                  </label>
+                  <input
+                    id="rosterMinStaff"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={settings.rosterMinStaff ?? 0}
+                    onChange={(e) => setSettings({ ...settings, rosterMinStaff: Number(e.target.value) })}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                  <p className="text-[11px] text-[var(--fg-3)] mt-0.5">0 = ไม่เตือน</p>
+                </div>
+
+                <div>
+                  <label htmlFor="laborCostTargetPct" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    เป้าค่าแรง/ยอดขาย (%)
+                  </label>
+                  <input
+                    id="laborCostTargetPct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={settings.laborCostTargetPct ?? 25}
+                    onChange={(e) => setSettings({ ...settings, laborCostTargetPct: Number(e.target.value) })}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                  <p className="text-[11px] text-[var(--fg-3)] mt-0.5">ค่าตั้งต้น 25%</p>
+                </div>
+
+                <div>
+                  <label htmlFor="loanInterestRatePct" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
+                    ดอกเบี้ยเงินยืมตั้งต้น (% ต่อปี)
+                  </label>
+                  <input
+                    id="loanInterestRatePct"
+                    type="number"
+                    min="0"
+                    max="15"
+                    step="any"
+                    value={settings.loanInterestRatePct ?? 0}
+                    onChange={(e) => setSettings({ ...settings, loanInterestRatePct: Number(e.target.value) })}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                  />
+                  <p className="text-[11px] text-[var(--fg-3)] mt-0.5">ป.พ.พ. ม.654 ไม่เกิน 15% ต่อปี</p>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-[var(--border)]">

@@ -31,6 +31,8 @@ export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_ord
   | 'leave'
   // คำขอเบิกล่วงหน้า/เงินยืม (HR Phase 6) — อนุมัติแล้ว employee_advances → APPROVED รอฝ่ายบุคคลจ่ายเงิน
   | 'advance'
+  // คำขอแลกกะ (HR Phase 7) — เพื่อนตกลงแล้ว รออนุมัติ → สลับกะใน shift_assignments
+  | 'shift_swap'
 
 /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
 export type Severity = 'high' | 'medium' | 'low' | 'info'
@@ -71,6 +73,7 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   close_adjust: 'accounting',
   leave: 'hr',
   advance: 'hr',
+  shift_swap: 'hr',
 }
 
 /** GM ตามที่เจ้าของกำหนด (2026-10-24) = ADMIN/MASTER/OWNER หรือแผนก CEO */
@@ -87,11 +90,15 @@ export function gmActsOn(user: GateUser, category?: string): boolean {
  * หัวหน้าแผนกตรง (org_units.manager_employee_id) ของพนักงานที่ขอลา — ห้ามอนุมัติใบลาของตัวเอง
  * ponytail: เช็คเฉพาะแผนกตรง (e.org_unit_id) ไม่ไล่ขึ้นแผนกแม่ (parent_id) — ถ้ามีหลายชั้นค่อยใช้ recursive CTE
  */
-export function isLeaveManagerFor(tenantId: string, userId: string, leaveRequestId: string): boolean {
+export function isLeaveManagerFor(tenantId: string, userId: string, leaveRequestId: string, moduleType: string = 'leave'): boolean {
   if (!tenantId || !userId || !leaveRequestId) return false
+  // shift_swap: หัวหน้าแผนกตรงของคนขอแลก (ทั้งสองคนควรอยู่แผนกเดียวกันอยู่แล้ว)
+  const source = moduleType === 'shift_swap'
+    ? '(SELECT id, tenant_id, requester_employee_id AS employee_id FROM shift_swaps)'
+    : 'leave_requests'
   const row = db.prepare(`
     SELECT 1
-    FROM leave_requests lr
+    FROM ${source} lr
     JOIN employees e ON e.id = lr.employee_id AND e.tenant_id = lr.tenant_id
     JOIN org_units ou ON ou.id = e.org_unit_id AND ou.tenant_id = lr.tenant_id
     JOIN employees m ON m.id = ou.manager_employee_id AND m.tenant_id = lr.tenant_id
@@ -107,7 +114,7 @@ export function isLeaveManagerFor(tenantId: string, userId: string, leaveRequest
 /** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท (หมวด leave เพิ่มหัวหน้าแผนกตรง) */
 export function canApprove(tenantId: string, user: GateUser, moduleType?: string, amount = 0, referenceId?: string): boolean {
   if (APPROVER_ROLES.has(user.role) || gmActsOn(user, moduleType)) return true
-  if (moduleType === 'leave' && referenceId && isLeaveManagerFor(tenantId, user.userId, referenceId)) return true
+  if ((moduleType === 'leave' || moduleType === 'shift_swap') && referenceId && isLeaveManagerFor(tenantId, user.userId, referenceId, moduleType)) return true
   // Non-admins capped at 5,000 THB max
   if (amount > 5000) return false
 
