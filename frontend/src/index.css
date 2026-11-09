@@ -491,3 +491,13 @@
 [data-theme="dark"] .brand-wordmark {
   filter: invert(1);
 }
+
+/* ตาข่ายกันป๊อปอัปล้นจอ: modal ทุกตัวในแอปเป็น div "fixed inset-0 flex" ครอบแผงเนื้อหา
+   แผงที่สูงเกินจอจะโดน items-center ดันหัว/ท้ายหลุดขอบ — บังคับให้แผงไม่สูงกว่าจอแล้วเลื่อนในตัวเอง
+   ponytail: กฎกลางตัวเดียวแทนแก้ ~40 ไฟล์ แผงไหนอยากคุมเองให้ใส่ max-h ของตัวเองที่ต่ำกว่านี้ได้ */
+.fixed.inset-0.flex > :not(.absolute):not(.fixed) {
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

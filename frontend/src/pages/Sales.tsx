@@ -3179,10 +3179,10 @@ function TotalsSummary({ items, mode, discountAmount, setDiscountAmount, extraCh
       </div>
       <div className="flex justify-between text-[var(--fg-3)] items-center gap-4">
         <span className="shrink-0">{t('common.extraCharge')}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <input type="text" value={extraCharge.label} placeholder={t('common.extraChargeLabel')}
             onChange={e => setExtraCharge({ ...extraCharge, label: e.target.value })}
-            className="w-28 bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] text-xs focus:outline-none focus:border-phopy-indigo" />
+            className="w-28 min-w-0 bg-[var(--bg)] border border-[var(--border)] rounded px-2 py-1 text-[var(--fg-1)] text-xs focus:outline-none focus:border-phopy-indigo" />
           <input type="number" value={extraCharge.amount} min={0}
             onChange={e => setExtraCharge({ ...extraCharge, amount: parseFloat(e.target.value) || 0 })}
             onFocus={e => e.target.select()}
@@ -4319,7 +4319,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
 
         {/* Footer */}
         {!loading && (
-          <div className="px-5 py-4 border-t border-[var(--border)] shrink-0 flex items-center gap-2">
+          <div className="px-5 py-4 border-t border-[var(--border)] shrink-0 flex flex-wrap items-center gap-2">
             <button onClick={() => handlePrintInv('a4')} title={t('sales.actions.printInvoiceA4')}
               className="px-3 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors flex items-center gap-1.5 text-sm">
               <Printer className="w-4 h-4" /> A4
