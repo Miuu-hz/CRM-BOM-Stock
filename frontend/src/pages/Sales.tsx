@@ -1654,10 +1654,13 @@ const Sales = () => {
                   const next = soNextStatus[order.status]
                   const orderDOs = doBySoNumber.get(order.so_number) || []
                   const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
+                  // ส่งครบ+เก็บเงินครบ = ปิดครบวงจร โชว์แบบหน้า PO ว่าจบที่ใบแจ้งหนี้ใบไหน
+                  const closedInv = order.status === 'COMPLETED' && order.payment_status === 'PAID'
+                    ? invoices.find(i => i.so_number === order.so_number && i.status !== 'CANCELLED') : undefined
                   return (
                     <tr key={order.id} className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3">
-                        <p className="font-mono text-xs font-semibold text-purple-400">{order.so_number}</p>
+                        <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))} className="font-mono text-xs font-semibold text-purple-400 hover:underline" title={t('sales.viewDetails')}>{order.so_number}</button>
                         <div className="flex items-center gap-1 mt-1 flex-wrap">
                           {order.quotation_number && (
                             <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
@@ -1706,6 +1709,15 @@ const Sales = () => {
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</td>
                       <td className="px-4 py-3 text-right">
+                        {closedInv ? (
+                        <button onClick={() => handleViewDetail(closedInv, t('sales.docType.invoice'))}
+                          aria-label={`${t('purchase.nextStep.cycleClosed')} ${closedInv.invoice_number}`}
+                          className="inline-flex items-center gap-1.5 min-h-[40px] px-3 rounded-lg hover:bg-[var(--bg)] transition-colors">
+                          <CheckCircle className="w-3.5 h-3.5 text-success shrink-0" />
+                          <span className="text-xs text-[var(--fg-3)]">{t('purchase.nextStep.cycleClosed')}</span>
+                          <span className="text-xs font-mono text-[var(--primary)]">{closedInv.invoice_number}</span>
+                        </button>
+                        ) : (
                         <div className="flex justify-end gap-1.5">
                           <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
                             className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
@@ -1740,6 +1752,7 @@ const Sales = () => {
                             </button>
                           )}
                         </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -1763,7 +1776,7 @@ const Sales = () => {
                   className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-purple-500/40 transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <p className="font-mono text-sm font-semibold text-purple-400">{order.so_number}</p>
+                      <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))} className="font-mono text-sm font-semibold text-purple-400 hover:underline" title={t('sales.viewDetails')}>{order.so_number}</button>
                       <div className="flex items-center gap-1 mt-1 flex-wrap">
                         {order.quotation_number && (
                           <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
