@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
+import { compressDataUrl, BANK_QR_IMAGE } from '../utils/compressImage'
 import { ACC, ACC_META } from '../config/accountCodes'
 
 const router = Router()
@@ -62,6 +63,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'MASTER'), async (req: Request,
 
     const now = new Date().toISOString()
     const id = generateId()
+    const qr = qrCodeBase64 ? await compressDataUrl(String(qrCodeBase64), BANK_QR_IMAGE) : null
 
     const result = db.transaction(() => {
       const parent = getOrCreateBankParentAccount(tenantId)
@@ -78,7 +80,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'MASTER'), async (req: Request,
 
       db.prepare(`INSERT INTO bank_accounts (id, tenant_id, bank_name, account_name, account_number, qr_code_base64, account_id, is_default, is_active, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
-        .run(id, tenantId, bankName, accountName, accountNumber, qrCodeBase64 || null, glId, isDefault ? 1 : 0, now, now)
+        .run(id, tenantId, bankName, accountName, accountNumber, qr, glId, isDefault ? 1 : 0, now, now)
 
       return glId
     })()
@@ -105,6 +107,7 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), async (req: Reques
 
     const { bankName, accountName, accountNumber, qrCodeBase64, isDefault } = req.body
     const now = new Date().toISOString()
+    const qr = qrCodeBase64 ? await compressDataUrl(String(qrCodeBase64), BANK_QR_IMAGE) : qrCodeBase64
 
     db.transaction(() => {
       if (isDefault) {
@@ -117,7 +120,7 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'MASTER'), async (req: Reques
         bankName ?? existing.bank_name,
         accountName ?? existing.account_name,
         accountNumber ?? existing.account_number,
-        qrCodeBase64 !== undefined ? qrCodeBase64 : existing.qr_code_base64,
+        qr !== undefined ? qr : existing.qr_code_base64,
         typeof isDefault === 'boolean' ? (isDefault ? 1 : 0) : existing.is_default,
         now, req.params.id, tenantId
       )

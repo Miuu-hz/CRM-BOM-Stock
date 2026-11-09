@@ -3,7 +3,6 @@ import { authenticate } from '../../middleware/auth.middleware'
 
 // Re-export shared sales helpers so consumers can import from the sales module root.
 export {
-  invoiceUpload,
   invoiceUploadDir,
   createSalesJournal,
   deductStockForSO,

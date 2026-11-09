@@ -1,7 +1,6 @@
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
-import { isValidImageFile, isAllowedImageExt, isAllowedImageMimetype, getSafeImageExtension, sanitizeFilename } from '../../utils/upload'
-import multer from 'multer'
+import { isValidImageFile, sanitizeFilename } from '../../utils/upload'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
 import { ACC, ACC_META, resolveBankAccountGL } from '../../config/accountCodes'
@@ -14,24 +13,6 @@ import fs from 'fs'
 // ATTACHMENT_STORAGE_DIR ใช้ย้ายไปที่อื่นได้ (เทสต์ชี้ไป /tmp จะได้ไม่เขียนลงโฟลเดอร์จริง)
 export const invoiceUploadDir = process.env.ATTACHMENT_STORAGE_DIR || path.join(__dirname, '..', '..', '..', 'storage', 'payment-attachments')
 if (!fs.existsSync(invoiceUploadDir)) fs.mkdirSync(invoiceUploadDir, { recursive: true })
-
-const invoiceStorage = multer.diskStorage({
-  destination: (_req: any, _file: any, cb: any) => cb(null, invoiceUploadDir),
-  filename: (req: any, _file: any, cb: any) => {
-    const ext = getSafeImageExtension(_file.originalname) || '.jpg'
-    cb(null, `inv-${generateId()}${ext}`)
-  },
-})
-
-export const invoiceUpload = multer({
-  storage: invoiceStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req: any, file: any, cb: any) => {
-    const ext = path.extname(file.originalname).toLowerCase()
-    if (isAllowedImageExt(ext) && isAllowedImageMimetype(file.mimetype)) cb(null, true)
-    else cb(new Error('Only image files allowed'))
-  },
-})
 
 // Create invoice_attachments table if not exists
 db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (

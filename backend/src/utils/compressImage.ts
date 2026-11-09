@@ -13,6 +13,9 @@ export const QR_AD_IMAGE = { maxEdge: 1350, maxBytes: 250 * 1024 }
 // โลโก้ติดหัวบิล/ใบเสนอราคา — PNG เพื่อเก็บพื้นโปร่งใส
 export const LOGO_IMAGE = { maxEdge: 600, maxBytes: 100 * 1024, format: 'png' as const }
 
+// QR รับเงินพิมพ์ท้ายบิล — PNG ขาวดำคมกว่า JPEG ต้องสแกนได้
+export const BANK_QR_IMAGE = { maxEdge: 800, maxBytes: 120 * 1024, format: 'png' as const }
+
 type Options = { maxEdge?: number; maxBytes?: number; format?: 'jpeg' | 'png' }
 
 // คืน null = เก็บไฟล์เดิม (PDF, ไฟล์ที่เล็กอยู่แล้ว, ไฟล์ที่ sharp อ่านไม่ได้)
