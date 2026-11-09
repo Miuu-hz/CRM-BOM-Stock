@@ -1,5 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // dark: ตามปุ่มสลับธีมของแอป (ThemeContext ตั้ง data-theme บน <html>) ไม่ใช่ธีมของระบบปฏิบัติการ
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
