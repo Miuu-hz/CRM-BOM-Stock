@@ -1270,17 +1270,23 @@ const PurchaseTrail = ({ poId }: { poId: string }) => {
 type RowMenuItem = { label: string; onClick: () => void; danger?: boolean }
 
 const RowMenu = ({ items, label }: { items: RowMenuItem[]; label: string }) => {
-  const [open, setOpen] = useState(false)
+  // เมนูเป็น fixed ตามตำแหน่งปุ่ม (แบบเมนูแถวหน้าคลัง) — absolute เดิมโดนกล่องตาราง overflow ตัดทิ้งที่แถวล่าง ๆ
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const open = anchor !== null
+  const setOpen = (v: boolean) => { if (!v) setAnchor(null) }
   if (items.length === 0) return null
+  const menuH = items.length * 40 + 8
+  const top = anchor && (anchor.bottom + 6 + menuH > window.innerHeight ? Math.max(8, anchor.top - 6 - menuH) : anchor.bottom + 6)
   return (
     <div className="relative flex justify-end">
-      <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }} aria-label={label} aria-expanded={open}
+      <button onClick={e => { e.stopPropagation(); setAnchor(open ? null : e.currentTarget.getBoundingClientRect()) }} aria-label={label} aria-expanded={open}
         className="p-2 rounded-lg text-[var(--fg-4)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)] transition-colors">
         <MoreHorizontal className="w-4 h-4" />
       </button>
       {open && (<>
         <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setOpen(false) }} />
-        <div className="absolute right-0 top-9 z-50 min-w-[168px] py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl">
+        <div role="menu" className="fixed z-50 min-w-[168px] py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl"
+          style={{ top: top ?? 0, right: Math.max(8, window.innerWidth - (anchor?.right ?? 0)) }}>
           {items.map(it => (
             <button key={it.label} onClick={e => { e.stopPropagation(); setOpen(false); it.onClick() }}
               className={`w-full text-left px-3 py-2.5 text-xs transition-colors hover:bg-[var(--bg)] ${it.danger ? 'text-danger' : 'text-[var(--fg-2)]'}`}>
