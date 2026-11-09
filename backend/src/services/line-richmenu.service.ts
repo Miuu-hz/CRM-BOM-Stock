@@ -90,7 +90,8 @@ const linkedMenu = new Map<string, string>() // `${tenantId}:${lineUserId}` → 
 
 async function create(tenantId: string, token: string, ver: string): Promise<Ids | null> {
     const db = getDb()
-    const row = db.prepare('SELECT rich_menus FROM line_channels WHERE tenant_id = ?').get(tenantId) as any
+    // เมนูเป็นของช่อง (OA กลางใช้ชุดเดียวทุกร้าน) — หาแถวจาก token ไม่ใช่ร้าน
+    const row = db.prepare('SELECT rich_menus FROM line_channels WHERE channel_access_token = ?').get(token) as any
     const saved = row?.rich_menus ? JSON.parse(row.rich_menus) : null
     if (saved?.version === ver) return saved.ids as Ids
 
@@ -102,14 +103,13 @@ async function create(tenantId: string, token: string, ver: string): Promise<Ids
         ids[k] = richMenuId
     }
     await api.setDefaultRichMenu(ids.guest)
-    db.prepare('UPDATE line_channels SET rich_menus = ? WHERE tenant_id = ?').run(JSON.stringify({ version: ver, ids }), tenantId)
+    db.prepare('UPDATE line_channels SET rich_menus = ? WHERE channel_access_token = ?').run(JSON.stringify({ version: ver, ids }), token)
 
     // ย้ายทุกคนที่ผูกไว้ไปชุดใหม่ก่อนลบชุดเก่า (ไม่งั้นเขาจะเห็นเมนูหายไปชั่วขณะ)
     const users = db.prepare(`
         SELECT lum.line_user_id, lum.user_id, lum.role, u.role AS user_role
         FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
-        WHERE lum.tenant_id = ?
-    `).all(tenantId) as any[]
+    `).all() as any[]
     for (const u of users) {
         const id = ids[menuKeyForRole(effectiveRole(u))]
         try { await api.linkRichMenuIdToUser(u.line_user_id, id); linkedMenu.set(`${tenantId}:${u.line_user_id}`, id) }
@@ -131,7 +131,7 @@ export const richMenus = {
     ensure(tenantId: string, token: string): Promise<Ids | null> {
         let ver: string
         try { ver = version() } catch (e) { console.error('richmenu assets missing', e); return Promise.resolve(null) }
-        const key = `${tenantId}:${ver}`
+        const key = `${token}:${ver}`
         if (!ensuring.has(key)) {
             ensuring.set(key, create(tenantId, token, ver).catch(e => {
                 ensuring.delete(key) // ลองใหม่ได้ครั้งหน้า

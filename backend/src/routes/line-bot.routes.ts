@@ -18,10 +18,8 @@ router.post('/webhook', (req: Request, res: Response) => {
         const signature = req.headers['x-line-signature'] as string;
         if (!signature) return; // no signature → ignore silently
 
-        const tenantId = lineBotService.getTenantFromSignature(signature, req.body);
-        if (!tenantId) {
-            // Signature didn't match any active tenant — could be LINE verify or unknown channel.
-            console.warn('⚠️ Webhook: signature matched no active tenant (may be a verify ping)');
+        if (!lineBotService.verifySignature(signature, req.body)) {
+            console.warn('⚠️ Webhook: signature ไม่ตรงกับ OA กลาง');
             return;
         }
 
@@ -30,7 +28,8 @@ router.post('/webhook', (req: Request, res: Response) => {
 
         if (events.length === 0) return; // verify ping — nothing to process
 
-        Promise.all(events.map(event => lineBotService.handleEvent(tenantId, event)))
+        // OA กลาง: ร้านของแต่ละ event มาจากบัญชี/กลุ่มที่ผูกด้วยรหัส 6 หลัก ไม่ใช่จากช่อง
+        Promise.all(events.map(event => lineBotService.handleEvent(lineBotService.resolveTenant(event), event)))
             .catch(err => console.error('Webhook event processing error:', err));
 
     } catch (error) {
@@ -101,6 +100,8 @@ router.put('/config', authenticate, requireMaster, (req: Request, res: Response)
                     .run(name, isActiveInt, tenantId);
             }
         } else {
+            // ทุกร้านใช้ OA กลาง Phopy-ERP — ห้ามสร้างช่องรายร้าน (webhook จะเลือกช่องไม่ถูก)
+            return res.status(409).json({ success: false, message: 'ระบบใช้ LINE OA กลาง Phopy-ERP แล้ว ไม่ต้องตั้งค่าช่องของร้านเอง' })
             // New record: both secret and token are mandatory
             if (!channel_secret || !channel_access_token) {
                 return res.status(400).json({ success: false, message: 'Channel Secret และ Access Token จำเป็นต้องกรอกสำหรับการตั้งค่าครั้งแรก' });

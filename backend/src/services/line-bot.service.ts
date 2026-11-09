@@ -93,6 +93,11 @@ import { canApprove } from './approvalGate.service'
 import { getLowStockItems } from '../routes/dashboard.routes'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน' }
+// ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
+function centralChannel(): any {
+    return getDb().prepare('SELECT * FROM line_channels WHERE is_active = 1 ORDER BY created_at LIMIT 1').get()
+}
+
 const companyName = (tenantId: string) =>
     ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
@@ -171,9 +176,8 @@ class LineBotService {
     private getClient(tenantId: string): any | null {
         if (!Client) return null
         const db = getDb()
-        const config = db.prepare(
-            'SELECT * FROM line_channels WHERE tenant_id = ? AND is_active = 1'
-        ).get(tenantId) as any
+        // OA กลาง Phopy-ERP ตัวเดียวทุกร้าน — tenantId ไม่ได้เลือกช่องแล้ว ใครได้ข้อความตัดสินที่ mapping ที่ผูกด้วยรหัส 6 หลัก
+        const config = centralChannel()
         if (!config) return null
         const inner = new Client({ channelAccessToken: config.channel_access_token })
         // Wrap v11 API to be compatible with v8 call signatures used throughout this service
@@ -193,18 +197,23 @@ class LineBotService {
     }
 
     // ── Tenant resolution ─────────────────────────────────────────────────────
-    public getTenantFromSignature(signature: string, bodyRaw: Buffer | string): string | null {
-        if (!validateSignature) return null
+    public verifySignature(signature: string, bodyRaw: Buffer | string): boolean {
+        const ch = centralChannel()
+        if (!validateSignature || !ch) return false
+        try { return !!validateSignature(bodyRaw, ch.channel_secret, signature) } catch { return false }
+    }
+
+    /** ร้านของ event: กลุ่ม → กลุ่มที่ผูกรหัสไว้ · แชทส่วนตัว → บัญชีที่ผูกล่าสุด · ยังไม่ผูก = '' (ทำได้แค่ผูกบัญชี/ดูวิธี) */
+    public resolveTenant(event: any): string {
         const db = getDb()
-        const channels = db.prepare(
-            'SELECT tenant_id, channel_secret FROM line_channels WHERE is_active = 1'
-        ).all() as any[]
-        for (const ch of channels) {
-            try {
-                if (validateSignature(bodyRaw, ch.channel_secret, signature)) return ch.tenant_id
-            } catch { /* try next */ }
+        const groupId = event.source?.groupId ?? event.source?.roomId
+        if (groupId) {
+            const g = db.prepare('SELECT tenant_id FROM line_group_mappings WHERE group_id = ? AND is_active = 1 ORDER BY joined_at DESC LIMIT 1').get(groupId) as any
+            return g?.tenant_id ?? ''
         }
-        return null
+        // ponytail: LINE เดียวผูกหลายร้านได้ — คำสั่งในแชทส่วนตัวไปที่ร้านที่ผูกล่าสุด ถ้าต้องสลับร้านค่อยทำคำสั่ง "สลับบริษัท"
+        const m = db.prepare('SELECT tenant_id FROM line_user_mappings WHERE line_user_id = ? ORDER BY linked_at DESC LIMIT 1').get(event.source?.userId ?? '') as any
+        return m?.tenant_id ?? ''
     }
 
     // ── Push helpers ──────────────────────────────────────────────────────────
@@ -434,9 +443,12 @@ class LineBotService {
     /** Generate a short-lived 6-digit token; returns the plain token */
     public generateLinkToken(tenantId: string, userId: string): string {
         const db = getDb()
-        // Invalidate previous tokens for this user
-        db.prepare('DELETE FROM line_link_tokens WHERE user_id = ?').run(userId)
-        const token = Math.floor(100000 + Math.random() * 900000).toString()
+        // Invalidate previous tokens for this user (+ ของที่หมดอายุทุกคน)
+        db.prepare('DELETE FROM line_link_tokens WHERE user_id = ? OR expires_at < ?').run(userId, new Date().toISOString())
+        // รหัสต้องไม่ซ้ำข้ามร้าน เพราะ OA กลางรู้ว่าเป็นร้านไหนก็จากรหัสนี้
+        let token: string
+        do { token = crypto.randomInt(100000, 1000000).toString() }
+        while (db.prepare('SELECT 1 FROM line_link_tokens WHERE token = ?').get(token))
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
         db.prepare(
             'INSERT INTO line_link_tokens (id, tenant_id, user_id, token, expires_at) VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?)'
@@ -444,32 +456,52 @@ class LineBotService {
         return token
     }
 
-    private tryLinkAccount(tenantId: string, lineUserId: string, token: string): 'ok' | 'invalid' | 'expired' | 'already_linked' {
+    /** รหัส 6 หลักไม่ผูกกับร้าน (OA กลาง) — ร้านมาจากเจ้าของรหัสเอง */
+    private tryLinkAccount(lineUserId: string, token: string): { result: 'ok' | 'invalid' | 'expired' | 'already_linked'; tenantId: string } {
         const db = getDb()
-        const row = db.prepare(
-            'SELECT * FROM line_link_tokens WHERE token = ? AND tenant_id = ?'
-        ).get(token, tenantId) as any
-        if (!row) return 'invalid'
+        const row = db.prepare('SELECT * FROM line_link_tokens WHERE token = ?').get(token) as any
+        if (!row) return { result: 'invalid', tenantId: '' }
+        const tenantId = row.tenant_id
         if (new Date(row.expires_at) < new Date()) {
             db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
-            return 'expired'
+            return { result: 'expired', tenantId }
         }
-        // Check already linked
         const existing = db.prepare(
-            'SELECT id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
-        ).get(tenantId, lineUserId)
-        if (existing) return 'already_linked'
-        // Fetch user role
+            'SELECT user_id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
+        ).get(tenantId, lineUserId) as any
+        if (existing && existing.user_id !== row.user_id) return { result: 'already_linked', tenantId }
         const user = db.prepare('SELECT role FROM users WHERE id = ?').get(row.user_id) as any
-        const role = user?.role ?? 'USER'
-        // Upsert mapping
-        db.prepare(`
-            INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
-            VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?)
-            ON CONFLICT(tenant_id, user_id) DO UPDATE SET line_user_id = excluded.line_user_id, role = excluded.role
-        `).run(tenantId, row.user_id, lineUserId, role)
-        db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
-        return 'ok'
+        const role = effectiveRole({ user_id: row.user_id, role: 'USER', user_role: user?.role ?? null })
+        db.transaction(() => {
+            db.prepare(`
+                INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+                VALUES (lower(hex(randomblob(12))), ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, user_id) DO UPDATE SET line_user_id = excluded.line_user_id, role = excluded.role, linked_at = CURRENT_TIMESTAMP
+            `).run(tenantId, row.user_id, lineUserId, role)
+            db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
+        })()
+        return { result: 'ok', tenantId }
+    }
+
+    /** ผูกกลุ่มกับร้าน: ผู้ดูแลพิมพ์รหัส 6 หลักของตัวเองในกลุ่ม — กลุ่มที่ไม่ได้ผูกจะไม่ได้รับแจ้งเตือนใดๆ */
+    private async handleGroupLink(groupId: string, token: string, replyToken: string, client: any) {
+        const db = getDb()
+        const row = db.prepare('SELECT * FROM line_link_tokens WHERE token = ?').get(token) as any
+        const u = row ? db.prepare('SELECT role FROM users WHERE id = ?').get(row.user_id) as any : null
+        const role = row ? effectiveRole({ user_id: row.user_id, role: 'USER', user_role: u?.role ?? null }) : ''
+        let text: string
+        if (!row) text = '❌ รหัสไม่ถูกต้อง\nขอรหัสใหม่ได้ที่ ตั้งค่า > LINE ในระบบ'
+        else if (new Date(row.expires_at) < new Date()) text = '⏰ รหัสหมดอายุแล้ว (มีอายุ 10 นาที)\nขอรหัสใหม่ได้ที่ ตั้งค่า > LINE'
+        else if (!['ADMIN', 'MASTER', 'OWNER'].includes(role)) text = '🔒 ผูกกลุ่มได้เฉพาะรหัสของผู้ดูแล (Admin/Master)'
+        else {
+            db.transaction(() => {
+                db.prepare('UPDATE line_group_mappings SET is_active = 0 WHERE group_id = ? AND tenant_id != ?').run(groupId, row.tenant_id)
+                this.saveGroup(row.tenant_id, groupId)
+                db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
+            })()
+            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nกลุ่มนี้จะได้รับแจ้งเตือนของบริษัทนี้`
+        }
+        await client.replyMessage(replyToken, { type: 'text', text })
     }
 
     // ── Group membership ──────────────────────────────────────────────────────
@@ -738,16 +770,13 @@ class LineBotService {
         await client.replyMessage(replyToken, msg)
     }
 
-    private async handleLinkCommand(
-        tenantId: string, lineUserId: string,
-        token: string, replyToken: string, client: any
-    ) {
-        const result = this.tryLinkAccount(tenantId, lineUserId, token)
+    private async handleLinkCommand(lineUserId: string, token: string, replyToken: string, client: any) {
+        const { result, tenantId } = this.tryLinkAccount(lineUserId, token)
         const texts: Record<string, string> = {
-            ok:            '✅ เชื่อมบัญชีสำเร็จ!\nตอนนี้คุณจะได้รับแจ้งเตือนและสั่งงานผ่าน LINE ได้แล้ว 🎉',
-            invalid:       '❌ รหัสไม่ถูกต้อง\nกรุณาขอรหัสใหม่จากหน้าตั้งค่าในระบบ',
-            expired:       '⏰ รหัสหมดอายุแล้ว (มีอายุ 10 นาที)\nกรุณาขอรหัสใหม่จากหน้าตั้งค่า',
-            already_linked:'ℹ️ LINE นี้เชื่อมบัญชีไว้แล้ว',
+            ok:            `✅ เชื่อมบัญชีกับ ${companyName(tenantId)} สำเร็จ!\nตอนนี้คุณจะได้รับแจ้งเตือนและสั่งงานผ่าน LINE ได้แล้ว 🎉`,
+            invalid:       '❌ รหัสไม่ถูกต้อง\nกรุณาขอรหัสใหม่จากหน้า ตั้งค่า > LINE ในระบบ',
+            expired:       '⏰ รหัสหมดอายุแล้ว (มีอายุ 10 นาที)\nกรุณาขอรหัสใหม่จากหน้า ตั้งค่า > LINE',
+            already_linked:'ℹ️ LINE นี้เชื่อมกับผู้ใช้อื่นในบริษัทนี้อยู่แล้ว',
         }
         await client.replyMessage(replyToken, {
             type: 'text', text: texts[result],
@@ -826,7 +855,7 @@ class LineBotService {
     private async handleHowToLinkCommand(replyToken: string, client: any) {
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: '🔗 วิธีเชื่อมบัญชี LINE กับระบบ\n\n1️⃣ เปิดเว็บ erp.phopy.net\n2️⃣ ไปที่ ตั้งค่า → LINE Bot\n3️⃣ กดปุ่ม "สร้างรหัสเชื่อม"\n4️⃣ ส่งข้อความนี้มาที่นี่:\n\nลิงก์ [รหัส 6 หลัก]\n\nตัวอย่าง: ลิงก์ 123456\n\n⏰ รหัสมีอายุ 10 นาที',
+            text: '🔗 วิธีเชื่อมบัญชี LINE กับระบบ\n\n1️⃣ เปิดเว็บ erp.phopy.net\n2️⃣ ไปที่ ตั้งค่า → LINE\n3️⃣ กดปุ่ม "สร้างรหัสเชื่อม"\n4️⃣ ส่งรหัส 6 หลักมาที่แชทนี้\n\nตัวอย่าง: 123456\n\n⏰ รหัสมีอายุ 10 นาที\n👥 ผูกกลุ่ม: ผู้ดูแลพิมพ์รหัสในกลุ่มนั้น',
             quickReply: { items: quickReplyItems(true) }
         })
     }
@@ -995,9 +1024,8 @@ class LineBotService {
         // ── unfollow: user blocked/removed the bot (no reply token) ──────────
         if (event.type === 'unfollow') {
             const db = getDb()
-            db.prepare(
-                'DELETE FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?'
-            ).run(tenantId, event.source.userId)
+            // บล็อก OA กลาง = เลิกรับจากทุกร้าน
+            getDb().prepare('DELETE FROM line_user_mappings WHERE line_user_id = ?').run(event.source.userId)
             return
         }
 
@@ -1005,15 +1033,13 @@ class LineBotService {
         if (event.type === 'join') {
             const groupId = event.source.groupId ?? event.source.roomId
             if (groupId) {
-                this.saveGroup(tenantId, groupId)
-                // pushMessage instead of replyMessage — replyToken expires in 30s
-                // and may already be stale when we get here
+                // ไม่ผูกกลุ่มอัตโนมัติแล้ว — OA กลางไม่รู้ว่ากลุ่มนี้ของร้านไหน และกลุ่มที่ไม่ได้ผูกต้องไม่ได้ข้อความของใคร
                 try {
-                    await client.pushMessage(groupId, {
+                    await client.replyMessage(event.replyToken, {
                         type: 'text',
-                        text: '👋 สวัสดีครับ! บอทเชื่อมต่อระบบแล้ว\nพิมพ์ "-help" เพื่อดูคำสั่งที่ใช้ได้'
+                        text: '👋 สวัสดีครับ จาก Phopy-ERP\nกลุ่มนี้ยังไม่ได้ผูกกับบริษัท จึงยังไม่ได้รับแจ้งเตือนใดๆ\n\nให้ผู้ดูแล (Admin/Master) ขอรหัส 6 หลักที่ ตั้งค่า > LINE ในระบบ แล้วพิมพ์รหัสในกลุ่มนี้'
                     })
-                } catch { /* ignore push failures */ }
+                } catch { /* ignore */ }
             }
             return
         }
@@ -1021,7 +1047,7 @@ class LineBotService {
         // ── leave: bot removed from group/room ───────────────────────────────
         if (event.type === 'leave') {
             const groupId = event.source.groupId ?? event.source.roomId
-            if (groupId) this.deactivateGroup(tenantId, groupId)
+            if (groupId) getDb().prepare('UPDATE line_group_mappings SET is_active = 0 WHERE group_id = ?').run(groupId)
             return
         }
 
@@ -1032,7 +1058,9 @@ class LineBotService {
 
             // ── Registration gate ─────────────────────────────────────────────
             // คนที่ยังไม่ผูกใช้ได้แค่ "ลิงก์ XXXXXX" + ปุ่มในเมนู guest (วิธีเชื่อมบัญชี / ช่วยเหลือ)
-            const isLinkAttempt = lower.startsWith('ลิงก์ ') || lower.startsWith('/ลิงก์ ')
+            // ส่งรหัส 6 หลักเฉยๆ ก็ผูกได้ · ในกลุ่มที่ผูกแล้วต้องพิมพ์ "ลิงก์ xxxxxx" กันตัวเลขในแชทปกติโดนตีเป็นรหัส
+            const bareOtp = /^\d{6}$/.test(text) && (src === 'user' || !tenantId)
+            const isLinkAttempt = bareOtp || lower.startsWith('ลิงก์ ') || lower.startsWith('/ลิงก์ ')
             const isHelp = ['-help', '/help', 'help', 'ช่วยเหลือ', '?', 'menu', 'เมนู'].includes(lower)
             const isHowToLink = ['วิธีเชื่อมบัญชี', 'เชื่อมบัญชี', 'link', '-link'].includes(lower)
             const me = this.linkedUser(tenantId, event.source.userId)
@@ -1045,7 +1073,7 @@ class LineBotService {
                     if (src === 'user') {
                         await client.replyMessage(event.replyToken, {
                             type: 'text',
-                            text: '🔒 คุณยังไม่ได้ลงทะเบียนในระบบ ERP\n\nกรุณาติดต่อผู้ดูแลระบบเพื่อขอรหัสเชื่อมบัญชี แล้วส่ง:\n\nลิงก์ [รหัส 6 หลัก]\n\nตัวอย่าง: ลิงก์ 123456',
+                            text: '🔒 LINE นี้ยังไม่ได้เชื่อมกับบัญชีในระบบ ERP\n\nเข้าเว็บ erp.phopy.net > ตั้งค่า > LINE กด "สร้างรหัสเชื่อม" แล้วส่งรหัส 6 หลักมาที่แชทนี้\n\nตัวอย่าง: 123456',
                         })
                     }
                     // กลุ่ม: เงียบ ไม่ตอบคนที่ไม่ได้ลงทะเบียน
@@ -1056,10 +1084,11 @@ class LineBotService {
             // BOM and PR drafting via chat removed (use Web ERP instead)
 
             // ── Account linking (personal chat only) ─────────────────────────
-            if (src === 'user' && (lower.startsWith('/ลิงก์ ') || lower.startsWith('ลิงก์ '))) {
-                const token = text.split(' ')[1]?.trim()
+            if (isLinkAttempt) {
+                const token = bareOtp ? text : text.split(' ')[1]?.trim()
                 if (token) {
-                    await this.handleLinkCommand(tenantId, event.source.userId, token, event.replyToken, client)
+                    if (src === 'user') await this.handleLinkCommand(event.source.userId, token, event.replyToken, client)
+                    else await this.handleGroupLink(event.source.groupId ?? event.source.roomId, token, event.replyToken, client)
                     return
                 }
             }

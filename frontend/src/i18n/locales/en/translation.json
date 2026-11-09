@@ -2960,12 +2960,12 @@
         "unlink": "Unlink",
         "stepsTitle": "How to link:",
         "step1": "1. Press \"Generate Link Code\" below",
-        "step2": "2. Press \"Copy\" and send that message in chat with LINE OA",
+        "step2": "2. Press \"Copy\" and send the code in chat with LINE OA Phopy-ERP",
         "tokenExpiry": "⏰ Code expires in 10 minutes",
         "generateToken": "Generate Link Code",
         "copyToken": "Copy",
         "copied": "Copied",
-        "tokenPrefix": "Link {{token}}"
+        "tokenPrefix": "{{token}}"
       },
       "linkedUsers": {
         "title": "Users Linked to LINE",
