@@ -519,6 +519,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       }
     }
 
+    // ปิดงาน SO = ของถึงมือลูกค้าแล้ว — ใบส่งของที่ออกอัตโนมัติค้าง SHIPPED (รอเซ็นรับ) ต้องปิดตาม
+    // ไม่งั้น delivered_qty ไม่เคยขยับ หน้าคำสั่งขายขึ้น "เสร็จสิ้น · ค้างส่ง n" ตลอดไป
+    if (status === 'COMPLETED' && salesOrder) closeShippedDeliveryOrders(tenantId, salesOrder)
+
     if (stockDeducted) {
       if (confirmGateArgs) recordAutoAction(confirmGateArgs)
 
@@ -603,3 +607,27 @@ router.delete('/:id', async (req: Request, res: Response) => {
 })
 
 export default router
+
+/**
+ * ปิดใบส่งของ SHIPPED ของ SO ที่จบแล้ว: DO → DELIVERED + บวก delivered_qty (ไม่เกินจำนวนสั่ง)
+ * ไม่แตะสต็อก เพราะสต็อกถูกตัดไปตั้งแต่ยืนยัน SO (STOCK_DEDUCTED_STATUSES)
+ * ถ้า SO มีบรรทัดผูกสต็อกแต่ยังไม่เคยตัด (ข้อมูลเก่า) ปล่อยไว้ให้คนกดรับของที่ใบส่งของ ซึ่งเป็นทางที่ตัดสต็อกให้
+ */
+export function closeShippedDeliveryOrders(tenantId: string, so: { id: string; so_number: string }) {
+  const hasStockLine = !!db.prepare('SELECT 1 FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ? AND stock_item_id IS NOT NULL LIMIT 1')
+    .get(so.id, tenantId)
+  if (hasStockLine && !soStockAlreadyDeducted(tenantId, so.so_number)) return 0
+  const dos = db.prepare("SELECT id FROM delivery_orders WHERE sales_order_id = ? AND tenant_id = ? AND status = 'SHIPPED'")
+    .all(so.id, tenantId) as { id: string }[]
+  const now = new Date().toISOString()
+  db.transaction(() => {
+    for (const d of dos) {
+      db.prepare("UPDATE delivery_orders SET status = 'DELIVERED', updated_at = ? WHERE id = ? AND tenant_id = ?").run(now, d.id, tenantId)
+      for (const it of db.prepare('SELECT sales_order_item_id, quantity FROM delivery_order_items WHERE delivery_order_id = ? AND tenant_id = ?').all(d.id, tenantId) as any[]) {
+        db.prepare('UPDATE sales_order_items SET delivered_qty = MIN(quantity, delivered_qty + ?) WHERE id = ? AND sales_order_id = ? AND tenant_id = ?')
+          .run(it.quantity, it.sales_order_item_id, so.id, tenantId)
+      }
+    }
+  })()
+  return dos.length
+}

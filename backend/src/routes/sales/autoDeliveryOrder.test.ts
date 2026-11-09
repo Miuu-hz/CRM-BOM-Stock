@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import db from '../../db/sqlite'
 import { generateId } from '../../utils/id'
 import { createDeliveryOrderForSO, soStockAlreadyDeducted, deductStockForSO } from './shared'
+import { closeShippedDeliveryOrders } from './salesOrders'
 
 // tenant ทิ้ง สร้างใหม่ทุกเคสแล้วลบใน afterEach
 const tenants: string[] = []
@@ -139,5 +140,29 @@ describe('การ์ดกันตัดสต็อกซ้ำ', () => {
     deductStockForSO(t, soId, so.so_number)
 
     expect(soStockAlreadyDeducted(t, 'SO-ไม่มีจริง')).toBe(false)
+  })
+})
+
+describe('SO เสร็จสิ้น → ปิดใบส่งของที่ค้าง SHIPPED', () => {
+  it('ใบส่งของเป็น DELIVERED และไม่เหลือค้างส่ง (บรรทัดไม่ผูกสต็อก แบบ SO-125)', () => {
+    const t = setupTenant()
+    const { soId, soNumber } = addSO(t, 'COMPLETED')
+    const line = generateId()
+    db.prepare(`INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_name, quantity, delivered_qty, unit_price, total_price, unit)
+                VALUES (?, ?, ?, NULL, 'หมอน', 1, 0, 45, 45, 'pcs')`).run(line, t, soId)
+    createDeliveryOrderForSO(t, soId)
+    expect(closeShippedDeliveryOrders(t, { id: soId, so_number: soNumber.so_number })).toBe(1)
+    expect((db.prepare('SELECT status FROM delivery_orders WHERE tenant_id = ?').get(t) as any).status).toBe('DELIVERED')
+    expect((db.prepare('SELECT delivered_qty FROM sales_order_items WHERE id = ?').get(line) as any).delivered_qty).toBe(1)
+    expect(closeShippedDeliveryOrders(t, { id: soId, so_number: soNumber.so_number }), 'เรียกซ้ำไม่บวกซ้ำ').toBe(0)
+  })
+
+  it('มีบรรทัดผูกสต็อกแต่ยังไม่เคยตัด → ไม่ปิดให้ (ต้องไปกดรับของที่ใบส่งของ ซึ่งตัดสต็อกให้)', () => {
+    const t = setupTenant()
+    const { soId, soNumber } = addSO(t, 'COMPLETED')
+    addSOLine(t, soId, addStockItem(t, 50), 3)
+    createDeliveryOrderForSO(t, soId)
+    expect(closeShippedDeliveryOrders(t, { id: soId, so_number: soNumber.so_number })).toBe(0)
+    expect((db.prepare('SELECT status FROM delivery_orders WHERE tenant_id = ?').get(t) as any).status).toBe('SHIPPED')
   })
 })
