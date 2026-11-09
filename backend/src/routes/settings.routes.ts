@@ -4,6 +4,7 @@ import db from '../db/sqlite'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { getSubscription } from '../services/subscription.service'
 import { can } from '../services/rbac.service'
+import { compressDataUrl, LOGO_IMAGE } from '../utils/compressImage'
 
 // แท็บ บิล/VAT — admin มอบให้คนอื่นแก้ได้ผ่านระบบสิทธิ์เดิม (Settings > สิทธิ์การใช้งาน: settings:write
 // หรือแผนก CEO/IT/CTO) · คนที่ได้สิทธิ์นี้แก้ได้เฉพาะช่องในแท็บนี้ ช่องอื่นของบริษัทยังเป็นของ ADMIN/MASTER
@@ -46,7 +47,7 @@ function parseAliasFlag(v: unknown): 0 | 1 | null {
 }
 
 // PUT /api/settings/company — บันทึกข้อมูลบริษัท
-router.put('/company', (req, res) => {
+router.put('/company', async (req, res) => {
   try {
     const user = (req as any).user!
     const tenantId = user.tenantId
@@ -116,7 +117,8 @@ router.put('/company', (req, res) => {
     // ยังไม่มีระบบสาขา ค่าตั้งต้นเป็นสำนักงานใหญ่ แต่แก้เองได้
     const mergedTaxBranch = tax_branch !== undefined ? (tax_branch || null) : (existing.tax_branch ?? 'สำนักงานใหญ่')
     const mergedCompanyVatInclusive = vat_inclusive !== undefined ? (vat_inclusive ? 1 : 0) : (existing.vat_inclusive === 1 ? 1 : 0)
-    const mergedLogo = logo_base64 !== undefined ? (logo_base64 || null) : existing.logo_base64
+    // โลโก้ใหญ่ถูกส่งไปกับทุกการโหลดตั้งค่า/พิมพ์บิล → บีบเหลือ PNG ≤100KB ด้านยาว 600px
+    const mergedLogo = logo_base64 !== undefined ? (logo_base64 ? await compressDataUrl(String(logo_base64), LOGO_IMAGE) : null) : existing.logo_base64
     const mergedBomDeduct = pos_bom_deduct !== undefined
       ? (pos_bom_deduct === false || pos_bom_deduct === 0 ? 0 : 1)
       : (existing.pos_bom_deduct === 0 ? 0 : 1)

@@ -44,3 +44,25 @@ describe('compressImage — รูปสินค้า', () => {
     expect(Math.max(meta.width!, meta.height!)).toBeLessThanOrEqual(800)
   }, 30000)
 })
+
+describe('compressDataUrl — โลโก้', () => {
+  it('บีบโลโก้เป็น PNG ≤100KB และยังโปร่งใส', async () => {
+    const { compressDataUrl, LOGO_IMAGE } = await import('./compressImage')
+    const w = 2000, h = 2000
+    const px = Buffer.alloc(w * h * 4)
+    for (let i = 0; i < w * h; i++) { px[i * 4] = (i * 7) % 256; px[i * 4 + 1] = (i >> 3) % 256; px[i * 4 + 2] = 90; px[i * 4 + 3] = i % w < w / 2 ? 0 : 255 }
+    const png = await sharp(px, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer()
+    const out = await compressDataUrl(`data:image/png;base64,${png.toString('base64')}`, LOGO_IMAGE)
+    expect(out.startsWith('data:image/png;base64,')).toBe(true)
+    const buf = Buffer.from(out.split(',')[1], 'base64')
+    expect(buf.length).toBeLessThanOrEqual(LOGO_IMAGE.maxBytes)
+    const meta = await sharp(buf).metadata()
+    expect(meta.hasAlpha).toBe(true)
+    expect(Math.max(meta.width!, meta.height!)).toBeLessThanOrEqual(600)
+  }, 30000)
+
+  it('ไม่ใช่ data URL รูป → คืนค่าเดิม', async () => {
+    const { compressDataUrl, LOGO_IMAGE } = await import('./compressImage')
+    expect(await compressDataUrl('https://x/logo.png', LOGO_IMAGE)).toBe('https://x/logo.png')
+  })
+})

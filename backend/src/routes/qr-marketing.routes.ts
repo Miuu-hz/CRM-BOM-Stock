@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
+import { compressImage, QR_AD_IMAGE } from '../utils/compressImage'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -109,7 +110,7 @@ router.delete('/rewards/:id', requireRole(...MANAGERS), (req, res) => {
 // ==================== Pop-up โฆษณา (add-on qr_ad) ====================
 const adDir = path.join(__dirname, '..', '..', 'uploads', 'qr-ads')
 fs.mkdirSync(adDir, { recursive: true })
-const MAX_AD_BYTES = 5 * 1024 * 1024
+const MAX_AD_BYTES = 15 * 1024 * 1024 // รับรูปเต็มจากมือถือได้ แล้วบีบเหลือ ≤250KB ตอนบันทึก
 const upload = multer({
   storage: multer.diskStorage({
     destination: adDir,
@@ -156,20 +157,26 @@ router.put('/ad', requireRole(...MANAGERS), (req, res) => {
 })
 
 // POST /ad/image (multipart field "image") — 1 ร้าน 1 รูป อัปโหลดใหม่แทนที่รูปเดิม
-// ponytail: ยังไม่ย่อ/แปลงเป็น WebP (ไม่มี sharp ในเครื่อง) — จำกัด 5MB แทน · ติดตั้ง sharp แล้วค่อยย่อเหลือ ~200KB
 router.post('/ad/image', requireRole(...MANAGERS), (req, res, next) => {
   if (!hasFeature(tid(req), 'qr_ad')) return res.status(403).json({ success: false, code: 'ADDON_REQUIRED', message: 'ต้องซื้อ Add-on Pop-up โฆษณา (฿19/เดือน) ก่อน' })
   upload.single('image')(req, res, (err: any) => {
-    if (err?.code === 'LIMIT_FILE_SIZE') return bad(res, 'ไฟล์ใหญ่เกิน 5 MB กรุณาย่อรูปก่อน')
+    if (err?.code === 'LIMIT_FILE_SIZE') return bad(res, 'ไฟล์ใหญ่เกิน 15 MB กรุณาย่อรูปก่อน')
     if (err) return bad(res, err.message)
     next()
   })
-}, (req, res) => {
+}, async (req, res) => {
   const tenantId = tid(req)
   const file = req.file
   if (!file) return bad(res, 'ไม่พบไฟล์รูป')
   const full = path.join(adDir, file.filename)
   if (!isValidImageFile(full)) { try { fs.unlinkSync(full) } catch { /* ignore */ } return bad(res, 'ไฟล์นี้ไม่ใช่รูปภาพที่ใช้ได้') }
+  const small = await compressImage(fs.readFileSync(full), QR_AD_IMAGE)
+  if (small) {
+    const jpgName = path.parse(file.filename).name + small.ext
+    fs.writeFileSync(path.join(adDir, jpgName), small.buffer)
+    if (jpgName !== file.filename) fs.unlinkSync(full)
+    file.filename = jpgName
+  }
   const old = db.prepare('SELECT image_url FROM pos_ad_slots WHERE tenant_id = ?').get(tenantId) as any
   const url = `/uploads/qr-ads/${file.filename}`
   db.prepare(`INSERT INTO pos_ad_slots (tenant_id, image_url, updated_at) VALUES (?, ?, ?)

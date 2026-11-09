@@ -17,7 +17,7 @@ const BASE = '/pos/qr-marketing'
 const errMsg = (e: any, fallback: string) => e?.response?.data?.message || fallback
 const input = 'phopy-input w-full'
 const card = 'p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] space-y-3'
-const MAX_AD_MB = 5
+const MAX_AD_MB = 15
 
 function MenuSelect({ menus, value, onChange, placeholder }: { menus: Menu[]; value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
