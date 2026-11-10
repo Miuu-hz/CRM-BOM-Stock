@@ -49,6 +49,7 @@
     "copy": "Copy",
     "confirm": "Confirm",
     "vatInclusive": "Prices include VAT",
+    "vatMode": "VAT mode",
     "extraCharge": "Shipping / other charge",
     "extraChargeLabel": "Label",
     "itemCount": "{{count}} items"
@@ -618,6 +619,7 @@
     "pendingItems": "Pending items",
     "common": {
       "status": "Status",
+      "viewOnly": "View only",
       "actions": "Actions",
       "total": "Total",
       "notes": "Notes",

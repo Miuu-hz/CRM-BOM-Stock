@@ -239,6 +239,7 @@
     "copy": "คัดลอก",
     "confirm": "ยืนยัน",
     "vatInclusive": "ราคารวม VAT แล้ว",
+    "vatMode": "โหมด VAT",
     "extraCharge": "ค่าขนส่ง/ค่าบริการอื่น",
     "extraChargeLabel": "ชื่อรายการ",
     "itemCount": "{{count}} รายการ"
@@ -619,6 +620,7 @@
     "pendingItems": "รายการรอดำเนินการ",
     "common": {
       "status": "สถานะ",
+      "viewOnly": "ดูอย่างเดียว",
       "actions": "จัดการ",
       "total": "รวม",
       "notes": "หมายเหตุ",
