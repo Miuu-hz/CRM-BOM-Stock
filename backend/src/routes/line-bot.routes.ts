@@ -209,4 +209,54 @@ router.delete('/link/:userId', authenticate, requireMaster, (req: Request, res: 
     }
 });
 
+// ==========================================
+// 4. Public Company Logo Endpoint (No Auth)
+// ==========================================
+// Serves decoded company logo image for LINE Flex cards and public views
+router.get('/logo/:tenantId', (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const db = getDb();
+        const row = db.prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as { logo_base64?: string } | undefined;
+
+        if (!row?.logo_base64 || !row.logo_base64.trim()) {
+            return res.status(404).json({ success: false, message: 'Logo not found' });
+        }
+
+        let mime = 'image/png';
+        let base64Data = row.logo_base64;
+        const match = row.logo_base64.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+            mime = match[1];
+            base64Data = match[2];
+        }
+
+        const buffer = Buffer.from(base64Data, 'base64');
+        if (!buffer.length) {
+            return res.status(404).json({ success: false, message: 'Logo not found' });
+        }
+
+        if (!match) {
+            if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+                mime = 'image/png';
+            } else if (buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+                mime = 'image/jpeg';
+            }
+        }
+
+        // โลโก้มาจากผู้ใช้ และ route นี้เปิดสาธารณะ — เสิร์ฟเฉพาะรูป ไม่งั้น data:text/html จะกลายเป็นหน้าเว็บบนโดเมนเรา
+        if (!['image/png', 'image/jpeg'].includes(mime)) {
+            return res.status(404).json({ success: false, message: 'Logo not found' });
+        }
+        res.set({
+            'Content-Type': mime,
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'public, max-age=86400',
+        }).send(buffer);
+    } catch (error) {
+        console.error('Error serving company logo:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch logo' });
+    }
+});
+
 export default router

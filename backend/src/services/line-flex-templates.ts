@@ -65,7 +65,16 @@ const barRow = (title: string, sub: string, amount: number, max: number, i: numb
         ] },
     ],
 })
-function card(o: { alt: string; kicker: string; title: string; sub?: string; body: any[]; buttons?: any[]; tone?: string }) {
+export function card(o: { alt: string; kicker: string; title: string; sub?: string; body: any[]; buttons?: any[]; tone?: string; logoUrl?: string; logo?: string }) {
+    const logoUrl = o.logoUrl ?? o.logo
+    const kickerBox = logoUrl ? {
+        type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'xs',
+        contents: [
+            { type: 'image', url: logoUrl, size: 'xxs', aspectRatio: '1:1', aspectMode: 'cover', flex: 0 },
+            txt(o.kicker, { size: 'xxs', weight: 'bold', color: '#FFFFFFCC', flex: 1 }),
+        ],
+    } : txt(o.kicker, { size: 'xxs', weight: 'bold', color: '#FFFFFFCC' })
+
     return {
         type: 'flex', altText: o.alt.slice(0, 400),
         contents: {
@@ -73,7 +82,7 @@ function card(o: { alt: string; kicker: string; title: string; sub?: string; bod
             header: {
                 type: 'box', layout: 'vertical', backgroundColor: o.tone ?? P.indigo, paddingAll: '18px', spacing: 'xs',
                 contents: [
-                    txt(o.kicker, { size: 'xxs', weight: 'bold', color: '#FFFFFFCC' }),
+                    kickerBox,
                     txt(o.title, { size: 'lg', weight: 'bold', color: '#FFFFFF', wrap: true }),
                     ...(o.sub ? [txt(o.sub, { size: 'xxs', color: '#FFFFFFCC', wrap: true })] : []),
                 ],
@@ -101,6 +110,7 @@ export const APPROVAL_MODULES: Record<string, { label: string; icon: string; bg:
 }
 
 export const flexTemplates = {
+    card,
     // 1. Work Order Card (ใบสั่งผลิต)
     workOrderCard: (wo: any) => ({
         type: 'flex',
@@ -519,7 +529,7 @@ export const flexTemplates = {
 
     // 8. ยอดขายวันนี้ (ผู้บริหาร) — ตัวเลขจาก posSales() ตัวเดียวกับ Phopy Board
     dailySalesCard: (d: {
-        company: string; date: string; revenue: number; bills: number; avgBill: number; discount: number
+        company: string; logoUrl?: string; logo?: string; date: string; revenue: number; bills: number; avgBill: number; discount: number
         byMethod: { label: string; amount: number; count: number }[]; cancelled: { bills: number; amount: number }
         lastWeek: number | null
     }) => {
@@ -528,6 +538,7 @@ export const flexTemplates = {
         return card({
             alt: `ยอดขายวันนี้ ${baht(d.revenue)} · ${d.bills} บิล${d.company ? ` · ${d.company}` : ''}`,
             kicker: d.company || 'Phopy ERP', title: '📈 ยอดขายวันนี้', sub: thDate(d.date),
+            logoUrl: d.logoUrl ?? d.logo,
             body: [
                 hero('ยอดขาย POS ที่ชำระแล้ว', baht(d.revenue), `· ${d.bills} บิล`),
                 tiles([
@@ -550,12 +561,13 @@ export const flexTemplates = {
     },
 
     // 9. กำไรเดือนนี้ (ผู้บริหาร) — ledgerRevenue/Cogs/Opex ตัวเดียวกับ Phopy Board
-    monthProfitCard: (d: { company: string; from: string; to: string; revenue: number; cogs: number; opex: number }) => {
+    monthProfitCard: (d: { company: string; logoUrl?: string; logo?: string; from: string; to: string; revenue: number; cogs: number; opex: number }) => {
         const net = d.revenue - d.cogs - d.opex
         const gm = d.revenue > 0 ? ((d.revenue - d.cogs) / d.revenue) * 100 : 0
         return card({
             alt: `กำไรเดือนนี้ ${baht(net)} · ยอดขาย ${baht(d.revenue)}`,
             kicker: d.company || 'Phopy ERP', title: '💰 กำไรเดือนนี้', sub: `${thDate(d.from)} – ${thDate(d.to)} · จากสมุดบัญชีที่ลงแล้ว`,
+            logoUrl: d.logoUrl ?? d.logo,
             body: [
                 hero(net < 0 ? 'ขาดทุนสุทธิ (ก่อนภาษี)' : 'กำไรสุทธิ (ก่อนภาษี)', baht(net), '', net < 0 ? P.danger50 : P.success50, net < 0 ? P.danger : P.ink900),
                 kv('รายได้', baht(d.revenue)),
@@ -569,11 +581,12 @@ export const flexTemplates = {
     },
 
     // 10. รออนุมัติ — แสดงเฉพาะคำขอที่คนกดอนุมัติได้จริง (canApprove)
-    pendingApprovalsCard: (d: { company: string; total: number; rows: { requestNumber: string; moduleType: string; requesterName: string; amount: number; createdAt: string }[] }) => {
+    pendingApprovalsCard: (d: { company: string; logoUrl?: string; logo?: string; total: number; rows: { requestNumber: string; moduleType: string; requesterName: string; amount: number; createdAt: string }[] }) => {
         if (d.total === 0) return { type: 'text', text: '✅ ไม่มีคำขอที่รอคุณอนุมัติครับ' }
         return card({
             alt: `รออนุมัติ ${d.total} รายการ${d.company ? ` · ${d.company}` : ''}`,
             kicker: d.company || 'Phopy ERP', title: `📝 รออนุมัติ ${d.total} รายการ`, tone: P.mango600,
+            logoUrl: d.logoUrl ?? d.logo,
             body: [
                 ...d.rows.map(r => {
                     const m = APPROVAL_MODULES[r.moduleType]
@@ -587,11 +600,12 @@ export const flexTemplates = {
     },
 
     // 11. สต็อกต่ำ — getLowStockItems() ตัวเดียวกับแดชบอร์ด (นับแพ็คที่ยังไม่แกะแล้ว)
-    lowStockCard: (d: { company: string; total: number; rows: { name: string; available: number; minStock: number; unit: string }[] }) => {
+    lowStockCard: (d: { company: string; logoUrl?: string; logo?: string; total: number; rows: { name: string; available: number; minStock: number; unit: string }[] }) => {
         if (d.total === 0) return { type: 'text', text: '✅ ไม่มีสินค้าที่ต่ำกว่าจุดสั่งซื้อครับ' }
         const fmt = (n: number) => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })
         return card({
             alt: `สต็อกต่ำ ${d.total} รายการ`, kicker: d.company || 'Phopy ERP', title: `⚠️ สต็อกต่ำ ${d.total} รายการ`, tone: P.danger,
+            logoUrl: d.logoUrl ?? d.logo,
             body: [
                 ...d.rows.map(r => listRow(r.name, `จุดสั่งซื้อ ${fmt(r.minStock)} ${r.unit || ''}`, `${fmt(r.available)} ${r.unit || ''}`,
                     r.available <= 0 ? P.danger : P.mango600)),
@@ -602,8 +616,9 @@ export const flexTemplates = {
     },
 
     // 12. บัญชีของฉัน
-    meCard: (d: { company: string; name: string; email: string; roleLabel: string; menuLabel: string; linkedAt: string | null }) => card({
+    meCard: (d: { company: string; logoUrl?: string; logo?: string; name: string; email: string; roleLabel: string; menuLabel: string; linkedAt: string | null }) => card({
         alt: `บัญชีของฉัน · ${d.company}`, kicker: '👤 บัญชีของฉัน', title: d.name || d.email || '-', sub: d.email || undefined,
+        logoUrl: d.logoUrl ?? d.logo,
         body: [
             kv('บริษัท', d.company || '-'),
             kv('ตำแหน่ง', d.roleLabel),

@@ -101,6 +101,13 @@ function centralChannel(): any {
 const companyName = (tenantId: string) =>
     ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
+export const companyLogoUrl = (tenantId: string) => {
+    const row = getDb().prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+    if (!row?.logo_base64 || !row.logo_base64.trim()) return undefined
+    const base = process.env.APP_URL ?? 'https://erp.phopy.net'
+    return `${base}/api/line/logo/${tenantId}`
+}
+
 // ─── Paperclip API ────────────────────────────────────────────────────────────
 const PAPERCLIP_URL        = process.env.PAPERCLIP_URL
 const PAPERCLIP_API_KEY    = process.env.PAPERCLIP_API_KEY
@@ -821,7 +828,7 @@ class LineBotService {
         const lw = addDaysStr(today, -7)
         const last = posSales(tenantId, lw, lw)
         await client.replyMessage(replyToken, flexTemplates.dailySalesCard({
-            company: companyName(tenantId), date: today, revenue: s.revenue, bills: s.bills, avgBill: s.avgBill,
+            company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), date: today, revenue: s.revenue, bills: s.bills, avgBill: s.avgBill,
             discount: s.discount, byMethod: s.byMethod, cancelled: s.cancelled, lastWeek: last.bills > 0 ? last.revenue : null,
         }))
     }
@@ -829,7 +836,7 @@ class LineBotService {
     private async handleMonthProfit(tenantId: string, replyToken: string, client: any) {
         const to = thaiToday(), from = `${to.slice(0, 7)}-01`
         await client.replyMessage(replyToken, flexTemplates.monthProfitCard({
-            company: companyName(tenantId), from, to,
+            company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), from, to,
             revenue: ledgerRevenue(tenantId, from, to), cogs: ledgerCogs(tenantId, from, to), opex: ledgerOpex(tenantId, from, to),
         }))
     }
@@ -843,7 +850,7 @@ class LineBotService {
         `).all(tenantId) as any[])
             .filter(r => canApprove(tenantId, { userId: me.user_id, email: me.email ?? '', role: me.role }, r.module_type, Number(r.amount) || 0, r.reference_id))
         await client.replyMessage(replyToken, flexTemplates.pendingApprovalsCard({
-            company: companyName(tenantId), total: rows.length,
+            company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), total: rows.length,
             rows: rows.slice(0, 6).map(r => ({ requestNumber: r.request_number, moduleType: r.module_type, requesterName: r.requester_name,
                 amount: Number(r.amount) || 0, createdAt: r.created_at })),
         }))
@@ -852,14 +859,14 @@ class LineBotService {
     private async handleLowStock(tenantId: string, replyToken: string, client: any) {
         const rows = getLowStockItems(tenantId)
         await client.replyMessage(replyToken, flexTemplates.lowStockCard({
-            company: companyName(tenantId), total: rows.length,
+            company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), total: rows.length,
             rows: rows.slice(0, 8).map((r: any) => ({ name: r.name, available: r.available, minStock: r.min_stock, unit: r.unit })),
         }))
     }
 
     private async handleMe(tenantId: string, me: any, replyToken: string, client: any) {
         await client.replyMessage(replyToken, flexTemplates.meCard({
-            company: companyName(tenantId), name: me.name ?? '', email: me.email ?? '',
+            company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), name: me.name ?? '', email: me.email ?? '',
             roleLabel: ROLE_LABEL[me.role] ?? me.role, menuLabel: MENUS[me.menu as MenuKey].label, linkedAt: me.linked_at,
         }))
     }
