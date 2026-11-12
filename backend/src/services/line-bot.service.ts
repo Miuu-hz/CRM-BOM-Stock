@@ -98,6 +98,19 @@ function centralChannel(): any {
     return getDb().prepare('SELECT * FROM line_channels WHERE is_active = 1 ORDER BY created_at LIMIT 1').get()
 }
 
+// shortcut: นับในหน่วยความจำของ process เดียว (pm2 fork) — ถ้ารันหลาย instance ต้องย้ายไปเก็บใน DB
+export const linkThrottle = {
+    hits: new Map<string, number[]>(),
+    allow(key: string, max = 5, windowMs = 10 * 60 * 1000): boolean {
+        const now = Date.now()
+        const recent = (this.hits.get(key) ?? []).filter(t => now - t < windowMs)
+        if (recent.length >= max) { this.hits.set(key, recent); return false }
+        recent.push(now); this.hits.set(key, recent)
+        if (this.hits.size > 5000) for (const [k, v] of this.hits) if (!v.some(t => now - t < windowMs)) this.hits.delete(k)
+        return true
+    },
+}
+
 const companyName = (tenantId: string) =>
     ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
@@ -219,7 +232,12 @@ class LineBotService {
             return g?.tenant_id ?? ''
         }
         // LINE เดียวผูกหลายร้านได้ — แชทส่วนตัวไปที่ร้านที่เลือกล่าสุด (คำสั่ง "เปลี่ยนบริษัท") ถ้าไม่เคยเลือกคือร้านที่ผูกล่าสุด
-        const m = db.prepare('SELECT tenant_id FROM line_user_mappings WHERE line_user_id = ? ORDER BY COALESCE(active_at, linked_at) DESC LIMIT 1').get(event.source?.userId ?? '') as any
+        // ข้ามร้านที่บัญชีถูกระงับ — ไม่งั้นคนที่ผูกหลายร้านจะค้างอยู่ที่ร้านที่ใช้ไม่ได้และสลับออกไม่ได้
+        const m = db.prepare(`
+            SELECT lum.tenant_id FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
+            WHERE lum.line_user_id = ? AND (u.id IS NULL OR u.status = 'active')
+            ORDER BY COALESCE(lum.active_at, lum.linked_at) DESC LIMIT 1
+        `).get(event.source?.userId ?? '') as any
         return m?.tenant_id ?? ''
     }
 
@@ -534,6 +552,9 @@ class LineBotService {
         if (!row) text = '❌ รหัสไม่ถูกต้อง\nขอรหัสใหม่ได้ที่ ตั้งค่า > LINE ในระบบ'
         else if (new Date(row.expires_at) < new Date()) text = '⏰ รหัสหมดอายุแล้ว (มีอายุ 10 นาที)\nขอรหัสใหม่ได้ที่ ตั้งค่า > LINE'
         else if (!['ADMIN', 'MASTER', 'OWNER'].includes(role)) text = '🔒 ผูกกลุ่มได้เฉพาะรหัสของผู้ดูแล (Admin/Master)'
+        // กลุ่มผูกกับบริษัทอื่นอยู่: ผู้ดูแลของอีกบริษัทที่อยู่ในกลุ่มต้องย้ายเองไม่ได้ (การ์ดยอดขายของเขาจะไหลเข้ากลุ่มนี้แทน)
+        else if (db.prepare('SELECT 1 FROM line_group_mappings WHERE group_id = ? AND is_active = 1 AND tenant_id != ?').get(groupId, row.tenant_id))
+            text = '🔒 กลุ่มนี้ผูกกับบริษัทอื่นอยู่\nถ้าจะย้าย ให้เชิญบอทออกจากกลุ่มแล้วเชิญเข้าใหม่ก่อนส่งรหัส'
         else {
             db.transaction(() => {
                 db.prepare('UPDATE line_group_mappings SET is_active = 0 WHERE group_id = ? AND tenant_id != ?').run(groupId, row.tenant_id)
@@ -831,11 +852,13 @@ class LineBotService {
     private linkedUser(tenantId: string, lineUserId: string) {
         const db = getDb()
         const m = db.prepare(`
-            SELECT lum.user_id, lum.role, lum.linked_at, u.role AS user_role, u.name, u.email
+            SELECT lum.user_id, lum.role, lum.linked_at, u.role AS user_role, u.name, u.email, u.status AS user_status
             FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
             WHERE lum.tenant_id = ? AND lum.line_user_id = ?
         `).get(tenantId, lineUserId) as any
         if (!m) return null
+        // บัญชีถูกระงับ/ปิดตอนออกงาน → LINE ใช้ไม่ได้ทันที (บัญชี master_* ไม่มีแถวใน users จึงไม่มี status)
+        if (m.user_status && m.user_status !== 'active') return null
         const role = effectiveRole(m)
         if (role !== m.role) {
             db.prepare('UPDATE line_user_mappings SET role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role, tenantId, lineUserId)
@@ -1126,6 +1149,11 @@ class LineBotService {
 
             // ── Account linking (personal chat only) ─────────────────────────
             if (isLinkAttempt) {
+                // รหัส 6 หลักเป็นความลับเดียวของการผูก และ OA กลางรับรหัสของทุกร้าน → จำกัดจำนวนครั้งต่อ LINE user
+                if (!linkThrottle.allow(event.source.userId ?? event.source.groupId ?? '')) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: '⏳ ลองรหัสบ่อยเกินไป รอ 10 นาทีแล้วลองใหม่' })
+                    return
+                }
                 const token = bareOtp ? text : text.split(' ')[1]?.trim()
                 if (token) {
                     if (src === 'user') await this.handleLinkCommand(event.source.userId, token, event.replyToken, client)

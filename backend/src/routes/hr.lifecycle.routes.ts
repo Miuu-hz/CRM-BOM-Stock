@@ -43,11 +43,13 @@ export function computeFinalPay(i: {
   unusedAnnualLeaveDays: number
   outstandingAdvances: number
   unreturnedAssets?: { id: string; code: string; name: string; loaned_on: string }[]
+  /** ลาออกเอง = ไม่มีค่าชดเชย (ม.118 จ่ายเมื่อนายจ้างเลิกจ้าง) */
+  resigned?: boolean
 }) {
   const wage = Number(i.baseWage) || 0
   const rawDaily = i.employmentType === 'MONTHLY' ? wage / 30 : i.employmentType === 'HOURLY' ? wage * 8 : wage // คูณก่อนปัด กันเศษสะสม
   const tenureDays = Math.max(0, Math.floor(i.tenureDays))
-  const severanceDays = severanceDaysFor(tenureDays)
+  const severanceDays = i.resigned ? 0 : severanceDaysFor(tenureDays)
   const unused = Math.max(0, Number(i.unusedAnnualLeaveDays) || 0)
   return {
     dailyWage: round2(rawDaily),
@@ -293,21 +295,28 @@ router.put('/checklist-items/:id', (req: Request, res: Response) => {
     if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 5000)) return bad(res, 'หมายเหตุยาวเกินไป')
 
     let targetUserId: string | null = null
-    if (done && item.auto_action === 'DISABLE_USER') {
+    // auto action ทำเฉพาะตอนเปลี่ยนจากยังไม่ทำ → ทำแล้ว (กดซ้ำ/ลองใหม่ต้องไม่ปิดบัญชีที่ถูกเปิดคืนไปแล้ว)
+    const firstTick = done && !item.done_at
+    if (firstTick && item.auto_action === 'DISABLE_USER') {
       const emp = getEmployee(tenantId, item.employee_id)
       if (emp?.user_id) {
         if (emp.user_id === req.user!.userId) return bad(res, 'ห้ามปิดบัญชีของตัวเอง')
         const u = db.prepare('SELECT role FROM users WHERE id = ? AND tenant_id = ?').get(emp.user_id, tenantId) as any
         if (u && (u.role === 'MASTER' || u.role === 'OWNER')) return bad(res, 'ห้ามปิดบัญชีผู้ดูแลสูงสุด')
+        // สิทธิ์ hr write ไม่ควรปิดบัญชีผู้ดูแลระบบได้ — ต้องเป็นผู้ดูแลด้วยกัน
+        if (u?.role === 'ADMIN' && !['ADMIN', 'MASTER', 'OWNER'].includes(req.user!.role)) return bad(res, 'บัญชีนี้เป็นผู้ดูแลระบบ ต้องให้ผู้ดูแลระบบเป็นคนปิด')
         if (u) targetUserId = emp.user_id
       }
     }
     let unlinkUserId: string | null = null
-    if (done && item.auto_action === 'UNLINK_LINE') unlinkUserId = getEmployee(tenantId, item.employee_id)?.user_id ?? null
+    if (firstTick && item.auto_action === 'UNLINK_LINE') unlinkUserId = getEmployee(tenantId, item.employee_id)?.user_id ?? null
 
     db.transaction(() => {
       if (targetUserId) db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ? AND tenant_id = ?`).run(targetUserId, tenantId)
-      if (unlinkUserId) db.prepare('DELETE FROM line_user_mappings WHERE user_id = ? AND tenant_id = ?').run(unlinkUserId, tenantId)
+      if (unlinkUserId) {
+        db.prepare('DELETE FROM line_user_mappings WHERE user_id = ? AND tenant_id = ?').run(unlinkUserId, tenantId)
+        db.prepare('DELETE FROM line_login_tokens WHERE user_id = ? AND tenant_id = ?').run(unlinkUserId, tenantId)
+      }
       db.prepare('UPDATE hr_checklist_items SET done_at = ?, done_by = ?, note = ? WHERE id = ? AND tenant_id = ?')
         .run(done ? new Date().toISOString() : null, done ? req.user!.userId : null, note === undefined ? item.note : note, item.id, tenantId)
     })()
@@ -360,7 +369,7 @@ router.get('/employees/:id/final-pay', (req: Request, res: Response) => {
       success: true,
       data: computeFinalPay({
         employmentType: emp.employment_type, baseWage: emp.base_wage, tenureDays,
-        unusedAnnualLeaveDays, outstandingAdvances, unreturnedAssets,
+        unusedAnnualLeaveDays, outstandingAdvances, unreturnedAssets, resigned: emp.status === 'RESIGNED',
       }),
     })
   } catch (err: any) {

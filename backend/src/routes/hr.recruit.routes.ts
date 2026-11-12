@@ -31,7 +31,7 @@ const bad = (res: Response, message: string) => res.status(400).json({ success: 
 const forbidden = (res: Response) => res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
 const fail = (res: Response, err: any) => {
   console.error('HR recruit error:', err)
-  res.status(500).json({ success: false, message: err.message })
+  res.status(500).json({ success: false, message: 'ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง' })
 }
 
 const fmtPosting = (r: any) => ({

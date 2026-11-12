@@ -683,6 +683,16 @@ router.post('/employees/:id/offboard', requirePermission('hr', 'write'), (req: R
       WHERE id = ? AND tenant_id = ?
     `).run(end_date, status, now, id, tenantId)
 
+    // บัญชี "LINE อย่างเดียว" มีไว้เพื่อพนักงานคนนี้เท่านั้น และไม่มีใครดูแลในหน้าผู้ใช้ → ปิดพร้อมการออกงาน
+    // (บัญชี ERP ปกติปิดผ่านเช็กลิสต์ออกงาน เพราะบางคนยังต้องใช้ระบบต่อ เช่น เจ้าของที่อยู่ในทะเบียนพนักงาน)
+    if (existing.user_id) {
+      const lineOnly = db.prepare('SELECT 1 FROM users WHERE id = ? AND tenant_id = ? AND line_only = 1').get(existing.user_id, tenantId)
+      if (lineOnly) {
+        db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ? AND tenant_id = ?`).run(existing.user_id, tenantId)
+        db.prepare('DELETE FROM line_user_mappings WHERE user_id = ? AND tenant_id = ?').run(existing.user_id, tenantId)
+      }
+    }
+
     const updated = db.prepare(`
       SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit
       FROM employees e

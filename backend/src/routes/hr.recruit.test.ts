@@ -107,8 +107,11 @@ describe('HR recruit (Phase 11)', () => {
 
   it('public: rate limit returns 429 after max requests', async () => {
     const limited = buildApp(3)
-    for (let i = 0; i < 3; i++) await request(limited).get(`/api/public/jobs/${'0'.repeat(32)}`)
-    expect((await request(limited).get(`/api/public/jobs/${'0'.repeat(32)}`)).status).toBe(429)
+    // ส่งใบสมัครจำกัดที่ max · เปิดดูประกาศได้ถี่กว่า (max × 6) เพราะหลายคนใช้ IP เดียวกัน
+    const url = `/api/public/jobs/${'0'.repeat(32)}`
+    for (let i = 0; i < 3; i++) await request(limited).post(`${url}/apply`).send({})
+    expect((await request(limited).post(`${url}/apply`).send({})).status).toBe(429)
+    expect((await request(limited).get(url)).status, 'เปิดดูประกาศยังไม่โดนจำกัด').toBe(404)
   })
 
   it('applicants: list/filter, stage update, HIRED via PUT rejected, cross-company 404, 403', async () => {

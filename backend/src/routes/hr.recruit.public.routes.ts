@@ -22,12 +22,14 @@ function findOpenPosting(token: string) {
 // max เป็นพารามิเตอร์เพื่อให้เทสต์ไม่ชนลิมิตของกันและกัน (production = 10 ครั้ง/15 นาที/IP)
 export function createPublicRecruitRouter(max = 10) {
   const router = Router()
-  router.use(rateLimit({
-    windowMs: 15 * 60 * 1000, max, standardHeaders: 'draft-7', legacyHeaders: false,
+  // จำกัดเข้มเฉพาะการส่งใบสมัคร — เปิดหน้าดูประกาศใช้โควตาแยก (หลายคนสมัครจากไวไฟร้านเดียวกัน = IP เดียว)
+  const limit = (n: number) => rateLimit({
+    windowMs: 15 * 60 * 1000, max: n, standardHeaders: 'draft-7', legacyHeaders: false,
     message: { success: false, message: 'เรียกถี่เกินไป ลองใหม่อีกครั้งในอีกสักครู่' },
-  }))
+  })
+  const viewLimit = limit(max * 6), applyLimit = limit(max)
 
-  router.get('/:token', (req: Request, res: Response) => {
+  router.get('/:token', viewLimit, (req: Request, res: Response) => {
     try {
       const p = findOpenPosting(String(req.params.token))
       if (!p) return res.status(404).json(NOT_FOUND)
@@ -39,7 +41,7 @@ export function createPublicRecruitRouter(max = 10) {
     }
   })
 
-  router.post('/:token/apply', (req: Request, res: Response) => {
+  router.post('/:token/apply', applyLimit, (req: Request, res: Response) => {
     try {
       const p = findOpenPosting(String(req.params.token))
       if (!p) return res.status(404).json(NOT_FOUND)

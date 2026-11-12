@@ -95,7 +95,9 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
     // ลิงก์จาก LINE: ใช้ได้เฉพาะหน้า "ของฉัน" และถือสิทธิ์แค่พนักงาน ไม่ว่าบัญชีจริงเป็น role อะไร
     // (LINE หลุด ≠ ได้สิทธิ์ผู้ดูแลในเว็บ) — ตอบ 403 ไม่ใช่ 401 เพราะ 401 ทำให้หน้าเว็บเด้งออก
     if ((decoded as any).scope === 'hr_self') {
-      if (!userRecord || !hrSelfAllowed(req.method, req.originalUrl)) {
+      // ยกเลิกผูก LINE / ออกงานแล้ว token ที่ออกไปต้องใช้ไม่ได้ทันที ไม่ต้องรอหมดอายุ 2 ชม.
+      const stillLinked = db.prepare('SELECT 1 FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?').get(decoded.tenantId, decoded.userId)
+      if (!userRecord || !stillLinked || !hrSelfAllowed(req.method, req.originalUrl)) {
         res.status(403).json({ success: false, code: 'SCOPE_LIMITED', message: 'ลิงก์จาก LINE ใช้ได้เฉพาะหน้าของฉัน' })
         return
       }

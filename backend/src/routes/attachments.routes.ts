@@ -213,7 +213,8 @@ router.get('/counts', (req: Request, res: Response) => {
     if (type === 'PAYMENT') {
       refs.push({ refType: 'RECEIPT', refId: id })
     } else if (REF_TYPE_TABLES[type]) {
-      refs.push({ refType: type, refId: id })
+      // ไฟล์ HR: ไม่มีสิทธิ์ → นับเป็น 0 (ไม่บอกว่ามีเรคอร์ดหรือมีกี่ไฟล์)
+      if (hrFileAllowed(req, type, id, false)) refs.push({ refType: type, refId: id })
     }
     if (type === 'INVOICE') needInvoiceReceipts.push({ key: token, invoiceId: id })
     if (type === 'POS_SALE') needPosPayment.push({ key: token, billId: id })

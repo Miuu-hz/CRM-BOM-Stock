@@ -92,3 +92,54 @@ describe('LINE self-service: ลิงก์เข้าหน้าของฉ
         }
     })
 })
+
+describe('LINE: บัญชีถูกระงับ / กันเดารหัส / กลุ่มของบริษัทอื่น', () => {
+    function rig() {
+        const replies: any[] = []
+        vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: async (_t: string, m: any) => { replies.push(m) }, pushMessage: vi.fn() })
+        vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
+        const say = async (text: string, source: any) => {
+            const n = replies.length, event = { type: 'message', replyToken: 'rt', message: { type: 'text', text }, source }
+            await lineBotService.handleEvent(lineBotService.resolveTenant(event), event)
+            return JSON.stringify(replies.slice(n))
+        }
+        return { say }
+    }
+
+    it('ระงับบัญชีในร้านที่ใช้อยู่ → คำสั่งไปร้านที่ยังใช้ได้ ไม่เห็นข้อมูลร้านที่ถูกระงับ', async () => {
+        const { say } = rig()
+        const A = shop('เอ'), B = shop('บี'), src = { type: 'user', userId: 'U' + generateId() }
+        await say(lineBotService.generateLinkToken(A.tenantId, A.userId), src)
+        await say(lineBotService.generateLinkToken(B.tenantId, B.userId), src)
+        db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ?`).run(B.userId)
+        expect(lineBotService.resolveTenant({ source: src })).toBe(A.tenantId)
+        const out = await say('ยอดขายวันนี้', src)
+        expect(out).toContain(A.company); expect(out).not.toContain(B.company)
+        db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ?`).run(A.userId)
+        expect(await say('ยอดขายวันนี้', src), 'ถูกระงับทุกร้าน → ไม่ได้ข้อมูลอะไร').not.toContain(A.company)
+    })
+
+    it('เดารหัสเกิน 5 ครั้งใน 10 นาที → ถูกพัก แม้รหัสถัดไปจะถูก', async () => {
+        const { say } = rig()
+        const A = shop('เอ'), src = { type: 'user', userId: 'U' + generateId() }
+        for (let i = 0; i < 5; i++) await say('000000', src)
+        const out = await say(lineBotService.generateLinkToken(A.tenantId, A.userId), src)
+        expect(out).toContain('ลองรหัสบ่อยเกินไป')
+        expect(lineBotService.resolveTenant({ source: src })).toBe('')
+    })
+
+    it('กลุ่มที่ผูกกับร้าน A อยู่ → รหัสผู้ดูแลของร้าน B ย้ายกลุ่มไม่ได้', async () => {
+        const { say } = rig()
+        const A = shop('เอ'), B = shop('บี')
+        const g = { type: 'group', groupId: 'C' + generateId(), userId: 'U' + generateId() }
+        try {
+            await say(lineBotService.generateLinkToken(A.tenantId, A.userId), g)
+            expect(lineBotService.resolveTenant({ source: g })).toBe(A.tenantId)
+            const out = await say('ลิงก์ ' + lineBotService.generateLinkToken(B.tenantId, B.userId), { ...g, userId: 'U' + generateId() })
+            expect(out).toContain('ผูกกับบริษัทอื่นอยู่')
+            expect(lineBotService.resolveTenant({ source: g })).toBe(A.tenantId)
+        } finally {
+            for (const t of [A, B]) db.prepare('DELETE FROM line_group_mappings WHERE tenant_id = ?').run(t.tenantId)
+        }
+    })
+})

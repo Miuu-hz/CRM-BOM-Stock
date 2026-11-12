@@ -17,6 +17,9 @@ router.post('/employees/:id/line-invite', requirePermission('hr', 'write'), (req
     if (emp.status !== 'ACTIVE') return res.status(409).json({ success: false, message: 'เชิญได้เฉพาะพนักงานที่ยังทำงานอยู่' })
 
     let userId: string = emp.user_id
+    if (userId && !db.prepare(`SELECT 1 FROM users WHERE id = ? AND tenant_id = ? AND status = 'active'`).get(userId, tenantId)) {
+      return res.status(409).json({ success: false, message: 'บัญชีผู้ใช้ของพนักงานคนนี้ถูกระงับอยู่ เปิดใช้งานบัญชีก่อนเชิญ' })
+    }
     if (!userId) {
       userId = crypto.randomBytes(12).toString('hex')
       // รหัสผ่านสุ่มที่ไม่มีใครรู้ + login ปฏิเสธ line_only อยู่แล้ว (auth.routes.ts)
