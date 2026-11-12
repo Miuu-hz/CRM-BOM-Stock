@@ -405,6 +405,11 @@ router.get('/:refType/:refId', (req: Request, res: Response) => {
     return
   }
   if (!checkFeature(req, res, REF_TYPE_FEATURE[refType])) return
+  // ไฟล์ HR: id ของบริษัทอื่น/ไม่มีจริง → 404 เหมือนกันหมด ก่อนจะบอกว่า "ไม่มีสิทธิ์"
+  if (REF_TYPE_FEATURE[refType] === 'hr' && !refExists(refType, refId, tenantId)) {
+    res.status(404).json({ success: false, message: 'Not found' })
+    return
+  }
   if (!hrFileAllowed(req, refType, refId, false)) return denyHrFile(res)
   const rows = db.prepare(
     `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at, 0 as is_upstream, NULL as source_doc

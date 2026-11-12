@@ -13,6 +13,8 @@ export type AttachmentRefType =
   | 'POS_PAYMENT' | 'STOCK_ADJUSTMENT'
   // HR Phase 5 — ใบรับรองอบรม
   | 'TRAINING_RECORD'
+  // HR Phase 9-10
+  | 'ASSET_LOAN' | 'EMPLOYEE_DOCUMENT' | 'DISCIPLINARY_RECORD'
 
 interface AttachmentRow {
   id: string

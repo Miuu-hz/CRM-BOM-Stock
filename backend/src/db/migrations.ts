@@ -2835,6 +2835,16 @@ export function runMigrations(db: any): void {
     if (!lumCols.some((c: any) => c.name === 'active_at')) db.exec('ALTER TABLE line_user_mappings ADD COLUMN active_at TEXT')
   } catch (e) { console.error('⚠️ line_user_mappings.active_at migration error:', e) }
 
+  // ลิงก์เข้าหน้า "ของฉัน" จาก LINE: ใช้ครั้งเดียว อายุ 5 นาที เก็บแค่ hash
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS line_login_tokens (
+        token_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL, used_at TEXT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+  } catch (e) { console.error('⚠️ line_login_tokens migration error:', e) }
+
   runMonthCloseMigrations(db)
 }
 

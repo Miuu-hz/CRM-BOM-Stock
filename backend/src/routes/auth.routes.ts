@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../db/sqlite'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHash } from 'crypto'
 import { BillingError, parseSelection, Selection } from '../services/billing.catalog'
 import { provisionTenant, ProvisionError, TRIAL_DAYS } from '../services/provisioning'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
@@ -250,6 +250,33 @@ router.post('/login', loginIpLimiter, async (req, res) => {
   } catch (error) {
     console.error('Login error:', error)
     res.status(500).json({ success: false, message: 'เข้าสู่ระบบไม่สำเร็จ' })
+  }
+})
+
+// @route   POST /api/auth/line-login
+// @desc    แลกลิงก์ใช้ครั้งเดียวจาก LINE เป็น access token ที่จำกัดเฉพาะหน้า "ของฉัน" (scope hr_self)
+//          ไม่มี refresh token — หมด 2 ชม. แล้วต้องกดปุ่มใน LINE ใหม่
+router.post('/line-login', loginIpLimiter, (req, res) => {
+  const fail = () => res.status(401).json({ success: false, message: 'ลิงก์ใช้ไม่ได้หรือหมดอายุแล้ว กดปุ่มใน LINE อีกครั้ง' })
+  try {
+    const raw = req.body?.token
+    if (typeof raw !== 'string' || !/^[a-f0-9]{64}$/.test(raw)) return fail()
+    const db = getDb()
+    const hash = createHash('sha256').update(raw).digest('hex')
+    const now = new Date().toISOString()
+    // UPDATE เดียวทั้งตรวจและใช้ — กดลิงก์เดิมสองครั้งพร้อมกันได้แค่ครั้งเดียว
+    const used = db.prepare('UPDATE line_login_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?').run(now, hash, now)
+    if (used.changes !== 1) return fail()
+    const row = db.prepare('SELECT tenant_id, user_id FROM line_login_tokens WHERE token_hash = ?').get(hash) as any
+    const user = db.prepare(`SELECT id, email, name, tenant_id FROM users WHERE id = ? AND tenant_id = ? AND status = 'active'`).get(row.user_id, row.tenant_id) as any
+    // ต้องยังผูก LINE อยู่ (ยกเลิกผูก/ออกงานแล้ว ลิงก์ที่ค้างในแชทต้องใช้ไม่ได้)
+    const linked = user && db.prepare('SELECT 1 FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?').get(user.tenant_id, user.id)
+    if (!linked) return fail()
+    const token = generateAccessToken({ userId: user.id, email: user.email, role: 'USER', tenantId: user.tenant_id, scope: 'hr_self' })
+    res.json({ success: true, data: { user: { id: user.id, email: user.email, name: user.name, role: 'USER', tenant_id: user.tenant_id, departments: [], scope: 'hr_self' }, token } })
+  } catch (error) {
+    console.error('LINE login error:', error)
+    fail()
   }
 })
 

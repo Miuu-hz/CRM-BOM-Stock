@@ -475,6 +475,17 @@ class LineBotService {
         return token
     }
 
+    /** ลิงก์ใช้ครั้งเดียวเข้าหน้า "ของฉัน" (แลกเป็น token scope hr_self ที่ POST /api/auth/line-login) */
+    public createLoginLink(tenantId: string, userId: string): string {
+        const db = getDb()
+        const token = crypto.randomBytes(32).toString('hex')
+        const now = new Date()
+        db.prepare('DELETE FROM line_login_tokens WHERE expires_at < ?').run(now.toISOString())
+        db.prepare('INSERT INTO line_login_tokens (token_hash, tenant_id, user_id, expires_at) VALUES (?, ?, ?, ?)')
+            .run(crypto.createHash('sha256').update(token).digest('hex'), tenantId, userId, new Date(now.getTime() + 5 * 60 * 1000).toISOString())
+        return `${process.env.APP_URL ?? 'https://erp.phopy.net'}/line-login?t=${token}`
+    }
+
     /** รหัส 6 หลักไม่ผูกกับร้าน (OA กลาง) — ร้านมาจากเจ้าของรหัสเอง */
     private tryLinkAccount(lineUserId: string, token: string): { result: 'ok' | 'invalid' | 'expired' | 'already_linked'; tenantId: string } {
         const db = getDb()
@@ -1146,6 +1157,29 @@ class LineBotService {
                 else if (text === 'รออนุมัติ') await this.handlePendingApprovals(tenantId, me, event.replyToken, client)
                 else if (text === 'สต็อกต่ำ') await this.handleLowStock(tenantId, event.replyToken, client)
                 else await this.handleMe(tenantId, me, event.replyToken, client)
+                return
+            }
+
+            // ── self-service: เปิดหน้า "ของฉัน" ด้วยลิงก์ใช้ครั้งเดียว — เฉพาะแชทส่วนตัว (ลิงก์ในกลุ่ม = ใครกดก็เข้าได้) ──
+            const selfCmd = ['ของฉัน', 'เช็คอิน', 'ขอลา', 'ขอเบิก', 'สลิป', 'ตารางกะ', 'แลกกะ']
+            if (me && selfCmd.includes(text)) {
+                if (src !== 'user') {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `🔒 "${text}" ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ` })
+                    return
+                }
+                const emp = getDb().prepare(`SELECT 1 FROM employees WHERE tenant_id = ? AND user_id = ? AND status = 'ACTIVE'`).get(tenantId, me.user_id)
+                if (!emp) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: 'บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน\nให้ฝ่ายบุคคลผูกบัญชีผู้ใช้ในหน้าพนักงานก่อนครับ' })
+                    return
+                }
+                await client.replyMessage(event.replyToken, {
+                    type: 'template', altText: `${text} · ${companyName(tenantId)}`,
+                    template: {
+                        type: 'buttons', title: (companyName(tenantId) || 'Phopy ERP').slice(0, 40),
+                        text: 'เช็คอิน ขอลา ขอเบิก สลิป ตารางกะ แลกกะ\nลิงก์ใช้ได้ครั้งเดียว ภายใน 5 นาที',
+                        actions: [{ type: 'uri', label: 'เปิดหน้าของฉัน', uri: this.createLoginLink(tenantId, me.user_id) }],
+                    },
+                })
                 return
             }
 

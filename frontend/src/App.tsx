@@ -47,6 +47,7 @@ import Discipline from './pages/HR/Discipline'
 import Recruit from './pages/HR/Recruit'
 import DocumentPrint from './pages/HR/DocumentPrint'
 import ApplyPublic from './pages/HR/ApplyPublic'
+import LineLogin from './pages/LineLogin'
 import PayslipPrint from './pages/HR/PayslipPrint'
 
 // Blocks direct-URL access to a route whose menu is restricted in
@@ -97,7 +98,19 @@ function AppContent() {
   // ใบสมัครงานสาธารณะ: ไม่ต้องล็อกอิน ไม่มี sidebar (HR Phase 11)
   if (window.location.pathname.startsWith('/apply/')) return <ApplyPublic />
 
+  // ลิงก์ใช้ครั้งเดียวจาก LINE — ต้องมาก่อนเช็ค user เพราะเบราว์เซอร์อาจมี session อื่นค้างอยู่
+  if (window.location.pathname === '/line-login') return <LineLogin />
+
   if (!user) return <Login />
+
+  // เข้าจาก LINE: token ใช้ได้แค่หน้า "ของฉัน" จึงไม่แสดงเมนูอื่น (เมนูอื่นเรียก API แล้วจะโดน 403 ทั้งหมด)
+  if ((user as any).scope === 'hr_self') {
+    return (
+      <div className="min-h-screen bg-[var(--bg)] p-3">
+        <MyHr />
+      </div>
+    )
+  }
 
   return (
     <>

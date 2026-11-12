@@ -66,3 +66,29 @@ describe('LINE OA กลาง: เปลี่ยนบริษัท', () => 
         expect(active()).toBe(B.tenantId)
     })
 })
+
+describe('LINE self-service: ลิงก์เข้าหน้าของฉัน', () => {
+    it('แชทส่วนตัว + ผูกกับทะเบียนพนักงาน → ได้ลิงก์ · ในกลุ่ม/ไม่มีทะเบียน → ไม่ได้ลิงก์', async () => {
+        const replies: any[] = []
+        vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: async (_t: string, m: any) => { replies.push(m) }, pushMessage: vi.fn() })
+        vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
+        const A = shop('เอ', 'USER'), uid = 'U' + generateId()
+        const say = async (text: string, source: any) => {
+            const n = replies.length, event = { type: 'message', replyToken: 'rt', message: { type: 'text', text }, source }
+            await lineBotService.handleEvent(lineBotService.resolveTenant(event), event)
+            return JSON.stringify(replies.slice(n))
+        }
+        await say(lineBotService.generateLinkToken(A.tenantId, A.userId), { type: 'user', userId: uid })
+        expect(await say('ขอลา', { type: 'user', userId: uid }), 'ยังไม่มีทะเบียนพนักงาน').not.toContain('line-login')
+
+        db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, employment_type, base_wage, start_date, status, user_id) VALUES (?, ?, 'E1', 'ก', 'ข', 'MONTHLY', 10000, '2026-01-01', 'ACTIVE', ?)`).run(generateId(), A.tenantId, A.userId)
+        try {
+            expect(await say('ขอลา', { type: 'user', userId: uid })).toContain('/line-login?t=')
+            const g = { type: 'group', groupId: 'C' + generateId(), userId: uid }
+            db.prepare(`INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active) VALUES (?, ?, ?, 1)`).run(generateId(), A.tenantId, g.groupId)
+            expect(await say('ขอลา', g), 'ลิงก์ล็อกอินห้ามโผล่ในกลุ่ม').not.toContain('line-login')
+        } finally {
+            for (const tb of ['employees', 'line_group_mappings', 'line_login_tokens']) db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(A.tenantId)
+        }
+    })
+})

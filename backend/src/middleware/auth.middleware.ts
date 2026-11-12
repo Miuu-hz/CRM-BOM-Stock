@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
+import { hrSelfAllowed } from './hrSelfScope'
 import { isCashierOnly, cashierAllowed, basicUserDenied } from './cashierScope'
 import { getDb } from '../db/sqlite'
 import { can, isBasicUser } from '../services/rbac.service'
@@ -89,6 +90,18 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
       departments,
       customPermissions,
       tenantId: decoded.tenantId,
+    }
+
+    // ลิงก์จาก LINE: ใช้ได้เฉพาะหน้า "ของฉัน" และถือสิทธิ์แค่พนักงาน ไม่ว่าบัญชีจริงเป็น role อะไร
+    // (LINE หลุด ≠ ได้สิทธิ์ผู้ดูแลในเว็บ) — ตอบ 403 ไม่ใช่ 401 เพราะ 401 ทำให้หน้าเว็บเด้งออก
+    if ((decoded as any).scope === 'hr_self') {
+      if (!userRecord || !hrSelfAllowed(req.method, req.originalUrl)) {
+        res.status(403).json({ success: false, code: 'SCOPE_LIMITED', message: 'ลิงก์จาก LINE ใช้ได้เฉพาะหน้าของฉัน' })
+        return
+      }
+      req.user = { ...req.user, role: 'USER' as Role, department: undefined, departments: [], customPermissions: undefined }
+      next()
+      return
     }
 
     // บัญชีแคชเชียร์ใช้ได้เฉพาะ API งานหน้าร้าน — ตรวจที่นี่ที่เดียวเพราะทุก route ผ่าน authenticate
