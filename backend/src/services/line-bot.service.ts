@@ -268,6 +268,19 @@ class LineBotService {
         }
     }
 
+    /** push หาผู้ใช้คนเดียว (ถ้าผูก LINE และบัญชียัง active) — คืน true เมื่อส่งสำเร็จ · push กินโควตารายเดือนของ OA กลาง ใช้เท่าที่จำเป็น */
+    public async pushToUser(tenantId: string, userId: string, message: any): Promise<boolean> {
+        const client = this.getClient(tenantId)
+        if (!client) return false
+        const m = getDb().prepare(`
+            SELECT lum.line_user_id FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
+            WHERE lum.tenant_id = ? AND lum.user_id = ? AND (u.id IS NULL OR u.status = 'active')
+        `).get(tenantId, userId) as { line_user_id: string } | undefined
+        if (!m) return false
+        try { await client.pushMessage(m.line_user_id, message); return true }
+        catch (err) { console.error(`pushToUser failed → ${userId}:`, err); return false }
+    }
+
     public async pushToAllGroups(tenantId: string, message: any) {
         const client = this.getClient(tenantId)
         if (!client) return
