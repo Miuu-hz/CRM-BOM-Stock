@@ -814,6 +814,11 @@ export const hrService = {
     return res.data.data
   },
 
+  async inviteEmployeeToLine(id: string): Promise<{ code: string; expires_in_minutes: number; created_line_only_account: boolean }> {
+    const res = await api.post(`/hr/employees/${id}/line-invite`)
+    return res.data.data
+  },
+
   async getMe(): Promise<Employee> {
     const res = await api.get('/hr/me')
     return res.data.data

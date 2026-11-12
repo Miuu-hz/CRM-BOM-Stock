@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
@@ -12,6 +12,7 @@ vi.mock('../../services/hr.service', () => ({
     createEmployee: vi.fn(),
     updateEmployee: vi.fn(),
     offboardEmployee: vi.fn(),
+    inviteEmployeeToLine: vi.fn(),
   },
 }))
 
@@ -88,5 +89,23 @@ describe('หน้าทะเบียนพนักงาน (Employees)', (
     expect(screen.getByText(/สมหญิง รักงาน/)).toBeTruthy()
     const bankCell = screen.getByTestId('bank-account-e2')
     expect(bankCell.textContent).toBe('')
+  })
+
+  it('กด เชิญเข้า LINE แล้วเรียก inviteEmployeeToLine และแสดงรหัส', async () => {
+    mockHr.getEmployees.mockResolvedValue([
+      {
+        id: 'e3', tenant_id: 't1', code: 'EMP-003', first_name: 'สมศรี', last_name: 'ดีมาก',
+        org_unit_id: null, position: null, employment_type: 'MONTHLY', start_date: '2026-02-01',
+        end_date: null, status: 'ACTIVE', sso_enrolled: 1,
+      },
+    ])
+    const invite = (hrService as any).inviteEmployeeToLine as ReturnType<typeof vi.fn>
+    invite.mockResolvedValue({ code: '123456', expires_in_minutes: 10, created_line_only_account: false })
+
+    render(<Employees />)
+    fireEvent.click(await screen.findByTitle('เชิญเข้า LINE'))
+
+    expect(await screen.findByText('123456')).toBeTruthy()
+    expect(invite).toHaveBeenCalledWith('e3')
   })
 })

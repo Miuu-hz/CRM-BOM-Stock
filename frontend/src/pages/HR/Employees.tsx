@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Users, Plus, Search, Pencil, UserMinus, X } from 'lucide-react'
+import { Users, Plus, Search, Pencil, UserMinus, X, MessageCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, OrgUnit, PayItem, Shift } from '../../services/hr.service'
 
@@ -89,6 +89,16 @@ export default function Employees() {
   const [offboardDate, setOffboardDate] = useState(todayStr())
   const [offboardStatus, setOffboardStatus] = useState<'RESIGNED' | 'TERMINATED'>('RESIGNED')
   const [offboarding, setOffboarding] = useState(false)
+
+  const [lineInvite, setLineInvite] = useState<{ code: string; created_line_only_account: boolean } | null>(null)
+
+  const handleLineInvite = async (emp: Employee) => {
+    try {
+      setLineInvite(await hrService.inviteEmployeeToLine(emp.id))
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'สร้างรหัสเชิญไม่สำเร็จ')
+    }
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -381,6 +391,15 @@ export default function Employees() {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
+                        {emp.status === 'ACTIVE' && (
+                          <button
+                            onClick={() => handleLineInvite(emp)}
+                            title="เชิญเข้า LINE"
+                            className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-2)]"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                          </button>
+                        )}
                         {emp.status === 'ACTIVE' && (
                           <button
                             onClick={() => {
@@ -724,6 +743,41 @@ export default function Employees() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* LINE Invite Modal */}
+      {lineInvite && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="phopy-card w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <h2 className="text-base font-bold text-[var(--fg-1)]">เชิญเข้า LINE</h2>
+              <button onClick={() => setLineInvite(null)} className="p-1 rounded-lg hover:bg-[var(--surface-2)]">
+                <X className="w-4 h-4 text-[var(--fg-3)]" />
+              </button>
+            </div>
+            <div className="text-center text-4xl font-mono font-bold tracking-widest text-[var(--fg-1)]">{lineInvite.code}</div>
+            <p className="text-sm text-[var(--fg-2)]">ให้พนักงานเพิ่มเพื่อน LINE Phopy-ERP แล้วส่งรหัสนี้ในแชท ภายใน 10 นาที</p>
+            {lineInvite.created_line_only_account && (
+              <p className="text-sm text-[var(--fg-2)]">สร้างบัญชีสำหรับใช้ผ่าน LINE ให้พนักงานคนนี้แล้ว (เข้าเว็บด้วยรหัสผ่านไม่ได้ และไม่นับจำนวนผู้ใช้ของแพ็กเกจ)</p>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(lineInvite.code).then(() => toast.success('คัดลอกรหัสแล้ว'))}
+                className="phopy-btn-primary px-4 py-2 rounded-lg text-sm font-semibold"
+              >
+                คัดลอกรหัส
+              </button>
+              <button
+                type="button"
+                onClick={() => setLineInvite(null)}
+                className="px-4 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--fg-2)]"
+              >
+                ปิด
+              </button>
+            </div>
           </div>
         </div>
       )}
