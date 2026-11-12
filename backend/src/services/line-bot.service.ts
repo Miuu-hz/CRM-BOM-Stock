@@ -211,9 +211,21 @@ class LineBotService {
             const g = db.prepare('SELECT tenant_id FROM line_group_mappings WHERE group_id = ? AND is_active = 1 ORDER BY joined_at DESC LIMIT 1').get(groupId) as any
             return g?.tenant_id ?? ''
         }
-        // ponytail: LINE เดียวผูกหลายร้านได้ — คำสั่งในแชทส่วนตัวไปที่ร้านที่ผูกล่าสุด ถ้าต้องสลับร้านค่อยทำคำสั่ง "สลับบริษัท"
-        const m = db.prepare('SELECT tenant_id FROM line_user_mappings WHERE line_user_id = ? ORDER BY linked_at DESC LIMIT 1').get(event.source?.userId ?? '') as any
+        // LINE เดียวผูกหลายร้านได้ — แชทส่วนตัวไปที่ร้านที่เลือกล่าสุด (คำสั่ง "เปลี่ยนบริษัท") ถ้าไม่เคยเลือกคือร้านที่ผูกล่าสุด
+        const m = db.prepare('SELECT tenant_id FROM line_user_mappings WHERE line_user_id = ? ORDER BY COALESCE(active_at, linked_at) DESC LIMIT 1').get(event.source?.userId ?? '') as any
         return m?.tenant_id ?? ''
+    }
+
+    /** ตั้งร้านที่ใช้อยู่ของ LINE นี้ — ล้าง active_at ร้านอื่นเพื่อให้ลำดับชัดแม้เวลาชนกันในวินาทีเดียว */
+    private setActiveTenant(lineUserId: string, tenantId: string) {
+        getDb().prepare(`UPDATE line_user_mappings SET active_at = CASE WHEN tenant_id = ? THEN strftime('%Y-%m-%d %H:%M:%f', 'now') END WHERE line_user_id = ?`)
+            .run(tenantId, lineUserId)
+    }
+
+    /** ร้านทั้งหมดที่ LINE นี้ผูกไว้ */
+    private linkedTenants(lineUserId: string): { tenantId: string; name: string }[] {
+        return (getDb().prepare('SELECT DISTINCT tenant_id FROM line_user_mappings WHERE line_user_id = ? ORDER BY linked_at').all(lineUserId) as any[])
+            .map(r => ({ tenantId: r.tenant_id, name: companyName(r.tenant_id) || r.tenant_id }))
     }
 
     // ── Push helpers ──────────────────────────────────────────────────────────
@@ -478,6 +490,7 @@ class LineBotService {
                 ON CONFLICT(tenant_id, user_id) DO UPDATE SET line_user_id = excluded.line_user_id, role = excluded.role, linked_at = CURRENT_TIMESTAMP
             `).run(tenantId, row.user_id, lineUserId, role)
             db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
+            this.setActiveTenant(lineUserId, tenantId) // ร้านที่เพิ่งผูกเป็นร้านที่ใช้อยู่
         })()
         return { result: 'ok', tenantId }
     }
@@ -1129,6 +1142,24 @@ class LineBotService {
                 return
             }
 
+            // ── เปลี่ยนบริษัท (LINE เดียวผูกหลายร้าน) — เฉพาะแชทส่วนตัว ร้านในกลุ่มมาจากการผูกกลุ่ม ──
+            if (me && src === 'user' && ['เปลี่ยนบริษัท', 'สลับบริษัท'].includes(text)) {
+                const shops = this.linkedTenants(event.source.userId)
+                const now = companyName(tenantId) || tenantId
+                if (shops.length < 2) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้ LINE นี้ผูกกับ ${now} บริษัทเดียวครับ\nถ้าจะเพิ่มบริษัท ให้ส่งรหัส 6 หลักจากหน้าตั้งค่าของบริษัทนั้นมาในแชทนี้` })
+                    return
+                }
+                await client.replyMessage(event.replyToken, {
+                    type: 'text', text: `ตอนนี้ใช้งาน: ${now}\nเลือกบริษัทที่จะเปลี่ยนไป`,
+                    // LINE: quick reply สูงสุด 13 ปุ่ม, label สูงสุด 20 ตัวอักษร
+                    quickReply: { items: shops.filter(s => s.tenantId !== tenantId).slice(0, 13).map(s => ({
+                        type: 'action', action: { type: 'postback', label: s.name.slice(0, 20), data: `action=switch_tenant&id=${encodeURIComponent(s.tenantId)}`, displayText: s.name },
+                    })) },
+                })
+                return
+            }
+
             // ── คำสั่ง: สถานะ / status / -status ─────────────────────────────
             if (['สถานะ', 'status', '-status'].includes(lower)) {
                 await this.handleStatusCommand(tenantId, event.replyToken, client)
@@ -1182,6 +1213,19 @@ class LineBotService {
             const action = params.get('action')
             const id     = params.get('id')
             const db     = getDb()
+
+            // เปลี่ยนบริษัท: id มาจากปุ่มซึ่งปลอมได้ → ต้องมี mapping ของ LINE นี้กับร้านนั้นจริง
+            if (action === 'switch_tenant' && id && event.source?.type === 'user') {
+                const to = this.linkedUser(id, event.source.userId)
+                if (!to) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: '❌ LINE นี้ไม่ได้ผูกกับบริษัทนั้น' })
+                    return
+                }
+                this.setActiveTenant(event.source.userId, id)
+                await client.replyMessage(event.replyToken, { type: 'text', text: `✅ ตอนนี้ใช้งาน: ${companyName(id) || id}\nคำสั่งและเมนูในแชทนี้เป็นของบริษัทนี้แล้ว` })
+                await richMenus.syncUser(id, client.token, event.source.userId, to.menu)
+                return
+            }
 
             // ปุ่มเริ่ม/ผลิตเสร็จบนการ์ดเก่า: เคย UPDATE ตรงๆ โดยไม่เช็ค tenant/สิทธิ์ และไม่ตัดสต็อก
             // → การ์ดใหม่เปิดเว็บแทน ส่วนการ์ดเก่าที่ค้างในแชทตอบลิงก์ให้ไปทำในเว็บ

@@ -112,7 +112,7 @@ async function create(tenantId: string, token: string, ver: string): Promise<Ids
     `).all() as any[]
     for (const u of users) {
         const id = ids[menuKeyForRole(effectiveRole(u))]
-        try { await api.linkRichMenuIdToUser(u.line_user_id, id); linkedMenu.set(`${tenantId}:${u.line_user_id}`, id) }
+        try { await api.linkRichMenuIdToUser(u.line_user_id, id); linkedMenu.set(u.line_user_id, id) }
         catch (e) { console.error('richmenu relink failed', u.line_user_id, e) }
     }
     for (const old of Object.values(saved?.ids ?? {}) as string[]) {
@@ -146,7 +146,7 @@ export const richMenus = {
     async syncUser(tenantId: string, token: string, lineUserId: string, key: MenuKey | null): Promise<void> {
         const ids = await this.ensure(tenantId, token)
         if (!ids) return
-        const cacheKey = `${tenantId}:${lineUserId}`
+        const cacheKey = lineUserId // OA กลาง: เมนูเดียวต่อ LINE user ไม่ว่าอยู่ร้านไหน (key ต่อร้านทำให้สลับร้านกลับมาแล้วเมนูค้าง)
         const want = key ? ids[key] : null
         if (linkedMenu.get(cacheKey) === (want ?? ids.guest)) return
         const { api } = sdk(token)

@@ -2829,6 +2829,12 @@ export function runMigrations(db: any): void {
     if (!lcCols.some((c: any) => c.name === 'rich_menus')) db.exec('ALTER TABLE line_channels ADD COLUMN rich_menus TEXT')
   } catch (e) { console.error('⚠️ line_channels.rich_menus migration error:', e) }
 
+  // OA กลาง: LINE เดียวผูกหลายร้าน — active_at บอกร้านที่ใช้อยู่ (ว่าง = ใช้ linked_at)
+  try {
+    const lumCols = db.prepare("PRAGMA table_info(line_user_mappings)").all() as any[]
+    if (!lumCols.some((c: any) => c.name === 'active_at')) db.exec('ALTER TABLE line_user_mappings ADD COLUMN active_at TEXT')
+  } catch (e) { console.error('⚠️ line_user_mappings.active_at migration error:', e) }
+
   runMonthCloseMigrations(db)
 }
 
