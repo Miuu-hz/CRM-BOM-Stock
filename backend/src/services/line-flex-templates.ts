@@ -107,6 +107,10 @@ export const APPROVAL_MODULES: Record<string, { label: string; icon: string; bg:
     purchase_order:    { label: 'ใบสั่งซื้อ',         icon: '🛍️', bg: '#F0FDF4', color: '#16A34A' },
     purchase_request:  { label: 'ใบขอซื้อ',          icon: '📄', bg: '#FEF3C7', color: '#D97706' },
     work_orders:       { label: 'ใบสั่งผลิต',        icon: '🏭', bg: '#F1F5F9', color: '#475569' },
+    // HR — เดิมการ์ดขึ้นเป็นรหัส leave/advance/shift_swap ดิบๆ
+    leave:             { label: 'ขอลา',              icon: '🌴', bg: '#ECFDF5', color: '#059669' },
+    advance:           { label: 'เบิกล่วงหน้า/เงินยืม', icon: '💸', bg: '#FEF3C7', color: '#D97706' },
+    shift_swap:        { label: 'ขอแลกกะ',           icon: '🔁', bg: '#EEF2FF', color: '#4F46E5' },
 }
 
 export const flexTemplates = {
