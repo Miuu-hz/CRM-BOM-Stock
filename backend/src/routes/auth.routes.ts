@@ -221,7 +221,8 @@ router.post('/login', loginIpLimiter, async (req, res) => {
 
     // Deactivated account: same generic error as a bad password, so we never
     // confirm to a caller that the email exists but was deactivated.
-    if (user.status !== 'active') {
+    // บัญชี LINE อย่างเดียว (line_only) เข้าด้วยรหัสผ่านไม่ได้ แม้ผู้ดูแลจะตั้งรหัสให้ภายหลัง
+    if (user.status !== 'active' || user.line_only) {
       recordFailedAttempt(email)
       return res.status(401).json({ success: false, message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
     }

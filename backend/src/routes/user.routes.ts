@@ -66,7 +66,7 @@ router.post('/', async (req, res) => {
   if (req.user!.role !== 'MASTER') {
     const { maxUsers } = getLimits(req.user!.tenantId)
     if (maxUsers !== null) {
-      const count = (db.prepare('SELECT COUNT(*) as c FROM users WHERE tenant_id = ?').get(req.user!.tenantId) as any).c
+      const count = (db.prepare('SELECT COUNT(*) as c FROM users WHERE tenant_id = ? AND COALESCE(line_only, 0) = 0').get(req.user!.tenantId) as any).c
       if (count >= maxUsers) {
         return res.status(403).json({
           success: false,

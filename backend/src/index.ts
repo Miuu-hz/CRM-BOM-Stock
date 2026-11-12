@@ -195,6 +195,7 @@ import hrAssetRoutes from './routes/hr.asset.routes'
 import hrDocumentRoutes from './routes/hr.document.routes'
 import hrDisciplineRoutes from './routes/hr.discipline.routes'
 import hrRecruitRoutes from './routes/hr.recruit.routes'
+import hrLineInviteRoutes from './routes/hr.lineInvite.routes'
 import hrRecruitPublicRoutes from './routes/hr.recruit.public.routes'
 
 
@@ -672,6 +673,7 @@ app.use('/api/hr', hrAssetRoutes)
 app.use('/api/hr', hrDocumentRoutes)
 app.use('/api/hr', hrDisciplineRoutes)
 app.use('/api/hr', hrRecruitRoutes)
+app.use('/api/hr', hrLineInviteRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)

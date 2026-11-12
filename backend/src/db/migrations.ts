@@ -2835,6 +2835,12 @@ export function runMigrations(db: any): void {
     if (!lumCols.some((c: any) => c.name === 'active_at')) db.exec('ALTER TABLE line_user_mappings ADD COLUMN active_at TEXT')
   } catch (e) { console.error('⚠️ line_user_mappings.active_at migration error:', e) }
 
+  // บัญชี "LINE อย่างเดียว" ของพนักงานที่ไม่มีบัญชี ERP: ล็อกอินรหัสผ่านไม่ได้ ไม่นับที่นั่ง
+  try {
+    const uCols = db.prepare("PRAGMA table_info(users)").all() as any[]
+    if (!uCols.some((c: any) => c.name === 'line_only')) db.exec('ALTER TABLE users ADD COLUMN line_only INTEGER NOT NULL DEFAULT 0')
+  } catch (e) { console.error('⚠️ users.line_only migration error:', e) }
+
   // ลิงก์เข้าหน้า "ของฉัน" จาก LINE: ใช้ครั้งเดียว อายุ 5 นาที เก็บแค่ hash
   try {
     db.exec(`
