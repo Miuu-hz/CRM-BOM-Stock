@@ -39,6 +39,9 @@ import hrService, {
   ShiftSwap,
   ShiftSwapStatus,
 } from '../../services/hr.service'
+import hrAssetService, { HrAssetLoan } from '../../services/hrAsset.service'
+import hrDocumentService, { EmployeeDocument, DocType } from '../../services/hrDocument.service'
+import hrDisciplineService, { DisciplinaryRecord } from '../../services/hrDiscipline.service'
 import PayslipPrint from './PayslipPrint'
 
 // ponytail: client-side formatted date helpers
@@ -129,6 +132,19 @@ const ADVANCE_STATUS_BADGE: Record<AdvanceStatus, string> = {
   CANCELLED: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
 }
 
+const DOC_TYPE_TH: Record<DocType, string> = {
+  CONTRACT: 'สัญญาจ้าง',
+  PROBATION: 'ทดลองงาน',
+  WORK_PERMIT: 'ใบอนุญาตทำงาน',
+  CERTIFICATE: 'ใบรับรอง',
+  OTHER: 'อื่นๆ',
+}
+
+const DISC_LEVEL_TH: Record<string, string> = {
+  VERBAL: 'ตักเตือนด้วยวาจา',
+  WRITTEN: 'หนังสือเตือน',
+}
+
 const fmt = (n: number | undefined | null) =>
   Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -199,6 +215,13 @@ export default function MyHr() {
   })
   const [myTraining, setMyTraining] = useState<TrainingRecord[]>([])
 
+  // Asset loans, documents, disciplinary state (each loads independently; failure -> empty)
+  const [myLoans, setMyLoans] = useState<HrAssetLoan[]>([])
+  const [myDocs, setMyDocs] = useState<EmployeeDocument[]>([])
+  const [myDisc, setMyDisc] = useState<DisciplinaryRecord[]>([])
+  const [ackConfirmId, setAckConfirmId] = useState<string | null>(null)
+  const [acking, setAcking] = useState(false)
+
   // Roster & Shift Swap state
   const [weekStart, setWeekStart] = useState<string>(getMondayStr())
   const [myRoster, setMyRoster] = useState<MyRosterWeek | null>(null)
@@ -246,7 +269,7 @@ export default function MyHr() {
       setWeekStart(initialMonday)
 
       // Concurrently load checkin location, attendance, leaves, slips, advances, training, roster, swaps
-      const [loc, att, types, balances, requests, mySlips, advances, training, roster, swaps] = await Promise.all([
+      const [loc, att, types, balances, requests, mySlips, advances, training, roster, swaps, loans, docs, disc] = await Promise.all([
         hrService.getCheckinLocation().catch(() => null),
         hrService.getMyAttendance().catch(() => null),
         hrService.getLeaveTypes({ active: 1 }).catch(() => []),
@@ -257,6 +280,9 @@ export default function MyHr() {
         hrService.getMyTraining().catch(() => []),
         hrService.getMyRoster(initialMonday).catch(() => null),
         hrService.getMyShiftSwaps().catch(() => []),
+        hrAssetService.getMyAssetLoans().catch(() => []),
+        hrDocumentService.getMyDocuments().catch(() => []),
+        hrDisciplineService.getMyDisciplinary().catch(() => []),
       ])
 
       setCheckinLocation(loc)
@@ -269,6 +295,9 @@ export default function MyHr() {
       setMyTraining(training || [])
       setMyRoster(roster)
       setMyShiftSwaps(swaps || [])
+      setMyLoans(loans || [])
+      setMyDocs(docs || [])
+      setMyDisc(disc || [])
     } catch (err: any) {
       if (err?.response?.status === 404 || err?.status === 404) {
         setNotLinked(true)
@@ -489,6 +518,20 @@ export default function MyHr() {
       reloadAdvances()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.message || 'ยกเลิกคำขอไม่สำเร็จ')
+    }
+  }
+
+  const handleAcknowledge = async (id: string) => {
+    setAcking(true)
+    try {
+      await hrDisciplineService.acknowledgeSelf(id)
+      toast.success('บันทึกการรับทราบแล้ว')
+      setAckConfirmId(null)
+      setMyDisc((await hrDisciplineService.getMyDisciplinary()) || [])
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'บันทึกการรับทราบไม่สำเร็จ')
+    } finally {
+      setAcking(false)
     }
   }
 
@@ -1483,6 +1526,141 @@ export default function MyHr() {
           <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">
             ยังไม่มีประวัติการอบรม
           </div>
+        )}
+      </div>
+
+      {/* 7. ทรัพย์สินที่ยืมอยู่ Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+          <FileText className="w-4 h-4 text-phopy-indigo" />
+          <span>ทรัพย์สินที่ยืมอยู่</span>
+        </div>
+        {myLoans.length > 0 ? (
+          <div className="space-y-2.5">
+            {myLoans.map((ln) => (
+              <div key={ln.id} className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 space-y-2 text-xs sm:text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-[var(--fg)]">
+                    {ln.asset_code} · {ln.asset_name}
+                  </div>
+                  {ln.returned_on ? (
+                    <span className="font-mono text-[var(--fg-2)]">คืน {ln.returned_on}</span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                      ยังไม่คืน
+                    </span>
+                  )}
+                </div>
+                <div className="text-[var(--fg-2)]">
+                  ยืมเมื่อ <span className="font-mono">{ln.loaned_on}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">ไม่มีทรัพย์สินที่ยืม</div>
+        )}
+      </div>
+
+      {/* 8. เอกสารของฉัน Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+          <FileText className="w-4 h-4 text-phopy-indigo" />
+          <span>เอกสารของฉัน</span>
+        </div>
+        {myDocs.length > 0 ? (
+          <div className="space-y-2.5">
+            {myDocs.map((doc) => {
+              const warn = doc.expires_on != null && doc.days_left != null && doc.days_left <= 30
+              return (
+                <div key={doc.id} className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 space-y-2 text-xs sm:text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-[var(--fg)]">{doc.title}</div>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--surface-2)] text-[var(--fg-3)]">
+                      {DOC_TYPE_TH[doc.doc_type] || doc.doc_type}
+                    </span>
+                  </div>
+                  <div className="text-[var(--fg-2)] flex flex-wrap gap-x-3 gap-y-1">
+                    <span>
+                      ออกเมื่อ <span className="font-mono">{doc.issued_on || '-'}</span>
+                    </span>
+                    <span>·</span>
+                    <span className={warn ? 'text-red-600 font-semibold' : ''}>
+                      หมดอายุ <span className="font-mono">{doc.expires_on || '-'}</span>
+                      {warn && (doc.days_left! < 0 ? ' (หมดอายุแล้ว)' : ` (เหลือ ${doc.days_left} วัน)`)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">ยังไม่มีเอกสาร</div>
+        )}
+      </div>
+
+      {/* 9. หนังสือเตือน Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+          <AlertTriangle className="w-4 h-4 text-phopy-indigo" />
+          <span>หนังสือเตือน</span>
+        </div>
+        <p className="text-xs text-[var(--fg-3)]">
+          การกดรับทราบหมายถึงได้รับและอ่านหนังสือแล้ว ไม่ได้หมายถึงยอมรับว่าทำผิด
+        </p>
+        {myDisc.length > 0 ? (
+          <div className="space-y-2.5">
+            {myDisc.map((rec) => (
+              <div key={rec.id} className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 space-y-2 text-xs sm:text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-[var(--fg)]">
+                    <span className="font-mono">{rec.incident_date}</span> · {rec.category}
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                    {DISC_LEVEL_TH[rec.level] || rec.level}
+                  </span>
+                </div>
+                <div className="text-[var(--fg-2)]">{rec.detail}</div>
+                <div className="text-[var(--fg-3)] flex flex-wrap items-center justify-between gap-2">
+                  <span>มีผลถึง {rec.expires_on}</span>
+                  {rec.acknowledged_at ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      รับทราบแล้ว {rec.acknowledged_at.slice(0, 10)}
+                    </span>
+                  ) : ackConfirmId === rec.id ? (
+                    <span className="flex items-center gap-2">
+                      <span className="text-[var(--fg)]">ยืนยันการรับทราบ?</span>
+                      <button
+                        type="button"
+                        onClick={() => setAckConfirmId(null)}
+                        className="px-2.5 py-1 rounded-lg text-xs border border-[var(--border)] text-[var(--fg-2)]"
+                      >
+                        ยกเลิก
+                      </button>
+                      <button
+                        type="button"
+                        disabled={acking}
+                        onClick={() => handleAcknowledge(rec.id)}
+                        className="phopy-btn-primary px-3 py-1 rounded-lg text-xs font-semibold min-h-[32px] disabled:opacity-50"
+                      >
+                        ยืนยัน
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAckConfirmId(rec.id)}
+                      className="phopy-btn-primary px-3 py-1 rounded-lg text-xs font-semibold min-h-[32px]"
+                    >
+                      รับทราบ
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs sm:text-sm text-[var(--fg-3)]">ไม่มีหนังสือเตือน</div>
         )}
       </div>
 

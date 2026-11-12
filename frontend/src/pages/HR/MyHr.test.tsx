@@ -31,6 +31,16 @@ vi.mock('../../services/hr.service', () => ({
   },
 }))
 
+vi.mock('../../services/hrAsset.service', () => ({
+  default: { getMyAssetLoans: vi.fn() },
+}))
+vi.mock('../../services/hrDocument.service', () => ({
+  default: { getMyDocuments: vi.fn() },
+}))
+vi.mock('../../services/hrDiscipline.service', () => ({
+  default: { getMyDisciplinary: vi.fn(), acknowledgeSelf: vi.fn() },
+}))
+
 vi.mock('./PayslipPrint', () => ({
   default: vi.fn(({ slips, onClose }: any) => (
     <div data-testid="payslip-print-modal">
@@ -41,7 +51,16 @@ vi.mock('./PayslipPrint', () => ({
 }))
 
 import hrService from '../../services/hr.service'
+import hrAssetService from '../../services/hrAsset.service'
+import hrDocumentService from '../../services/hrDocument.service'
+import hrDisciplineService from '../../services/hrDiscipline.service'
+import toast from 'react-hot-toast'
 import MyHr from './MyHr'
+
+const mockLoans = hrAssetService.getMyAssetLoans as unknown as ReturnType<typeof vi.fn>
+const mockDocs = hrDocumentService.getMyDocuments as unknown as ReturnType<typeof vi.fn>
+const mockDisc = hrDisciplineService.getMyDisciplinary as unknown as ReturnType<typeof vi.fn>
+const mockAck = hrDisciplineService.acknowledgeSelf as unknown as ReturnType<typeof vi.fn>
 
 const mockHr = hrService as unknown as {
   getMe: ReturnType<typeof vi.fn>
@@ -97,6 +116,9 @@ beforeEach(() => {
   })
   mockHr.getColleagueShifts.mockResolvedValue([])
   mockHr.getMyShiftSwaps.mockResolvedValue([])
+  mockLoans.mockResolvedValue([])
+  mockDocs.mockResolvedValue([])
+  mockDisc.mockResolvedValue([])
 })
 
 describe('หน้าของฉัน /hr/me (MyHr)', () => {
@@ -796,5 +818,58 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
     await waitFor(() => {
       expect(mockHr.getMyRoster).toHaveBeenCalled()
     })
+  })
+
+  const linkedMe = { id: 'emp-1', code: 'EMP-001', first_name: 'สมชาย', last_name: 'ใจดี' }
+  const discRec = {
+    id: 'd-1', employee_id: 'emp-1', incident_date: '2026-11-01', category: 'มาสาย',
+    detail: 'สายเกินกำหนดสามครั้ง', level: 'WRITTEN', expires_on: '2027-05-01', active: true, acknowledged_at: null,
+  }
+
+  it('แสดงทรัพย์สิน เอกสาร และหนังสือเตือนจากข้อมูล', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockLoans.mockResolvedValue([
+      { id: 'l-1', asset_code: 'NB-01', asset_name: 'โน้ตบุ๊ก', loaned_on: '2026-10-01', returned_on: null },
+    ])
+    mockDocs.mockResolvedValue([
+      { id: 'x-1', doc_type: 'WORK_PERMIT', title: 'ใบอนุญาต 2569', issued_on: '2026-01-01', expires_on: '2026-11-20', days_left: 8 },
+    ])
+    mockDisc.mockResolvedValue([discRec])
+    render(<MyHr />)
+
+    expect(await screen.findByText(/NB-01 · โน้ตบุ๊ก/)).toBeTruthy()
+    expect(screen.getByText('ยังไม่คืน')).toBeTruthy()
+    expect(screen.getByText('ใบอนุญาต 2569')).toBeTruthy()
+    expect(screen.getByText('ใบอนุญาตทำงาน')).toBeTruthy()
+    expect(screen.getByText('สายเกินกำหนดสามครั้ง')).toBeTruthy()
+    expect(screen.getByText('หนังสือเตือน', { selector: 'span.rounded-full' })).toBeTruthy()
+    expect(screen.getByText('มีผลถึง 2027-05-01')).toBeTruthy()
+  })
+
+  it('กด รับทราบ แล้วยืนยัน จะเรียก acknowledgeSelf ด้วย id และโหลดรายการใหม่', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockDisc.mockResolvedValue([discRec])
+    mockAck.mockResolvedValue({})
+    render(<MyHr />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'รับทราบ' }))
+    expect(mockAck).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }))
+
+    await waitFor(() => expect(mockAck).toHaveBeenCalledWith('d-1'))
+    await waitFor(() => expect(mockDisc).toHaveBeenCalledTimes(2))
+    expect(toast.success).toHaveBeenCalledWith('บันทึกการรับทราบแล้ว')
+  })
+
+  it('getMyDocuments ล้มเหลว หน้ายังแสดงส่วนอื่นและไม่มี toast error', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockDocs.mockRejectedValue({ response: { status: 403 } })
+    mockDisc.mockResolvedValue([discRec])
+    render(<MyHr />)
+
+    expect(await screen.findByText('ยังไม่มีเอกสาร')).toBeTruthy()
+    expect(screen.getByText('สายเกินกำหนดสามครั้ง')).toBeTruthy()
+    expect(screen.getByText('ไม่มีทรัพย์สินที่ยืม')).toBeTruthy()
+    expect(toast.error).not.toHaveBeenCalled()
   })
 })
