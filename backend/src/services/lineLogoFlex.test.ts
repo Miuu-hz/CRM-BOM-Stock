@@ -269,7 +269,7 @@ describe('Public Logo Route GET /api/line/logo/:tenantId', () => {
         expect(res.status).toBe(404)
 
         // Also test empty string logo
-        db.prepare('UPDATE company_settings SET logo_base64 = "" WHERE tenant_id = ?').run(tenantId)
+        db.prepare(`UPDATE company_settings SET logo_base64 = '' WHERE tenant_id = ?`).run(tenantId)
         const resEmpty = await request(app).get(`/api/line/logo/${tenantId}`)
         expect(resEmpty.status).toBe(404)
     })
