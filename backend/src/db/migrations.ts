@@ -3344,6 +3344,98 @@ export function runMonthCloseMigrations(db: any): void {
       "ALTER TABLE advance_repayments ADD COLUMN source TEXT NOT NULL DEFAULT 'PAYROLL'",
     ]) { try { db.exec(sql) } catch { /* column already exists */ } }
   } catch (e) { console.error('⚠️ HR Phase 7 migration error:', e) }
+
+  // ==================== HR Phase 9-11 — เข้า-ออกงาน/ทรัพย์สิน · เอกสาร/วินัย · รับสมัคร (สัญญากลาง docs/contracts/hr-phase9-11.md) ====================
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS hr_checklist_templates (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('ONBOARD','OFFBOARD')),
+        org_unit_id TEXT NULL, title TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0,
+        auto_action TEXT NULL CHECK (auto_action IS NULL OR auto_action IN ('DISABLE_USER','UNLINK_LINE')),
+        is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS hr_checklist_items (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, employee_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('ONBOARD','OFFBOARD')),
+        title TEXT NOT NULL, auto_action TEXT NULL, sort_order INTEGER NOT NULL DEFAULT 0,
+        done_at TEXT NULL, done_by TEXT NULL, note TEXT, created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_checklist_items_emp ON hr_checklist_items(tenant_id, employee_id, kind);
+      CREATE TABLE IF NOT EXISTS hr_assets (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, category TEXT,
+        status TEXT NOT NULL DEFAULT 'AVAILABLE' CHECK (status IN ('AVAILABLE','LOANED','RETIRED')),
+        notes TEXT, created_at TEXT, UNIQUE(tenant_id, code)
+      );
+      CREATE TABLE IF NOT EXISTS hr_asset_loans (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, asset_id TEXT NOT NULL, employee_id TEXT NOT NULL,
+        loaned_on TEXT NOT NULL, returned_on TEXT NULL, note TEXT, created_by TEXT, created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_asset_loans_emp ON hr_asset_loans(tenant_id, employee_id);
+      -- ของชิ้นหนึ่งมีรายการยืมที่ยังไม่คืนได้รายการเดียว (กันกดยืมซ้อน)
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_hr_asset_loans_open ON hr_asset_loans(asset_id) WHERE returned_on IS NULL;
+      CREATE TABLE IF NOT EXISTS hr_employee_documents (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, employee_id TEXT NOT NULL,
+        doc_type TEXT NOT NULL CHECK (doc_type IN ('CONTRACT','PROBATION','WORK_PERMIT','CERTIFICATE','OTHER')),
+        title TEXT NOT NULL, issued_on TEXT, expires_on TEXT NULL, notes TEXT, created_by TEXT, created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_employee_documents_exp ON hr_employee_documents(tenant_id, expires_on);
+      CREATE TABLE IF NOT EXISTS hr_doc_templates (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('CONTRACT','PROBATION','WARNING','CERTIFICATE')),
+        name TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', created_at TEXT, updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS hr_work_rules (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, clause_no TEXT NOT NULL, title TEXT NOT NULL, body TEXT,
+        announced_on TEXT, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS hr_disciplinary_records (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, employee_id TEXT NOT NULL,
+        incident_date TEXT NOT NULL, category TEXT NOT NULL, detail TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('VERBAL','WRITTEN')),
+        work_rule_id TEXT NULL, expires_on TEXT NOT NULL,
+        acknowledged_at TEXT NULL, acknowledged_via TEXT NULL CHECK (acknowledged_via IS NULL OR acknowledged_via IN ('SELF','WITNESS')),
+        witness_name TEXT, created_by TEXT, created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_disciplinary_emp ON hr_disciplinary_records(tenant_id, employee_id);
+      CREATE TABLE IF NOT EXISTS hr_job_postings (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, title TEXT NOT NULL, org_unit_id TEXT NULL, description TEXT,
+        public_token TEXT NOT NULL UNIQUE, is_open INTEGER NOT NULL DEFAULT 1, created_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS hr_applicants (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, posting_id TEXT NOT NULL,
+        full_name TEXT NOT NULL, phone TEXT NOT NULL, email TEXT, note TEXT, source TEXT,
+        stage TEXT NOT NULL DEFAULT 'APPLIED' CHECK (stage IN ('APPLIED','INTERVIEW','TRIAL','HIRED','REJECTED')),
+        interview_at TEXT NULL, interview_note TEXT, consent_at TEXT NOT NULL, purge_after TEXT NOT NULL,
+        employee_id TEXT NULL, created_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_applicants_posting ON hr_applicants(tenant_id, posting_id, stage);
+    `)
+  } catch (e) { console.error('⚠️ HR Phase 9-11 migration error:', e) }
+  // ไฟล์แนบของ HR Phase 9-10 ใช้ระบบแนบไฟล์กลาง → เพิ่ม ref_type ใน CHECK (rebuild แบบเดียวกับ TRAINING_RECORD)
+  try {
+    const cur = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='payment_attachments'").get() as any)?.sql || ''
+    if (cur && !cur.includes('DISCIPLINARY_RECORD')) {
+      const cols = (db.prepare('PRAGMA table_info(payment_attachments)').all() as any[]).map((c: any) => c.name).join(', ')
+      const ddl = cur
+        .replace(/CREATE TABLE\s+"?payment_attachments"?/i, 'CREATE TABLE payment_attachments_new')
+        .replace(/CHECK\s*\(\s*ref_type\s+IN\s*\([^)]*\)\s*\)/i, "CHECK(ref_type IN ('RECEIPT','SUPPLIER_PAYMENT','POS_PAYMENT','INVOICE','PURCHASE_REQUEST','PURCHASE_ORDER','GOODS_RECEIPT','PURCHASE_INVOICE','STOCK_ADJUSTMENT','JOURNAL_ENTRY','TAX_PERIOD','TRAINING_RECORD','ASSET_LOAN','EMPLOYEE_DOCUMENT','DISCIPLINARY_RECORD'))")
+      const idx = (db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='payment_attachments' AND sql IS NOT NULL").all() as any[]).map((r: any) => r.sql)
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.transaction(() => {
+        db.exec(ddl)
+        db.exec(`INSERT INTO payment_attachments_new (${cols}) SELECT ${cols} FROM payment_attachments`)
+        db.exec('DROP TABLE payment_attachments')
+        db.exec('ALTER TABLE payment_attachments_new RENAME TO payment_attachments')
+        for (const sql of idx) db.exec(sql)
+      })()
+      db.exec('PRAGMA foreign_keys=ON')
+      console.log('✅ Migration: payment_attachments รองรับไฟล์แนบ HR Phase 9-10 แล้ว')
+    }
+  } catch (e) {
+    console.error('⚠️ payment_attachments HR Phase 9-10 migration error:', e)
+    try { db.exec('PRAGMA foreign_keys=ON') } catch {}
+  }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

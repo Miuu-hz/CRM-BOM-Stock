@@ -190,6 +190,12 @@ import hrTrainingRoutes from './routes/hr.training.routes'
 import hrAdvanceRoutes from './routes/hr.advance.routes'
 import hrRosterRoutes from './routes/hr.roster.routes'
 import hrSwapRoutes from './routes/hr.swap.routes'
+import hrLifecycleRoutes from './routes/hr.lifecycle.routes'
+import hrAssetRoutes from './routes/hr.asset.routes'
+import hrDocumentRoutes from './routes/hr.document.routes'
+import hrDisciplineRoutes from './routes/hr.discipline.routes'
+import hrRecruitRoutes from './routes/hr.recruit.routes'
+import hrRecruitPublicRoutes from './routes/hr.recruit.public.routes'
 
 
 import { setupMcpRoutes } from './mcp/server'
@@ -464,6 +470,8 @@ app.use('/r', receiptRoutes)
 // Public QR สั่งที่โต๊ะ — API ของหน้าลูกค้า (frontend/public/qr/) ไม่มี login เข้าด้วย token บน QR
 // อยู่นอก /api เหมือน /r: มี rate limit ของตัวเอง ไม่แย่งโควตา 200/นาที/IP กับเครื่องแคชเชียร์ที่ใช้ Wi-Fi เดียวกัน
 app.use('/qr/api', qrPublicRoutes)
+// ใบสมัครงานสาธารณะ (HR Phase 11) — ไม่ล็อกอิน, rate limit อยู่ใน router
+app.use('/api/public/jobs', hrRecruitPublicRoutes)
 
 
 // API Routes
@@ -659,6 +667,11 @@ app.use('/api/hr', hrTrainingRoutes)
 app.use('/api/hr', hrAdvanceRoutes)
 app.use('/api/hr', hrRosterRoutes)
 app.use('/api/hr', hrSwapRoutes)
+app.use('/api/hr', hrLifecycleRoutes)
+app.use('/api/hr', hrAssetRoutes)
+app.use('/api/hr', hrDocumentRoutes)
+app.use('/api/hr', hrDisciplineRoutes)
+app.use('/api/hr', hrRecruitRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)

@@ -40,6 +40,13 @@ import CheckinKiosk from './pages/HR/CheckinKiosk'
 import Training from './pages/HR/Training'
 import Advances from './pages/HR/Advances'
 import Roster from './pages/HR/Roster'
+import Lifecycle from './pages/HR/Lifecycle'
+import Assets from './pages/HR/Assets'
+import Documents from './pages/HR/Documents'
+import Discipline from './pages/HR/Discipline'
+import Recruit from './pages/HR/Recruit'
+import DocumentPrint from './pages/HR/DocumentPrint'
+import ApplyPublic from './pages/HR/ApplyPublic'
 import PayslipPrint from './pages/HR/PayslipPrint'
 
 // Blocks direct-URL access to a route whose menu is restricted in
@@ -86,6 +93,9 @@ function AppContent() {
       </div>
     )
   }
+
+  // ใบสมัครงานสาธารณะ: ไม่ต้องล็อกอิน ไม่มี sidebar (HR Phase 11)
+  if (window.location.pathname.startsWith('/apply/')) return <ApplyPublic />
 
   if (!user) return <Login />
 
@@ -137,6 +147,12 @@ function AppContent() {
         <Route path="/hr/training" element={<Guard path="/hr/training"><Training /></Guard>} />
         <Route path="/hr/advances" element={<Guard path="/hr/advances"><Advances /></Guard>} />
         <Route path="/hr/roster" element={<Guard path="/hr/roster"><Roster /></Guard>} />
+        <Route path="/hr/lifecycle" element={<Guard path="/hr/lifecycle"><Lifecycle /></Guard>} />
+        <Route path="/hr/assets" element={<Guard path="/hr/assets"><Assets /></Guard>} />
+        <Route path="/hr/documents" element={<Guard path="/hr/documents"><Documents /></Guard>} />
+        <Route path="/hr/discipline" element={<Guard path="/hr/discipline"><Discipline /></Guard>} />
+        <Route path="/hr/recruit" element={<Guard path="/hr/recruit"><Recruit /></Guard>} />
+        <Route path="/hr/documents/print" element={<Guard path="/hr/documents"><DocumentPrint /></Guard>} />
 
         {/* Cashier & KDS Route */}
         <Route path="/cashier" element={<Cashier />} />

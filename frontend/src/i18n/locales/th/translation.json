@@ -92,7 +92,12 @@
     "leave": "การลา",
     "training": "อบรม",
     "advances": "เบิก/เงินยืม",
-    "roster": "ตารางกะ"
+    "roster": "ตารางกะ",
+    "lifecycle": "เข้า-ออกงาน",
+    "hrAssets": "ทรัพย์สินให้ยืม",
+    "hrDocuments": "เอกสารพนักงาน",
+    "discipline": "วินัย/ข้อบังคับ",
+    "recruit": "รับสมัครงาน"
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",

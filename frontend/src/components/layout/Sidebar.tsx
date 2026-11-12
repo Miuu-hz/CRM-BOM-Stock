@@ -37,6 +37,7 @@ import {
   Banknote,
   CalendarDays,
   CalendarRange,
+  Scale, UserPlus,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../services/api'
@@ -125,6 +126,11 @@ const menuItems: MenuItem[] = [
       { path: '/hr/payroll', tKey: 'sidebar.payroll', icon: Wallet },
       { path: '/hr/advances', tKey: 'sidebar.advances', icon: Banknote },
       { path: '/hr/training', tKey: 'sidebar.training', icon: GraduationCap },
+      { path: '/hr/lifecycle', tKey: 'sidebar.lifecycle', icon: ClipboardCheck },
+      { path: '/hr/assets', tKey: 'sidebar.hrAssets', icon: Package },
+      { path: '/hr/documents', tKey: 'sidebar.hrDocuments', icon: FileText },
+      { path: '/hr/discipline', tKey: 'sidebar.discipline', icon: Scale },
+      { path: '/hr/recruit', tKey: 'sidebar.recruit', icon: UserPlus },
       { path: '/hr/settings', tKey: 'sidebar.hrSettings', icon: Settings },
     ],
   },

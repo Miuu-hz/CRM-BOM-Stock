@@ -7,6 +7,7 @@ import { generateId } from '../utils/id'
 import { invoiceUploadDir } from './sales/shared'
 import { compressImage } from '../utils/compressImage'
 import { getSubscription } from '../services/subscription.service'
+import { can } from '../services/rbac.service'
 import {
   isValidAttachmentFile,
   isAllowedAttachmentExt,
@@ -45,6 +46,10 @@ const REF_TYPE_TABLES: Record<string, string> = {
   TAX_PERIOD: 'tax_periods',
   // HR Phase 5 — ใบรับรองอบรม
   TRAINING_RECORD: 'training_records',
+  // HR Phase 9-10 — รูปส่งมอบทรัพย์สิน, เอกสารพนักงาน, หลักฐานวินัย
+  ASSET_LOAN: 'hr_asset_loans',
+  EMPLOYEE_DOCUMENT: 'hr_employee_documents',
+  DISCIPLINARY_RECORD: 'hr_disciplinary_records',
 }
 
 // Which subscription feature gates each ref_type. Mount in index.ts is gate-free
@@ -63,6 +68,28 @@ const REF_TYPE_FEATURE: Record<string, string> = {
   JOURNAL_ENTRY: 'accounting',
   TAX_PERIOD: 'accounting',
   TRAINING_RECORD: 'hr',
+  ASSET_LOAN: 'hr',
+  EMPLOYEE_DOCUMENT: 'hr',
+  DISCIPLINARY_RECORD: 'hr',
+}
+
+// ไฟล์ของ HR เป็นข้อมูลส่วนบุคคล: แพ็กเกจมี hr อย่างเดียวไม่พอ ต้องมีสิทธิ์ hr
+// หรือเป็นเจ้าของเรคอร์ดเอง (อ่านอย่างเดียว) — เดิม TRAINING_RECORD ใครล็อกอินอยู่ในบริษัทก็เปิดได้
+function hrFileAllowed(req: Request, refType: string, refId: string, write: boolean): boolean {
+  if (REF_TYPE_FEATURE[refType] !== 'hr') return true
+  const u = req.user!
+  if (can(u.role, u.departments || [], 'hr', write ? 'write' : 'read', u.customPermissions)) return true
+  if (write) return false
+  const row = db.prepare(
+    `SELECT 1 FROM ${REF_TYPE_TABLES[refType]} r JOIN employees e ON e.id = r.employee_id AND e.tenant_id = r.tenant_id
+     WHERE r.id = ? AND r.tenant_id = ? AND e.user_id = ?`
+  ).get(refId, u.tenantId, u.userId)
+  return !!row
+}
+const attRefId = (id: string, tenantId: string): string =>
+  ((db.prepare('SELECT ref_id FROM payment_attachments WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any)?.ref_id ?? '')
+function denyHrFile(res: Response) {
+  res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึงไฟล์นี้' })
 }
 
 // Mirrors subscriptionGate() in middleware/subscription.middleware.ts, but the
@@ -121,6 +148,7 @@ router.get('/:id/file', (req: Request, res: Response) => {
     return
   }
   if (!checkFeature(req, res, REF_TYPE_FEATURE[att.refType])) return
+  if (!hrFileAllowed(req, att.refType, attRefId(req.params.id, tenantId), false)) return denyHrFile(res)
 
   const dir = path.resolve(att.dir)
   const filePath = path.resolve(dir, att.file_path)
@@ -310,6 +338,7 @@ router.post('/:refType/:refId', (req: Request, res: Response, next: any) => {
     return
   }
   if (!checkFeature(req, res, feature)) return
+  if (!hrFileAllowed(req, refType, req.params.refId, true)) return denyHrFile(res)
   next()
 }, (req: Request, res: Response, next: any) => {
   const tenantId = req.user!.tenantId
@@ -376,6 +405,7 @@ router.get('/:refType/:refId', (req: Request, res: Response) => {
     return
   }
   if (!checkFeature(req, res, REF_TYPE_FEATURE[refType])) return
+  if (!hrFileAllowed(req, refType, refId, false)) return denyHrFile(res)
   const rows = db.prepare(
     `SELECT id, ref_type, ref_id, original_name, file_size, uploaded_by, created_at, 0 as is_upstream, NULL as source_doc
      FROM payment_attachments WHERE tenant_id = ? AND ref_type = ? AND ref_id = ? ORDER BY created_at ASC`
@@ -441,6 +471,7 @@ router.delete('/:id', (req: Request, res: Response) => {
     if (row) {
       const refType = src.refType || row.ref_type!
       if (!checkFeature(req, res, REF_TYPE_FEATURE[refType])) return
+      if (!hrFileAllowed(req, refType, attRefId(id, tenantId), true)) return denyHrFile(res)
       const dir = path.resolve(src.dir)
       const filePath = path.resolve(dir, row.file_path)
       if (filePath.startsWith(dir + path.sep) && fs.existsSync(filePath)) {

@@ -125,7 +125,12 @@
     "leave": "Leave",
     "training": "Training",
     "advances": "Advances & Loans",
-    "roster": "Shift Roster"
+    "roster": "Shift Roster",
+    "lifecycle": "Onboarding & Offboarding",
+    "hrAssets": "Loaned Assets",
+    "hrDocuments": "Employee Documents",
+    "discipline": "Discipline",
+    "recruit": "Recruitment"
   },
   "dashboard": {
     "title": "Executive Dashboard",
