@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import crypto from 'crypto'
+import { startChecklist } from './hr.lifecycle.routes'
 import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
 import { can } from '../services/rbac.service'
@@ -205,7 +206,8 @@ router.post('/applicants/:id/hire', (req: Request, res: Response) => {
         status, phone, email, sso_enrolled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, 1, ?, ?)`)
         .run(empId, tenantId, code, firstName, lastName, orgUnitId, b.employment_type, Number(rawWage), b.start_date, ap.phone, ap.email ?? null, now, now)
       db.prepare(`UPDATE hr_applicants SET stage = 'HIRED', employee_id = ? WHERE id = ? AND tenant_id = ?`).run(empId, ap.id, tenantId)
-      try { const lc: any = require('./hr.lifecycle.routes'); lc.startChecklist?.(tenantId, empId, 'ONBOARD', userId) } catch { /* ไม่มีแม่แบบ/ยังไม่มีฟีเจอร์ → ไม่ล้ม */ }
+      // ไม่มีแม่แบบ → คืน 0 เฉยๆ · ถ้า error จริงให้ล้มทั้งการรับเข้าทำงาน (อยู่ใน transaction เดียวกัน)
+      startChecklist(tenantId, empId, 'ONBOARD', userId)
     })()
     const row = db.prepare(`${APPLICANT_SELECT} WHERE a.id = ? AND a.tenant_id = ?`).get(ap.id, tenantId)
     res.status(201).json({ success: true, data: fmtApplicant(row) })

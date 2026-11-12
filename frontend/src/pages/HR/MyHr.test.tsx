@@ -601,7 +601,7 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
     ])
     mockHr.createShiftSwap.mockResolvedValue({
       id: 'swap-1',
-      work_date: '2026-11-10',
+      work_date: '2099-01-05',
       requester_employee_id: 'emp-1',
       requester_name: 'สมชาย ใจดี',
       target_employee_id: 'emp-2',
@@ -621,10 +621,10 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
 
     // Pick date
     const dateInput = screen.getByLabelText(/วันที่ต้องการแลกกะ/)
-    fireEvent.change(dateInput, { target: { value: '2026-11-10' } })
+    fireEvent.change(dateInput, { target: { value: '2099-01-05' } })
 
     await waitFor(() => {
-      expect(mockHr.getColleagueShifts).toHaveBeenCalledWith('2026-11-10')
+      expect(mockHr.getColleagueShifts).toHaveBeenCalledWith('2099-01-05')
     })
 
     // Colleague radio appears
@@ -642,7 +642,7 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
     await waitFor(() => {
       expect(mockHr.createShiftSwap).toHaveBeenCalledWith({
         target_employee_id: 'emp-2',
-        work_date: '2026-11-10',
+        work_date: '2099-01-05',
         reason: 'ติดธุระ',
       })
     })
