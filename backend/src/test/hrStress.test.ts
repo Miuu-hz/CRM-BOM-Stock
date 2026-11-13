@@ -16,6 +16,11 @@ import hrLineInviteRoutes from '../routes/hr.lineInvite.routes'
 import { createPublicRecruitRouter } from '../routes/hr.recruit.public.routes'
 import { lineBotService } from '../services/line-bot.service'
 import { richMenus } from '../services/line-richmenu.service'
+import hrRosterRoutes from '../routes/hr.roster.routes'
+import hrPayrollRoutes from '../routes/hr.payroll.routes'
+import { runExpiryDigest } from '../services/hrExpiry.scheduler'
+import { seedChartOfAccounts } from '../config/chartOfAccounts'
+import { getOrCreateAccount } from '../services/accounting.service'
 
 // Stress / concurrency over HR + LINE features. Every scenario fires overlapping requests and asserts DB invariants.
 function buildApp(publicLimit = 100000) {
@@ -25,12 +30,13 @@ function buildApp(publicLimit = 100000) {
   app.use('/api/auth', authRoutes)
   app.use('/api/public/jobs', createPublicRecruitRouter(publicLimit))
   app.use('/api/hr', authenticate)
-  for (const r of [hrAssetRoutes, hrDisciplineRoutes, hrDocumentRoutes, hrLifecycleRoutes, hrRecruitRoutes, hrLineInviteRoutes]) app.use('/api/hr', r)
+  for (const r of [hrAssetRoutes, hrDisciplineRoutes, hrDocumentRoutes, hrLifecycleRoutes, hrRecruitRoutes, hrLineInviteRoutes, hrRosterRoutes, hrPayrollRoutes]) app.use('/api/hr', r)
   return app
 }
 
 const tenants: string[] = []
-const TABLES = ['hr_asset_loans', 'hr_assets', 'hr_disciplinary_records', 'hr_employee_documents', 'hr_checklist_items', 'hr_checklist_templates',
+const TABLES = ['approval_logs', 'approval_requests', 'leave_requests', 'leave_types', 'shift_assignments', 'hr_roster_publishes', 'shifts',
+  'hr_expiry_digest_runs', 'journal_lines', 'journal_entries', 'payroll_run_lines', 'payroll_runs', 'accounts', 'org_units','hr_asset_loans', 'hr_assets', 'hr_disciplinary_records', 'hr_employee_documents', 'hr_checklist_items', 'hr_checklist_templates',
   'hr_applicants', 'hr_job_postings', 'line_login_tokens', 'line_link_tokens', 'line_user_mappings', 'employees', 'company_settings', 'tenant_subscriptions', 'users']
 afterAll(() => {
   vi.restoreAllMocks()
@@ -227,5 +233,110 @@ describe('HR/LINE stress', () => {
       expect(out.includes(e.p.other.company) || out.includes(e.p.other.tenantId), `${e.text} leaked other company`).toBe(false)
       if (e.text === 'บัญชีของฉัน') expect(out).toContain(e.p.own.company)
     }
+  }, 60000)
+
+  it('10. in-chat approval double press: 2 admins x 5 mixed postbacks -> exactly one decision', async () => {
+    const a = admin(), t = a.tenantId, now = new Date().toISOString()
+    const boss2 = createTestUser({ role: 'ADMIN', tenantId: t }), staff = createTestUser({ role: 'USER', tenantId: t })
+    const link = (userId: string) => { const l = 'U' + generateId(); db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, 'ADMIN')`).run(generateId(), t, userId, l); return l }
+    const lines = [link(a.userId), link(boss2.userId)]
+    const typeId = generateId(), leaveId = generateId(), reqId = generateId(), e = emp(t, { userId: staff.userId })
+    db.prepare(`INSERT INTO leave_types (id, tenant_id, code, name, paid, days_per_year, is_active, created_at) VALUES (?, ?, 'SICK', 'ลาป่วย', 1, 30, 1, ?)`).run(typeId, t, now)
+    db.prepare(`INSERT INTO leave_requests (id, tenant_id, employee_id, leave_type_id, start_date, end_date, days, reason, status, approval_request_id, requested_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, '2026-11-03', '2026-11-03', 1, 'ป่วย', 'PENDING', ?, ?, ?, ?)`).run(leaveId, t, e, typeId, reqId, staff.userId, now, now)
+    db.prepare(`INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id, requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'leave', 'leave_requests', ?, ?, 'x', 'USER', 0, 'ลาป่วย 1 วัน', 'PENDING', ?, ?)`).run(reqId, t, 'APR-' + reqId.slice(0, 8), leaveId, staff.userId, now, now)
+    vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: async () => {}, pushMessage: vi.fn() })
+    vi.spyOn(lineBotService, 'notifyApprovalDecision').mockResolvedValue(undefined as any)
+    const presses = Array.from({ length: 10 }, (_, i) => lineBotService.handleEvent(t, {
+      type: 'postback', replyToken: `rt-${i}`, source: { type: 'user', userId: lines[i % 2] }, postback: { data: `action=${i % 3 === 0 ? 'reject_req' : 'approve_req'}&id=${reqId}` } }))
+    const settled = await Promise.allSettled(presses)
+    expect(settled.filter(r => r.status === 'rejected').map((r: any) => String(r.reason))).toEqual([])
+    expect(count(`SELECT COUNT(*) c FROM approval_logs WHERE approval_request_id = ? AND action IN ('APPROVED', 'REJECTED')`, reqId)).toBe(1)
+    const st = (db.prepare('SELECT status FROM approval_requests WHERE id = ?').get(reqId) as any).status
+    expect(st).not.toBe('PENDING')
+    const leave = (db.prepare('SELECT status FROM leave_requests WHERE id = ?').get(leaveId) as any).status
+    expect(leave).toBe(st === 'REJECTED' ? 'REJECTED' : 'APPROVED')
+  }, 60000)
+
+  it('11. roster publish: 10 parallel -> 1x200 + 9x409, one push per linked employee; 10 parallel forced -> 1 success', async () => {
+    const push = vi.spyOn(lineBotService, 'pushToUser').mockResolvedValue(true)
+    push.mockClear()
+    const a = admin(), t = a.tenantId, MONDAY = '2030-01-07'
+    try { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(t, 'ร้านสเตรส') } catch { /* already present */ }
+    const shift = generateId()
+    db.prepare(`INSERT INTO shifts (id, tenant_id, name, start_time, end_time, grace_minutes, break_minutes, is_active, created_at) VALUES (?, ?, 'เช้า', '09:00', '18:00', 0, 60, 1, '2026-01-01T00:00:00.000Z')`).run(shift, t)
+    const ins = db.prepare('INSERT INTO shift_assignments (id, tenant_id, employee_id, work_date, shift_id) VALUES (?, ?, ?, ?, ?)')
+    const users = Array.from({ length: 4 }, () => createTestUser({ role: 'USER', tenantId: t }))
+    for (const u of users) ins.run(generateId(), t, emp(t, { userId: u.userId }), MONDAY, shift)
+    ins.run(generateId(), t, emp(t), MONDAY, shift) // no LINE-linked user
+    const pub = (body: any = {}) => api().post('/api/hr/roster/publish').set(auth(a)).send({ week_start: MONDAY, ...body })
+    const r1 = await Promise.all(Array.from({ length: 10 }, () => pub()))
+    expect(tally(r1)).toEqual({ 200: 1, 409: 9 })
+    expect(count('SELECT COUNT(*) c FROM hr_roster_publishes WHERE tenant_id = ?', t)).toBe(1)
+    expect(push).toHaveBeenCalledTimes(4)
+    expect(push.mock.calls.map(c => c[1]).sort()).toEqual(users.map(u => u.userId).sort())
+    const r2 = await Promise.all(Array.from({ length: 10 }, () => pub({ force: true })))
+    expect(tally(r2)).toEqual({ 200: 1, 409: 9 })
+    expect(push).toHaveBeenCalledTimes(8)
+    expect(count('SELECT COUNT(*) c FROM hr_roster_publishes WHERE tenant_id = ?', t)).toBe(1)
+  }, 60000)
+
+  it('12. expiry digest: 10 parallel runs -> pushed once, one run row', async () => {
+    const push = vi.spyOn(lineBotService, 'pushToUser').mockResolvedValue(true)
+    push.mockClear()
+    const a = admin(), t = a.tenantId, TODAY = '2031-03-01', in30 = '2031-03-31'
+    try { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(t, 'ร้านสเตรส') } catch { /* already present */ }
+    db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, 'ADMIN')`).run(generateId(), t, a.userId, 'U' + generateId())
+    db.prepare(`INSERT INTO hr_employee_documents (id, tenant_id, employee_id, doc_type, title, expires_on) VALUES (?, ?, ?, 'OTHER', 'พาสปอร์ต', ?)`).run(generateId(), t, emp(t), in30)
+    await Promise.all(Array.from({ length: 10 }, () => runExpiryDigest(TODAY)))
+    expect(push.mock.calls.filter(c => c[0] === t)).toHaveLength(1)
+    expect(count('SELECT COUNT(*) c FROM hr_expiry_digest_runs WHERE tenant_id = ? AND run_date = ?', t, TODAY)).toBe(1)
+  }, 60000)
+
+  it('13. final-pay apply: 10 parallel -> each item at most once, gross equals single apply', async () => {
+    const a = admin(), t = a.tenantId
+    const mk = () => { const id = generateId(); db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, employment_type, base_wage, start_date, end_date, status)
+      VALUES (?, ?, ?, 'ส', 'ด', 'MONTHLY', 30000, '2020-01-01', '2026-06-01', 'ACTIVE')`).run(id, t, `F${id.slice(0, 6)}`); return id }
+    const e1 = mk(), e2 = mk()
+    db.prepare(`INSERT INTO leave_types (id, tenant_id, code, name, paid, days_per_year, is_active) VALUES (?, ?, 'VACATION', 'พักร้อน', 1, 6, 1)`).run(generateId(), t)
+    const run = await api().post('/api/hr/payroll-runs').set(auth(a)).send({ period: '2026-06' })
+    expect(run.status).toBe(201)
+    const apply = (e: string) => api().post(`/api/hr/employees/${e}/final-pay/apply`).set(auth(a)).send({ run_id: run.body.id })
+    const rs = await Promise.all(Array.from({ length: 10 }, () => apply(e1)))
+    expect(rs.filter(r => r.status >= 500).map(r => r.status)).toEqual([])
+    expect((await apply(e2)).status).toBe(200)
+    const line = (e: string) => db.prepare('SELECT inputs, gross FROM payroll_run_lines WHERE run_id = ? AND employee_id = ?').get(run.body.id, e) as any
+    const names = (JSON.parse(line(e1).inputs).extraPayItems || []).map((i: any) => i.name as string)
+    expect(names.filter((n: string) => n.startsWith('ค่าชดเชยตามกฎหมาย'))).toHaveLength(1)
+    expect(names.filter((n: string) => n.startsWith('ค่าจ้างวันหยุดพักผ่อนคงเหลือ'))).toHaveLength(1)
+    expect(names).toHaveLength(2)
+    expect(line(e1).gross).toBe(line(e2).gross)
+  }, 60000)
+
+  it('14. payroll post: 5 parallel -> one success, slip pushed at most once per linked employee, one set of JEs', async () => {
+    const push = vi.spyOn(lineBotService, 'pushToUser').mockResolvedValue(true)
+    push.mockClear()
+    const a = admin(), t = a.tenantId
+    seedChartOfAccounts(t)
+    const bank = getOrCreateAccount(t, '1102')
+    for (const c of ['1101', '2105', '2106', '2107', '5301', '5314']) getOrCreateAccount(t, c)
+    try { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(t, 'ร้านสเตรส') } catch { /* already present */ }
+    const users = Array.from({ length: 3 }, () => createTestUser({ role: 'USER', tenantId: t }))
+    for (const u of users) emp(t, { userId: u.userId })
+    emp(t)
+    const run = await api().post('/api/hr/payroll-runs').set(auth(a)).send({ period: '2026-08' })
+    expect(run.status).toBe(201)
+    expect((await api().post(`/api/hr/payroll-runs/${run.body.id}/approve`).set(auth(a)).send({})).status).toBe(200)
+    const rs = await Promise.all(Array.from({ length: 5 }, () => api().post(`/api/hr/payroll-runs/${run.body.id}/post`).set(auth(a)).send({ payDate: '2026-08-31', payAccountId: bank })))
+    await new Promise(r => setTimeout(r, 50))
+    expect(rs.filter(r => r.status >= 500).map(r => r.status)).toEqual([])
+    expect(rs.filter(r => r.status === 200)).toHaveLength(1)
+    const ids = users.map(u => u.userId)
+    const mine = push.mock.calls.filter(c => ids.includes(c[1] as string))
+    for (const id of ids) expect(mine.filter(c => c[1] === id).length, id).toBeLessThanOrEqual(1)
+    expect(count(`SELECT COUNT(*) c FROM journal_entries WHERE tenant_id = ? AND reference_type = 'PAYROLL_RUN' AND reference_id = ?`, t, run.body.id))
+      .toBe(rs.find(r => r.status === 200)!.body.accrual_je_ids.length)
+    expect((db.prepare('SELECT status FROM payroll_runs WHERE id = ?').get(run.body.id) as any).status).toBe('POSTED')
   }, 60000)
 })

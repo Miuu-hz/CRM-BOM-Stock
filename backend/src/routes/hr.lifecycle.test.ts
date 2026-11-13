@@ -226,10 +226,10 @@ describe('HR lifecycle routes', () => {
       const gp = (await request(app).get(`/api/hr/employees/${emp}/final-pay`).set(auth(a))).body.data
       const r = await apply(a, emp, runId)
       expect(r.status).toBe(200)
-      expect(r.body.data.note).toBe('ค่าชดเชยอาจได้รับยกเว้นภาษีบางส่วนตามกฎหมาย ให้นักบัญชีตรวจช่องคิดภาษีในรอบเงินเดือนก่อนอนุมัติ')
+      expect(r.body.data.note).toContain('ไม่คิดภาษี')
       const items = r.body.data.line.inputs.extraPayItems
       expect(items).toHaveLength(2)
-      expect(items[0]).toMatchObject({ amount: gp.severanceAmount, taxable: true, ssoable: false })
+      expect(items[0]).toMatchObject({ amount: gp.severanceAmount, taxable: false, ssoable: false })
       expect(items[0].name).toBe(`${SEV} (${gp.severanceDays} วัน)`)
       expect(items[1]).toMatchObject({ amount: gp.leavePayout, taxable: true, ssoable: true })
       expect(items[1].name).toBe(`${LEAVE} (${gp.unusedAnnualLeaveDays} วัน)`)
@@ -248,6 +248,20 @@ describe('HR lifecycle routes', () => {
       expect(again.body.data.line.net).toBe(r.body.data.line.net)
       const detail = await request(app).get(`/api/hr/payroll-runs/${runId}`).set(auth(a))
       expect(detail.body.totals.net).toBe(r.body.data.line.net)
+    })
+
+    it('ไม่จ่ายซ้ำข้ามรอบ · พนักงานที่ยังไม่มีวันออกงานส่งไม่ได้', async () => {
+      const { a, emp, runId } = await setup()
+      db.prepare(`UPDATE employees SET end_date = '2026-08-01' WHERE id = ?`).run(emp)
+      const still = insertEmp(a.tenantId) // ACTIVE ไม่มี end_date
+      const run2 = await request(app).post('/api/hr/payroll-runs').set(auth(a)).send({ period: '2026-07' })
+      expect((await apply(a, emp, runId)).status).toBe(200)
+      const dup = await apply(a, emp, run2.body.id)
+      expect(dup.status).toBe(409)
+      expect(dup.body.message).toContain('2026-06')
+      const active = await apply(a, still, run2.body.id)
+      expect(active.status).toBe(409)
+      expect(active.body.message).toContain('ยังไม่ได้ออกงาน')
     })
 
     it('RESIGNED employee gets only the leave item', async () => {

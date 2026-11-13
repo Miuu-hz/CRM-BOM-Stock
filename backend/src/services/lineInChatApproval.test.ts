@@ -78,6 +78,31 @@ describe('LINE: อนุมัติคำขอ HR ในแชท', () => {
     })
 })
 
+describe('ด่านแพ็กเกจและเพดาน push', () => {
+    it('แพ็กเกจหมดอายุ → คนที่ไม่ใช่ ADMIN กดอนุมัติในแชทไม่ได้ (เหมือนหน้าเว็บ)', async () => {
+        const s = setup(), r = s.request(), me = s.link(s.staff.userId)
+        db.prepare('DELETE FROM tenant_subscriptions WHERE tenant_id = ?').run(s.t)
+        db.prepare(`INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, current_period_end, packs, addons)
+            VALUES (?, ?, 'pro', 'EXPIRED', datetime('now', '-1 days'), '[]', '{}')`).run(generateId(), s.t)
+        expect(await s.press(me, 'approve_req', r.id)).toContain('แพ็กเกจหมดอายุ')
+        expect(s.st(r.id)).toBe('PENDING')
+    })
+
+    it('pushToUser หยุดส่งเมื่อถึงเพดานต่อบริษัทต่อเดือน', async () => {
+        const s = setup(), pushMessage = vi.fn()
+        s.link(s.staff.userId)
+        vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ pushMessage })
+        vi.stubEnv('LINE_BULK_PUSH_CAP', '2')
+        try {
+            const sent = []
+            for (let i = 0; i < 4; i++) sent.push(await lineBotService.pushToUser(s.t, s.staff.userId, 'x'))
+            expect(sent).toEqual([true, true, false, false])
+            expect(pushMessage).toHaveBeenCalledTimes(2)
+            expect(lineBotService.pushQuotaLeft(s.t)).toBe(0)
+        } finally { vi.unstubAllEnvs(); db.prepare('DELETE FROM line_push_counts WHERE tenant_id = ?').run(s.t) }
+    })
+})
+
 describe('pushToUser', () => {
     it('ข้อความตัวอักษรเปล่าถูกห่อเป็น text message', async () => {
         const s = setup(), line = s.link(s.staff.userId), pushMessage = vi.fn()

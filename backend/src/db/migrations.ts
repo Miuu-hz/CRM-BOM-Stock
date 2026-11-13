@@ -2852,6 +2852,13 @@ export function runMigrations(db: any): void {
     `)
   } catch (e) { console.error('⚠️ hr_roster_publishes migration error:', e) }
 
+  // เพดานข้อความ push แบบส่งทีละหลายคน (ประกาศกะ/สลิป/สรุปหมดอายุ) ต่อบริษัทต่อเดือน — OA กลางมีโควตารวม 300/เดือน
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS line_push_counts (
+      tenant_id TEXT NOT NULL, month TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tenant_id, month)
+    )`)
+  } catch (e) { console.error('⚠️ line_push_counts migration error:', e) }
+
   // กันส่ง digest เอกสารใกล้หมดอายุซ้ำ (1 แถว/บริษัท/วัน) — โควตา LINE push จำกัด
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS hr_expiry_digest_runs (

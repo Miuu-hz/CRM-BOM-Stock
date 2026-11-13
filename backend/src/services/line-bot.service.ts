@@ -86,6 +86,7 @@ try {
 }
 
 import { flexTemplates, IN_CHAT_APPROVAL } from './line-flex-templates'
+import { getSubscription } from './subscription.service'
 import { handleDecision } from '../routes/approval.routes' // วนกันกับ approval.routes แต่ใช้ตอนเรียกเท่านั้น
 import { detectIntent } from './llm.service'
 import { richMenus, menuKeyForRole, effectiveRole, MENUS, MenuKey } from './line-richmenu.service'
@@ -167,6 +168,8 @@ async function createPaperclipTask(title: string, description: string): Promise<
     }
 }
 
+const BULK_PUSH_CAP = () => Number(process.env.LINE_BULK_PUSH_CAP) || 100
+
 // ─── Quick Reply Items ────────────────────────────────────────────────────────
 function quickReplyItems(isPersonal: boolean) {
     const items: any[] = [
@@ -177,7 +180,12 @@ function quickReplyItems(isPersonal: boolean) {
         { type: 'action', action: { type: 'message', label: '❓ ช่วยเหลือ',    text: '-help' } },
     ]
     if (isPersonal) {
-        items.splice(4, 0, {
+        // ปุ่ม HR + เปลี่ยนบริษัท อยู่หน้าสุด — รูปริชเมนูยังไม่มีปุ่มสองอย่างนี้
+        items.unshift(
+            { type: 'action', action: { type: 'message', label: '👤 ของฉัน (HR)', text: 'ของฉัน' } },
+            { type: 'action', action: { type: 'message', label: '🏢 เปลี่ยนบริษัท', text: 'เปลี่ยนบริษัท' } },
+        )
+        items.splice(6, 0, {
             type: 'action', action: { type: 'message', label: '🔗 เชื่อมบัญชี', text: 'วิธีเชื่อมบัญชี' }
         })
     }
@@ -270,6 +278,12 @@ class LineBotService {
     }
 
     /** push หาผู้ใช้คนเดียว (ถ้าผูก LINE และบัญชียัง active) — คืน true เมื่อส่งสำเร็จ · push กินโควตารายเดือนของ OA กลาง ใช้เท่าที่จำเป็น */
+    // shortcut: เพดานคงที่ต่อบริษัท (ค่าเริ่ม 100/เดือน) กันบริษัทเดียวกินโควตา 300 ของ OA กลางหมด — ซื้อแพ็กเกจข้อความแล้วค่อยปรับ LINE_BULK_PUSH_CAP
+    public pushQuotaLeft(tenantId: string): number {
+        const row = getDb().prepare('SELECT n FROM line_push_counts WHERE tenant_id = ? AND month = ?').get(tenantId, thaiToday().slice(0, 7)) as { n: number } | undefined
+        return Math.max(0, BULK_PUSH_CAP() - (row?.n ?? 0))
+    }
+
     public async pushToUser(tenantId: string, userId: string, message: any): Promise<boolean> {
         const client = this.getClient(tenantId)
         if (!client) return false
@@ -278,6 +292,10 @@ class LineBotService {
             WHERE lum.tenant_id = ? AND lum.user_id = ? AND (u.id IS NULL OR u.status = 'active')
         `).get(tenantId, userId) as { line_user_id: string } | undefined
         if (!m) return false
+        // จองโควตาก่อนส่ง (อะตอมมิก) — เต็มแล้วไม่ส่ง
+        const claimed = getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, 1)
+            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + 1 WHERE n < ?`).run(tenantId, thaiToday().slice(0, 7), BULK_PUSH_CAP())
+        if (!claimed.changes) { console.warn(`pushToUser: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`); return false }
         // รับข้อความตัวอักษรเปล่าด้วย — LINE รับเฉพาะ object
         try { await client.pushMessage(m.line_user_id, typeof message === 'string' ? { type: 'text', text: message } : message); return true }
         catch (err) { console.error(`pushToUser failed → ${userId}:`, err); return false }
@@ -1328,6 +1346,12 @@ class LineBotService {
                 if (!me) return
                 const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
                 const u = db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, tenantId) as any
+                // ด่านแพ็กเกจเดียวกับ /api/approval บนเว็บ: หมดอายุ → เฉพาะ ADMIN
+                const sub = getSubscription(tenantId)
+                if (u && u.role !== 'ADMIN' && (sub.status === 'EXPIRED' || sub.status === 'CANCELLED')) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: '❌ แพ็กเกจหมดอายุ กรุณาติดต่อผู้ดูแลบริษัทเพื่อต่ออายุ' })
+                    return
+                }
                 if (!row || !u || !IN_CHAT_APPROVAL.includes(row.module_type)) {
                     await client.replyMessage(event.replyToken, { type: 'text', text: '❌ รายการนี้อนุมัติในแชทไม่ได้ กรุณาเปิดในเว็บครับ' })
                     return

@@ -199,6 +199,9 @@ export default function Lifecycle() {
                 ทรัพย์สินที่ยังไม่คืน:{' '}
                 {finalPay.unreturnedAssets.length === 0 ? 'ไม่มี' : finalPay.unreturnedAssets.map((a) => `${a.code} ${a.name}`).join(', ')}
               </div>
+              {finalPay.retainTaxUntil && (
+                <div>เก็บข้อมูลหลังออกงาน: ค่าจ้างและเวลาทำงานถึง {finalPay.retainWageUntil} · เอกสารภาษีถึง {finalPay.retainTaxUntil}</div>
+              )}
               <p className="text-xs text-[var(--fg-3)]">เป็นตัวเลขแนะนำเท่านั้น ไม่ได้ลงบัญชีหรือเข้าเงินเดือน</p>
               {draftRuns.length === 0 ? (
                 <p className="text-xs text-amber-600">ยังไม่มีรอบเงินเดือนที่เป็นร่าง สร้างรอบก่อนที่หน้าเงินเดือน</p>

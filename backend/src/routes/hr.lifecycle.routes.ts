@@ -359,10 +359,15 @@ function finalPayFor(tenantId: string, emp: any) {
      WHERE l.tenant_id = ? AND l.employee_id = ? AND l.returned_on IS NULL ORDER BY l.loaned_on`
   ).all(tenantId, emp.id) as any[]
 
-  return computeFinalPay({
-    employmentType: emp.employment_type, baseWage: emp.base_wage, tenureDays,
-    unusedAnnualLeaveDays, outstandingAdvances, unreturnedAssets, resigned: emp.status === 'RESIGNED',
-  })
+  // กำหนดเก็บข้อมูลหลังออกงาน: ค่าจ้าง/เวลาทำงาน 2 ปี (พ.ร.บ.คุ้มครองแรงงาน ม.115), เอกสารภาษี 5 ปี — ระบบไม่ลบเอง แสดงไว้ให้รู้ว่าห้ามลบก่อนวันไหน
+  const plusYears = (n: number) => `${Number(endDay.slice(0, 4)) + n}${endDay.slice(4)}`
+  return {
+    ...computeFinalPay({
+      employmentType: emp.employment_type, baseWage: emp.base_wage, tenureDays,
+      unusedAnnualLeaveDays, outstandingAdvances, unreturnedAssets, resigned: emp.status === 'RESIGNED',
+    }),
+    retainWageUntil: plusYears(2), retainTaxUntil: plusYears(5),
+  }
 }
 
 router.get('/employees/:id/final-pay', (req: Request, res: Response) => {
@@ -379,7 +384,7 @@ router.get('/employees/:id/final-pay', (req: Request, res: Response) => {
   }
 })
 
-const SEVERANCE_NOTE = 'ค่าชดเชยอาจได้รับยกเว้นภาษีบางส่วนตามกฎหมาย ให้นักบัญชีตรวจช่องคิดภาษีในรอบเงินเดือนก่อนอนุมัติ'
+const SEVERANCE_NOTE = 'ค่าชดเชยส่งเข้าแบบไม่คิดภาษี (กฎหมายยกเว้นไม่เกิน 300 วันและ 600,000 บาท) ถ้าเกินให้นักบัญชีแก้ช่องคิดภาษีในรอบเงินเดือนก่อนอนุมัติ'
 const SEV_PREFIX = 'ค่าชดเชยตามกฎหมาย'
 const LEAVE_PREFIX = 'ค่าจ้างวันหยุดพักผ่อนคงเหลือ'
 
@@ -398,6 +403,13 @@ router.post('/employees/:id/final-pay/apply', (req: Request, res: Response) => {
     const lineRow = db.prepare('SELECT * FROM payroll_run_lines WHERE run_id = ? AND employee_id = ? AND tenant_id = ?').get(runId, emp.id, tenantId) as any
     if (!lineRow) return bad(res, 'พนักงานคนนี้ไม่อยู่ในรอบเงินเดือนนี้', 409)
 
+    if (emp.status === 'ACTIVE' && !emp.end_date) return bad(res, 'พนักงานยังไม่ได้ออกงาน กรุณาบันทึกวันออกงานก่อน', 409)
+    // กันจ่ายซ้ำข้ามรอบ: รอบอื่น (ที่ไม่ถูกยกเลิก) มีรายการงวดสุดท้ายของคนนี้แล้ว
+    const dup = db.prepare(`SELECT r.period FROM payroll_run_lines l JOIN payroll_runs r ON r.id = l.run_id AND r.tenant_id = l.tenant_id
+      WHERE l.tenant_id = ? AND l.employee_id = ? AND l.run_id != ? AND r.status != 'VOID' AND (l.inputs LIKE ? OR l.inputs LIKE ?)`)
+      .get(tenantId, emp.id, runId, `%${SEV_PREFIX}%`, `%${LEAVE_PREFIX}%`) as any
+    if (dup) return bad(res, `ส่งเงินงวดสุดท้ายเข้ารอบ ${dup.period} ไปแล้ว`, 409)
+
     const fp = finalPayFor(tenantId, emp)
     const added: { name: string; amount: number }[] = []
     if (fp.severanceAmount > 0) added.push({ name: `${SEV_PREFIX} (${fp.severanceDays} วัน)`, amount: fp.severanceAmount })
@@ -410,7 +422,8 @@ router.post('/employees/:id/final-pay/apply', (req: Request, res: Response) => {
         const prev = JSON.parse(lineRow.inputs || '{}')
         const kept = (Array.isArray(prev.extraPayItems) ? prev.extraPayItems : Array.isArray(prev.payItems) ? prev.payItems : [])
           .filter((p: any) => { const n = String(p?.name ?? ''); return !n.startsWith(SEV_PREFIX) && !n.startsWith(LEAVE_PREFIX) })
-        const items = added.map((a) => ({ ...a, taxable: true, ssoable: !a.name.startsWith(SEV_PREFIX) }))
+        // ค่าชดเชยตามกฎหมายได้ยกเว้นภาษี (ไม่เกิน 300 วันและ 600,000 บาท) และถ้าคิดภาษีแบบคูณ 12 จะหักเกินจริงมาก → ไม่คิดภาษี/สปส.
+        const items = added.map((a) => { const sev = a.name.startsWith(SEV_PREFIX); return { ...a, taxable: !sev, ssoable: !sev } })
         return recalcRunLine(tenantId, runId, lineRow, emp, { extraPayItems: [...kept, ...items] })
       })()
     } catch (err: any) {

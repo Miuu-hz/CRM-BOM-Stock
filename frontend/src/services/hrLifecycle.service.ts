@@ -42,6 +42,8 @@ export interface FinalPay {
   leavePayout: number
   outstandingAdvances: number
   unreturnedAssets: { id: string; code: string; name: string; loaned_on: string }[]
+  retainWageUntil?: string
+  retainTaxUntil?: string
 }
 
 export const hrLifecycleService = {

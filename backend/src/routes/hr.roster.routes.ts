@@ -338,6 +338,9 @@ router.post('/roster/publish', requirePermission('hr', 'write'), async (req: Req
     }
     const force = req.body?.force === true
     const tenantId = req.user!.tenantId
+    if (lineBotService.pushQuotaLeft(tenantId) <= 0) {
+      return res.status(429).json({ success: false, message: 'โควตาข้อความ LINE ของบริษัทเดือนนี้เต็มแล้ว พนักงานยังดูตารางกะได้โดยพิมพ์ "ตารางกะ"' })
+    }
     const today = thToday()
     const now = new Date().toISOString()
     const dates = weekDates(weekStart)
@@ -382,7 +385,9 @@ router.post('/roster/publish', requirePermission('hr', 'write'), async (req: Req
       if (await lineBotService.pushToUser(tenantId, e.user_id, lines.join('\n'))) sent++
       else skipped++
     }
-    db.prepare('UPDATE hr_roster_publishes SET sent = ? WHERE tenant_id = ? AND week_start = ?').run(sent, tenantId, weekStart)
+    // ส่งไม่ถึงใครเลยในครั้งแรก (LINE ล่ม/ยังไม่มีใครผูก) → ไม่ล็อกสัปดาห์ ให้กดใหม่ได้โดยไม่ต้อง force
+    if (!prev && sent === 0) db.prepare('DELETE FROM hr_roster_publishes WHERE tenant_id = ? AND week_start = ?').run(tenantId, weekStart)
+    else db.prepare('UPDATE hr_roster_publishes SET sent = ? WHERE tenant_id = ? AND week_start = ?').run(sent, tenantId, weekStart)
     res.json({ success: true, data: { sent, skipped_no_line: skipped, employees: emps.length } })
   } catch (err: any) {
     console.error('Publish roster error:', err)
