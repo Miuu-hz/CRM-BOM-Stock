@@ -72,6 +72,8 @@ function buildMessage(company: string, items: ExpiryItem[]): string {
 }
 
 export async function runExpiryDigest(today = thaiDateStr()): Promise<{ tenants: number; pushes: number }> {
+  // PDPA: ลบใบสมัครที่เกินกำหนดเก็บ (6 เดือน) ทุกวัน ไม่ต้องรอ HR เปิดหน้ารับสมัคร — ไม่ลบคนที่รับเข้าทำงานแล้ว
+  try { db.prepare(`DELETE FROM hr_applicants WHERE stage <> 'HIRED' AND purge_after < ?`).run(today) } catch (e) { console.error('[HrExpiry] purge applicants failed', e) }
   const tenantIds = (db.prepare(`
     SELECT tenant_id FROM hr_employee_documents WHERE expires_on IS NOT NULL
     UNION SELECT tenant_id FROM training_records WHERE expires_on IS NOT NULL`).all() as any[]).map(r => r.tenant_id as string)

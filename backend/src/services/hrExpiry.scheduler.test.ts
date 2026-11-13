@@ -110,3 +110,27 @@ describe('hrExpiry digest', () => {
     expect(db.prepare('SELECT COUNT(*) n FROM hr_expiry_digest_runs WHERE tenant_id = ?').get(t.tenantId)).toEqual({ n: 0 })
   })
 })
+
+describe('ลบใบสมัครเกินกำหนดเก็บ', () => {
+  it('ลบใบสมัครที่ purge_after ผ่านแล้ว แต่ไม่ลบคนที่รับเข้าทำงานและใบที่ยังไม่ถึงกำหนด', async () => {
+    const a = setupTenant()
+    const pid = generateId()
+    db.prepare(`INSERT INTO hr_job_postings (id, tenant_id, title, public_token, is_open, created_at) VALUES (?, ?, 'งาน', ?, 1, ?)`).run(pid, a.tenantId, generateId() + generateId(), TODAY)
+    const add = (stage: string, purge: string) => {
+      const id = generateId()
+      db.prepare(`INSERT INTO hr_applicants (id, tenant_id, posting_id, full_name, phone, source, stage, consent_at, purge_after, created_at)
+        VALUES (?, ?, ?, 'ผู้สมัคร', '0800000000', 'PUBLIC', ?, ?, ?, ?)`).run(id, a.tenantId, pid, stage, TODAY, purge, TODAY)
+      return id
+    }
+    const old = add('APPLIED', addDays(TODAY, -1)), hired = add('HIRED', addDays(TODAY, -1)), fresh = add('APPLIED', addDays(TODAY, 30))
+    try {
+      await runExpiryDigest(TODAY)
+      const left = (db.prepare('SELECT id FROM hr_applicants WHERE tenant_id = ?').all(a.tenantId) as any[]).map(r => r.id)
+      expect(left).not.toContain(old)
+      expect(left).toEqual(expect.arrayContaining([hired, fresh]))
+    } finally {
+      db.prepare('DELETE FROM hr_applicants WHERE tenant_id = ?').run(a.tenantId)
+      db.prepare('DELETE FROM hr_job_postings WHERE tenant_id = ?').run(a.tenantId)
+    }
+  })
+})
