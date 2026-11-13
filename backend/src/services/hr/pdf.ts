@@ -128,10 +128,9 @@ export function renderPdf(input: PdfInput): Promise<Buffer> {
       else doc.moveDown(0.7)
     }
 
+    // ช่องลงชื่ออยู่หน้าเดียวกันทั้งชุด
+    if (doc.y + 60 * input.signatures.length > doc.page.height - MARGIN) doc.addPage()
     for (const sig of input.signatures) {
-      if (doc.y + 60 > doc.page.height - MARGIN) {
-        doc.addPage()
-      }
       doc.moveDown(1.5)
       doc.text('ลงชื่อ ................................................', { align: 'right', width })
       doc.text(`(${sig})`, { align: 'right', width })
