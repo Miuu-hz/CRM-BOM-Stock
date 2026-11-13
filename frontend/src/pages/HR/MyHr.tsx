@@ -17,6 +17,7 @@ import {
   Banknote,
   GraduationCap,
   ArrowLeftRight,
+  Camera,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, {
@@ -28,6 +29,9 @@ import hrService, {
   PayrollRunLine,
   CheckinLocation,
   CheckinResult,
+  CheckinGeo,
+  FaceEnrollmentStatus,
+  CheckinFaceInput,
   EmployeeAdvance,
   AdvanceKind,
   AdvanceStatus,
@@ -39,6 +43,7 @@ import hrService, {
   ShiftSwap,
   ShiftSwapStatus,
 } from '../../services/hr.service'
+import FaceCapture from '../../components/hr/FaceCapture'
 import hrAssetService, { HrAssetLoan } from '../../services/hrAsset.service'
 import hrDocumentService, { EmployeeDocument, DocType } from '../../services/hrDocument.service'
 import hrDisciplineService, { DisciplinaryRecord } from '../../services/hrDiscipline.service'
@@ -222,6 +227,15 @@ export default function MyHr() {
   const [ackConfirmId, setAckConfirmId] = useState<string | null>(null)
   const [acking, setAcking] = useState(false)
 
+  // Face scan & enrollment state
+  const [faceStatus, setFaceStatus] = useState<FaceEnrollmentStatus | null>(null)
+  const [showEnrollModal, setShowEnrollModal] = useState(false)
+  const [enrollStep, setEnrollStep] = useState<'consent' | 'camera'>('consent')
+  const [consentChecked, setConsentChecked] = useState(false)
+  const [confirmDeleteFace, setConfirmDeleteFace] = useState(false)
+  const [deletingFace, setDeletingFace] = useState(false)
+  const [showFaceCheckinModal, setShowFaceCheckinModal] = useState(false)
+
   // Roster & Shift Swap state
   const [weekStart, setWeekStart] = useState<string>(getMondayStr())
   const [myRoster, setMyRoster] = useState<MyRosterWeek | null>(null)
@@ -268,8 +282,8 @@ export default function MyHr() {
       const initialMonday = getMondayStr()
       setWeekStart(initialMonday)
 
-      // Concurrently load checkin location, attendance, leaves, slips, advances, training, roster, swaps
-      const [loc, att, types, balances, requests, mySlips, advances, training, roster, swaps, loans, docs, disc] = await Promise.all([
+      // Concurrently load checkin location, attendance, leaves, slips, advances, training, roster, swaps, face
+      const [loc, att, types, balances, requests, mySlips, advances, training, roster, swaps, loans, docs, disc, face] = await Promise.all([
         hrService.getCheckinLocation().catch(() => null),
         hrService.getMyAttendance().catch(() => null),
         hrService.getLeaveTypes({ active: 1 }).catch(() => []),
@@ -283,6 +297,7 @@ export default function MyHr() {
         hrAssetService.getMyAssetLoans().catch(() => []),
         hrDocumentService.getMyDocuments().catch(() => []),
         hrDisciplineService.getMyDisciplinary().catch(() => []),
+        hrService.getMyFace().catch(() => ({ enrolled: false, consent_at: null })),
       ])
 
       setCheckinLocation(loc)
@@ -298,6 +313,7 @@ export default function MyHr() {
       setMyLoans(loans || [])
       setMyDocs(docs || [])
       setMyDisc(disc || [])
+      setFaceStatus(face || { enrolled: false, consent_at: null })
     } catch (err: any) {
       if (err?.response?.status === 404 || err?.status === 404) {
         setNotLinked(true)
@@ -393,6 +409,101 @@ export default function MyHr() {
     } else {
       // No check-in location configured -> send without GPS
       sendPunch({})
+    }
+  }
+
+  const handleOpenEnrollModal = () => {
+    setEnrollStep('consent')
+    setConsentChecked(false)
+    setShowEnrollModal(true)
+  }
+
+  const handleEnrollCapture = async (descriptor: number[]) => {
+    try {
+      await hrService.enrollMyFace({ descriptor, consent: true })
+      setShowEnrollModal(false)
+      setEnrollStep('consent')
+      setConsentChecked(false)
+      toast.success('ลงทะเบียนใบหน้าสำเร็จ')
+      const today = new Date().toISOString().slice(0, 19).replace('T', ' ')
+      setFaceStatus({
+        enrolled: true,
+        consent_at: today,
+      })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'ลงทะเบียนใบหน้าไม่สำเร็จ'
+      toast.error(msg)
+      throw err
+    }
+  }
+
+  const handleDeleteFace = async () => {
+    setDeletingFace(true)
+    try {
+      await hrService.deleteMyFace()
+      setFaceStatus({ enrolled: false, consent_at: null })
+      setConfirmDeleteFace(false)
+      toast.success('ลบข้อมูลใบหน้าเรียบร้อยแล้ว')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'ลบข้อมูลไม่สำเร็จ')
+    } finally {
+      setDeletingFace(false)
+    }
+  }
+
+  const handleFaceCheckinCapture = async (descriptor: number[]) => {
+    setCheckinError(null)
+    setCheckinSuccess(null)
+    setPermissionDenied(false)
+
+    const getGeo = (): Promise<CheckinGeo> => {
+      return new Promise((resolve) => {
+        if (checkinLocation) {
+          if (!navigator.geolocation) {
+            resolve({})
+            return
+          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              resolve({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+              })
+            },
+            (geoErr) => {
+              if (geoErr.code === 1) {
+                setPermissionDenied(true)
+              }
+              resolve({})
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          )
+        } else {
+          resolve({})
+        }
+      })
+    }
+
+    try {
+      const geo = await getGeo()
+      const res = await hrService.checkinWithFace({
+        face_descriptor: descriptor,
+        ...geo,
+      })
+      setShowFaceCheckinModal(false)
+      const timeStr = fmtTime(res.punched_at)
+      const kindText = res.kind === 'IN' ? 'เข้างาน' : 'ออกงาน'
+      const distText = res.distance_m != null ? ` · ห่างร้าน ${Math.round(res.distance_m)} ม.` : ''
+      const bannerText = `${kindText} ${timeStr}${distText}`
+      setCheckinSuccess(bannerText)
+      toast.success(bannerText)
+      reloadAttendance()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'บันทึกเวลาไม่สำเร็จ'
+      setCheckinError(msg)
+      toast.error(msg)
+      throw err
     }
   }
 
@@ -818,10 +929,104 @@ export default function MyHr() {
           )}
         </button>
 
+        {/* Face Scan Check-in Button (only when enrolled) */}
+        {faceStatus?.enrolled && (
+          <button
+            type="button"
+            onClick={() => setShowFaceCheckinModal(true)}
+            disabled={checkingIn}
+            data-testid="face-checkin-btn"
+            className="w-full min-h-[48px] py-3 px-6 rounded-xl font-bold text-base border-2 border-phopy-indigo text-phopy-indigo hover:bg-phopy-indigo/5 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <Camera className="w-5 h-5" />
+            <span>สแกนหน้า</span>
+          </button>
+        )}
+
         {/* PDPA Note */}
         <p className="text-xs text-center text-[var(--fg-3)]">
           ระบบเก็บตำแหน่งเฉพาะตอนกดบันทึกเวลา
         </p>
+      </div>
+
+      {/* สแกนหน้าเข้างาน Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+            <Camera className="w-4 h-4 text-phopy-indigo" />
+            <span>สแกนหน้าเข้างาน</span>
+          </div>
+          {faceStatus?.enrolled ? (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium">
+              ลงทะเบียนแล้ว
+            </span>
+          ) : (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--surface-2)] text-[var(--fg-3)] font-medium">
+              ยังไม่ได้ลงทะเบียน
+            </span>
+          )}
+        </div>
+
+        {faceStatus?.enrolled ? (
+          <div className="space-y-3">
+            <div className="text-xs text-[var(--fg-2)] flex items-center justify-between py-1">
+              <span>วันที่ให้ความยินยอม</span>
+              <span className="font-medium text-[var(--fg)]">{faceStatus.consent_at || '-'}</span>
+            </div>
+
+            {confirmDeleteFace ? (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 space-y-2">
+                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                  ยืนยันยกเลิกความยินยอมและลบข้อมูลใบหน้า?
+                </p>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteFace(false)}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--surface-2)] text-[var(--fg-2)] transition"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteFace}
+                    disabled={deletingFace}
+                    data-testid="confirm-delete-face-btn"
+                    className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
+                  >
+                    {deletingFace ? 'กำลังลบ...' : 'ยืนยันลบ'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="pt-2 border-t border-[var(--border)] flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteFace(true)}
+                  data-testid="delete-face-btn"
+                  className="text-xs text-red-600 dark:text-red-400 hover:underline transition"
+                >
+                  ยกเลิกความยินยอมและลบข้อมูล
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-[var(--fg-3)]">
+              ลงทะเบียนใบหน้าเพื่อใช้สแกนหน้าเข้า-ออกงานได้อย่างสะดวกรวดเร็ว
+            </p>
+            <button
+              type="button"
+              onClick={handleOpenEnrollModal}
+              data-testid="enroll-face-btn"
+              className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-phopy-indigo text-white hover:opacity-90 active:scale-[0.99] transition flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Camera className="w-4 h-4" />
+              <span>ลงทะเบียนใบหน้า</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ตารางกะของฉัน Card */}
@@ -2132,6 +2337,85 @@ export default function MyHr() {
           payDate={viewingSlip.pay_date}
           onClose={() => setViewingSlip(null)}
         />
+      )}
+
+      {/* Face Check-in Modal */}
+      {showFaceCheckinModal && (
+        <FaceCapture
+          title="สแกนหน้าเข้างาน"
+          onCapture={handleFaceCheckinCapture}
+          onClose={() => setShowFaceCheckinModal(false)}
+        />
+      )}
+
+      {/* Face Enrollment Modal */}
+      {showEnrollModal && (
+        enrollStep === 'consent' ? (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+            <div className="phopy-card w-full max-w-md p-6 space-y-4 shadow-xl">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+                <h3 className="font-bold text-base sm:text-lg text-[var(--fg)] flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-phopy-indigo" />
+                  <span>ลงทะเบียนใบหน้า</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowEnrollModal(false)}
+                  aria-label="ปิด"
+                  className="p-1 rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg)] transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="text-xs sm:text-sm text-[var(--fg-2)] leading-relaxed bg-[var(--surface-2)] p-4 rounded-xl border border-[var(--border)] space-y-2">
+                <p>
+                  ระบบจะเก็บเฉพาะค่าตัวเลขของใบหน้าที่เข้ารหัสไว้ ไม่เก็บรูปถ่าย · ใช้เพื่อยืนยันตัวตอนเช็คอินเท่านั้น · ยกเลิกความยินยอมและลบข้อมูลได้ทุกเมื่อ · ข้อมูลจะถูกลบเมื่อพ้นสภาพพนักงาน
+                </p>
+              </div>
+
+              <label className="flex items-start gap-3 text-xs sm:text-sm text-[var(--fg)] cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  data-testid="face-consent-checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  className="mt-0.5 rounded border-[var(--border)] text-phopy-indigo focus:ring-phopy-indigo"
+                />
+                <span>ยินยอมให้จัดเก็บและประมวลผลข้อมูลตัวเลขใบหน้าตามข้อกำหนดข้างต้น</span>
+              </label>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => setShowEnrollModal(false)}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-[var(--border)] hover:bg-[var(--surface-2)] text-[var(--fg-2)] transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  disabled={!consentChecked}
+                  onClick={() => setEnrollStep('camera')}
+                  data-testid="proceed-camera-btn"
+                  className="phopy-btn-primary px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm disabled:opacity-50 transition"
+                >
+                  <span>ดำเนินการต่อ</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <FaceCapture
+            title="ถ่ายภาพใบหน้าเพื่อลงทะเบียน"
+            onCapture={handleEnrollCapture}
+            onClose={() => {
+              setShowEnrollModal(false)
+              setEnrollStep('consent')
+              setConsentChecked(false)
+            }}
+          />
+        )
       )}
     </div>
   )

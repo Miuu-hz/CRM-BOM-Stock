@@ -5,6 +5,12 @@ import { generateId, thaiDateStr } from '../utils/id'
 import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import { userCan } from '../services/rbac.service'
 import { AttendanceError, getAttendanceSummary, isValidIsoDate } from '../services/hr/attendanceStore'
+import {
+  decryptDescriptor,
+  faceSimilarity,
+  FACE_MATCH_MIN,
+  FACE_MATCH_MARGIN,
+} from '../services/hr/face'
 
 // สัญญากลาง: docs/contracts/hr-phase4.md — เช็คอินเว็บ + หน้าของฉัน (งาน B4)
 // ponytail: ยังไม่ทำเช็คอินด้วยใบหน้าในเฟสนี้ (ต้องเก็บ PDPA consent ข้อมูลชีวมิติและมี PIN fallback เสมอ) — ใช้ GPS + Kiosk PIN ก่อน
@@ -51,6 +57,46 @@ function recordPinFailure(key: string, now = Date.now()): boolean {
     return true
   }
   pinFailures.set(key, rec)
+  return false
+}
+
+const FACE_WINDOW_MS = 5 * 60 * 1000
+const FACE_LOCKOUT_MS = 5 * 60 * 1000
+const FACE_MAX_FAILURES = 5
+
+interface FaceFailureRecord {
+  count: number
+  firstFailedAt: number
+  lockedUntil: number
+}
+const faceFailures = new Map<string, FaceFailureRecord>()
+
+export function resetCheckinFaceLockout(): void {
+  faceFailures.clear()
+}
+
+function isFaceLocked(key: string, now = Date.now()): boolean {
+  const rec = faceFailures.get(key)
+  if (!rec) return false
+  if (rec.lockedUntil > now) return true
+  if (rec.lockedUntil > 0 || now - rec.firstFailedAt > FACE_WINDOW_MS) {
+    faceFailures.delete(key)
+  }
+  return false
+}
+
+function recordFaceFailure(key: string, now = Date.now()): boolean {
+  let rec = faceFailures.get(key)
+  if (!rec || rec.lockedUntil > 0 || now - rec.firstFailedAt > FACE_WINDOW_MS) {
+    rec = { count: 0, firstFailedAt: now, lockedUntil: 0 }
+  }
+  rec.count += 1
+  if (rec.count >= FACE_MAX_FAILURES) {
+    rec.lockedUntil = now + FACE_LOCKOUT_MS
+    faceFailures.set(key, rec)
+    return true
+  }
+  faceFailures.set(key, rec)
   return false
 }
 
@@ -352,6 +398,72 @@ router.post('/checkin', (req: Request, res: Response) => {
   }
 })
 
+// POST /api/hr/checkin/face (self)
+router.post('/checkin/face', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = (req.user as any)?.id || req.user!.userId
+    const emp = getSelfEmployee(tenantId, userId)
+    if (!emp) {
+      return res.status(404).json({ success: false, message: 'บัญชีนี้ยังไม่ได้ผูกกับพนักงาน' })
+    }
+
+    const descriptor = req.body?.face_descriptor
+    if (
+      !Array.isArray(descriptor) ||
+      descriptor.length < 128 ||
+      descriptor.length > 2048 ||
+      !descriptor.every((n: any) => typeof n === 'number' && Number.isFinite(n))
+    ) {
+      return res.status(400).json({ success: false, message: 'ข้อมูลใบหน้าไม่ถูกต้อง' })
+    }
+
+    const lockKey = `${tenantId}:${emp.id}`
+    if (isFaceLocked(lockKey)) {
+      return res.status(429).json({
+        success: false,
+        message: 'สแกนหน้าไม่ผ่านเกินจำนวนครั้งที่กำหนด กรุณารอ 5 นาทีแล้วลองใหม่',
+      })
+    }
+
+    const enrollment = db
+      .prepare('SELECT descriptor_enc FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?')
+      .get(tenantId, emp.id) as { descriptor_enc: string } | undefined
+    if (!enrollment) {
+      return res.status(409).json({ success: false, message: 'ยังไม่ได้ลงทะเบียนใบหน้า' })
+    }
+
+    let stored: number[]
+    try {
+      stored = decryptDescriptor(enrollment.descriptor_enc)
+    } catch {
+      return res.status(500).json({ success: false, message: 'ไม่สามารถอ่านข้อมูลใบหน้าได้' })
+    }
+
+    const sim = faceSimilarity(descriptor, stored)
+    if (sim < FACE_MATCH_MIN) {
+      const lockedNow = recordFaceFailure(lockKey)
+      if (lockedNow) {
+        return res.status(429).json({
+          success: false,
+          message: 'สแกนหน้าไม่ผ่านเกินจำนวนครั้งที่กำหนด กรุณารอ 5 นาทีแล้วลองใหม่',
+        })
+      }
+      return res.status(401).json({
+        success: false,
+        message: 'สแกนหน้าไม่ผ่าน กรุณาลองใหม่หรือใช้ PIN',
+      })
+    }
+
+    faceFailures.delete(lockKey)
+    const result = executeCheckin(tenantId, emp, req.body || {})
+    return res.status(result.status).json(result.body)
+  } catch (error: any) {
+    console.error('Face checkin error:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+})
+
 // C4: POST /api/hr/checkin/pin (hr:read — Kiosk)
 router.post('/checkin/pin', requirePermission('hr', 'read'), async (req: Request, res: Response) => {
   try {
@@ -400,6 +512,82 @@ router.post('/checkin/pin', requirePermission('hr', 'read'), async (req: Request
   } catch (error: any) {
     console.error('PIN checkin error:', error)
     res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// POST /api/hr/checkin/face-kiosk (hr:read — Kiosk)
+router.post('/checkin/face-kiosk', requirePermission('hr', 'read'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const descriptor = req.body?.face_descriptor
+    if (
+      !Array.isArray(descriptor) ||
+      descriptor.length < 128 ||
+      descriptor.length > 2048 ||
+      !descriptor.every((n: any) => typeof n === 'number' && Number.isFinite(n))
+    ) {
+      return res.status(400).json({ success: false, message: 'ข้อมูลใบหน้าไม่ถูกต้อง' })
+    }
+
+    const ip = req.ip || req.socket.remoteAddress || 'kiosk'
+    const lockKey = `${tenantId}:kiosk:${ip}`
+    if (isFaceLocked(lockKey)) {
+      return res.status(429).json({
+        success: false,
+        message: 'สแกนหน้าไม่ผ่านเกินจำนวนครั้งที่กำหนด กรุณารอ 5 นาทีแล้วลองใหม่',
+      })
+    }
+
+    const rows = db
+      .prepare(
+        `SELECT fe.descriptor_enc, e.*, s.name AS shift_name
+         FROM hr_face_enrollments fe
+         JOIN employees e ON e.id = fe.employee_id AND e.tenant_id = fe.tenant_id
+         LEFT JOIN shifts s ON e.shift_id = s.id AND s.tenant_id = e.tenant_id
+         WHERE fe.tenant_id = ? AND e.status = 'ACTIVE'`
+      )
+      .all(tenantId) as any[]
+
+    const candidates: { emp: any; similarity: number }[] = []
+    for (const r of rows) {
+      try {
+        const stored = decryptDescriptor(r.descriptor_enc)
+        const sim = faceSimilarity(descriptor, stored)
+        candidates.push({ emp: r, similarity: sim })
+      } catch {
+        // ignore corrupted
+      }
+    }
+
+    candidates.sort((a, b) => b.similarity - a.similarity)
+    const best = candidates[0]
+    const secondBest = candidates[1]
+
+    const pass =
+      best &&
+      best.similarity >= FACE_MATCH_MIN &&
+      (!secondBest || best.similarity - secondBest.similarity >= FACE_MATCH_MARGIN)
+
+    if (!pass) {
+      const lockedNow = recordFaceFailure(lockKey)
+      if (lockedNow) {
+        return res.status(429).json({
+          success: false,
+          message: 'สแกนหน้าไม่ผ่านเกินจำนวนครั้งที่กำหนด กรุณารอ 5 นาทีแล้วลองใหม่',
+        })
+      }
+      return res.status(401).json({
+        success: false,
+        message: 'สแกนหน้าไม่ผ่าน กรุณาลองใหม่หรือใช้ PIN',
+      })
+    }
+
+    faceFailures.delete(lockKey)
+    const result = executeCheckin(tenantId, best.emp, req.body || {})
+    return res.status(result.status).json(result.body)
+  } catch (error: any) {
+    console.error('Kiosk face checkin error:', error)
+    return res.status(500).json({ success: false, message: error.message })
   }
 })
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Clock, Delete, RotateCcw } from 'lucide-react'
-import hrService, { CheckinGeo, CheckinPinInput } from '../../services/hr.service'
+import { Clock, Delete, RotateCcw, Camera } from 'lucide-react'
+import hrService, { CheckinGeo, CheckinPinInput, CheckinFaceKioskInput } from '../../services/hr.service'
+import FaceCapture from '../../components/hr/FaceCapture'
 
 export default function CheckinKiosk() {
   const [currentTime, setCurrentTime] = useState(() => new Date())
@@ -9,6 +10,7 @@ export default function CheckinKiosk() {
   const [submitting, setSubmitting] = useState(false)
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [geo, setGeo] = useState<CheckinGeo>({})
+  const [showFaceModal, setShowFaceModal] = useState(false)
 
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -104,6 +106,47 @@ export default function CheckinKiosk() {
       }, 5000)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleFaceCapture = async (descriptor: number[]) => {
+    try {
+      const payload: CheckinFaceKioskInput = {
+        face_descriptor: descriptor,
+        ...(geo.lat !== undefined ? { lat: geo.lat, lng: geo.lng, accuracy: geo.accuracy } : {}),
+      }
+
+      const result = await hrService.checkinWithFaceKiosk(payload)
+      setShowFaceModal(false)
+
+      let timeStr = ''
+      if (result.punched_at && result.punched_at.length >= 16) {
+        timeStr = result.punched_at.slice(11, 16)
+      } else {
+        timeStr = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })
+      }
+      const actionText = result.kind === 'IN' ? 'เข้างาน' : 'ออกงาน'
+      const bannerMsg = `${result.employee_name} · ${actionText} ${timeStr}`
+
+      setBanner({ type: 'success', message: bannerMsg })
+
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
+      bannerTimerRef.current = setTimeout(() => {
+        setBanner(null)
+        setEmployeeCode('')
+        setPin('')
+      }, 5000)
+    } catch (err: any) {
+      setShowFaceModal(false)
+      const errMsg = err?.response?.data?.message || err?.message || 'บันทึกเวลาไม่สำเร็จ'
+      setBanner({ type: 'error', message: errMsg })
+
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current)
+      bannerTimerRef.current = setTimeout(() => {
+        setBanner(null)
+        setEmployeeCode('')
+        setPin('')
+      }, 5000)
     }
   }
 
@@ -250,7 +293,28 @@ export default function CheckinKiosk() {
             {submitting ? 'กำลังบันทึก...' : 'บันทึกเวลา'}
           </button>
         </form>
+
+        {/* Face Scan Check-in Button */}
+        <div className="pt-2 border-t border-[var(--border)]">
+          <button
+            type="button"
+            onClick={() => setShowFaceModal(true)}
+            data-testid="face-kiosk-btn"
+            className="w-full py-3 px-4 rounded-xl font-bold text-base border border-[var(--border)] bg-[var(--surface-2)] hover:bg-[var(--surface-sunken)] active:scale-95 text-[var(--fg-1)] transition flex items-center justify-center gap-2 shadow-sm"
+          >
+            <Camera className="w-5 h-5 text-phopy-indigo" />
+            <span>สแกนหน้า</span>
+          </button>
+        </div>
       </div>
+
+      {showFaceModal && (
+        <FaceCapture
+          title="สแกนหน้าเข้างาน"
+          onCapture={handleFaceCapture}
+          onClose={() => setShowFaceModal(false)}
+        />
+      )}
     </div>
   )
 }

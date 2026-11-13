@@ -312,10 +312,14 @@ router.put('/checklist-items/:id', (req: Request, res: Response) => {
     if (firstTick && item.auto_action === 'UNLINK_LINE') unlinkUserId = getEmployee(tenantId, item.employee_id)?.user_id ?? null
 
     db.transaction(() => {
-      if (targetUserId) db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ? AND tenant_id = ?`).run(targetUserId, tenantId)
+      if (targetUserId) {
+        db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ? AND tenant_id = ?`).run(targetUserId, tenantId)
+        db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, item.employee_id)
+      }
       if (unlinkUserId) {
         db.prepare('DELETE FROM line_user_mappings WHERE user_id = ? AND tenant_id = ?').run(unlinkUserId, tenantId)
         db.prepare('DELETE FROM line_login_tokens WHERE user_id = ? AND tenant_id = ?').run(unlinkUserId, tenantId)
+        db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, item.employee_id)
       }
       db.prepare('UPDATE hr_checklist_items SET done_at = ?, done_by = ?, note = ? WHERE id = ? AND tenant_id = ?')
         .run(done ? new Date().toISOString() : null, done ? req.user!.userId : null, note === undefined ? item.note : note, item.id, tenantId)

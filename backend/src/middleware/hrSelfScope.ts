@@ -4,8 +4,10 @@
  */
 const ALLOW: [RegExp, RegExp][] = [
   [/^(GET|POST)$/, /^\/api\/hr\/me(\/[A-Za-z0-9_\-/]*)?$/],
+  [/^DELETE$/, /^\/api\/hr\/me\/face$/],
   [/^GET$/, /^\/api\/hr\/checkin\/location$/],
   [/^POST$/, /^\/api\/hr\/checkin$/],
+  [/^POST$/, /^\/api\/hr\/checkin\/face$/],
   [/^GET$/, /^\/api\/hr\/(leave-types|leave-balances)$/],
   [/^(GET|POST)$/, /^\/api\/hr\/leave-requests$/],
   [/^POST$/, /^\/api\/hr\/(leave-requests|advances|shift-swaps)\/[A-Za-z0-9_-]+\/cancel$/],

@@ -641,6 +641,10 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
       id, tenantId
     )
 
+    if (status !== 'ACTIVE') {
+      db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, id)
+    }
+
     const updated = db.prepare(`
       SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
       FROM employees e
@@ -682,6 +686,8 @@ router.post('/employees/:id/offboard', requirePermission('hr', 'write'), (req: R
       UPDATE employees SET end_date = ?, status = ?, updated_at = ?
       WHERE id = ? AND tenant_id = ?
     `).run(end_date, status, now, id, tenantId)
+
+    db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, id)
 
     // บัญชี "LINE อย่างเดียว" มีไว้เพื่อพนักงานคนนี้เท่านั้น และไม่มีใครดูแลในหน้าผู้ใช้ → ปิดพร้อมการออกงาน
     // (บัญชี ERP ปกติปิดผ่านเช็กลิสต์ออกงาน เพราะบางคนยังต้องใช้ระบบต่อ เช่น เจ้าของที่อยู่ในทะเบียนพนักงาน)

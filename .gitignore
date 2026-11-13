@@ -26,6 +26,8 @@ upload data/
 dist/
 build/
 *.log
+frontend/public/human-models/
+frontend/public/human-models
 
 ########################
 # IDE / Editor

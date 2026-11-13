@@ -1,17 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import hrService from '../../services/hr.service'
+import { captureFaceDescriptor } from '../../lib/faceScan'
 import CheckinKiosk from './CheckinKiosk'
+
+vi.mock('../../lib/faceScan', () => ({
+  startCamera: vi.fn().mockResolvedValue({}),
+  stopCamera: vi.fn(),
+  captureFaceDescriptor: vi.fn(),
+}))
 
 vi.mock('../../services/hr.service', () => ({
   default: {
     checkinWithPin: vi.fn(),
+    checkinWithFaceKiosk: vi.fn(),
+    checkinFaceKiosk: vi.fn(),
   },
 }))
 
 const mockHr = hrService as unknown as {
   checkinWithPin: ReturnType<typeof vi.fn>
+  checkinWithFaceKiosk: ReturnType<typeof vi.fn>
 }
+
+const mockCaptureFace = captureFaceDescriptor as unknown as ReturnType<typeof vi.fn>
 
 describe('หน้าจอเช็คอินหน้าร้าน (CheckinKiosk)', () => {
   beforeEach(() => {
@@ -227,5 +239,70 @@ describe('หน้าจอเช็คอินหน้าร้าน (Check
     expect(screen.queryByRole('alert')).toBeNull()
     expect(codeInput.value).toBe('')
     expect(pinInput.value).toBe('')
+  })
+
+  it('กด สแกนหน้า แล้วกด ถ่าย จะส่ง face_descriptor ไปยัง checkinWithFaceKiosk พร้อมพิกัด และแสดงผลสำเร็จ', async () => {
+    const fakeDescriptor = [0.12, -0.34, 0.56, 0.78]
+    mockCaptureFace.mockResolvedValueOnce(fakeDescriptor)
+    mockHr.checkinWithFaceKiosk.mockResolvedValueOnce({
+      punched_at: '2026-11-02 08:58:00',
+      kind: 'IN',
+      employee_name: 'สมหญิง จริงใจ',
+      distance_m: 10,
+    })
+
+    render(<CheckinKiosk />)
+
+    // Click "สแกนหน้า" button
+    const faceBtn = screen.getByRole('button', { name: /สแกนหน้า/ })
+    fireEvent.click(faceBtn)
+
+    // Face capture modal should appear with "ถ่าย" button
+    const captureBtn = screen.getByRole('button', { name: 'ถ่าย' })
+    expect(captureBtn).toBeTruthy()
+
+    await act(async () => {}) // รอกล้องพร้อม (fake timers ใช้ waitFor ไม่ได้)
+    await act(async () => {
+      fireEvent.click(captureBtn)
+    })
+
+    expect(mockCaptureFace).toHaveBeenCalled()
+    expect(mockHr.checkinWithFaceKiosk).toHaveBeenCalledWith({
+      face_descriptor: fakeDescriptor,
+      lat: 13.7563,
+      lng: 100.5018,
+      accuracy: 12,
+    })
+
+    // Green banner shows employee name, kind, time
+    const banner = screen.getByRole('alert')
+    expect(banner.textContent).toContain('สมหญิง จริงใจ')
+    expect(banner.textContent).toContain('เข้างาน 08:58')
+  })
+
+  it('แสดงข้อความแจ้งเตือนสีแดงเมื่อ server ตอบ 401 (เช่น ใบหน้าไม่ตรงกับพนักงาน)', async () => {
+    mockCaptureFace.mockResolvedValueOnce([0.1, 0.2, 0.3])
+    mockHr.checkinWithFaceKiosk.mockRejectedValueOnce({
+      response: {
+        status: 401,
+        data: {
+          success: false,
+          message: 'ใบหน้าไม่ตรงกับพนักงานในระบบ',
+        },
+      },
+    })
+
+    render(<CheckinKiosk />)
+
+    fireEvent.click(screen.getByRole('button', { name: /สแกนหน้า/ }))
+    const captureBtn = screen.getByRole('button', { name: 'ถ่าย' })
+
+    await act(async () => {}) // รอกล้องพร้อม (fake timers ใช้ waitFor ไม่ได้)
+    await act(async () => {
+      fireEvent.click(captureBtn)
+    })
+
+    const banner = screen.getByRole('alert')
+    expect(banner.textContent).toContain('ใบหน้าไม่ตรงกับพนักงานในระบบ')
   })
 })

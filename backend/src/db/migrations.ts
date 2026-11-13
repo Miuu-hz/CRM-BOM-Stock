@@ -3478,6 +3478,25 @@ export function runMonthCloseMigrations(db: any): void {
     console.error('⚠️ payment_attachments HR Phase 9-10 migration error:', e)
     try { db.exec('PRAGMA foreign_keys=ON') } catch {}
   }
+
+  // ==================== HR Face Enrollments (Biometrics / PDPA) ====================
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS hr_face_enrollments (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        descriptor_enc TEXT NOT NULL,
+        consent_at TEXT NOT NULL,
+        consent_version TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(tenant_id, employee_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_face_enrollments_emp ON hr_face_enrollments(tenant_id, employee_id);
+    `)
+  } catch (e) {
+    console.error('⚠️ HR Face Enrollments migration error:', e)
+  }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

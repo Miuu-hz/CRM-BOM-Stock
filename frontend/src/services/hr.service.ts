@@ -516,6 +516,19 @@ export interface CheckinPinInput extends CheckinGeo {
   pin: string
 }
 
+export interface FaceEnrollmentStatus {
+  enrolled: boolean
+  consent_at: string | null
+}
+
+export interface CheckinFaceInput extends CheckinGeo {
+  face_descriptor: number[]
+}
+
+export interface CheckinFaceKioskInput extends CheckinGeo {
+  face_descriptor: number[]
+}
+
 export interface CheckinResult {
   punched_at: string
   kind: 'IN' | 'OUT'
@@ -1072,6 +1085,50 @@ export const hrService = {
   async checkinWithPin(data: CheckinPinInput): Promise<CheckinResult> {
     const res = await api.post('/hr/checkin/pin', data)
     return res.data.data
+  },
+
+  async getMyFace(): Promise<FaceEnrollmentStatus> {
+    const res = await api.get('/hr/me/face')
+    return res.data.data
+  },
+
+  async getFace(): Promise<FaceEnrollmentStatus> {
+    return this.getMyFace()
+  },
+
+  async enrollMyFace(data: { descriptor: number[]; consent: boolean }): Promise<void> {
+    const res = await api.post('/hr/me/face', data)
+    return res.data.data
+  },
+
+  async enrollFace(data: { descriptor: number[]; consent: boolean }): Promise<void> {
+    return this.enrollMyFace(data)
+  },
+
+  async deleteMyFace(): Promise<void> {
+    await api.delete('/hr/me/face')
+  },
+
+  async deleteFace(): Promise<void> {
+    return this.deleteMyFace()
+  },
+
+  async checkinWithFace(data: CheckinFaceInput): Promise<CheckinResult> {
+    const res = await api.post('/hr/checkin/face', data)
+    return res.data.data
+  },
+
+  async checkinFace(data: CheckinFaceInput): Promise<CheckinResult> {
+    return this.checkinWithFace(data)
+  },
+
+  async checkinWithFaceKiosk(data: CheckinFaceKioskInput): Promise<CheckinResult> {
+    const res = await api.post('/hr/checkin/face-kiosk', data)
+    return res.data.data
+  },
+
+  async checkinFaceKiosk(data: CheckinFaceKioskInput): Promise<CheckinResult> {
+    return this.checkinWithFaceKiosk(data)
   },
 
   async getMyAttendance(params?: { from?: string; to?: string }): Promise<MyAttendance> {

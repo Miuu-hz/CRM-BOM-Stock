@@ -6,7 +6,12 @@ import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { authenticate } from '../middleware/auth.middleware'
 import { subscriptionGate } from '../middleware/subscription.middleware'
-import hrCheckinRoutes, { haversineMeters, resetCheckinPinLockout } from './hr.checkin.routes'
+import hrCheckinRoutes, {
+  haversineMeters,
+  resetCheckinPinLockout,
+  resetCheckinFaceLockout,
+} from './hr.checkin.routes'
+import { encryptDescriptor } from '../services/hr/face'
 import { createTestUser } from '../test/testAuth'
 
 function buildApp() {
@@ -21,7 +26,9 @@ const tenants: string[] = []
 
 afterEach(() => {
   resetCheckinPinLockout()
+  resetCheckinFaceLockout()
   for (const t of tenants.splice(0)) {
+    db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM attendance_logs WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM hr_checkin_locations WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM employees WHERE tenant_id = ?').run(t)
@@ -480,5 +487,190 @@ describe('HR Phase 4 (B4) — Web Check-in, Kiosk PIN Check-in & My Attendance',
     expect(resB.body.data.logs).toEqual([
       { punched_at: '2026-03-02 07:00:00', source: 'DEVICE', distance_m: null },
     ])
+  })
+
+  it('self face checkin: 409 when not enrolled, 401 when vector mismatch, 201 on match, rate limiter 429 after 5 failures', async () => {
+    const admin = newAdmin()
+    const plainUser = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+    const authUser = { Authorization: `Bearer ${plainUser.token}` }
+
+    const v1 = Array.from({ length: 128 }, (_, i) => Math.sin(i * 0.1 + 1))
+    const v2 = Array.from({ length: 128 }, (_, i) => Math.sin(i * 0.1 + 5))
+
+    // 1. Unlinked user -> 404
+    const resUnlinked = await request(app)
+      .post('/api/hr/checkin/face')
+      .set(authUser)
+      .send({ face_descriptor: v1 })
+    expect(resUnlinked.status).toBe(404)
+
+    // Link user to employee
+    const empId = insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'FACE-01',
+      firstName: 'วีระ',
+      lastName: 'ทดสอบ',
+      userId: plainUser.userId,
+    })
+
+    // 2. Linked but not enrolled -> 409
+    const resNotEnrolled = await request(app)
+      .post('/api/hr/checkin/face')
+      .set(authUser)
+      .send({ face_descriptor: v1 })
+    expect(resNotEnrolled.status).toBe(409)
+    expect(resNotEnrolled.body.success).toBe(false)
+
+    // Enroll face (v1)
+    const nowIso = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+       VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), admin.tenantId, empId, encryptDescriptor(v1), nowIso, nowIso)
+
+    // 3. Different vector (v2) -> 401
+    const resMismatch = await request(app)
+      .post('/api/hr/checkin/face')
+      .set(authUser)
+      .send({ face_descriptor: v2 })
+    expect(resMismatch.status).toBe(401)
+    expect(resMismatch.body.message).toBe('สแกนหน้าไม่ผ่าน กรุณาลองใหม่หรือใช้ PIN')
+
+    // 4. Rate limiter lockout: fail 4 more times (total 5) -> 429
+    await request(app).post('/api/hr/checkin/face').set(authUser).send({ face_descriptor: v2 })
+    await request(app).post('/api/hr/checkin/face').set(authUser).send({ face_descriptor: v2 })
+    await request(app).post('/api/hr/checkin/face').set(authUser).send({ face_descriptor: v2 })
+    const resLocked = await request(app)
+      .post('/api/hr/checkin/face')
+      .set(authUser)
+      .send({ face_descriptor: v2 })
+    expect(resLocked.status).toBe(429)
+
+    // Even with correct face, locked out until reset
+    const resStillLocked = await request(app)
+      .post('/api/hr/checkin/face')
+      .set(authUser)
+      .send({ face_descriptor: v1 })
+    expect(resStillLocked.status).toBe(429)
+
+    // Reset lockout
+    resetCheckinFaceLockout()
+
+    // 5. Correct vector (v1) -> 201 check-in succeeds
+    const resSuccess = await request(app)
+      .post('/api/hr/checkin/face')
+      .set(authUser)
+      .send({ face_descriptor: v1 })
+    expect(resSuccess.status).toBe(201)
+    expect(resSuccess.body.success).toBe(true)
+    expect(resSuccess.body.data.employee_name).toBe('วีระ ทดสอบ')
+    expect(resSuccess.body.data.kind).toBe('IN')
+
+    // Check attendance log created with source WEB
+    const log = db
+      .prepare('SELECT * FROM attendance_logs WHERE tenant_id = ?')
+      .get(admin.tenantId) as any
+    expect(log).toBeTruthy()
+    expect(log.source).toBe('WEB')
+  })
+
+  it('kiosk face checkin: requires hr:read, identifies best match among 3 active employees, refuses near-identical vectors, never matches other company, ignores non-active', async () => {
+    const adminA = newAdmin()
+    const adminB = newAdmin()
+    const plainUser = createTestUser({ role: 'USER', tenantId: adminA.tenantId })
+
+    const v1 = Array.from({ length: 128 }, (_, i) => Math.sin(i * 0.1 + 1))
+    const v2 = Array.from({ length: 128 }, (_, i) => Math.sin(i * 0.1 + 5))
+    const v3 = Array.from({ length: 128 }, (_, i) => Math.sin(i * 0.1 + 10))
+
+    // 1. Plain user without hr:read -> 403
+    const res403 = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set('Authorization', `Bearer ${plainUser.token}`)
+      .send({ face_descriptor: v1 })
+    expect(res403.status).toBe(403)
+
+    // Enroll 3 active employees in company A
+    const nowIso = new Date().toISOString()
+    const emp1 = insertEmployee({
+      tenantId: adminA.tenantId,
+      code: 'EMP-01',
+      firstName: 'สมชาย',
+      lastName: 'หนึ่ง',
+    })
+    const emp2 = insertEmployee({
+      tenantId: adminA.tenantId,
+      code: 'EMP-02',
+      firstName: 'สมหญิง',
+      lastName: 'สอง',
+    })
+    const emp3 = insertEmployee({
+      tenantId: adminA.tenantId,
+      code: 'EMP-03',
+      firstName: 'สมศักดิ์',
+      lastName: 'สาม',
+    })
+
+    db.prepare(
+      `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+       VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), adminA.tenantId, emp1, encryptDescriptor(v1), nowIso, nowIso)
+
+    db.prepare(
+      `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+       VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), adminA.tenantId, emp2, encryptDescriptor(v2), nowIso, nowIso)
+
+    db.prepare(
+      `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+       VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), adminA.tenantId, emp3, encryptDescriptor(v3), nowIso, nowIso)
+
+    // 2. Kiosk identifies the right employee (v2 -> emp2)
+    const resMatch2 = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set('Authorization', `Bearer ${adminA.token}`)
+      .send({ face_descriptor: v2 })
+    expect(resMatch2.status).toBe(201)
+    expect(resMatch2.body.data.employee_name).toBe('สมหญิง สอง')
+
+    // 3. Refuses when two enrolled vectors are near-identical (ambiguous)
+    // Add Emp 4 with vector very close to v1 (difference in similarity < 0.05)
+    const v1Near = v1.map((x) => x + 0.0005)
+    const emp4 = insertEmployee({
+      tenantId: adminA.tenantId,
+      code: 'EMP-04',
+      firstName: 'สมบูรณ์',
+      lastName: 'สี่',
+    })
+    db.prepare(
+      `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+       VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), adminA.tenantId, emp4, encryptDescriptor(v1Near), nowIso, nowIso)
+
+    // Presenting v1 matches emp1 with 1.0 and emp4 with ~0.97 (gap < 0.05 margin) -> 401 ambiguous
+    const resAmbiguous = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set('Authorization', `Bearer ${adminA.token}`)
+      .send({ face_descriptor: v1 })
+    expect(resAmbiguous.status).toBe(401)
+    expect(resAmbiguous.body.message).toBe('สแกนหน้าไม่ผ่าน กรุณาลองใหม่หรือใช้ PIN')
+
+    // 4. Never matches another company's enrollment
+    // Company B kiosk called with Company A's enrolled vector (v3) -> 401
+    const resCross = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set('Authorization', `Bearer ${adminB.token}`)
+      .send({ face_descriptor: v3 })
+    expect(resCross.status).toBe(401)
+    expect(resCross.body.message).toBe('สแกนหน้าไม่ผ่าน กรุณาลองใหม่หรือใช้ PIN')
+
+    // 5. Ignores RESIGNED / TERMINATED employees
+    db.prepare(`UPDATE employees SET status = 'RESIGNED' WHERE id = ?`).run(emp3)
+    const resResigned = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set('Authorization', `Bearer ${adminA.token}`)
+      .send({ face_descriptor: v3 })
+    expect(resResigned.status).toBe(401)
   })
 })

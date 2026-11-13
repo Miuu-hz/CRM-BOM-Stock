@@ -5,11 +5,25 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('../../lib/faceScan', () => ({
+  startCamera: vi.fn().mockResolvedValue({}),
+  stopCamera: vi.fn(),
+  captureFaceDescriptor: vi.fn(),
+}))
+
 vi.mock('../../services/hr.service', () => ({
   default: {
     getMe: vi.fn(),
     getCheckinLocation: vi.fn(),
     checkin: vi.fn(),
+    getMyFace: vi.fn(),
+    getFace: vi.fn(),
+    enrollMyFace: vi.fn(),
+    enrollFace: vi.fn(),
+    deleteMyFace: vi.fn(),
+    deleteFace: vi.fn(),
+    checkinWithFace: vi.fn(),
+    checkinFace: vi.fn(),
     getMyAttendance: vi.fn(),
     getMySlips: vi.fn(),
     getLeaveTypes: vi.fn(),
@@ -54,6 +68,7 @@ import hrService from '../../services/hr.service'
 import hrAssetService from '../../services/hrAsset.service'
 import hrDocumentService from '../../services/hrDocument.service'
 import hrDisciplineService from '../../services/hrDiscipline.service'
+import { captureFaceDescriptor } from '../../lib/faceScan'
 import toast from 'react-hot-toast'
 import MyHr from './MyHr'
 
@@ -61,11 +76,20 @@ const mockLoans = hrAssetService.getMyAssetLoans as unknown as ReturnType<typeof
 const mockDocs = hrDocumentService.getMyDocuments as unknown as ReturnType<typeof vi.fn>
 const mockDisc = hrDisciplineService.getMyDisciplinary as unknown as ReturnType<typeof vi.fn>
 const mockAck = hrDisciplineService.acknowledgeSelf as unknown as ReturnType<typeof vi.fn>
+const mockCaptureFace = captureFaceDescriptor as unknown as ReturnType<typeof vi.fn>
 
 const mockHr = hrService as unknown as {
   getMe: ReturnType<typeof vi.fn>
   getCheckinLocation: ReturnType<typeof vi.fn>
   checkin: ReturnType<typeof vi.fn>
+  getMyFace: ReturnType<typeof vi.fn>
+  getFace: ReturnType<typeof vi.fn>
+  enrollMyFace: ReturnType<typeof vi.fn>
+  enrollFace: ReturnType<typeof vi.fn>
+  deleteMyFace: ReturnType<typeof vi.fn>
+  deleteFace: ReturnType<typeof vi.fn>
+  checkinWithFace: ReturnType<typeof vi.fn>
+  checkinFace: ReturnType<typeof vi.fn>
   getMyAttendance: ReturnType<typeof vi.fn>
   getMySlips: ReturnType<typeof vi.fn>
   getLeaveTypes: ReturnType<typeof vi.fn>
@@ -89,6 +113,7 @@ const mockHr = hrService as unknown as {
 beforeEach(() => {
   vi.clearAllMocks()
   mockHr.getCheckinLocation.mockResolvedValue(null)
+  mockHr.getMyFace.mockResolvedValue({ enrolled: false, consent_at: null })
   mockHr.getMyAttendance.mockResolvedValue({
     employee: { id: 'emp-1', code: 'EMP001', name: 'สมชาย ใจดี', device_pin: '1001', shift_name: 'กะเช้า' },
     logs: [],
@@ -871,5 +896,150 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
     expect(screen.getByText('สายเกินกำหนดสามครั้ง')).toBeTruthy()
     expect(screen.getByText('ไม่มีทรัพย์สินที่ยืม')).toBeTruthy()
     expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('การลงทะเบียนใบหน้า: ไม่สามารถไปขั้นตอนกล้องได้จนกว่าจะติ๊กยินยอม และหลังถ่ายจะเรียก enrollMyFace ด้วย { descriptor, consent: true }', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockHr.getMyFace.mockResolvedValueOnce({ enrolled: false, consent_at: null })
+    const fakeDescriptor = [0.11, 0.22, 0.33, 0.44]
+    mockCaptureFace.mockResolvedValueOnce(fakeDescriptor)
+    mockHr.enrollMyFace.mockResolvedValueOnce({})
+
+    render(<MyHr />)
+
+    // Wait for card to appear
+    expect(await screen.findByText('สแกนหน้าเข้างาน')).toBeTruthy()
+    expect(screen.getByText('ยังไม่ได้ลงทะเบียน')).toBeTruthy()
+
+    // Click "ลงทะเบียนใบหน้า"
+    const enrollBtn = screen.getByTestId('enroll-face-btn')
+    fireEvent.click(enrollBtn)
+
+    // Consent modal with specific text
+    expect(
+      screen.getByText(/ระบบจะเก็บเฉพาะค่าตัวเลขของใบหน้าที่เข้ารหัสไว้ ไม่เก็บรูปถ่าย/)
+    ).toBeTruthy()
+
+    const proceedBtn = screen.getByTestId('proceed-camera-btn')
+    const checkbox = screen.getByTestId('face-consent-checkbox')
+
+    // Camera step is NOT reachable before ticking checkbox
+    expect((proceedBtn as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByTestId('capture-face-btn')).toBeNull()
+
+    // Tick consent checkbox
+    fireEvent.click(checkbox)
+    expect((proceedBtn as HTMLButtonElement).disabled).toBe(false)
+
+    // Proceed to camera step
+    fireEvent.click(proceedBtn)
+
+    // Now in camera step -> "ถ่าย" button is present
+    const captureBtn = screen.getByTestId('capture-face-btn')
+    expect(captureBtn).toBeTruthy()
+
+    // Click "ถ่าย"
+    await waitFor(() => expect((captureBtn as HTMLButtonElement).disabled).toBe(false))
+    await fireEvent.click(captureBtn)
+
+    await waitFor(() => {
+      expect(mockHr.enrollMyFace).toHaveBeenCalledWith({
+        descriptor: fakeDescriptor,
+        consent: true,
+      })
+    })
+
+    expect(toast.success).toHaveBeenCalledWith('ลงทะเบียนใบหน้าสำเร็จ')
+  })
+
+  it('เมื่อลงทะเบียนแล้ว จะมีปุ่ม สแกนหน้า ในส่วนเช็คอิน และสามารถกดเพื่อเช็คอินด้วยใบหน้าได้', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockHr.getMyFace.mockResolvedValue({ enrolled: true, consent_at: '2026-11-01 10:00:00' })
+    const fakeDescriptor = [0.55, 0.66, 0.77]
+    mockCaptureFace.mockResolvedValueOnce(fakeDescriptor)
+    mockHr.checkinWithFace.mockResolvedValueOnce({
+      punched_at: '2026-11-02 08:45:00',
+      kind: 'IN',
+      employee_name: 'สมชาย ใจดี',
+      distance_m: 12,
+    })
+
+    render(<MyHr />)
+
+    // Wait for face card to show enrolled
+    expect(await screen.findByText('ลงทะเบียนแล้ว')).toBeTruthy()
+    expect(screen.getByText('2026-11-01 10:00:00')).toBeTruthy()
+
+    // "สแกนหน้า" button is rendered in check-in section
+    const faceCheckinBtn = screen.getByTestId('face-checkin-btn')
+    expect(faceCheckinBtn).toBeTruthy()
+
+    // Existing "บันทึกเวลา" button still exists
+    expect(screen.getByRole('button', { name: 'บันทึกเวลา' })).toBeTruthy()
+
+    // Click "สแกนหน้า"
+    fireEvent.click(faceCheckinBtn)
+
+    // Capture face
+    const captureBtn = screen.getByTestId('capture-face-btn')
+    await waitFor(() => expect((captureBtn as HTMLButtonElement).disabled).toBe(false))
+    await fireEvent.click(captureBtn)
+
+    await waitFor(() => {
+      expect(mockHr.checkinWithFace).toHaveBeenCalledWith({
+        face_descriptor: fakeDescriptor,
+      })
+    })
+
+    expect(toast.success).toHaveBeenCalledWith('เข้างาน 08:45 · ห่างร้าน 12 ม.')
+  })
+
+  it('เมื่อสแกนหน้าเช็คอินล้มเหลว แสดงข้อความแจ้งเตือนจาก server', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockHr.getMyFace.mockResolvedValue({ enrolled: true, consent_at: '2026-11-01 10:00:00' })
+    mockCaptureFace.mockResolvedValueOnce([0.55, 0.66])
+    mockHr.checkinWithFace.mockRejectedValueOnce({
+      response: {
+        status: 401,
+        data: { success: false, message: 'ใบหน้าไม่ตรงกับข้อมูลที่ลงทะเบียนไว้' },
+      },
+    })
+
+    render(<MyHr />)
+
+    const faceCheckinBtn = await screen.findByTestId('face-checkin-btn')
+    fireEvent.click(faceCheckinBtn)
+
+    const captureBtn = screen.getByTestId('capture-face-btn')
+    await waitFor(() => expect((captureBtn as HTMLButtonElement).disabled).toBe(false))
+    await fireEvent.click(captureBtn)
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('ใบหน้าไม่ตรงกับข้อมูลที่ลงทะเบียนไว้')
+    })
+  })
+
+  it('ยกเลิกความยินยอมและลบข้อมูล: ยืนยันในหน้าแล้วเรียก deleteMyFace', async () => {
+    mockHr.getMe.mockResolvedValue(linkedMe)
+    mockHr.getMyFace.mockResolvedValue({ enrolled: true, consent_at: '2026-11-01 10:00:00' })
+    mockHr.deleteMyFace.mockResolvedValueOnce({})
+
+    render(<MyHr />)
+
+    expect(await screen.findByText('ลงทะเบียนแล้ว')).toBeTruthy()
+
+    const deleteBtn = screen.getByTestId('delete-face-btn')
+    fireEvent.click(deleteBtn)
+
+    // Inline confirm appears
+    expect(screen.getByText('ยืนยันยกเลิกความยินยอมและลบข้อมูลใบหน้า?')).toBeTruthy()
+
+    const confirmBtn = screen.getByTestId('confirm-delete-face-btn')
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(mockHr.deleteMyFace).toHaveBeenCalled()
+    })
+    expect(toast.success).toHaveBeenCalledWith('ลบข้อมูลใบหน้าเรียบร้อยแล้ว')
   })
 })
