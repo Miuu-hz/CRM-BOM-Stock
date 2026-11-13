@@ -118,7 +118,8 @@ router.put('/config', authenticate, requireMaster, (req: Request, res: Response)
 });
 
 // Test Message Endpoint
-router.post('/test', authenticate, async (req: Request, res: Response) => {
+// push ใช้โควตากลาง 300/เดือน → เฉพาะผู้ดูแล
+router.post('/test', authenticate, requireRole('ADMIN'), async (req: Request, res: Response) => {
     try {
         const tenantId = req.user!.tenantId;
         const role = req.user!.role;

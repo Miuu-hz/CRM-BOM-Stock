@@ -114,6 +114,7 @@ async function create(tenantId: string, token: string, ver: string): Promise<Ids
     const users = db.prepare(`
         SELECT lum.line_user_id, lum.user_id, lum.role, u.role AS user_role
         FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
+        ORDER BY COALESCE(lum.active_at, lum.linked_at) ASC -- คนผูกหลายร้าน: ร้านที่ใช้อยู่มาทีหลัง เมนูสุดท้ายจึงตรง
     `).all() as any[]
     for (const u of users) {
         const id = ids[menuKeyForRole(effectiveRole(u))]

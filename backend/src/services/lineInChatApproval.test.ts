@@ -57,6 +57,17 @@ describe('LINE: อนุมัติคำขอ HR ในแชท', () => {
         expect(s.st(r.id)).toBe('EXECUTED')
     })
 
+    it('Master จาก env (master_<email> ไม่มีแถวใน users) กดอนุมัติได้ · คนอื่นปลอม id master_ ไม่ได้สิทธิ์', async () => {
+        const s = setup(), r = s.request(), r2 = s.request()
+        const boss = s.link('master_owner@example.com')
+        expect(await s.press(boss, 'approve_req', r.id)).toContain('อนุมัติแล้ว')
+        expect(s.st(r.id)).toBe('EXECUTED')
+        // พนักงานธรรมดา (มีแถวใน users) ยังถูกด่านสิทธิ์เดิมกันไว้
+        const emp = s.link(s.staff.userId)
+        await s.press(emp, 'approve_req', r2.id)
+        expect(s.st(r2.id)).toBe('PENDING')
+    })
+
     it('กดไม่อนุมัติ → REJECTED', async () => {
         const s = setup(), r = s.request()
         await s.press(s.link(s.admin.userId), 'reject_req', r.id)

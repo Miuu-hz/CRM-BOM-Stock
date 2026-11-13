@@ -492,7 +492,7 @@ export async function handleDecision(req: Request, res: Response) {
           await cancelPosBill(tenantId, request.requester_id, posPayload.billId,
             posPayload.reason, posPayload.finalStatus)
         } catch (e) {
-          db.prepare(`UPDATE approval_requests SET status = 'PENDING' WHERE id = ? AND status = 'PROCESSING'`).run(req.params.id)
+          db.prepare(`UPDATE approval_requests SET status = 'PENDING' WHERE id = ? AND tenant_id = ? AND status = 'PROCESSING'`).run(req.params.id, tenantId)
           throw e
         }
       }

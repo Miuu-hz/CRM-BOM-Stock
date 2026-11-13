@@ -1384,7 +1384,11 @@ class LineBotService {
                 const me = this.linkedUser(tenantId, event.source.userId)
                 if (!me) return
                 const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
-                const u = db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, tenantId) as any
+                // บัญชี master_<email> ไม่มีแถวใน users (ดู auth.routes.ts) → ประกอบข้อมูลเองเหมือนตอนล็อกอินเว็บ
+                const mid = String(me.user_id)
+                const u = (me.realRole === 'MASTER' && mid.startsWith('master_')
+                    ? { id: mid, email: mid.slice(7), role: 'MASTER', departments: null, custom_permissions: null }
+                    : db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, tenantId)) as any
                 // ด่านแพ็กเกจเดียวกับ /api/approval บนเว็บ: หมดอายุ → เฉพาะ ADMIN
                 const sub = getSubscription(tenantId)
                 if (u && u.role !== 'ADMIN' && (sub.status === 'EXPIRED' || sub.status === 'CANCELLED')) {
