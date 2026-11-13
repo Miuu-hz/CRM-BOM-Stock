@@ -100,6 +100,30 @@ const hrDocumentService = {
     const res = await api.post(`/hr/doc-templates/${id}/render`, { employee_id, extra })
     return res.data.data.text
   },
+  async downloadTemplatePdf(id: string, employee_id: string): Promise<void> {
+    const res = await api.get(`/hr/doc-templates/${id}/pdf`, {
+      params: { employee_id },
+      responseType: 'blob',
+    })
+    let filename = 'document.pdf'
+    const disp = res.headers?.['content-disposition'] || res.headers?.['Content-Disposition']
+    if (disp) {
+      const match = disp.match(/filename\*=UTF-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i)
+      if (match) filename = decodeURIComponent(match[1])
+    }
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  },
+  async downloadPdf(id: string, employee_id: string): Promise<void> {
+    return this.downloadTemplatePdf(id, employee_id)
+  },
   async getMyDocuments(): Promise<EmployeeDocument[]> {
     const res = await api.get('/hr/me/documents')
     return res.data.data || []

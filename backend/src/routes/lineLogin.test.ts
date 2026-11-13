@@ -77,9 +77,11 @@ describe('LINE login link (scope hr_self)', () => {
 
     it('allowlist: เฉพาะเส้นทางของตัวเอง', () => {
         const yes: [string, string][] = [['GET', '/api/hr/me'], ['GET', '/api/hr/me/roster/day?date=2026-11-12'], ['POST', '/api/hr/me/shift-swaps/abc/accept'], ['POST', '/api/hr/checkin'],
-            ['GET', '/api/hr/checkin/location'], ['POST', '/api/hr/leave-requests'], ['POST', '/api/hr/leave-requests/a_b-1/cancel'], ['GET', '/api/subscription/me']]
+            ['GET', '/api/hr/checkin/location'], ['POST', '/api/hr/leave-requests'], ['POST', '/api/hr/leave-requests/a_b-1/cancel'], ['GET', '/api/subscription/me'],
+            ['GET', '/api/hr/disciplinary/disc-123/pdf']]
         const no: [string, string][] = [['POST', '/api/hr/checkin/pin'], ['GET', '/api/hr/leave-requests/x'], ['PUT', '/api/hr/me'], ['DELETE', '/api/hr/me/x'], ['GET', '/api/hr/menu'],
-            ['POST', '/api/hr/leave-requests/x/approve'], ['GET', '/api/hr/me/%2e%2e/employees'], ['GET', '/api/hr/employees?x=/api/hr/me'], ['GET', '/api/attachments/EMPLOYEE_DOCUMENT/1'], ['GET', '/hr/me']]
+            ['POST', '/api/hr/leave-requests/x/approve'], ['GET', '/api/hr/me/%2e%2e/employees'], ['GET', '/api/hr/employees?x=/api/hr/me'], ['GET', '/api/attachments/EMPLOYEE_DOCUMENT/1'], ['GET', '/hr/me'],
+            ['GET', '/api/hr/disciplinary/disc-123']]
         for (const [m, p] of yes) expect(hrSelfAllowed(m, p), `${m} ${p}`).toBe(true)
         for (const [m, p] of no) expect(hrSelfAllowed(m, p), `${m} ${p}`).toBe(false)
     })

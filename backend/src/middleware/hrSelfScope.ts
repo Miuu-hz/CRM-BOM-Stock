@@ -10,6 +10,7 @@ const ALLOW: [RegExp, RegExp][] = [
   [/^(GET|POST)$/, /^\/api\/hr\/leave-requests$/],
   [/^POST$/, /^\/api\/hr\/(leave-requests|advances|shift-swaps)\/[A-Za-z0-9_-]+\/cancel$/],
   [/^GET$/, /^\/api\/subscription\/me$/],
+  [/^GET$/, /^\/api\/hr\/disciplinary\/[A-Za-z0-9_\-]+\/pdf$/],
 ]
 
 export function hrSelfAllowed(method: string, originalUrl: string): boolean {

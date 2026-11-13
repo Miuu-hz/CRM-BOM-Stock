@@ -45,6 +45,8 @@ vi.mock('../../services/hrDiscipline.service', () => {
     acknowledgeWitness: vi.fn(),
     getMyDisciplinary: vi.fn(),
     acknowledgeSelf: vi.fn(),
+    downloadDisciplinaryPdf: vi.fn(),
+    downloadPdf: vi.fn(),
   }
   return {
     default: service,
@@ -65,6 +67,8 @@ const mockDiscipline = hrDisciplineService as unknown as {
   createDisciplinaryRecord: ReturnType<typeof vi.fn>
   updateDisciplinaryRecord: ReturnType<typeof vi.fn>
   acknowledgeWitness: ReturnType<typeof vi.fn>
+  downloadDisciplinaryPdf: ReturnType<typeof vi.fn>
+  downloadPdf: ReturnType<typeof vi.fn>
 }
 
 const mockToast = toast as unknown as {
@@ -342,5 +346,34 @@ describe('Discipline Page Component', () => {
     })
 
     expect(mockToast.success).toHaveBeenCalledWith('พยานลงชื่อรับทราบเรียบร้อย')
+  })
+
+  it('คลิกปุ่มดาวน์โหลด PDF เรียก downloadDisciplinaryPdf ของ service', async () => {
+    mockDiscipline.downloadDisciplinaryPdf.mockResolvedValue(undefined)
+
+    render(
+      <MemoryRouter>
+        <Discipline />
+      </MemoryRouter>
+    )
+
+    const downloadBtns = await screen.findAllByTitle('ดาวน์โหลด PDF')
+    expect(downloadBtns.length).toBeGreaterThan(0)
+    fireEvent.click(downloadBtns[0])
+
+    await waitFor(() => {
+      expect(mockDiscipline.downloadDisciplinaryPdf).toHaveBeenCalledWith('rec-1')
+    })
+
+    const detailBtn = screen.getAllByTitle('ดูรายละเอียดและหลักฐาน')[0]
+    fireEvent.click(detailBtn)
+    expect(await screen.findByRole('heading', { name: /รายละเอียดบันทึกวินัย/ })).toBeTruthy()
+
+    const modalDownloadBtn = screen.getAllByRole('button', { name: /ดาวน์โหลด PDF/i }).pop()!
+    fireEvent.click(modalDownloadBtn)
+
+    await waitFor(() => {
+      expect(mockDiscipline.downloadDisciplinaryPdf).toHaveBeenCalledWith('rec-1')
+    })
   })
 })

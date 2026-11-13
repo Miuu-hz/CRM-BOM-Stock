@@ -11,6 +11,7 @@ import {
   UserCheck,
   Filter,
   ShieldAlert,
+  Download,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, { Employee } from '../../services/hr.service'
@@ -159,6 +160,15 @@ export default function Discipline() {
       setLoadingRules(false)
     }
   }, [])
+
+  const handleDownloadPdf = async (id: string) => {
+    try {
+      await hrDisciplineService.downloadDisciplinaryPdf(id)
+    } catch (err: any) {
+      console.error('Download disciplinary PDF failed:', err)
+      toast.error(err?.response?.data?.message || 'ดาวน์โหลด PDF ไม่สำเร็จ')
+    }
+  }
 
   // Load disciplinary records
   const loadRecords = useCallback(async () => {
@@ -640,6 +650,17 @@ export default function Discipline() {
                               className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
                             >
                               <FileText className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* ดาวน์โหลด PDF */}
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadPdf(r.id)}
+                              title="ดาวน์โหลด PDF"
+                              aria-label="ดาวน์โหลด PDF"
+                              className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg-1)]"
+                            >
+                              <Download className="w-3.5 h-3.5" />
                             </button>
 
                             {/* ปุ่มพยานลงชื่อ (ถ้ายังไม่รับทราบ) */}
@@ -1190,7 +1211,15 @@ export default function Discipline() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-[var(--border)]">
+            <div className="flex justify-between items-center pt-3 border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => handleDownloadPdf(detailModalRecord.id)}
+                className="phopy-btn text-xs inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                ดาวน์โหลด PDF
+              </button>
               <button
                 type="button"
                 onClick={() => setDetailModalRecord(null)}

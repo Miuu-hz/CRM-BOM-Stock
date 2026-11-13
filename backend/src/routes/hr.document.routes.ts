@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
 import { can } from '../services/rbac.service'
+import { renderPdf, sendPdf } from '../services/hr/pdf'
 
 // HR Phase 10A — เอกสารพนักงาน + แม่แบบ (สัญญากลาง docs/contracts/hr-phase9-11.md)
 const router = Router()
@@ -305,53 +306,105 @@ router.delete('/doc-templates/:id', (req: Request, res: Response) => {
   }
 })
 
+export interface RenderDocTemplateResult {
+  text: string
+  templateName: string
+  companyName: string
+  employeeName: string
+}
+
+export function renderDocTemplate(
+  tenantId: string,
+  templateId: string,
+  employeeId: unknown,
+  extra: unknown
+): { error: { status: number; message: string } } | { data: RenderDocTemplateResult } {
+  const tpl = db.prepare('SELECT name, body FROM hr_doc_templates WHERE id = ? AND tenant_id = ?').get(templateId, tenantId) as any
+  if (!tpl) return { error: { status: 404, message: 'ไม่พบแม่แบบ' } }
+  if (typeof employeeId !== 'string' || !employeeId) {
+    return { error: { status: 400, message: 'กรุณาระบุพนักงาน' } }
+  }
+  const emp = db.prepare(`SELECT e.*, o.name AS org_unit_name FROM employees e
+    LEFT JOIN org_units o ON o.id = e.org_unit_id AND o.tenant_id = e.tenant_id
+    WHERE e.id = ? AND e.tenant_id = ?`).get(employeeId, tenantId) as any
+  if (!emp) return { error: { status: 404, message: 'ไม่พบพนักงาน' } }
+
+  const vals = new Map<string, string>()
+  if (extra !== undefined && extra !== null) {
+    if (typeof extra !== 'object' || Array.isArray(extra) || Object.keys(extra as any).length > 50) {
+      return { error: { status: 400, message: 'ข้อมูลเพิ่มเติมไม่ถูกต้อง' } }
+    }
+    for (const [k, v] of Object.entries(extra as Record<string, unknown>)) {
+      if (!/^\w{1,50}$/.test(k) || typeof v !== 'string' || v.length > 5000) {
+        return { error: { status: 400, message: 'ข้อมูลเพิ่มเติมไม่ถูกต้อง' } }
+      }
+      vals.set(k, v)
+    }
+  }
+  const company = db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+  const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim()
+  const companyName = company?.name || ''
+  // ค่าระบบทับ extra เพื่อไม่ให้ปลอมข้อมูลพนักงาน
+  const builtin: Record<string, string> = {
+    company_name: companyName,
+    employee_name: empName,
+    employee_code: emp.code || '',
+    position: emp.position || '',
+    org_unit: emp.org_unit_name || '',
+    start_date: emp.start_date || '',
+    base_wage: Number(emp.base_wage || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    national_id: emp.national_id || '',
+    today: thaiDateStr(),
+  }
+  for (const [k, v] of Object.entries(builtin)) vals.set(k, v)
+
+  const text = tpl.body.replace(/\{\{(\w+)\}\}/g, (m: string, k: string) => (vals.has(k) ? vals.get(k)! : m))
+  return {
+    data: {
+      text,
+      templateName: tpl.name || '',
+      companyName,
+      employeeName: empName,
+    },
+  }
+}
+
 // plain text เท่านั้น: แทนที่ {{key}} รอบเดียว (ค่าที่แทนแล้วไม่ถูกแทนซ้ำ) และไม่ตีความ HTML
 router.post('/doc-templates/:id/render', (req: Request, res: Response) => {
   try {
     if (!userHasHr(req, 'write')) return deny(res)
-    const tenantId = req.user!.tenantId
-    const tpl = db.prepare('SELECT body FROM hr_doc_templates WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
-    if (!tpl) return res.status(404).json({ success: false, message: 'ไม่พบแม่แบบ' })
-    const { employee_id, extra } = req.body || {}
-    if (typeof employee_id !== 'string' || !employee_id) {
-      return res.status(400).json({ success: false, message: 'กรุณาระบุพนักงาน' })
+    const result = renderDocTemplate(req.user!.tenantId, req.params.id, req.body?.employee_id, req.body?.extra)
+    if ('error' in result) {
+      return res.status(result.error.status).json({ success: false, message: result.error.message })
     }
-    const emp = db.prepare(`SELECT e.*, o.name AS org_unit_name FROM employees e
-      LEFT JOIN org_units o ON o.id = e.org_unit_id AND o.tenant_id = e.tenant_id
-      WHERE e.id = ? AND e.tenant_id = ?`).get(employee_id, tenantId) as any
-    if (!emp) return res.status(404).json({ success: false, message: 'ไม่พบพนักงาน' })
-
-    const vals = new Map<string, string>()
-    if (extra !== undefined && extra !== null) {
-      if (typeof extra !== 'object' || Array.isArray(extra) || Object.keys(extra).length > 50) {
-        return res.status(400).json({ success: false, message: 'ข้อมูลเพิ่มเติมไม่ถูกต้อง' })
-      }
-      for (const [k, v] of Object.entries(extra)) {
-        if (!/^\w{1,50}$/.test(k) || typeof v !== 'string' || v.length > 5000) {
-          return res.status(400).json({ success: false, message: 'ข้อมูลเพิ่มเติมไม่ถูกต้อง' })
-        }
-        vals.set(k, v)
-      }
-    }
-    const company = db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
-    // ค่าระบบทับ extra เพื่อไม่ให้ปลอมข้อมูลพนักงาน
-    const builtin: Record<string, string> = {
-      company_name: company?.name || '',
-      employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
-      employee_code: emp.code || '',
-      position: emp.position || '',
-      org_unit: emp.org_unit_name || '',
-      start_date: emp.start_date || '',
-      base_wage: Number(emp.base_wage || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      national_id: emp.national_id || '',
-      today: thaiDateStr(),
-    }
-    for (const [k, v] of Object.entries(builtin)) vals.set(k, v)
-
-    const text = tpl.body.replace(/\{\{(\w+)\}\}/g, (m: string, k: string) => (vals.has(k) ? vals.get(k)! : m))
-    res.json({ success: true, data: { text } })
+    res.json({ success: true, data: { text: result.data.text } })
   } catch (err: any) {
     console.error('Render doc template error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+router.get('/doc-templates/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    if (!userHasHr(req, 'write')) return deny(res)
+    const tenantId = req.user!.tenantId
+    let extra: any = undefined
+    if (typeof req.query.extra === 'string') {
+      try { extra = JSON.parse(req.query.extra) } catch { /* ignore */ }
+    }
+    const result = renderDocTemplate(tenantId, req.params.id, req.query.employee_id, extra)
+    if ('error' in result) {
+      return res.status(result.error.status).json({ success: false, message: result.error.message })
+    }
+    const buf = await renderPdf({
+      title: result.data.templateName,
+      companyName: result.data.companyName,
+      bodyText: result.data.text,
+      signatures: result.data.employeeName ? [result.data.employeeName] : [],
+    })
+    sendPdf(res, buf, result.data.templateName || 'document')
+  } catch (err: any) {
+    console.error('Download doc template pdf error:', err)
     res.status(500).json({ success: false, message: err.message })
   }
 })

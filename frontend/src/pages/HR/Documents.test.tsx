@@ -15,6 +15,7 @@ vi.mock('../../services/hrDocument.service', async () => {
     default: {
       getDocuments: vi.fn(), getExpiring: vi.fn(), getTemplates: vi.fn(),
       createDocument: vi.fn(), updateDocument: vi.fn(), deleteDocument: vi.fn(),
+      renderTemplate: vi.fn(), downloadTemplatePdf: vi.fn(), downloadPdf: vi.fn(),
     },
   }
 })
@@ -61,5 +62,25 @@ describe('หน้าเอกสารพนักงาน', () => {
     fireEvent.click(screen.getByText('บันทึก'))
     await waitFor(() => expect(svc.createDocument).toHaveBeenCalled())
     expect(svc.createDocument.mock.calls[0][0]).toMatchObject({ employee_id: 'e1', doc_type: 'CONTRACT', title: 'สัญญาจ้าง 2569' })
+  })
+
+  it('คลิกปุ่มดาวน์โหลด PDF เรียก downloadTemplatePdf ของ service', async () => {
+    svc.getTemplates.mockResolvedValue([
+      { id: 'tpl-1', kind: 'CONTRACT', name: 'แม่แบบสัญญาจ้าง', body: 'เนื้อหา', created_at: '', updated_at: '' },
+    ])
+    renderPage()
+    await screen.findByText('ใบอนุญาต พ.ศ. 2569')
+    fireEvent.click(screen.getByText('แม่แบบ'))
+    expect(await screen.findByText('แม่แบบสัญญาจ้าง')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('สร้างเอกสาร'))
+    fireEvent.change(screen.getByLabelText('พนักงาน'), { target: { value: 'e1' } })
+
+    const dlBtn = screen.getByText('ดาวน์โหลด PDF')
+    fireEvent.click(dlBtn)
+
+    await waitFor(() => {
+      expect(svc.downloadTemplatePdf).toHaveBeenCalledWith('tpl-1', 'e1')
+    })
   })
 })

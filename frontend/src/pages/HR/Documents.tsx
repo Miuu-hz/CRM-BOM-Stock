@@ -122,11 +122,24 @@ export default function Documents() {
     if (!genTpl || !genEmp) return toast.error('กรุณาเลือกพนักงาน')
     try {
       const text = await hrDocumentService.renderTemplate(genTpl.id, genEmp)
-      try { sessionStorage.setItem(PRINT_KEY, text) } catch { /* ignore */ }
+      try {
+        sessionStorage.setItem(PRINT_KEY, text)
+        sessionStorage.setItem('hr_document_print_tpl', genTpl.id)
+        sessionStorage.setItem('hr_document_print_emp', genEmp)
+      } catch { /* ignore */ }
       setGenTpl(null)
       navigate('/hr/documents/print')
     } catch (e: any) {
       toast.error(errMsg(e, 'สร้างเอกสารไม่สำเร็จ'))
+    }
+  }
+
+  const downloadPdf = async () => {
+    if (!genTpl || !genEmp) return toast.error('กรุณาเลือกพนักงาน')
+    try {
+      await hrDocumentService.downloadTemplatePdf(genTpl.id, genEmp)
+    } catch (e: any) {
+      toast.error(errMsg(e, 'ดาวน์โหลด PDF ไม่สำเร็จ'))
     }
   }
 
@@ -281,6 +294,7 @@ export default function Documents() {
             <div className="flex justify-end gap-2">
               <button className="phopy-btn" onClick={() => setGenTpl(null)}>ยกเลิก</button>
               <button className="phopy-btn" onClick={generate}>สร้างเอกสาร</button>
+              <button className="phopy-btn" onClick={downloadPdf}>ดาวน์โหลด PDF</button>
             </div>
           </div>
         </div>

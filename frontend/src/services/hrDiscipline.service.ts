@@ -107,6 +107,31 @@ export const hrDisciplineService = {
     return res.data.data
   },
 
+  async downloadDisciplinaryPdf(id: string): Promise<void> {
+    const res = await api.get(`/hr/disciplinary/${id}/pdf`, {
+      responseType: 'blob',
+    })
+    let filename = 'disciplinary.pdf'
+    const disp = res.headers?.['content-disposition'] || res.headers?.['Content-Disposition']
+    if (disp) {
+      const match = disp.match(/filename\*=UTF-8''([^;]+)/i) || disp.match(/filename="?([^";]+)"?/i)
+      if (match) filename = decodeURIComponent(match[1])
+    }
+    const blob = new Blob([res.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  },
+
+  async downloadPdf(id: string): Promise<void> {
+    return this.downloadDisciplinaryPdf(id)
+  },
+
   // ---------- ส่วนของพนักงานตนเอง (/me/disciplinary) ----------
   async getMyDisciplinary(): Promise<DisciplinaryRecord[]> {
     const res = await api.get('/hr/me/disciplinary')

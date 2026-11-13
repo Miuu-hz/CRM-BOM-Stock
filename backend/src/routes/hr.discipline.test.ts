@@ -528,4 +528,144 @@ describe('HR Discipline Routes (Phase 10B)', () => {
       expect(ackRes.status).toBe(404)
     })
   })
+
+  // 6. PDF Export for Disciplinary Records
+  describe('GET /disciplinary/:id/pdf', () => {
+    const binaryParser = (res: any, cb: (err: Error | null, res: Buffer) => void) => {
+      const data: Buffer[] = []
+      res.on('data', (chunk: Buffer) => data.push(chunk))
+      res.on('end', () => cb(null, Buffer.concat(data)))
+    }
+
+    it('returns 200 and a body starting with %PDF- for HR admin', async () => {
+      const admin = newAdmin()
+      const auth = { Authorization: `Bearer ${admin.token}` }
+      const empId = insertEmployee(admin.tenantId, 'EMP-1', 'มานะ', 'อดทน')
+
+      const rec = await request(app)
+        .post('/api/hr/disciplinary')
+        .set(auth)
+        .send({
+          employee_id: empId,
+          incident_date: '2026-08-01',
+          category: 'ขาดงาน',
+          detail: 'ขาดงานติดต่อกัน 3 วัน',
+          level: 'WRITTEN',
+        })
+      expect(rec.status).toBe(201)
+      const recordId = rec.body.data.id
+
+      const res = await request(app)
+        .get(`/api/hr/disciplinary/${recordId}/pdf`)
+        .set(auth)
+        .buffer(true)
+        .parse(binaryParser)
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toContain('application/pdf')
+      expect(res.headers['content-disposition']).toContain("filename*=UTF-8''")
+      expect(res.body.subarray(0, 5).toString()).toBe('%PDF-')
+    })
+
+    it('allows record owner to download own PDF without HR permission', async () => {
+      const admin = newAdmin()
+      const authAdmin = { Authorization: `Bearer ${admin.token}` }
+      const user = newUser(admin.tenantId)
+      const authUser = { Authorization: `Bearer ${user.token}` }
+
+      const empId = insertEmployee(admin.tenantId, 'EMP-ME', 'ฉันเอง', 'จริงใจ', user.userId)
+
+      const rec = await request(app)
+        .post('/api/hr/disciplinary')
+        .set(authAdmin)
+        .send({
+          employee_id: empId,
+          incident_date: '2026-08-01',
+          category: 'มาสาย',
+          detail: 'มาสายเกิน 30 นาที',
+          level: 'VERBAL',
+        })
+      expect(rec.status).toBe(201)
+      const recordId = rec.body.data.id
+
+      // Owner downloads via /disciplinary/:id/pdf
+      const res = await request(app)
+        .get(`/api/hr/disciplinary/${recordId}/pdf`)
+        .set(authUser)
+        .buffer(true)
+        .parse(binaryParser)
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toContain('application/pdf')
+      expect(res.body.subarray(0, 5).toString()).toBe('%PDF-')
+
+      // Owner downloads via /me/disciplinary/:id/pdf
+      const meRes = await request(app)
+        .get(`/api/hr/me/disciplinary/${recordId}/pdf`)
+        .set(authUser)
+        .buffer(true)
+        .parse(binaryParser)
+
+      expect(meRes.status).toBe(200)
+      expect(meRes.body.subarray(0, 5).toString()).toBe('%PDF-')
+    })
+
+    it('returns 404 for ids of another company', async () => {
+      const companyA = newAdmin()
+      const companyB = newAdmin()
+      const authA = { Authorization: `Bearer ${companyA.token}` }
+      const authB = { Authorization: `Bearer ${companyB.token}` }
+
+      const empA = insertEmployee(companyA.tenantId, 'EMP-A', 'ประสิทธิ์', 'มั่นคง')
+      const rec = await request(app)
+        .post('/api/hr/disciplinary')
+        .set(authA)
+        .send({
+          employee_id: empA,
+          incident_date: '2026-08-01',
+          category: 'ทะเลาะวิวาท',
+          detail: 'มีปากเสียงในที่ทำงาน',
+          level: 'WRITTEN',
+        })
+      const recordIdA = rec.body.data.id
+
+      const res = await request(app)
+        .get(`/api/hr/disciplinary/${recordIdA}/pdf`)
+        .set(authB)
+        .buffer(true)
+        .parse(binaryParser)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 403 for user with no HR permission trying to download another employee record', async () => {
+      const admin = newAdmin()
+      const authAdmin = { Authorization: `Bearer ${admin.token}` }
+      const otherUser = newUser(admin.tenantId)
+      const authOther = { Authorization: `Bearer ${otherUser.token}` }
+
+      const empA = insertEmployee(admin.tenantId, 'EMP-A', 'ประสิทธิ์', 'มั่นคง')
+      insertEmployee(admin.tenantId, 'EMP-OTHER', 'คนอื่น', 'เฉยๆ', otherUser.userId)
+
+      const rec = await request(app)
+        .post('/api/hr/disciplinary')
+        .set(authAdmin)
+        .send({
+          employee_id: empA,
+          incident_date: '2026-08-01',
+          category: 'ทะเลาะวิวาท',
+          detail: 'มีปากเสียงในที่ทำงาน',
+          level: 'WRITTEN',
+        })
+      const recordIdA = rec.body.data.id
+
+      const res = await request(app)
+        .get(`/api/hr/disciplinary/${recordIdA}/pdf`)
+        .set(authOther)
+        .buffer(true)
+        .parse(binaryParser)
+
+      expect(res.status).toBe(403)
+    })
+  })
 })

@@ -174,4 +174,54 @@ describe('HR Documents (10A)', () => {
     expect((await request(app).get('/api/hr/doc-templates').set(auth(admin))).body.data).toHaveLength(1)
     expect((await request(app).delete(`/api/hr/doc-templates/${c.body.data.id}`).set(auth(admin))).status).toBe(200)
   })
+
+  it('GET /doc-templates/:id/pdf returns PDF buffer, handles cross-company (404) and no-permission (403)', async () => {
+    const binaryParser = (res: any, cb: (err: Error | null, res: Buffer) => void) => {
+      const data: Buffer[] = []
+      res.on('data', (chunk: Buffer) => data.push(chunk))
+      res.on('end', () => cb(null, Buffer.concat(data)))
+    }
+
+    const adminA = newAdmin()
+    const adminB = newAdmin()
+    const userA = newUser(adminA.tenantId)
+
+    db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(adminA.tenantId, 'บริษัท ทดสอบ จำกัด')
+    const empA = insertEmployee(adminA.tenantId, 'E1')
+    const tplA = await request(app).post('/api/hr/doc-templates').set(auth(adminA)).send({
+      kind: 'CONTRACT',
+      name: 'สัญญาจ้าง',
+      body: 'สัญญาจ้างระหว่าง {{company_name}} กับ {{employee_name}}',
+    })
+    expect(tplA.status).toBe(201)
+    const tplId = tplA.body.data.id
+
+    // 200 with PDF buffer starting with %PDF-
+    const res = await request(app)
+      .get(`/api/hr/doc-templates/${tplId}/pdf?employee_id=${empA}`)
+      .set(auth(adminA))
+      .buffer(true)
+      .parse(binaryParser)
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('application/pdf')
+    expect(res.headers['content-disposition']).toContain("filename*=UTF-8''")
+    expect(res.body.subarray(0, 5).toString()).toBe('%PDF-')
+
+    // 404 for ids of another company (Company B accessing Company A's template)
+    const crossRes = await request(app)
+      .get(`/api/hr/doc-templates/${tplId}/pdf?employee_id=${empA}`)
+      .set(auth(adminB))
+      .buffer(true)
+      .parse(binaryParser)
+    expect(crossRes.status).toBe(404)
+
+    // 403 for user without hr permission
+    const noPermRes = await request(app)
+      .get(`/api/hr/doc-templates/${tplId}/pdf?employee_id=${empA}`)
+      .set(auth(userA))
+      .buffer(true)
+      .parse(binaryParser)
+    expect(noPermRes.status).toBe(403)
+  })
 })

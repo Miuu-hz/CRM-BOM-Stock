@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
 import { can } from '../services/rbac.service'
+import { renderPdf, sendPdf } from '../services/hr/pdf'
 
 // HR Phase 10B — วินัย หนังสือเตือน ข้อบังคับการทำงาน (สัญญากลาง docs/contracts/hr-phase9-11.md)
 const router = Router()
@@ -343,6 +344,91 @@ router.get('/disciplinary/:id', (req: Request, res: Response) => {
     res.json({ success: true, data: formatDisciplinaryRow(row, today) })
   } catch (err: any) {
     console.error('Get disciplinary record error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+// หนังสือเตือน/บันทึกตักเตือนเป็น PDF — ใช้ร่วมกันทั้งทาง HR และทางพนักงานเจ้าของบันทึก
+async function sendDisciplinaryPdf(res: Response, tenantId: string, row: any) {
+  const company = db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+  const companyName = company?.name || ''
+  const empName = `${row.first_name || ''} ${row.last_name || ''}`.trim()
+  const title = row.level === 'WRITTEN' ? 'หนังสือเตือนการกระทำผิดวินัย' : 'บันทึกการตักเตือนด้วยวาจา'
+
+  const bodyParts: string[] = [
+    `วันที่เกิดเหตุ: ${row.incident_date}`,
+    `พนักงาน: ${empName} (รหัสพนักงาน: ${row.employee_code || '-'})`,
+  ]
+  if (row.position) bodyParts.push(`ตำแหน่ง: ${row.position}`)
+  if (row.org_unit_name) bodyParts.push(`แผนก: ${row.org_unit_name}`)
+  bodyParts.push(`หมวดหมู่ความผิด: ${row.category}`)
+  if (row.clause_no) {
+    bodyParts.push(`ข้อบังคับการทำงาน: ข้อที่ ${row.clause_no} ${row.work_rule_title ? `(${row.work_rule_title})` : ''}`.trim())
+  }
+  bodyParts.push(`ระดับการลงโทษ: ${row.level === 'WRITTEN' ? 'ตักเตือนเป็นหนังสือ' : 'ตักเตือนด้วยวาจา'}`)
+  bodyParts.push(`วันหมดอายุผลทางวินัย: ${row.expires_on}`)
+  bodyParts.push('')
+  bodyParts.push('รายละเอียดการกระทำความผิด:')
+  bodyParts.push(row.detail)
+
+  const signatures: string[] = ['ผู้มีอำนาจลงนาม / ผู้บังคับบัญชา']
+  if (empName) signatures.push(empName)
+  if (row.witness_name) signatures.push(`พยาน (${row.witness_name})`)
+
+  const buf = await renderPdf({
+    title,
+    companyName,
+    bodyText: bodyParts.join('\n'),
+    signatures,
+  })
+
+  const filename = `${title}_${row.employee_code || empName || row.id}`
+  sendPdf(res, buf, filename)
+}
+
+// GET /disciplinary/:id/pdf (hr:read หรือเป็นเจ้าของบันทึก)
+router.get('/disciplinary/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.userId
+
+    const row = db.prepare(`
+      SELECT
+        r.*,
+        e.first_name,
+        e.last_name,
+        e.code AS employee_code,
+        e.position,
+        o.name AS org_unit_name,
+        w.clause_no,
+        w.title AS work_rule_title
+      FROM hr_disciplinary_records r
+      JOIN employees e ON e.id = r.employee_id AND e.tenant_id = r.tenant_id
+      LEFT JOIN org_units o ON o.id = e.org_unit_id AND o.tenant_id = e.tenant_id
+      LEFT JOIN hr_work_rules w ON w.id = r.work_rule_id AND w.tenant_id = r.tenant_id
+      WHERE r.id = ? AND r.tenant_id = ?
+    `).get(req.params.id, tenantId) as any
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'ไม่พบบันทึกวินัย' })
+    }
+
+    const hasHrRead = userHasHr(req, 'read')
+    let isOwner = false
+    if (!hasHrRead) {
+      const self = getSelfEmployee(tenantId, userId)
+      if (self && self.id === row.employee_id) {
+        isOwner = true
+      }
+    }
+
+    if (!hasHrRead && !isOwner) {
+      return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึง' })
+    }
+
+    await sendDisciplinaryPdf(res, tenantId, row)
+  } catch (err: any) {
+    console.error('Download disciplinary pdf error:', err)
     res.status(500).json({ success: false, message: err.message })
   }
 })
@@ -710,6 +796,45 @@ router.post('/me/disciplinary/:id/acknowledge', (req: Request, res: Response) =>
     res.json({ success: true, data: formatDisciplinaryRow(updated, today) })
   } catch (err: any) {
     console.error('Acknowledge my disciplinary error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+// GET /me/disciplinary/:id/pdf -> ดาวน์โหลดหนังสือเตือนของตัวเอง
+router.get('/me/disciplinary/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const userId = req.user!.userId
+
+    const self = getSelfEmployee(tenantId, userId)
+    if (!self) {
+      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลพนักงานของผู้ใช้งาน' })
+    }
+
+    const row = db.prepare(`
+      SELECT
+        r.*,
+        e.first_name,
+        e.last_name,
+        e.code AS employee_code,
+        e.position,
+        o.name AS org_unit_name,
+        w.clause_no,
+        w.title AS work_rule_title
+      FROM hr_disciplinary_records r
+      JOIN employees e ON e.id = r.employee_id AND e.tenant_id = r.tenant_id
+      LEFT JOIN org_units o ON o.id = e.org_unit_id AND o.tenant_id = e.tenant_id
+      LEFT JOIN hr_work_rules w ON w.id = r.work_rule_id AND w.tenant_id = r.tenant_id
+      WHERE r.id = ? AND r.tenant_id = ?
+    `).get(req.params.id, tenantId) as any
+
+    if (!row || row.employee_id !== self.id) {
+      return res.status(404).json({ success: false, message: 'ไม่พบบันทึกวินัย' })
+    }
+
+    await sendDisciplinaryPdf(res, tenantId, row)
+  } catch (err: any) {
+    console.error('Download my disciplinary pdf error:', err)
     res.status(500).json({ success: false, message: err.message })
   }
 })
