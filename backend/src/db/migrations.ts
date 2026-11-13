@@ -2852,6 +2852,14 @@ export function runMigrations(db: any): void {
     `)
   } catch (e) { console.error('⚠️ hr_roster_publishes migration error:', e) }
 
+  // กันส่ง digest เอกสารใกล้หมดอายุซ้ำ (1 แถว/บริษัท/วัน) — โควตา LINE push จำกัด
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS hr_expiry_digest_runs (
+      tenant_id TEXT NOT NULL, run_date TEXT NOT NULL, pushes INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (tenant_id, run_date)
+    )`)
+  } catch (e) { console.error('⚠️ hr_expiry_digest_runs migration error:', e) }
+
   // ลิงก์เข้าหน้า "ของฉัน" จาก LINE: ใช้ครั้งเดียว อายุ 5 นาที เก็บแค่ hash
   try {
     db.exec(`

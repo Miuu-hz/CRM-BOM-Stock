@@ -177,6 +177,7 @@ import kanbanSsoRoutes from './routes/kanban-sso.routes'
 
 import cookieParser from 'cookie-parser'
 import { startBackupScheduler } from './services/backup.scheduler'
+import { startHrExpiryScheduler } from './services/hrExpiry.scheduler'
 
 
 import qcRoutes from './routes/qc.routes'
@@ -798,6 +799,7 @@ app.listen(PORT, () => {
 
 
   startBackupScheduler()
+  startHrExpiryScheduler()
 
 
 })
