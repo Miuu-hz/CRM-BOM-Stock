@@ -123,10 +123,9 @@ export function renderPdf(input: PdfInput): Promise<Buffer> {
       if (doc.y + doc.currentLineHeight(true) > doc.page.height - MARGIN) {
         doc.addPage()
       }
-      if (line) {
-        doc.text(line, MARGIN, doc.y, { width, lineBreak: false })
-      }
-      doc.moveDown(line ? 1 : 0.7)
+      // text() เลื่อนลงหนึ่งบรรทัดให้อยู่แล้ว — เว้นเพิ่มเฉพาะบรรทัดว่าง
+      if (line) doc.text(line, MARGIN, doc.y, { width, lineBreak: false, lineGap: 6 })
+      else doc.moveDown(0.7)
     }
 
     for (const sig of input.signatures) {

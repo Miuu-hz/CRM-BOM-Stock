@@ -1092,25 +1092,13 @@ export const hrService = {
     return res.data.data
   },
 
-  async getFace(): Promise<FaceEnrollmentStatus> {
-    return this.getMyFace()
-  },
-
   async enrollMyFace(data: { descriptor: number[]; consent: boolean }): Promise<void> {
     const res = await api.post('/hr/me/face', data)
     return res.data.data
   },
 
-  async enrollFace(data: { descriptor: number[]; consent: boolean }): Promise<void> {
-    return this.enrollMyFace(data)
-  },
-
   async deleteMyFace(): Promise<void> {
     await api.delete('/hr/me/face')
-  },
-
-  async deleteFace(): Promise<void> {
-    return this.deleteMyFace()
   },
 
   async checkinWithFace(data: CheckinFaceInput): Promise<CheckinResult> {
@@ -1118,17 +1106,9 @@ export const hrService = {
     return res.data.data
   },
 
-  async checkinFace(data: CheckinFaceInput): Promise<CheckinResult> {
-    return this.checkinWithFace(data)
-  },
-
   async checkinWithFaceKiosk(data: CheckinFaceKioskInput): Promise<CheckinResult> {
     const res = await api.post('/hr/checkin/face-kiosk', data)
     return res.data.data
-  },
-
-  async checkinFaceKiosk(data: CheckinFaceKioskInput): Promise<CheckinResult> {
-    return this.checkinWithFaceKiosk(data)
   },
 
   async getMyAttendance(params?: { from?: string; to?: string }): Promise<MyAttendance> {
