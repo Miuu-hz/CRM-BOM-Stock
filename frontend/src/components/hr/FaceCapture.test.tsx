@@ -4,7 +4,7 @@ import FaceCapture from './FaceCapture'
 import { captureFaceDescriptor, startCamera, stopCamera } from '../../lib/faceScan'
 
 vi.mock('../../lib/faceScan', () => ({
-  startCamera: vi.fn().mockResolvedValue({}),
+  startCamera: vi.fn().mockResolvedValue({ getTracks: () => [] }),
   stopCamera: vi.fn(),
   captureFaceDescriptor: vi.fn(),
 }))
@@ -16,7 +16,17 @@ const mockCaptureFace = captureFaceDescriptor as unknown as ReturnType<typeof vi
 describe('FaceCapture component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockStartCamera.mockResolvedValue({})
+    mockStartCamera.mockResolvedValue({ getTracks: () => [] })
+  })
+
+  it('stops camera tracks on unmount', async () => {
+    const stop = vi.fn()
+    mockStartCamera.mockResolvedValue({ getTracks: () => [{ stop }] })
+    const { unmount } = render(<FaceCapture onCapture={vi.fn()} onClose={vi.fn()} />)
+    const captureBtn = screen.getByRole('button', { name: 'ถ่าย' })
+    await waitFor(() => expect((captureBtn as HTMLButtonElement).disabled).toBe(false))
+    unmount()
+    expect(stop).toHaveBeenCalled()
   })
 
   it('renders video element, camera title and buttons', async () => {

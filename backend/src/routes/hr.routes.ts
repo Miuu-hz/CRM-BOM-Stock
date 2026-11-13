@@ -641,7 +641,7 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
       id, tenantId
     )
 
-    if (status !== 'ACTIVE') {
+    if (status !== 'ACTIVE' || (existing.user_id && existing.user_id !== userId)) {
       db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, id)
     }
 

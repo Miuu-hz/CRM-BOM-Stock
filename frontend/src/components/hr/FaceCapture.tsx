@@ -10,6 +10,7 @@ export interface FaceCaptureProps {
 
 export default function FaceCapture({ title = 'สแกนใบหน้า', onCapture, onClose }: FaceCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const [cameraLoading, setCameraLoading] = useState(true)
   const [capturing, setCapturing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +22,12 @@ export default function FaceCapture({ title = 'สแกนใบหน้า', 
       setCameraLoading(true)
       setError(null)
       try {
-        await startCamera(videoRef.current)
+        const stream = await startCamera(videoRef.current)
+        if (mounted) {
+          streamRef.current = stream
+        } else {
+          stream?.getTracks().forEach(t => t.stop())
+        }
       } catch (err: any) {
         if (mounted) {
           setError(err?.message || 'ไม่สามารถเปิดกล้องได้')
@@ -37,6 +43,8 @@ export default function FaceCapture({ title = 'สแกนใบหน้า', 
 
     return () => {
       mounted = false
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
       if (videoRef.current) {
         stopCamera(videoRef.current)
       }
@@ -44,6 +52,8 @@ export default function FaceCapture({ title = 'สแกนใบหน้า', 
   }, [])
 
   const handleClose = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
     if (videoRef.current) {
       stopCamera(videoRef.current)
     }

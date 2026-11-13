@@ -673,4 +673,59 @@ describe('HR Phase 4 (B4) — Web Check-in, Kiosk PIN Check-in & My Attendance',
       .send({ face_descriptor: v3 })
     expect(resResigned.status).toBe(401)
   })
+
+  function enrollWithOffset(tenantId: string, code: string, d: number) {
+    const empId = insertEmployee({ tenantId, code, firstName: code })
+    const stored = Array.from({ length: 128 }, (_, i) => (i === 0 ? d : 0))
+    const nowIso = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+       VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), tenantId, empId, encryptDescriptor(stored), nowIso, nowIso)
+    return empId
+  }
+
+  it('kiosk face: margin applies only among candidates >= FACE_MATCH_MIN', async () => {
+    const admin = newAdmin()
+    const auth = { Authorization: `Bearer ${admin.token}` }
+    const probe = Array.from({ length: 128 }, () => 0)
+
+    // similarity = 1 - 5d: 0.63 and 0.58 (second below min) -> first wins
+    enrollWithOffset(admin.tenantId, 'M-01', 0.074)
+    enrollWithOffset(admin.tenantId, 'M-02', 0.084)
+    const ok = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set(auth)
+      .send({ face_descriptor: probe })
+    expect(ok.status).toBe(201)
+    expect(ok.body.data.employee_name).toBe('M-01')
+  })
+
+  it('kiosk face: two candidates >= min and closer than margin -> 401', async () => {
+    const admin = newAdmin()
+    const auth = { Authorization: `Bearer ${admin.token}` }
+    const probe = Array.from({ length: 128 }, () => 0)
+
+    enrollWithOffset(admin.tenantId, 'A-01', 0.05) // 0.75
+    enrollWithOffset(admin.tenantId, 'A-02', 0.052) // 0.74
+    const res = await request(app)
+      .post('/api/hr/checkin/face-kiosk')
+      .set(auth)
+      .send({ face_descriptor: probe })
+    expect(res.status).toBe(401)
+  })
+
+  it('kiosk face lockout: 14 failures -> 401, 15th -> 429', async () => {
+    const admin = newAdmin()
+    const auth = { Authorization: `Bearer ${admin.token}` }
+    const probe = Array.from({ length: 128 }, () => 0)
+
+    for (let i = 1; i <= 14; i++) {
+      const r = await request(app).post('/api/hr/checkin/face-kiosk').set(auth).send({ face_descriptor: probe })
+      expect(r.status).toBe(401)
+    }
+    const r15 = await request(app).post('/api/hr/checkin/face-kiosk').set(auth).send({ face_descriptor: probe })
+    expect(r15.status).toBe(429)
+    expect(r15.body.message).toBe('สแกนหน้าไม่ผ่านหลายครั้ง กรุณารอ 1 นาทีหรือใช้ PIN')
+  })
 })

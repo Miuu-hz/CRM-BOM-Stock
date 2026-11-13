@@ -378,6 +378,50 @@ describe('HR Face Routes (/api/hr/me/face & /api/hr/employees/:id/face)', () => 
       expect(faceRow).toBeUndefined()
     })
 
+    it('deletes face enrollment when linked user changes via PUT /employees/:id, keeps it on unrelated edits', async () => {
+      const admin = newAdmin()
+      const userA = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+      const userB = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+      const empId = insertEmployee({
+        tenantId: admin.tenantId,
+        code: 'LINK-01',
+        firstName: 'ลิงก์',
+        userId: userA.userId,
+      })
+      const countRows = () =>
+        (
+          db
+            .prepare('SELECT COUNT(*) AS c FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?')
+            .get(admin.tenantId, empId) as { c: number }
+        ).c
+      const enroll = () =>
+        db
+          .prepare(
+            `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+             VALUES (?, ?, ?, 'iv:tag:cipher', ?, '1.0', ?)`
+          )
+          .run(generateId(), admin.tenantId, empId, new Date().toISOString(), new Date().toISOString())
+      const put = (extra: Record<string, unknown>) =>
+        request(app)
+          .put(`/api/hr/employees/${empId}`)
+          .set('Authorization', `Bearer ${admin.token}`)
+          .send({ code: 'LINK-01', first_name: 'ลิงก์', employment_type: 'MONTHLY', start_date: '2026-01-01', ...extra })
+
+      enroll()
+      const posRes = await put({ position: 'Cashier' })
+      expect(posRes.status).toBe(200)
+      expect(countRows()).toBe(1)
+
+      const changeRes = await put({ user_id: userB.userId })
+      expect(changeRes.status).toBe(200)
+      expect(countRows()).toBe(0)
+
+      enroll()
+      const nullRes = await put({ user_id: null })
+      expect(nullRes.status).toBe(200)
+      expect(countRows()).toBe(0)
+    })
+
     it('deletes face enrollment when lifecycle offboarding checklist item (DISABLE_USER) is ticked', async () => {
       const admin = newAdmin()
       const linkedUser = createTestUser({ role: 'USER', tenantId: admin.tenantId })

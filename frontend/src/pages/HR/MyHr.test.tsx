@@ -6,7 +6,7 @@ vi.mock('react-hot-toast', () => ({
 }))
 
 vi.mock('../../lib/faceScan', () => ({
-  startCamera: vi.fn().mockResolvedValue({}),
+  startCamera: vi.fn().mockResolvedValue({ getTracks: () => [] }),
   stopCamera: vi.fn(),
   captureFaceDescriptor: vi.fn(),
 }))

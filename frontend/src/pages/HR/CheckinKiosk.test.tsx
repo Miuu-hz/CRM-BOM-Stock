@@ -5,7 +5,7 @@ import { captureFaceDescriptor } from '../../lib/faceScan'
 import CheckinKiosk from './CheckinKiosk'
 
 vi.mock('../../lib/faceScan', () => ({
-  startCamera: vi.fn().mockResolvedValue({}),
+  startCamera: vi.fn().mockResolvedValue({ getTracks: () => [] }),
   stopCamera: vi.fn(),
   captureFaceDescriptor: vi.fn(),
 }))

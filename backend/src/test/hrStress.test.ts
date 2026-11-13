@@ -21,6 +21,10 @@ import hrPayrollRoutes from '../routes/hr.payroll.routes'
 import { runExpiryDigest } from '../services/hrExpiry.scheduler'
 import { seedChartOfAccounts } from '../config/chartOfAccounts'
 import { getOrCreateAccount } from '../services/accounting.service'
+import hrFaceRoutes from '../routes/hr.face.routes'
+import hrCheckinRoutes, { resetCheckinFaceLockout } from '../routes/hr.checkin.routes'
+import hrRoutes from '../routes/hr.routes'
+import { encryptDescriptor } from '../services/hr/face'
 
 // Stress / concurrency over HR + LINE features. Every scenario fires overlapping requests and asserts DB invariants.
 function buildApp(publicLimit = 100000) {
@@ -30,14 +34,29 @@ function buildApp(publicLimit = 100000) {
   app.use('/api/auth', authRoutes)
   app.use('/api/public/jobs', createPublicRecruitRouter(publicLimit))
   app.use('/api/hr', authenticate)
-  for (const r of [hrAssetRoutes, hrDisciplineRoutes, hrDocumentRoutes, hrLifecycleRoutes, hrRecruitRoutes, hrLineInviteRoutes, hrRosterRoutes, hrPayrollRoutes]) app.use('/api/hr', r)
+  for (const r of [
+    hrAssetRoutes,
+    hrDisciplineRoutes,
+    hrDocumentRoutes,
+    hrLifecycleRoutes,
+    hrRecruitRoutes,
+    hrLineInviteRoutes,
+    hrRosterRoutes,
+    hrPayrollRoutes,
+    hrFaceRoutes,
+    hrCheckinRoutes,
+    hrRoutes,
+  ]) app.use('/api/hr', r)
   return app
 }
 
 const tenants: string[] = []
-const TABLES = ['approval_logs', 'approval_requests', 'leave_requests', 'leave_types', 'shift_assignments', 'hr_roster_publishes', 'shifts',
+const TABLES = [
+  'hr_face_enrollments', 'attendance_logs', 'hr_checkin_locations', 'hr_doc_templates',
+  'approval_logs', 'approval_requests', 'leave_requests', 'leave_types', 'shift_assignments', 'hr_roster_publishes', 'shifts',
   'hr_expiry_digest_runs', 'journal_lines', 'journal_entries', 'payroll_run_lines', 'payroll_runs', 'accounts', 'org_units','hr_asset_loans', 'hr_assets', 'hr_disciplinary_records', 'hr_employee_documents', 'hr_checklist_items', 'hr_checklist_templates',
-  'hr_applicants', 'hr_job_postings', 'line_login_tokens', 'line_link_tokens', 'line_user_mappings', 'employees', 'company_settings', 'tenant_subscriptions', 'users']
+  'hr_applicants', 'hr_job_postings', 'line_login_tokens', 'line_link_tokens', 'line_user_mappings', 'employees', 'company_settings', 'tenant_subscriptions', 'users'
+]
 afterAll(() => {
   vi.restoreAllMocks()
   for (const t of tenants) for (const tb of TABLES) { try { db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t) } catch { /* table without tenant_id */ } }
@@ -59,6 +78,16 @@ function emp(tenantId: string, opts: { first?: string; userId?: string } = {}) {
   db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, employment_type, base_wage, start_date, status, user_id)
     VALUES (?, ?, ?, ?, 'ทดสอบ', 'MONTHLY', 20000, '2026-01-01', 'ACTIVE', ?)`).run(id, tenantId, `S${++n}-${id.slice(0, 6)}`, opts.first ?? 'พนักงาน', opts.userId ?? null)
   return id
+}
+
+function makeDescriptor(seed: number, length = 1024): number[] {
+  let s = seed >>> 0
+  const arr: number[] = new Array(length)
+  for (let i = 0; i < length; i++) {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0
+    arr[i] = (s / 0xffffffff) * 0.2
+  }
+  return arr
 }
 
 describe('HR/LINE stress', () => {
@@ -338,5 +367,245 @@ describe('HR/LINE stress', () => {
     expect(count(`SELECT COUNT(*) c FROM journal_entries WHERE tenant_id = ? AND reference_type = 'PAYROLL_RUN' AND reference_id = ?`, t, run.body.id))
       .toBe(rs.find(r => r.status === 200)!.body.accrual_je_ids.length)
     expect((db.prepare('SELECT status FROM payroll_runs WHERE id = ?').get(run.body.id) as any).status).toBe('POSTED')
+  }, 60000)
+
+  it('15. face enroll race: 20 concurrent POST /api/hr/me/face -> all 200, 1 row, safe GET', async () => {
+    const a = admin()
+    const u = createTestUser({ role: 'USER', tenantId: a.tenantId })
+    const e = emp(a.tenantId, { userId: u.userId })
+    const descriptors = Array.from({ length: 20 }, (_, i) => makeDescriptor(i + 1, 1024))
+    const rs = await Promise.all(
+      descriptors.map(d =>
+        api()
+          .post('/api/hr/me/face')
+          .set(auth(u))
+          .send({ descriptor: d, consent: true })
+      )
+    )
+    expect(tally(rs)).toEqual({ 200: 20 })
+    expect(count('SELECT COUNT(*) c FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?', a.tenantId, e)).toBe(1)
+
+    const getRes = await api().get('/api/hr/me/face').set(auth(u))
+    expect(getRes.status).toBe(200)
+    expect(getRes.body.success).toBe(true)
+    expect(getRes.body.data.enrolled).toBe(true)
+    expect(getRes.body.data).not.toHaveProperty('descriptor')
+    expect(getRes.body.data).not.toHaveProperty('descriptor_enc')
+    expect(getRes.body).not.toHaveProperty('descriptor')
+    expect(getRes.body).not.toHaveProperty('descriptor_enc')
+  }, 60000)
+
+  it('16. face check-in burst: 10 concurrent POST /api/hr/checkin/face -> no 5xx, punches equals 2xx count', async () => {
+    const a = admin()
+    const u = createTestUser({ role: 'USER', tenantId: a.tenantId })
+    emp(a.tenantId, { userId: u.userId })
+    const desc = makeDescriptor(42, 1024)
+
+    const enrollRes = await api()
+      .post('/api/hr/me/face')
+      .set(auth(u))
+      .send({ descriptor: desc, consent: true })
+    expect(enrollRes.status).toBe(200)
+
+    const rs = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        api()
+          .post('/api/hr/checkin/face')
+          .set(auth(u))
+          .send({ face_descriptor: desc, lat: 13.7563, lng: 100.5018 })
+      )
+    )
+    expect(rs.filter(r => r.status >= 500).map(r => r.status)).toEqual([])
+    const okCount = rs.filter(r => r.status >= 200 && r.status < 300).length
+    expect(okCount).toBe(1)
+    expect(tally(rs)).toEqual({ 201: 1, 409: 9 })
+    expect(count('SELECT COUNT(*) c FROM attendance_logs WHERE tenant_id = ?', a.tenantId)).toBe(okCount)
+  }, 60000)
+
+  it('17. wrong-face lockout under concurrency: 12 concurrent wrong face -> only 401/429, >=1 429, zero punches', async () => {
+    resetCheckinFaceLockout()
+    try {
+      const a = admin()
+      const u = createTestUser({ role: 'USER', tenantId: a.tenantId })
+      emp(a.tenantId, { userId: u.userId })
+      const enrolledDesc = makeDescriptor(101, 1024)
+      const wrongDesc = makeDescriptor(999, 1024)
+
+      const enrollRes = await api()
+        .post('/api/hr/me/face')
+        .set(auth(u))
+        .send({ descriptor: enrolledDesc, consent: true })
+      expect(enrollRes.status).toBe(200)
+
+      const rs = await Promise.all(
+        Array.from({ length: 12 }, () =>
+          api()
+            .post('/api/hr/checkin/face')
+            .set(auth(u))
+            .send({ face_descriptor: wrongDesc, lat: 13.7563, lng: 100.5018 })
+        )
+      )
+      const t = tally(rs)
+      expect(rs.every(r => r.status === 401 || r.status === 429)).toBe(true)
+      expect(t[429] ?? 0).toBeGreaterThanOrEqual(1)
+      expect(count('SELECT COUNT(*) c FROM attendance_logs WHERE tenant_id = ?', a.tenantId)).toBe(0)
+    } finally {
+      resetCheckinFaceLockout()
+    }
+  }, 60000)
+
+  it('18. kiosk identification isolation: 30 enrolled in X, 1 in Y -> foreign descriptor 401, own matches #7', async () => {
+    resetCheckinFaceLockout()
+    try {
+      const x = admin(), y = admin()
+      const nowIso = new Date().toISOString()
+      const descD = makeDescriptor(7777, 1024)
+
+      // Company X has 30 enrolled ACTIVE employees with distinct random descriptors
+      const empsX: string[] = []
+      const descsX: number[][] = []
+      for (let i = 0; i < 30; i++) {
+        const eId = emp(x.tenantId, { first: `เอ็กซ์คน${i}` })
+        empsX.push(eId)
+        const d = makeDescriptor(1000 + i, 1024)
+        descsX.push(d)
+        db.prepare(
+          `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+           VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+        ).run(generateId(), x.tenantId, eId, encryptDescriptor(d), nowIso, nowIso)
+      }
+
+      // Company Y has 1 employee enrolled with descriptor D
+      const empY = emp(y.tenantId, { first: 'วายคนเดียว' })
+      db.prepare(
+        `INSERT INTO hr_face_enrollments (id, tenant_id, employee_id, descriptor_enc, consent_at, consent_version, created_at)
+         VALUES (?, ?, ?, ?, ?, '1.0', ?)`
+      ).run(generateId(), y.tenantId, empY, encryptDescriptor(descD), nowIso, nowIso)
+
+      // A kiosk user of company X (ADMIN) posts descriptor D to /api/hr/checkin/face-kiosk -> must be 401
+      const resD = await api()
+        .post('/api/hr/checkin/face-kiosk')
+        .set(auth(x))
+        .send({ face_descriptor: descD, lat: 13.7563, lng: 100.5018 })
+      expect(resD.status).toBe(401)
+      expect(count('SELECT COUNT(*) c FROM attendance_logs WHERE tenant_id = ?', x.tenantId)).toBe(0)
+      expect(count('SELECT COUNT(*) c FROM attendance_logs WHERE tenant_id = ?', y.tenantId)).toBe(0)
+
+      // Then posting employee #7's own descriptor from company X matches employee #7 (check the punch row's employee_id)
+      const emp7Id = empsX[7]
+      const desc7 = descsX[7]
+      const res7 = await api()
+        .post('/api/hr/checkin/face-kiosk')
+        .set(auth(x))
+        .send({ face_descriptor: desc7, lat: 13.7563, lng: 100.5018 })
+      expect(res7.status).toBe(201)
+      expect(res7.body.success).toBe(true)
+      expect(res7.body.data.employee_name).toContain('เอ็กซ์คน7')
+
+      const punch = db.prepare(`
+        SELECT l.*, e.id AS employee_id
+        FROM attendance_logs l
+        JOIN employees e ON e.tenant_id = l.tenant_id AND e.device_pin = l.device_pin
+        WHERE l.tenant_id = ?
+      `).get(x.tenantId) as any
+      expect(punch).toBeTruthy()
+      expect(punch.employee_id).toBe(emp7Id)
+      expect(count('SELECT COUNT(*) c FROM attendance_logs WHERE tenant_id = ?', y.tenantId)).toBe(0)
+    } finally {
+      resetCheckinFaceLockout()
+    }
+  }, 60000)
+
+  it('19. offboard wipes face data: offboard concurrently with 5 /checkin/face -> 0 rows, new checkin fails', async () => {
+    const a = admin()
+    const u = createTestUser({ role: 'USER', tenantId: a.tenantId })
+    const e = emp(a.tenantId, { userId: u.userId })
+    const desc = makeDescriptor(321, 1024)
+
+    const enrollRes = await api()
+      .post('/api/hr/me/face')
+      .set(auth(u))
+      .send({ descriptor: desc, consent: true })
+    expect(enrollRes.status).toBe(200)
+    expect(count('SELECT COUNT(*) c FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?', a.tenantId, e)).toBe(1)
+
+    const offboardReq = api()
+      .post(`/api/hr/employees/${e}/offboard`)
+      .set(auth(a))
+      .send({ end_date: '2026-11-13', status: 'RESIGNED' })
+
+    const checkinReqs = Array.from({ length: 5 }, () =>
+      api()
+        .post('/api/hr/checkin/face')
+        .set(auth(u))
+        .send({ face_descriptor: desc, lat: 13.7563, lng: 100.5018 })
+    )
+
+    const [offRes, ...checkinRes] = await Promise.all([offboardReq, ...checkinReqs])
+    expect(offRes.status).toBe(200)
+    expect(checkinRes.filter(r => r.status >= 500).map(r => r.status)).toEqual([])
+
+    expect(count('SELECT COUNT(*) c FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?', a.tenantId, e)).toBe(0)
+
+    const postOffboardCheckin = await api()
+      .post('/api/hr/checkin/face')
+      .set(auth(u))
+      .send({ face_descriptor: desc, lat: 13.7563, lng: 100.5018 })
+    expect(postOffboardCheckin.status).toBeGreaterThanOrEqual(400)
+    expect(count('SELECT COUNT(*) c FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?', a.tenantId, e)).toBe(0)
+  }, 60000)
+
+  it('20. PDF burst: 15 concurrent GET doc-templates/:id/pdf with 30k Thai chars -> all 200 %PDF in <20s, foreign admin 404', async () => {
+    const a = admin(), foreignAdmin = admin()
+    try { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(a.tenantId, 'บริษัท สเตรสพีดีเอฟ จำกัด') } catch { /* ignore */ }
+
+    const e = emp(a.tenantId, { first: 'สมศักดิ์' })
+    const tplId = generateId()
+    const nowIso = new Date().toISOString()
+
+    const baseThai = 'หนังสือสัญญาจ้างงานฉบับนี้ทำขึ้นเพื่อเป็นหลักฐานว่าพนักงานตกลงเข้าทำงานตามข้อกำหนดและเงื่อนไขที่ระบุไว้ในสัญญาทุกประการ'
+    const thaiWithoutSpaces = baseThai.repeat(Math.ceil(30000 / baseThai.length)).slice(0, 30000)
+    expect(thaiWithoutSpaces.length).toBe(30000)
+    expect(thaiWithoutSpaces.includes(' ')).toBe(false)
+    const tplBody = thaiWithoutSpaces + '{{employee_name}}'
+
+    db.prepare(
+      `INSERT INTO hr_doc_templates (id, tenant_id, kind, name, body, created_at, updated_at)
+       VALUES (?, ?, 'CONTRACT', 'สัญญาจ้างยาวพิเศษ', ?, ?, ?)`
+    ).run(tplId, a.tenantId, tplBody, nowIso, nowIso)
+
+    const parseBinary = (res: any, cb: (err: Error | null, body?: any) => void) => {
+      const c: Buffer[] = []
+      res.on('data', (d: Buffer) => c.push(d))
+      res.on('end', () => cb(null, Buffer.concat(c)))
+    }
+
+    const t0 = Date.now()
+    const rs = await Promise.all(
+      Array.from({ length: 15 }, () =>
+        api()
+          .get(`/api/hr/doc-templates/${tplId}/pdf?employee_id=${e}`)
+          .set(auth(a))
+          .buffer(true)
+          .parse(parseBinary)
+      )
+    )
+    const elapsedMs = Date.now() - t0
+    console.log(`[stress 20] 15 PDF renders in ${elapsedMs}ms`)
+
+    expect(elapsedMs).toBeLessThan(20000)
+    expect(rs).toHaveLength(15)
+    for (const r of rs) {
+      expect(r.status).toBe(200)
+      expect(r.headers['content-type']).toContain('application/pdf')
+      expect(Buffer.isBuffer(r.body)).toBe(true)
+      expect((r.body as Buffer).subarray(0, 4).toString('ascii')).toBe('%PDF')
+    }
+
+    // Also one request from another company's admin for the same template id -> 404
+    const foreignRes = await api()
+      .get(`/api/hr/doc-templates/${tplId}/pdf?employee_id=${e}`)
+      .set(auth(foreignAdmin))
+    expect(foreignRes.status).toBe(404)
   }, 60000)
 })

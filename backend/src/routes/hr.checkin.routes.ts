@@ -85,14 +85,19 @@ function isFaceLocked(key: string, now = Date.now()): boolean {
   return false
 }
 
-function recordFaceFailure(key: string, now = Date.now()): boolean {
+function recordFaceFailure(
+  key: string,
+  max = FACE_MAX_FAILURES,
+  lockMs = FACE_LOCKOUT_MS,
+  now = Date.now()
+): boolean {
   let rec = faceFailures.get(key)
   if (!rec || rec.lockedUntil > 0 || now - rec.firstFailedAt > FACE_WINDOW_MS) {
     rec = { count: 0, firstFailedAt: now, lockedUntil: 0 }
   }
   rec.count += 1
-  if (rec.count >= FACE_MAX_FAILURES) {
-    rec.lockedUntil = now + FACE_LOCKOUT_MS
+  if (rec.count >= max) {
+    rec.lockedUntil = now + lockMs
     faceFailures.set(key, rec)
     return true
   }
@@ -534,46 +539,55 @@ router.post('/checkin/face-kiosk', requirePermission('hr', 'read'), (req: Reques
     if (isFaceLocked(lockKey)) {
       return res.status(429).json({
         success: false,
-        message: 'สแกนหน้าไม่ผ่านเกินจำนวนครั้งที่กำหนด กรุณารอ 5 นาทีแล้วลองใหม่',
+        message: 'สแกนหน้าไม่ผ่านหลายครั้ง กรุณารอ 1 นาทีหรือใช้ PIN',
       })
     }
 
     const rows = db
       .prepare(
-        `SELECT fe.descriptor_enc, e.*, s.name AS shift_name
+        `SELECT fe.employee_id, fe.descriptor_enc
          FROM hr_face_enrollments fe
          JOIN employees e ON e.id = fe.employee_id AND e.tenant_id = fe.tenant_id
-         LEFT JOIN shifts s ON e.shift_id = s.id AND s.tenant_id = e.tenant_id
          WHERE fe.tenant_id = ? AND e.status = 'ACTIVE'`
       )
-      .all(tenantId) as any[]
+      .all(tenantId) as { employee_id: string; descriptor_enc: string }[]
 
-    const candidates: { emp: any; similarity: number }[] = []
+    const candidates: { employeeId: string; similarity: number }[] = []
     for (const r of rows) {
       try {
         const stored = decryptDescriptor(r.descriptor_enc)
         const sim = faceSimilarity(descriptor, stored)
-        candidates.push({ emp: r, similarity: sim })
+        candidates.push({ employeeId: r.employee_id, similarity: sim })
       } catch {
         // ignore corrupted
       }
     }
 
     candidates.sort((a, b) => b.similarity - a.similarity)
-    const best = candidates[0]
-    const secondBest = candidates[1]
+    const matched = candidates.filter((c) => c.similarity >= FACE_MATCH_MIN)
+    const best = matched[0]
+    const secondBest = matched[1]
 
     const pass =
-      best &&
-      best.similarity >= FACE_MATCH_MIN &&
-      (!secondBest || best.similarity - secondBest.similarity >= FACE_MATCH_MARGIN)
+      !!best && (!secondBest || best.similarity - secondBest.similarity >= FACE_MATCH_MARGIN)
 
-    if (!pass) {
-      const lockedNow = recordFaceFailure(lockKey)
+    const winner = pass
+      ? (db
+          .prepare(
+            `SELECT e.*, s.name AS shift_name
+             FROM employees e
+             LEFT JOIN shifts s ON e.shift_id = s.id AND s.tenant_id = e.tenant_id
+             WHERE e.tenant_id = ? AND e.id = ? AND e.status = 'ACTIVE'`
+          )
+          .get(tenantId, best.employeeId) as any)
+      : undefined
+
+    if (!winner) {
+      const lockedNow = recordFaceFailure(lockKey, 15, 60_000)
       if (lockedNow) {
         return res.status(429).json({
           success: false,
-          message: 'สแกนหน้าไม่ผ่านเกินจำนวนครั้งที่กำหนด กรุณารอ 5 นาทีแล้วลองใหม่',
+          message: 'สแกนหน้าไม่ผ่านหลายครั้ง กรุณารอ 1 นาทีหรือใช้ PIN',
         })
       }
       return res.status(401).json({
@@ -583,7 +597,7 @@ router.post('/checkin/face-kiosk', requirePermission('hr', 'read'), (req: Reques
     }
 
     faceFailures.delete(lockKey)
-    const result = executeCheckin(tenantId, best.emp, req.body || {})
+    const result = executeCheckin(tenantId, winner, req.body || {})
     return res.status(result.status).json(result.body)
   } catch (error: any) {
     console.error('Kiosk face checkin error:', error)
