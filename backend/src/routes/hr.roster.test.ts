@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import db from '../db/sqlite'
@@ -6,6 +6,7 @@ import { generateId } from '../utils/id'
 import { authenticate } from '../middleware/auth.middleware'
 import { subscriptionGate } from '../middleware/subscription.middleware'
 import hrRosterRouter from './hr.roster.routes'
+import { lineBotService } from '../services/line-bot.service'
 import { createTestUser } from '../test/testAuth'
 
 const app = express()
@@ -19,6 +20,8 @@ afterEach(() => {
   for (const t of tenants.splice(0)) {
     for (const tbl of [
       'shift_assignments',
+      'hr_roster_publishes',
+      'company_settings',
       'pos_running_bills',
       'hr_settings',
       'employees',
@@ -339,5 +342,52 @@ describe('HR Phase 7 — Shift Roster API (B7a: R1–R5)', () => {
       .get(`/api/hr/roster?week_start=${MONDAY}`)
       .set(linkedUserAuth)
     expect(userR1.status).toBe(403)
+  })
+
+  it('R6 publish: one push per eligible employee, 409 on repeat, force once per day, cross-company and permission', async () => {
+    const push = vi.spyOn(lineBotService, 'pushToUser').mockResolvedValue(true)
+    try {
+      const { tenantId, auth, linkedUserAuth, shiftLongId, empMonthlyId, empDailyId, empHourlyId, otherEmpId, shiftMorningId } = setupSeed()
+      db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(tenantId, 'ร้านทดสอบ')
+      const linkedId = (db.prepare('SELECT user_id FROM employees WHERE id = ?').get(empMonthlyId) as any).user_id
+      const dailyUser = createTestUser({ role: 'USER', tenantId })
+      db.prepare('UPDATE employees SET user_id = ? WHERE id = ?').run(dailyUser.userId, empDailyId)
+      // monthly (linked), daily (linked), hourly (no LINE link) have shifts; other company has one too
+      const ins = db.prepare('INSERT INTO shift_assignments (id, tenant_id, employee_id, work_date, shift_id) VALUES (?, ?, ?, ?, ?)')
+      ins.run(generateId(), tenantId, empMonthlyId, MONDAY, shiftLongId)
+      ins.run(generateId(), tenantId, empDailyId, TUESDAY, shiftMorningId)
+      ins.run(generateId(), tenantId, empHourlyId, TUESDAY, shiftMorningId)
+      const otherTenant = (db.prepare('SELECT tenant_id FROM employees WHERE id = ?').get(otherEmpId) as any).tenant_id
+      ins.run(generateId(), otherTenant, otherEmpId, MONDAY, null)
+      const pub = (a: any, b: any = {}) => request(app).post('/api/hr/roster/publish').set(a).send({ week_start: MONDAY, ...b })
+
+      expect((await pub(linkedUserAuth)).status).toBe(403)
+      expect((await request(app).post('/api/hr/roster/publish').set(auth).send({ week_start: TUESDAY })).status).toBe(400)
+      expect(push).not.toHaveBeenCalled()
+
+      const r1 = await pub(auth)
+      expect(r1.status).toBe(200)
+      expect(r1.body.data).toEqual({ sent: 2, skipped_no_line: 1, employees: 3 })
+      expect(push).toHaveBeenCalledTimes(2)
+      const msg = push.mock.calls.find((c) => c[1] === linkedId)![2] as string
+      const lines = msg.split('\n')
+      expect(lines[0]).toBe('ตารางกะ ร้านทดสอบ สัปดาห์ 7 ม.ค. – 13 ม.ค.')
+      expect(lines[1]).toBe('จ. 7: ยาว 08:00–20:00')
+      expect(lines[2]).toBe('อ. 8: เช้า 09:00–18:00') // กะประจำ (employees.shift_id)
+      expect(lines).toHaveLength(9)
+      expect(lines[8]).toBe('พิมพ์ "ตารางกะ" เพื่อเปิดดูในหน้าของฉัน')
+
+      const r2 = await pub(auth)
+      expect(r2.status).toBe(409)
+      expect(r2.body.message).toBe('ประกาศสัปดาห์นี้ไปแล้ว')
+      expect(push).toHaveBeenCalledTimes(2)
+
+      expect((await pub(auth, { force: true })).status).toBe(200)
+      expect(push).toHaveBeenCalledTimes(4)
+      expect((await pub(auth, { force: true })).status).toBe(409)
+      expect(push).toHaveBeenCalledTimes(4)
+    } finally {
+      push.mockRestore()
+    }
   })
 })

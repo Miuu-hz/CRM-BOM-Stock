@@ -1179,6 +1179,11 @@ export const hrService = {
     return res.data.data
   },
 
+  async publishRoster(weekStart: string, force = false): Promise<{ sent: number; skipped_no_line: number; employees: number }> {
+    const res = await api.post('/hr/roster/publish', { week_start: weekStart, ...(force ? { force: true } : {}) })
+    return res.data.data
+  },
+
   async getMyRoster(weekStart: string): Promise<MyRosterWeek> {
     const res = await api.get('/hr/me/roster', { params: { week_start: weekStart } })
     return res.data.data

@@ -18,6 +18,7 @@ import {
   WorkDay,
 } from '../services/hr/roster'
 import { getTenantHrSettings } from './hr.payroll.routes'
+import { lineBotService } from '../services/line-bot.service'
 
 // สัญญากลาง: docs/contracts/hr-phase7.md — ตารางกะรายวัน + ค่าแรงเทียบยอดขาย POS (งาน B7a: R1–R5)
 const router = Router()
@@ -318,6 +319,73 @@ router.post('/roster/copy', requirePermission('hr', 'write'), (req: Request, res
     res.json({ success: true, data: { copied, skipped } })
   } catch (err: any) {
     console.error('Copy roster error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+// R6: POST /roster/publish (hr:write) — ส่งตารางกะสัปดาห์นี้ให้พนักงานทาง LINE (ผู้จัดการกดเอง)
+// โควตา push ใช้ร่วมทุกบริษัท: ส่งได้ 1 ข้อความ/คน/ครั้งที่กด, ซ้ำต้อง force และ force ได้วันละครั้งต่อสัปดาห์ (วันไทย)
+const TH_DAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
+const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+const thDate = (d: string) => `${Number(d.slice(8))} ${TH_MONTHS[Number(d.slice(5, 7)) - 1]}`
+const thToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
+
+router.post('/roster/publish', requirePermission('hr', 'write'), async (req: Request, res: Response) => {
+  try {
+    const weekStart = typeof req.body?.week_start === 'string' ? req.body.week_start.trim() : ''
+    if (!isMonday(weekStart)) {
+      return res.status(400).json({ success: false, message: 'week_start ต้องเป็นวันจันทร์' })
+    }
+    const force = req.body?.force === true
+    const tenantId = req.user!.tenantId
+    const today = thToday()
+    const now = new Date().toISOString()
+    const dates = weekDates(weekStart)
+
+    // จองสิทธิ์ส่งก่อน (UNIQUE กันกดซ้ำพร้อมกัน) แล้วค่อยส่ง
+    const prev = db.prepare('SELECT id, forced_at FROM hr_roster_publishes WHERE tenant_id = ? AND week_start = ?').get(tenantId, weekStart) as { id: string; forced_at: string | null } | undefined
+    if (!prev) {
+      db.prepare('INSERT INTO hr_roster_publishes (id, tenant_id, week_start, published_by, published_at) VALUES (?, ?, ?, ?, ?)')
+        .run(generateId(), tenantId, weekStart, req.user!.userId, now)
+    } else if (!force) {
+      return res.status(409).json({ success: false, message: 'ประกาศสัปดาห์นี้ไปแล้ว' })
+    } else {
+      const forcedToday = prev.forced_at && new Date(new Date(prev.forced_at).getTime() + 7 * 3600_000).toISOString().slice(0, 10) === today
+      const claimed = forcedToday ? { changes: 0 } : db.prepare('UPDATE hr_roster_publishes SET published_by = ?, published_at = ?, forced_at = ? WHERE id = ? AND tenant_id = ? AND forced_at IS ?')
+        .run(req.user!.userId, now, now, prev.id, tenantId, prev.forced_at)
+      if (!claimed.changes) {
+        return res.status(409).json({ success: false, message: 'ประกาศซ้ำได้วันละครั้งต่อสัปดาห์ — วันนี้ส่งซ้ำไปแล้ว' })
+      }
+    }
+
+    const shiftMap = new Map<string, RosterShift>(listShifts(tenantId).map((s) => [s.id, s]))
+    const company = (db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as { name?: string } | undefined)?.name || ''
+    const emps = db.prepare(`
+      SELECT DISTINCT e.id, e.user_id FROM employees e
+      JOIN shift_assignments sa ON sa.employee_id = e.id AND sa.tenant_id = e.tenant_id
+        AND sa.shift_id IS NOT NULL AND sa.work_date >= ? AND sa.work_date <= ?
+      WHERE e.tenant_id = ? AND e.status = 'ACTIVE' ORDER BY e.code ASC
+    `).all(dates[0], dates[6], tenantId) as Array<{ id: string; user_id: string | null }>
+    const cellMap = getEffectiveCells(tenantId, dates, emps.map((e) => e.id))
+
+    let sent = 0
+    let skipped = 0
+    for (const e of emps) {
+      if (!e.user_id) { skipped++; continue }
+      const lines = [`ตารางกะ ${company} สัปดาห์ ${thDate(dates[0])} – ${thDate(dates[6])}`]
+      for (const c of cellMap.get(e.id) || []) {
+        const sh = c.shift_id && !c.on_leave ? shiftMap.get(c.shift_id) : null
+        const day = `${TH_DAYS[new Date(`${c.date}T00:00:00Z`).getUTCDay()]} ${Number(c.date.slice(8))}`
+        lines.push(sh ? `${day}: ${sh.name} ${sh.start_time}–${sh.end_time}` : `${day}: หยุด`)
+      }
+      lines.push('พิมพ์ "ตารางกะ" เพื่อเปิดดูในหน้าของฉัน')
+      if (await lineBotService.pushToUser(tenantId, e.user_id, lines.join('\n'))) sent++
+      else skipped++
+    }
+    db.prepare('UPDATE hr_roster_publishes SET sent = ? WHERE tenant_id = ? AND week_start = ?').run(sent, tenantId, weekStart)
+    res.json({ success: true, data: { sent, skipped_no_line: skipped, employees: emps.length } })
+  } catch (err: any) {
+    console.error('Publish roster error:', err)
     res.status(500).json({ success: false, message: err.message })
   }
 })

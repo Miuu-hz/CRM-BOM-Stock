@@ -129,6 +129,13 @@ export default function Roster() {
   const [overwrite, setOverwrite] = useState<boolean>(false)
   const [copying, setCopying] = useState<boolean>(false)
 
+  // ประกาศตารางกะทาง LINE (ผู้จัดการกดเอง)
+  const [publishOpen, setPublishOpen] = useState<boolean>(false)
+  const [publishing, setPublishing] = useState<boolean>(false)
+  const [publishConflict, setPublishConflict] = useState<string | null>(null)
+  // นับเฉพาะคนที่มีช่องที่จัดไว้จริง (ASSIGNED) — ตรงกับที่เซิร์ฟเวอร์ส่งให้
+  const publishCount = roster?.employees.filter((e) => e.cells.some((c) => c.source === 'ASSIGNED' && c.shift_id)).length ?? 0
+
   // Tab 2: Shift swaps
   const [swaps, setSwaps] = useState<ShiftSwap[]>([])
   const [loadingSwaps, setLoadingSwaps] = useState<boolean>(false)
@@ -243,6 +250,22 @@ export default function Roster() {
       toast.error(err?.response?.data?.message || 'บันทึกตารางกะไม่สำเร็จ')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handlePublish = async (force: boolean) => {
+    setPublishing(true)
+    try {
+      const res = await hrService.publishRoster(weekStart, force)
+      toast.success(`ส่งแล้ว ${res.sent} คน · ยังไม่ผูก LINE ${res.skipped_no_line} คน`)
+      setPublishOpen(false)
+      setPublishConflict(null)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'ประกาศตารางกะไม่สำเร็จ'
+      if (err?.response?.status === 409) setPublishConflict(msg)
+      else { toast.error(msg); setPublishOpen(false) }
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -387,6 +410,14 @@ export default function Roster() {
               >
                 <Copy className="w-4 h-4 text-blue-600" />
                 คัดลอกสัปดาห์ก่อน
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setPublishConflict(null); setPublishOpen(true) }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-sm font-medium hover:bg-[var(--surface-2)] text-[var(--fg)] transition"
+              >
+                ประกาศใน LINE
               </button>
 
               <button
@@ -905,6 +936,37 @@ export default function Roster() {
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition disabled:opacity-50"
               >
                 {copying ? 'กำลังคัดลอก...' : 'ยืนยัน'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ประกาศใน LINE */}
+      {publishOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="text-lg font-bold text-[var(--fg)]">ประกาศตารางกะใน LINE</h3>
+            <p className="text-sm text-[var(--fg-2)]">
+              สัปดาห์ {formatThaiDate(weekStart)} มีพนักงาน {publishCount} คนที่มีกะ จะส่งตารางให้ทาง LINE คนละ 1 ข้อความ
+            </p>
+            {publishConflict && <p className="text-sm text-rose-600">{publishConflict}</p>}
+            <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => setPublishOpen(false)}
+                disabled={publishing}
+                className="px-4 py-2 rounded-lg border border-[var(--border)] text-sm font-medium hover:bg-[var(--surface-2)] text-[var(--fg)] transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePublish(publishConflict !== null)}
+                disabled={publishing}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition disabled:opacity-50"
+              >
+                {publishing ? 'กำลังส่ง...' : publishConflict ? 'ส่งอีกครั้ง' : 'ส่ง'}
               </button>
             </div>
           </div>

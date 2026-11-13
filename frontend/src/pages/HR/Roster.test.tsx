@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 
 vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
@@ -10,6 +10,7 @@ vi.mock('../../services/hr.service', () => {
     getRoster: vi.fn(),
     saveRosterAssignments: vi.fn(),
     copyRosterWeek: vi.fn(),
+    publishRoster: vi.fn(),
     getShiftSwaps: vi.fn(),
     cancelShiftSwap: vi.fn(),
   }
@@ -20,12 +21,14 @@ vi.mock('../../services/hr.service', () => {
 })
 
 import hrService, { RosterWeek, RosterShift, ShiftSwap } from '../../services/hr.service'
+import toast from 'react-hot-toast'
 import Roster from './Roster'
 
 const mockHr = hrService as unknown as {
   getRoster: ReturnType<typeof vi.fn>
   saveRosterAssignments: ReturnType<typeof vi.fn>
   copyRosterWeek: ReturnType<typeof vi.fn>
+  publishRoster: ReturnType<typeof vi.fn>
   getShiftSwaps: ReturnType<typeof vi.fn>
   cancelShiftSwap: ReturnType<typeof vi.fn>
 }
@@ -282,5 +285,24 @@ describe('หน้าตารางกะ /hr/roster (Roster)', () => {
 
     // Modal dismissed
     expect(screen.queryByText('ละทิ้งการแก้ไข?')).toBeNull()
+  })
+
+  it('5. ประกาศใน LINE → confirm shows count → toast; 409 shows message and ส่งอีกครั้ง forces', async () => {
+    mockHr.publishRoster
+      .mockRejectedValueOnce({ response: { status: 409, data: { message: 'ประกาศสัปดาห์นี้ไปแล้ว' } } })
+      .mockResolvedValueOnce({ sent: 1, skipped_no_line: 1, employees: 2 })
+    render(<Roster />)
+    await screen.findByText('สมหญิง รักดี')
+    const week = mockHr.getRoster.mock.calls[0][0]
+
+    fireEvent.click(screen.getByRole('button', { name: 'ประกาศใน LINE' }))
+    expect(screen.getByText(/มีพนักงาน 2 คนที่มีกะ/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'ส่ง' }))
+    expect(await screen.findByText('ประกาศสัปดาห์นี้ไปแล้ว')).toBeTruthy()
+    expect(mockHr.publishRoster).toHaveBeenLastCalledWith(week, false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'ส่งอีกครั้ง' }))
+    await waitFor(() => expect(mockHr.publishRoster).toHaveBeenLastCalledWith(week, true))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('ส่งแล้ว 1 คน · ยังไม่ผูก LINE 1 คน'))
   })
 })

@@ -2841,6 +2841,17 @@ export function runMigrations(db: any): void {
     if (!uCols.some((c: any) => c.name === 'line_only')) db.exec('ALTER TABLE users ADD COLUMN line_only INTEGER NOT NULL DEFAULT 0')
   } catch (e) { console.error('⚠️ users.line_only migration error:', e) }
 
+  // ประกาศตารางกะทาง LINE: 1 แถวต่อ (บริษัท, สัปดาห์) กันยิงซ้ำ — โควตา push ใช้ร่วมทุกบริษัท
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS hr_roster_publishes (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, week_start TEXT NOT NULL,
+        published_by TEXT, published_at TEXT, sent INTEGER NOT NULL DEFAULT 0,
+        forced_at TEXT, UNIQUE(tenant_id, week_start)
+      )
+    `)
+  } catch (e) { console.error('⚠️ hr_roster_publishes migration error:', e) }
+
   // ลิงก์เข้าหน้า "ของฉัน" จาก LINE: ใช้ครั้งเดียว อายุ 5 นาที เก็บแค่ hash
   try {
     db.exec(`

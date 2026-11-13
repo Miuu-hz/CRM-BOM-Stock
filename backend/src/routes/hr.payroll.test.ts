@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import db from '../db/sqlite'
@@ -8,6 +8,7 @@ import { subscriptionGate } from '../middleware/subscription.middleware'
 import hrRouter from './hr.routes'
 import hrPayrollRouter from './hr.payroll.routes'
 import { createTestUser } from '../test/testAuth'
+import { lineBotService } from '../services/line-bot.service'
 import { round2 } from '../services/hr/payrollCalc'
 import { seedChartOfAccounts } from '../config/chartOfAccounts'
 import { getOrCreateAccount } from '../services/accounting.service'
@@ -457,5 +458,54 @@ describe('HR Phase 2b — Payroll runs, pay items, accounting posting, slips & t
     expect(meSlipsRes.body[0].employee_id).toBe(emp1Res.body.data.id)
     expect(meSlipsRes.body[0].period).toBe('2026-09')
     expect(meSlipsRes.body[0].status).toBe('POSTED')
+  })
+
+  it('post sends one slip LINE push per linked employee, no amounts, never twice; USER without hr -> 403', async () => {
+    const push = vi.spyOn(lineBotService, 'pushToUser').mockResolvedValue(true)
+    try {
+      const admin = newAdmin()
+      const auth = { Authorization: `Bearer ${admin.token}` }
+      const other = newAdmin()
+      const linkedA = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+      const linkedB = createTestUser({ role: 'USER', tenantId: admin.tenantId })
+      db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(admin.tenantId, 'ร้านทดสอบ')
+      for (const [name, uid] of [['ก', linkedA.userId], ['ข', linkedB.userId], ['ค', null]] as const) {
+        const r = await request(app).post('/api/hr/employees').set(auth).send({
+          first_name: name, employment_type: 'MONTHLY', base_wage: 23456, start_date: '2026-01-01',
+        })
+        if (uid) db.prepare('UPDATE employees SET user_id = ? WHERE id = ? AND tenant_id = ?').run(uid, r.body.data.id, admin.tenantId)
+      }
+      await request(app).post('/api/hr/employees').set({ Authorization: `Bearer ${other.token}` }).send({
+        first_name: 'ต่าง', employment_type: 'MONTHLY', base_wage: 1000, start_date: '2026-01-01',
+      })
+      const runId = (await request(app).post('/api/hr/payroll-runs').set(auth).send({ period: '2026-08' })).body.id
+      await request(app).post(`/api/hr/payroll-runs/${runId}/approve`).set(auth).send({})
+      expect(push).not.toHaveBeenCalled() // approve ยังไม่ส่ง
+
+      const body = { payDate: '2026-08-31', payAccountId: admin.accounts['1102'] }
+      const forbidden = await request(app).post(`/api/hr/payroll-runs/${runId}/post`).set({ Authorization: `Bearer ${linkedA.token}` }).send(body)
+      expect(forbidden.status).toBe(403)
+      const crossTenant = await request(app).post(`/api/hr/payroll-runs/${runId}/post`).set({ Authorization: `Bearer ${other.token}` }).send(body)
+      expect(crossTenant.status).toBe(404)
+      expect(push).not.toHaveBeenCalled()
+
+      const post = await request(app).post(`/api/hr/payroll-runs/${runId}/post`).set(auth).send(body)
+      expect(post.status).toBe(200)
+      const net = String(Math.round(post.body.lines[0].net))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(push).toHaveBeenCalledTimes(2)
+      expect(push.mock.calls.map((c) => c[1]).sort()).toEqual([linkedA.userId, linkedB.userId].sort())
+      const text = String(push.mock.calls[0][2])
+      expect(text).toBe('สลิปเงินเดือน 2026-08 ออกแล้ว · ร้านทดสอบ\nพิมพ์ "สลิป" เพื่อเปิดดู'.replace('2026-08', '2026-08'))
+      expect(text).not.toContain(net)
+
+      const again = await request(app).post(`/api/hr/payroll-runs/${runId}/post`).set(auth).send(body)
+      expect(again.status).toBe(400)
+      await new Promise((r) => setTimeout(r, 20))
+      expect(push).toHaveBeenCalledTimes(2)
+    } finally {
+      push.mockRestore()
+      db.prepare("DELETE FROM company_settings WHERE name = 'ร้านทดสอบ'").run()
+    }
   })
 })

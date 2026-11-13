@@ -3,6 +3,7 @@ import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
 import { authenticate, requirePermission } from '../middleware/auth.middleware'
 import { subscriptionGate } from '../middleware/subscription.middleware'
+import { lineBotService } from '../services/line-bot.service'
 import { ACC } from '../config/accountCodes'
 import { getOrCreateAccount, getAccountIdByCode } from '../services/accounting.service'
 import {
@@ -831,6 +832,18 @@ router.post('/payroll-runs/:id/post', requirePermission('hr', 'write'), (req: Re
   } catch (err: any) {
     return res.status(400).json({ error: err.message || 'ไม่สามารถลงบัญชีเงินเดือนได้' })
   }
+
+  // แจ้งสลิปออก: ยิงได้ครั้งเดียวต่อรอบ เพราะสถานะ APPROVED -> POSTED/PAID เกิดซ้ำไม่ได้ (โพสต์ซ้ำถูกปฏิเสธด้านบนก่อนถึงตรงนี้)
+  // ไม่ใส่ยอดเงินในข้อความ; fire-and-forget ไม่ให้ LINE ล้มกระทบคำขอ
+  try {
+    const company = (db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as { name?: string } | undefined)?.name || ''
+    const text = `สลิปเงินเดือน ${run.period} ออกแล้ว · ${company}\nพิมพ์ "สลิป" เพื่อเปิดดู`
+    const users = db.prepare(
+      `SELECT DISTINCT e.user_id FROM payroll_run_lines prl JOIN employees e ON e.id = prl.employee_id AND e.tenant_id = prl.tenant_id
+       WHERE prl.run_id = ? AND prl.tenant_id = ? AND e.user_id IS NOT NULL`
+    ).all(id, tenantId) as Array<{ user_id: string }>
+    Promise.allSettled(users.map((u) => lineBotService.pushToUser(tenantId, u.user_id, text))).catch(() => {})
+  } catch (e) { console.error('slip notify error:', e) }
 
   res.json({ ...getRunDetail(tenantId, id), warnings })
 })
