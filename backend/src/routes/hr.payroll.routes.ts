@@ -624,31 +624,38 @@ router.put('/payroll-runs/:id/lines/:lineId', requirePermission('hr', 'write'), 
     .get(lineRow.employee_id, tenantId) as any
   if (!emp) return res.status(404).json({ error: 'ไม่พบข้อมูลพนักงาน' })
 
-  const prevInputs = safeJsonParse<LineInputs>(lineRow.inputs, DEFAULT_LINE_INPUTS)
   const rawInputPayload = req.body?.inputs && typeof req.body.inputs === 'object' ? req.body.inputs : req.body
 
-  let nextInputs: LineInputs
-  let calcResult: PayrollCalcResult
   try {
-    nextInputs = normalizeLineInputs({ ...prevInputs, ...rawInputPayload })
-    calcResult = computeEmployeeLine(tenantId, emp, nextInputs, getTenantHrSettings(tenantId))
-    validateAdvanceDeductions(tenantId, emp.id, nextInputs, calcResult)
+    res.json(recalcRunLine(tenantId, id, lineRow, emp, rawInputPayload))
   } catch (err: any) {
     return res.status(400).json({ error: err.message || 'ไม่สามารถคำนวณเงินเดือนได้' })
   }
+})
+
+/** คำนวณบรรทัดใหม่จาก input ที่ merge กับของเดิม แล้วบันทึก (ใช้ร่วมกับ PUT line และ final-pay/apply) — throw Error เมื่อ input ผิด */
+export function recalcRunLine(
+  tenantId: string, runId: string, lineRow: any,
+  emp: { id: string; employment_type: EmploymentType; base_wage: number; sso_enrolled: number; tax_allowances: string },
+  rawInputPayload: any
+) {
+  const prevInputs = safeJsonParse<LineInputs>(lineRow.inputs, DEFAULT_LINE_INPUTS)
+  const nextInputs = normalizeLineInputs({ ...prevInputs, ...rawInputPayload })
+  const calcResult = computeEmployeeLine(tenantId, emp, nextInputs, getTenantHrSettings(tenantId))
+  validateAdvanceDeductions(tenantId, emp.id, nextInputs, calcResult)
 
   db.transaction(() => {
     db.prepare(
       `UPDATE payroll_run_lines SET inputs = ?, result = ?, gross = ?, late = ?, sso_employee = ?, sso_employer = ?, wht = ?, other_deduction = ?, net = ?
        WHERE id = ? AND run_id = ? AND tenant_id = ?`
     ).run(JSON.stringify(nextInputs), JSON.stringify(calcResult), calcResult.gross, calcResult.lateDeduction,
-      calcResult.ssoEmployee, calcResult.ssoEmployer, calcResult.wht, calcResult.otherDeductionsTotal, calcResult.net, lineId, id, tenantId)
-    db.prepare('UPDATE payroll_runs SET updated_at = ? WHERE id = ? AND tenant_id = ?').run(nowIso(), id, tenantId)
+      calcResult.ssoEmployee, calcResult.ssoEmployer, calcResult.wht, calcResult.otherDeductionsTotal, calcResult.net, lineRow.id, runId, tenantId)
+    db.prepare('UPDATE payroll_runs SET updated_at = ? WHERE id = ? AND tenant_id = ?').run(nowIso(), runId, tenantId)
   })()
 
-  const updatedRow = db.prepare(`${RUN_LINE_SELECT} WHERE prl.id = ? AND prl.run_id = ? AND prl.tenant_id = ?`).get(lineId, id, tenantId)
-  res.json(formatRunLine(tenantId, updatedRow))
-})
+  const updatedRow = db.prepare(`${RUN_LINE_SELECT} WHERE prl.id = ? AND prl.run_id = ? AND prl.tenant_id = ?`).get(lineRow.id, runId, tenantId)
+  return formatRunLine(tenantId, updatedRow)
+}
 
 router.post('/payroll-runs/:id/approve', requirePermission('hr', 'write'), (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId

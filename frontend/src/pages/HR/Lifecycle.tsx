@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, X, Pencil, Trash2, UserX, Unlink, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
-import hrService, { Employee } from '../../services/hr.service'
+import hrService, { Employee, PayrollRun } from '../../services/hr.service'
 import lifecycle, {
   ChecklistTemplate,
   ChecklistItem,
@@ -73,12 +73,21 @@ export default function Lifecycle() {
   const [kind, setKind] = useState<ChecklistKind>('OFFBOARD')
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [finalPay, setFinalPay] = useState<FinalPay | null>(null)
+  const [draftRuns, setDraftRuns] = useState<PayrollRun[]>([])
+  const [runId, setRunId] = useState('')
+  const [applyNote, setApplyNote] = useState('')
 
   const loadItems = useCallback(async () => {
     if (!empId) { setItems([]); setFinalPay(null); return }
     try {
       setItems(await lifecycle.getChecklist(empId, kind))
       setFinalPay(kind === 'OFFBOARD' ? await lifecycle.getFinalPay(empId) : null)
+      setApplyNote('')
+      if (kind === 'OFFBOARD') {
+        const drafts = (await hrService.getPayrollRuns()).filter((r) => r.status === 'DRAFT')
+        setDraftRuns(drafts)
+        setRunId(drafts[0]?.id ?? '')
+      }
     } catch (e) { toast.error(errMsg(e)) }
   }, [empId, kind])
 
@@ -101,6 +110,20 @@ export default function Lifecycle() {
       const r = await lifecycle.setItemDone(it.id, done)
       toast.success(r.message || 'บันทึกแล้ว')
       loadItems()
+    } catch (e) { toast.error(errMsg(e)) }
+  }
+
+  const applyFinalPay = async () => {
+    if (!finalPay || !runId) return
+    const lines = [
+      finalPay.severanceAmount > 0 && `ค่าชดเชย ${baht(finalPay.severanceAmount)} บาท`,
+      finalPay.leavePayout > 0 && `ค่าพักร้อนคงเหลือ ${baht(finalPay.leavePayout)} บาท`,
+    ].filter(Boolean).join('\n')
+    if (!window.confirm(`ส่งเข้ารอบเงินเดือน:\n${lines}\nยืนยันหรือไม่?`)) return
+    try {
+      const r = await lifecycle.applyFinalPay(empId, runId)
+      toast.success('เพิ่มในรอบเงินเดือนแล้ว')
+      setApplyNote(r.note)
     } catch (e) { toast.error(errMsg(e)) }
   }
 
@@ -177,6 +200,17 @@ export default function Lifecycle() {
                 {finalPay.unreturnedAssets.length === 0 ? 'ไม่มี' : finalPay.unreturnedAssets.map((a) => `${a.code} ${a.name}`).join(', ')}
               </div>
               <p className="text-xs text-[var(--fg-3)]">เป็นตัวเลขแนะนำเท่านั้น ไม่ได้ลงบัญชีหรือเข้าเงินเดือน</p>
+              {draftRuns.length === 0 ? (
+                <p className="text-xs text-amber-600">ยังไม่มีรอบเงินเดือนที่เป็นร่าง สร้างรอบก่อนที่หน้าเงินเดือน</p>
+              ) : (
+                <div className="flex gap-2 items-center pt-1">
+                  <select aria-label="รอบเงินเดือน" className={inputCls} value={runId} onChange={(e) => setRunId(e.target.value)}>
+                    {draftRuns.map((r) => <option key={r.id} value={r.id}>งวด {r.period}</option>)}
+                  </select>
+                  <button type="button" className="btn-primary whitespace-nowrap" onClick={applyFinalPay}>ส่งเข้ารอบเงินเดือน</button>
+                </div>
+              )}
+              {applyNote && <p className="text-xs text-amber-600" data-testid="apply-note">{applyNote}</p>}
             </div>
           )}
         </div>

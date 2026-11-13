@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 
 vi.mock('../../services/hr.service', () => {
-  const service = { getEmployees: vi.fn() }
+  const service = { getEmployees: vi.fn(), getPayrollRuns: vi.fn() }
   return { default: service, hrService: service }
 })
 
@@ -19,12 +19,14 @@ vi.mock('../../services/hrLifecycle.service', () => {
     getChecklist: vi.fn(),
     setItemDone: vi.fn(),
     getFinalPay: vi.fn(),
+    applyFinalPay: vi.fn(),
   }
   return { default: service, hrLifecycleService: service }
 })
 
 import hrService from '../../services/hr.service'
 import lifecycle from '../../services/hrLifecycle.service'
+import toast from 'react-hot-toast'
 import Lifecycle from './Lifecycle'
 
 const hr = hrService as any
@@ -33,6 +35,7 @@ const lc = lifecycle as any
 beforeEach(() => {
   vi.clearAllMocks()
   hr.getEmployees.mockResolvedValue([{ id: 'e1', code: 'EMP-1', first_name: 'สมชาย', last_name: 'ใจดี' }])
+  hr.getPayrollRuns.mockResolvedValue([{ id: 'r1', period: '2026-06', status: 'DRAFT' }, { id: 'r0', period: '2026-05', status: 'APPROVED' }])
   lc.getTemplates.mockResolvedValue([
     { id: 't1', kind: 'OFFBOARD', title: 'ปิดบัญชีผู้ใช้ ERP', auto_action: 'DISABLE_USER', sort_order: 1, is_active: true, org_unit_id: null },
   ])
@@ -68,5 +71,29 @@ describe('Lifecycle page', () => {
     expect(confirmSpy).toHaveBeenCalled()
     await waitFor(() => expect(lc.setItemDone).toHaveBeenCalledWith('i1', true))
     confirmSpy.mockRestore()
+  })
+
+  it('sends final pay into a draft run after confirm and shows the note', async () => {
+    lc.applyFinalPay.mockResolvedValue({ added: [], note: 'หมายเหตุภาษี' })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Lifecycle />)
+    fireEvent.click(screen.getByText('พนักงาน'))
+    fireEvent.change(await screen.findByLabelText('เลือกพนักงาน'), { target: { value: 'e1' } })
+    expect(await screen.findByText('งวด 2026-06')).toBeTruthy()
+    expect(screen.queryByText('งวด 2026-05')).toBeNull()
+    fireEvent.click(screen.getByText('ส่งเข้ารอบเงินเดือน'))
+    expect(confirmSpy.mock.calls[0][0]).toContain('90,000.00')
+    await waitFor(() => expect(lc.applyFinalPay).toHaveBeenCalledWith('e1', 'r1'))
+    await waitFor(() => expect(screen.getByTestId('apply-note').textContent).toBe('หมายเหตุภาษี'))
+    expect(toast.success).toHaveBeenCalledWith('เพิ่มในรอบเงินเดือนแล้ว')
+    confirmSpy.mockRestore()
+  })
+
+  it('tells HR to create a draft run when none exists', async () => {
+    hr.getPayrollRuns.mockResolvedValue([])
+    render(<Lifecycle />)
+    fireEvent.click(screen.getByText('พนักงาน'))
+    fireEvent.change(await screen.findByLabelText('เลือกพนักงาน'), { target: { value: 'e1' } })
+    expect(await screen.findByText('ยังไม่มีรอบเงินเดือนที่เป็นร่าง สร้างรอบก่อนที่หน้าเงินเดือน')).toBeTruthy()
   })
 })

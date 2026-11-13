@@ -79,6 +79,10 @@ export const hrLifecycleService = {
     const res = await api.get(`/hr/employees/${employeeId}/final-pay`)
     return res.data.data
   },
+  async applyFinalPay(employeeId: string, runId: string): Promise<{ added: { name: string; amount: number }[]; note: string }> {
+    const res = await api.post(`/hr/employees/${employeeId}/final-pay/apply`, { run_id: runId })
+    return res.data.data
+  },
 }
 
 export default hrLifecycleService

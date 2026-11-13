@@ -3,7 +3,7 @@ import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
 import { can } from '../services/rbac.service'
 import { round2 } from '../services/hr/payrollCalc'
-import { advanceOutstanding } from './hr.payroll.routes'
+import { advanceOutstanding, recalcRunLine } from './hr.payroll.routes'
 
 // HR Phase 9A — เช็กลิสต์เข้า/ออกงาน + เงินงวดสุดท้าย (สัญญากลาง docs/contracts/hr-phase9-11.md)
 const router = Router()
@@ -333,6 +333,38 @@ router.put('/checklist-items/:id', (req: Request, res: Response) => {
 
 // ---------- เงินงวดสุดท้าย ----------
 
+function finalPayFor(tenantId: string, emp: any) {
+  const today = thaiDateStr()
+  const endDay = emp.end_date || today
+  const tenureDays = dayNum(endDay) - dayNum(emp.start_date)
+
+  // ยอดลาคงเหลือ: สูตรเดียวกับ GET /leave-balances (quota - APPROVED ปีนั้น) ของประเภท VACATION
+  const lt = db.prepare(`SELECT id, days_per_year FROM leave_types WHERE tenant_id = ? AND code = 'VACATION' AND is_active = 1`).get(tenantId) as any
+  let unusedAnnualLeaveDays = 0
+  if (lt && lt.days_per_year !== null && lt.days_per_year !== undefined) {
+    const used = db.prepare(
+      `SELECT COALESCE(SUM(days), 0) AS used FROM leave_requests
+       WHERE tenant_id = ? AND employee_id = ? AND leave_type_id = ? AND status = 'APPROVED' AND start_date LIKE ?`
+    ).get(tenantId, emp.id, lt.id, `${endDay.slice(0, 4)}-%`) as any
+    unusedAnnualLeaveDays = Math.max(0, Number(lt.days_per_year) - Number(used.used))
+  }
+
+  // ยอดคงค้าง: เฉพาะรายการที่เบิกจ่ายแล้ว (ACTIVE) ใช้ตัวคิดเดียวกับหน้าเบิก/ยืม
+  const advs = db.prepare(`SELECT id FROM employee_advances WHERE tenant_id = ? AND employee_id = ? AND status = 'ACTIVE'`).all(tenantId, emp.id) as any[]
+  const outstandingAdvances = advs.reduce((s, a) => s + advanceOutstanding(tenantId, a.id), 0)
+
+  const unreturnedAssets = db.prepare(
+    `SELECT a.id, a.code, a.name, l.loaned_on FROM hr_asset_loans l
+     JOIN hr_assets a ON a.id = l.asset_id AND a.tenant_id = l.tenant_id
+     WHERE l.tenant_id = ? AND l.employee_id = ? AND l.returned_on IS NULL ORDER BY l.loaned_on`
+  ).all(tenantId, emp.id) as any[]
+
+  return computeFinalPay({
+    employmentType: emp.employment_type, baseWage: emp.base_wage, tenureDays,
+    unusedAnnualLeaveDays, outstandingAdvances, unreturnedAssets, resigned: emp.status === 'RESIGNED',
+  })
+}
+
 router.get('/employees/:id/final-pay', (req: Request, res: Response) => {
   try {
     if (!userHasHr(req, 'read')) return forbid(res)
@@ -340,40 +372,53 @@ router.get('/employees/:id/final-pay', (req: Request, res: Response) => {
     const emp = getEmployee(tenantId, req.params.id)
     if (!emp) return bad(res, 'ไม่พบพนักงาน', 404)
 
-    const today = thaiDateStr()
-    const endDay = emp.end_date || today
-    const tenureDays = dayNum(endDay) - dayNum(emp.start_date)
-
-    // ยอดลาคงเหลือ: สูตรเดียวกับ GET /leave-balances (quota - APPROVED ปีนั้น) ของประเภท VACATION
-    const lt = db.prepare(`SELECT id, days_per_year FROM leave_types WHERE tenant_id = ? AND code = 'VACATION' AND is_active = 1`).get(tenantId) as any
-    let unusedAnnualLeaveDays = 0
-    if (lt && lt.days_per_year !== null && lt.days_per_year !== undefined) {
-      const used = db.prepare(
-        `SELECT COALESCE(SUM(days), 0) AS used FROM leave_requests
-         WHERE tenant_id = ? AND employee_id = ? AND leave_type_id = ? AND status = 'APPROVED' AND start_date LIKE ?`
-      ).get(tenantId, emp.id, lt.id, `${endDay.slice(0, 4)}-%`) as any
-      unusedAnnualLeaveDays = Math.max(0, Number(lt.days_per_year) - Number(used.used))
-    }
-
-    // ยอดคงค้าง: เฉพาะรายการที่เบิกจ่ายแล้ว (ACTIVE) ใช้ตัวคิดเดียวกับหน้าเบิก/ยืม
-    const advs = db.prepare(`SELECT id FROM employee_advances WHERE tenant_id = ? AND employee_id = ? AND status = 'ACTIVE'`).all(tenantId, emp.id) as any[]
-    const outstandingAdvances = advs.reduce((s, a) => s + advanceOutstanding(tenantId, a.id), 0)
-
-    const unreturnedAssets = db.prepare(
-      `SELECT a.id, a.code, a.name, l.loaned_on FROM hr_asset_loans l
-       JOIN hr_assets a ON a.id = l.asset_id AND a.tenant_id = l.tenant_id
-       WHERE l.tenant_id = ? AND l.employee_id = ? AND l.returned_on IS NULL ORDER BY l.loaned_on`
-    ).all(tenantId, emp.id) as any[]
-
-    res.json({
-      success: true,
-      data: computeFinalPay({
-        employmentType: emp.employment_type, baseWage: emp.base_wage, tenureDays,
-        unusedAnnualLeaveDays, outstandingAdvances, unreturnedAssets, resigned: emp.status === 'RESIGNED',
-      }),
-    })
+    res.json({ success: true, data: finalPayFor(tenantId, emp) })
   } catch (err: any) {
     console.error('Final pay error:', err)
+    res.status(500).json({ success: false, message: err.message })
+  }
+})
+
+const SEVERANCE_NOTE = 'ค่าชดเชยอาจได้รับยกเว้นภาษีบางส่วนตามกฎหมาย ให้นักบัญชีตรวจช่องคิดภาษีในรอบเงินเดือนก่อนอนุมัติ'
+const SEV_PREFIX = 'ค่าชดเชยตามกฎหมาย'
+const LEAVE_PREFIX = 'ค่าจ้างวันหยุดพักผ่อนคงเหลือ'
+
+// ส่งเงินงวดสุดท้ายเข้าบรรทัดเงินเดือนในรอบ DRAFT เป็นรายการครั้งเดียว (คำนวณ/บันทึกผ่าน recalcRunLine เดียวกับ PUT line)
+router.post('/employees/:id/final-pay/apply', (req: Request, res: Response) => {
+  try {
+    if (!userHasHr(req, 'write')) return forbid(res)
+    const tenantId = req.user!.tenantId
+    const emp = getEmployee(tenantId, req.params.id)
+    if (!emp) return bad(res, 'ไม่พบพนักงาน', 404)
+    const runId = req.body?.run_id
+    if (typeof runId !== 'string' || !runId) return bad(res, 'กรุณาเลือกรอบเงินเดือน')
+    const run = db.prepare('SELECT id, status FROM payroll_runs WHERE id = ? AND tenant_id = ?').get(runId, tenantId) as any
+    if (!run) return bad(res, 'ไม่พบรอบเงินเดือน', 404)
+    if (run.status !== 'DRAFT') return bad(res, 'ส่งเข้าได้เฉพาะรอบเงินเดือนที่เป็นร่าง', 409)
+    const lineRow = db.prepare('SELECT * FROM payroll_run_lines WHERE run_id = ? AND employee_id = ? AND tenant_id = ?').get(runId, emp.id, tenantId) as any
+    if (!lineRow) return bad(res, 'พนักงานคนนี้ไม่อยู่ในรอบเงินเดือนนี้', 409)
+
+    const fp = finalPayFor(tenantId, emp)
+    const added: { name: string; amount: number }[] = []
+    if (fp.severanceAmount > 0) added.push({ name: `${SEV_PREFIX} (${fp.severanceDays} วัน)`, amount: fp.severanceAmount })
+    if (fp.leavePayout > 0) added.push({ name: `${LEAVE_PREFIX} (${fp.unusedAnnualLeaveDays} วัน)`, amount: fp.leavePayout })
+    if (added.length === 0) return bad(res, 'ไม่มียอดค่าชดเชยหรือค่าพักร้อนคงเหลือให้ส่ง', 409)
+
+    let line: any
+    try {
+      line = db.transaction(() => {
+        const prev = JSON.parse(lineRow.inputs || '{}')
+        const kept = (Array.isArray(prev.extraPayItems) ? prev.extraPayItems : Array.isArray(prev.payItems) ? prev.payItems : [])
+          .filter((p: any) => { const n = String(p?.name ?? ''); return !n.startsWith(SEV_PREFIX) && !n.startsWith(LEAVE_PREFIX) })
+        const items = added.map((a) => ({ ...a, taxable: true, ssoable: !a.name.startsWith(SEV_PREFIX) }))
+        return recalcRunLine(tenantId, runId, lineRow, emp, { extraPayItems: [...kept, ...items] })
+      })()
+    } catch (err: any) {
+      return bad(res, err.message || 'ไม่สามารถคำนวณเงินเดือนได้')
+    }
+    res.json({ success: true, data: { line, added, note: SEVERANCE_NOTE } })
+  } catch (err: any) {
+    console.error('Final pay apply error:', err)
     res.status(500).json({ success: false, message: err.message })
   }
 })

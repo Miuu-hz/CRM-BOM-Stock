@@ -6,17 +6,19 @@ import { generateId } from '../utils/id'
 import { authenticate } from '../middleware/auth.middleware'
 import { subscriptionGate } from '../middleware/subscription.middleware'
 import lifecycleRoutes, { computeFinalPay, severanceDaysFor, startChecklist } from './hr.lifecycle.routes'
+import hrPayrollRouter from './hr.payroll.routes'
 import { createTestUser } from '../test/testAuth'
 
 const app = express()
 app.use(express.json())
 app.use('/api/hr', authenticate, subscriptionGate('hr'))
 app.use('/api/hr', lifecycleRoutes)
+app.use('/api/hr', hrPayrollRouter)
 
 const tenants: string[] = []
 afterEach(() => {
   for (const t of tenants.splice(0)) {
-    for (const tb of ['hr_checklist_items', 'hr_checklist_templates', 'hr_asset_loans', 'hr_assets', 'line_user_mappings', 'employee_advances', 'leave_requests', 'leave_types', 'employees', 'tenant_subscriptions', 'users'])
+    for (const tb of ['payroll_run_lines', 'payroll_runs', 'hr_checklist_items', 'hr_checklist_templates', 'hr_asset_loans', 'hr_assets', 'line_user_mappings', 'employee_advances', 'leave_requests', 'leave_types', 'employees', 'tenant_subscriptions', 'users'])
       db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t)
   }
 })
@@ -201,5 +203,74 @@ describe('HR lifecycle routes', () => {
     expect((await request(app).post(`/api/hr/employees/${emp}/checklists`).set(h).send({ kind: 'ONBOARD' })).status).toBe(403)
     expect((await request(app).get(`/api/hr/employees/${emp}/final-pay`).set(h)).status).toBe(403)
     expect((await request(app).put('/api/hr/checklist-items/x').set(h).send({ done: true })).status).toBe(403)
+  })
+
+  describe('final-pay/apply', () => {
+    const SEV = 'ค่าชดเชยตามกฎหมาย'
+    const LEAVE = 'ค่าจ้างวันหยุดพักผ่อนคงเหลือ'
+    async function setup(opts: { resigned?: boolean } = {}) {
+      const a = admin()
+      const emp = insertEmp(a.tenantId, { start: '2020-01-01', end: '2026-06-01', wage: 30000 })
+      const ltId = generateId()
+      db.prepare(`INSERT INTO leave_types (id, tenant_id, code, name, paid, days_per_year, is_active) VALUES (?, ?, 'VACATION', 'พักร้อน', 1, 6, 1)`).run(ltId, a.tenantId)
+      const run = await request(app).post('/api/hr/payroll-runs').set(auth(a)).send({ period: '2026-06' })
+      expect(run.status).toBe(201)
+      if (opts.resigned) db.prepare(`UPDATE employees SET status = 'RESIGNED' WHERE id = ?`).run(emp)
+      const line = run.body.lines.find((l: any) => l.employee_id === emp)
+      return { a, emp, runId: run.body.id as string, line }
+    }
+    const apply = (u: any, emp: string, run_id: string) => request(app).post(`/api/hr/employees/${emp}/final-pay/apply`).set(auth(u)).send({ run_id })
+
+    it('adds both items matching GET, net equals the payroll recalculation, idempotent', async () => {
+      const { a, emp, runId, line } = await setup()
+      const gp = (await request(app).get(`/api/hr/employees/${emp}/final-pay`).set(auth(a))).body.data
+      const r = await apply(a, emp, runId)
+      expect(r.status).toBe(200)
+      expect(r.body.data.note).toBe('ค่าชดเชยอาจได้รับยกเว้นภาษีบางส่วนตามกฎหมาย ให้นักบัญชีตรวจช่องคิดภาษีในรอบเงินเดือนก่อนอนุมัติ')
+      const items = r.body.data.line.inputs.extraPayItems
+      expect(items).toHaveLength(2)
+      expect(items[0]).toMatchObject({ amount: gp.severanceAmount, taxable: true, ssoable: false })
+      expect(items[0].name).toBe(`${SEV} (${gp.severanceDays} วัน)`)
+      expect(items[1]).toMatchObject({ amount: gp.leavePayout, taxable: true, ssoable: true })
+      expect(items[1].name).toBe(`${LEAVE} (${gp.unusedAnnualLeaveDays} วัน)`)
+      expect(r.body.data.added).toEqual(items.map((i: any) => ({ name: i.name, amount: i.amount })))
+      expect(r.body.data.line.net).toBeGreaterThan(line.net)
+
+      // same recalculation via PUT line with the same items
+      const put = await request(app).put(`/api/hr/payroll-runs/${runId}/lines/${line.id}`).set(auth(a)).send({ extraPayItems: items })
+      expect(put.status).toBe(200)
+      expect(put.body.net).toBe(r.body.data.line.net)
+      expect(put.body.wht).toBe(r.body.data.line.wht)
+      expect(put.body.sso_employee).toBe(r.body.data.line.sso_employee)
+
+      const again = await apply(a, emp, runId)
+      expect(again.body.data.line.inputs.extraPayItems).toHaveLength(2)
+      expect(again.body.data.line.net).toBe(r.body.data.line.net)
+      const detail = await request(app).get(`/api/hr/payroll-runs/${runId}`).set(auth(a))
+      expect(detail.body.totals.net).toBe(r.body.data.line.net)
+    })
+
+    it('RESIGNED employee gets only the leave item', async () => {
+      const { a, emp, runId } = await setup({ resigned: true })
+      const r = await apply(a, emp, runId)
+      expect(r.status).toBe(200)
+      expect(r.body.data.added).toHaveLength(1)
+      expect(r.body.data.added[0].name.startsWith(LEAVE)).toBe(true)
+    })
+
+    it('409 when run is not DRAFT or employee not in run; 404 cross-company; 403 without hr', async () => {
+      const { a, emp, runId } = await setup()
+      const other = insertEmp(a.tenantId)
+      expect((await apply(a, other, runId)).status).toBe(409)
+      const b = admin()
+      expect((await apply(b, emp, runId)).status).toBe(404)
+      const empB = insertEmp(b.tenantId)
+      expect((await apply(a, empB, runId)).status).toBe(404)
+      const u = admin('USER', a.tenantId)
+      expect((await apply(u, emp, runId)).status).toBe(403)
+      expect((await request(app).post(`/api/hr/employees/${emp}/final-pay/apply`).set(auth(a)).send({})).status).toBe(400)
+      db.prepare(`UPDATE payroll_runs SET status = 'APPROVED' WHERE id = ?`).run(runId)
+      expect((await apply(a, emp, runId)).status).toBe(409)
+    })
   })
 })
