@@ -278,7 +278,8 @@ class LineBotService {
             WHERE lum.tenant_id = ? AND lum.user_id = ? AND (u.id IS NULL OR u.status = 'active')
         `).get(tenantId, userId) as { line_user_id: string } | undefined
         if (!m) return false
-        try { await client.pushMessage(m.line_user_id, message); return true }
+        // รับข้อความตัวอักษรเปล่าด้วย — LINE รับเฉพาะ object
+        try { await client.pushMessage(m.line_user_id, typeof message === 'string' ? { type: 'text', text: message } : message); return true }
         catch (err) { console.error(`pushToUser failed → ${userId}:`, err); return false }
     }
 

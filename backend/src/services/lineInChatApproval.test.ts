@@ -77,3 +77,12 @@ describe('LINE: อนุมัติคำขอ HR ในแชท', () => {
         expect(other.st(theirs.id)).toBe('PENDING')
     })
 })
+
+describe('pushToUser', () => {
+    it('ข้อความตัวอักษรเปล่าถูกห่อเป็น text message', async () => {
+        const s = setup(), line = s.link(s.staff.userId), pushMessage = vi.fn()
+        vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ pushMessage })
+        expect(await lineBotService.pushToUser(s.t, s.staff.userId, 'สวัสดี')).toBe(true)
+        expect(pushMessage).toHaveBeenCalledWith(line, { type: 'text', text: 'สวัสดี' })
+    })
+})
