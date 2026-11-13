@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { Copy, Plus, X } from 'lucide-react'
+import { Copy, Plus, QrCode, X } from 'lucide-react'
 import hrRecruitService, { Applicant, ApplicantStage, JobPosting } from '../../services/hrRecruit.service'
 
 const COLUMNS: { stage: ApplicantStage; label: string; next?: ApplicantStage }[] = [
@@ -33,6 +33,7 @@ export default function Recruit() {
   const [applicants, setApplicants] = useState<Applicant[]>([])
   const [postingFilter, setPostingFilter] = useState('')
   const [newPosting, setNewPosting] = useState<{ title: string; description: string } | null>(null)
+  const [qr, setQr] = useState<{ title: string; url: string; qr: string } | null>(null)
   const [interview, setInterview] = useState<{ a: Applicant; at: string; note: string } | null>(null)
   const [hire, setHire] = useState<{ a: Applicant; code: string; type: 'MONTHLY' | 'DAILY' | 'HOURLY'; wage: string; start: string } | null>(null)
 
@@ -66,6 +67,13 @@ export default function Recruit() {
     } catch { toast.error('คัดลอกไม่สำเร็จ') }
   }
 
+  const showQr = async (p: JobPosting) => {
+    try {
+      const d = await hrRecruitService.getPostingQr(p.id)
+      setQr({ title: p.title, ...d })
+    } catch (e) { toast.error(errMsg(e, 'สร้าง QR ไม่สำเร็จ')) }
+  }
+
   return (
     <div className="space-y-6">
       <div className="phopy-card p-4 space-y-3">
@@ -83,6 +91,7 @@ export default function Recruit() {
                 <td>{p.is_open ? 'เปิดรับ' : 'ปิดรับ'}</td>
                 <td className="space-x-2 text-right">
                   <button onClick={() => copyLink(p)}><Copy className="w-4 h-4 inline" /> คัดลอกลิงก์</button>
+                  <button onClick={() => showQr(p)}><QrCode className="w-4 h-4 inline" /> QR ใบสมัคร</button>
                   <button onClick={() => run(() => hrRecruitService.updatePosting(p.id, { is_open: !p.is_open }), 'บันทึกแล้ว')}>{p.is_open ? 'ปิดรับ' : 'เปิดรับ'}</button>
                 </td>
               </tr>
@@ -133,6 +142,19 @@ export default function Recruit() {
           <button className="phopy-btn" disabled={!newPosting.title.trim()} onClick={async () => {
             if (await run(() => hrRecruitService.createPosting({ title: newPosting.title, description: newPosting.description }), 'เพิ่มตำแหน่งแล้ว')) setNewPosting(null)
           }}>บันทึก</button>
+        </Modal>
+      )}
+
+      {qr && (
+        <Modal title="QR ใบสมัคร" onClose={() => setQr(null)}>
+          {/* พิมพ์เฉพาะการ์ด QR: ซ่อนทุกอย่างยกเว้น #qr-print */}
+          <style>{`@media print { body * { visibility: hidden } #qr-print, #qr-print * { visibility: visible } #qr-print { position: fixed; inset: 0; margin: auto; text-align: center } }`}</style>
+          <div id="qr-print" className="text-center space-y-2">
+            <div className="text-lg font-bold">{qr.title}</div>
+            <img src={qr.qr} alt="QR ใบสมัคร" className="mx-auto w-64 h-64" />
+            <div className="text-xs break-all select-all">{qr.url}</div>
+          </div>
+          <button className="phopy-btn" onClick={() => window.print()}>พิมพ์</button>
         </Modal>
       )}
 

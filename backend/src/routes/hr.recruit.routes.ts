@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import crypto from 'crypto'
+import QRCode from 'qrcode'
 import { startChecklist } from './hr.lifecycle.routes'
 import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
@@ -69,6 +70,17 @@ router.get('/job-postings', (req: Request, res: Response) => {
     if (!userHasHr(req, 'read')) return forbidden(res)
     const rows = db.prepare(`${POSTING_SELECT} WHERE p.tenant_id = ? ORDER BY p.created_at DESC`).all(req.user!.tenantId) as any[]
     res.json({ success: true, data: rows.map(fmtPosting) })
+  } catch (err) { fail(res, err) }
+})
+
+router.get('/job-postings/:id/qr', async (req: Request, res: Response) => {
+  try {
+    if (!userHasHr(req, 'read')) return forbidden(res)
+    const p = db.prepare('SELECT public_token FROM hr_job_postings WHERE id = ? AND tenant_id = ?').get(req.params.id, req.user!.tenantId) as any
+    if (!p) return res.status(404).json({ success: false, message: 'ไม่พบตำแหน่งงาน' })
+    const url = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/apply/${p.public_token}`
+    const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', width: 512 })
+    res.json({ success: true, data: { url, qr } })
   } catch (err) { fail(res, err) }
 })
 

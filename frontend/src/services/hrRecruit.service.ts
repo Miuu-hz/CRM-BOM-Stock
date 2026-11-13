@@ -43,6 +43,9 @@ export const hrRecruitService = {
   async getPostings(): Promise<JobPosting[]> {
     return (await api.get('/hr/job-postings')).data.data || []
   },
+  async getPostingQr(id: string): Promise<{ url: string; qr: string }> {
+    return (await api.get(`/hr/job-postings/${id}/qr`)).data.data
+  },
   async createPosting(data: { title: string; description?: string }): Promise<JobPosting> {
     return (await api.post('/hr/job-postings', data)).data.data
   },

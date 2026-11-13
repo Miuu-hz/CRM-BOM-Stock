@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('../../services/hrRecruit.service', () => {
-  const service = { getPostings: vi.fn(), createPosting: vi.fn(), updatePosting: vi.fn(), getApplicants: vi.fn(), updateApplicant: vi.fn(), hire: vi.fn() }
+  const service = { getPostings: vi.fn(), createPosting: vi.fn(), updatePosting: vi.fn(), getApplicants: vi.fn(), getPostingQr: vi.fn(), updateApplicant: vi.fn(), hire: vi.fn() }
   return { default: service, hrRecruitService: service }
 })
 
@@ -40,5 +40,15 @@ describe('Recruit page', () => {
     fireEvent.change(screen.getByLabelText('ชื่อตำแหน่ง'), { target: { value: 'พนักงานครัว' } })
     fireEvent.click(screen.getByText('บันทึก'))
     await waitFor(() => expect(m.createPosting).toHaveBeenCalledWith({ title: 'พนักงานครัว', description: '' }))
+  })
+
+  it('shows the QR card for a posting', async () => {
+    m.getPostingQr.mockResolvedValue({ url: 'https://x.test/apply/abc', qr: 'data:image/png;base64,AAA' })
+    render(<Recruit />)
+    fireEvent.click(await screen.findByText(/QR ใบสมัคร/))
+    const img = await screen.findByAltText('QR ใบสมัคร')
+    expect(img.getAttribute('src')).toBe('data:image/png;base64,AAA')
+    expect(screen.getByText('https://x.test/apply/abc')).toBeTruthy()
+    expect(m.getPostingQr).toHaveBeenCalledWith('p1')
   })
 })

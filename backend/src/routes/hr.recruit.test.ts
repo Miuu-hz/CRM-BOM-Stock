@@ -64,6 +64,18 @@ describe('HR recruit (Phase 11)', () => {
     expect((await request(app).post('/api/hr/job-postings').set(auth(a)).send({ title: 'x', org_unit_id: 'nope' })).status).toBe(400)
   })
 
+  it('QR: png data url + link; cross-company 404; no hr 403', async () => {
+    const a = newUser('ADMIN')
+    const b = newUser('ADMIN')
+    const p = await mkPosting(a)
+    const r = await request(app).get(`/api/hr/job-postings/${p.id}/qr`).set(auth(a))
+    expect(r.status).toBe(200)
+    expect(r.body.data.qr).toMatch(/^data:image\/png;base64,/)
+    expect(r.body.data.url).toBe(`${process.env.APP_URL ?? 'https://erp.phopy.net'}/apply/${p.public_token}`)
+    expect((await request(app).get(`/api/hr/job-postings/${p.id}/qr`).set(auth(b))).status).toBe(404)
+    expect((await request(app).get(`/api/hr/job-postings/${p.id}/qr`).set(auth(newUser('USER')))).status).toBe(403)
+  })
+
   it('public: get/apply happy path, no internal ids, closed/unknown identical 404', async () => {
     const a = newUser('ADMIN')
     db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(a.tenantId, 'บริษัทเอ')
