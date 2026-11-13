@@ -426,7 +426,10 @@ router.get('/requests/:id/detail', async (req: Request, res: Response) => {
 })
 
 // PUT approve/reject request
-router.put('/requests/:id/decision', async (req: Request, res: Response) => {
+router.put('/requests/:id/decision', (req, res) => handleDecision(req, res))
+
+/** ตัวตัดสินคำขอ — ใช้ร่วมกันระหว่างหน้าเว็บกับปุ่มอนุมัติใน LINE (line-bot.service.ts) เพื่อให้ด่านสิทธิ์/วงเงินมีที่เดียว */
+export async function handleDecision(req: Request, res: Response) {
   try {
     const tenantId = req.user!.tenantId
     const { decision, comment } = req.body  // decision: APPROVED/REJECTED
@@ -557,7 +560,7 @@ router.put('/requests/:id/decision', async (req: Request, res: Response) => {
     console.error('Approval decision error:', error)
     res.status(500).json({ success: false, message: 'Failed to process decision' })
   }
-})
+}
 
 // Helper function to execute approved action
 function executeApprovedAction(request: any, executorId: string, executorName: string, now: string) {

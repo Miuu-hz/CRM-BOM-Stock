@@ -85,7 +85,8 @@ try {
     console.warn('⚠️ @line/bot-sdk is not installed. LINE Bot functionality will be disabled.')
 }
 
-import { flexTemplates } from './line-flex-templates'
+import { flexTemplates, IN_CHAT_APPROVAL } from './line-flex-templates'
+import { handleDecision } from '../routes/approval.routes' // วนกันกับ approval.routes แต่ใช้ตอนเรียกเท่านั้น
 import { detectIntent } from './llm.service'
 import { richMenus, menuKeyForRole, effectiveRole, MENUS, MenuKey } from './line-richmenu.service'
 import { posSales, ledgerRevenue, ledgerCogs, ledgerOpex, thaiToday, addDaysStr } from './phopyBoard.service'
@@ -1317,6 +1318,31 @@ class LineBotService {
                 this.setActiveTenant(event.source.userId, id)
                 await client.replyMessage(event.replyToken, { type: 'text', text: `✅ ตอนนี้ใช้งาน: ${companyName(id) || id}\nคำสั่งและเมนูในแชทนี้เป็นของบริษัทนี้แล้ว` })
                 await richMenus.syncUser(id, client.token, event.source.userId, to.menu)
+                return
+            }
+
+            // ── อนุมัติ/ไม่อนุมัติคำขอ HR จากการ์ด (เฉพาะแชทส่วนตัว) — ด่านสิทธิ์ใช้ตัวเดียวกับหน้าเว็บ ──
+            if ((action === 'approve_req' || action === 'reject_req') && id && event.source?.type === 'user') {
+                const me = this.linkedUser(tenantId, event.source.userId)
+                if (!me) return
+                const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+                const u = db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, tenantId) as any
+                if (!row || !u || !IN_CHAT_APPROVAL.includes(row.module_type)) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: '❌ รายการนี้อนุมัติในแชทไม่ได้ กรุณาเปิดในเว็บครับ' })
+                    return
+                }
+                const departments = u.departments ? JSON.parse(u.departments) : []
+                const req = {
+                    params: { id }, body: { decision: action === 'approve_req' ? 'APPROVED' : 'REJECTED', comment: 'ทาง LINE' },
+                    user: { userId: u.id, email: u.email, role: u.role, department: departments[0], departments, tenantId,
+                        customPermissions: u.custom_permissions ? JSON.parse(u.custom_permissions) : undefined },
+                }
+                let out: any = {}
+                const res: any = { status: () => res, json: (j: any) => { out = j; return res } }
+                await handleDecision(req as any, res)
+                const text = out.success ? (action === 'approve_req' ? '✅ อนุมัติแล้ว' : '❌ ไม่อนุมัติแล้ว')
+                    : /already|ตัดสินไปแล้ว/.test(out.message || '') ? 'รายการนี้ถูกตัดสินไปแล้วครับ' : `❌ ${out.message || 'ทำรายการไม่สำเร็จ'}`
+                await client.replyMessage(event.replyToken, { type: 'text', text })
                 return
             }
 

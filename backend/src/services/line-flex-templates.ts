@@ -113,6 +113,9 @@ export const APPROVAL_MODULES: Record<string, { label: string; icon: string; bg:
     shift_swap:        { label: 'ขอแลกกะ',           icon: '🔁', bg: '#EEF2FF', color: '#4F46E5' },
 }
 
+/** หมวดที่กดอนุมัติจากการ์ดใน LINE ได้ — เฉพาะคำขอ HR ที่ไม่กระทบสต็อก/เอกสารบัญชี */
+export const IN_CHAT_APPROVAL = ['leave', 'advance', 'shift_swap']
+
 export const flexTemplates = {
     card,
     // 1. Work Order Card (ใบสั่งผลิต)
@@ -826,7 +829,18 @@ export const flexTemplates = {
                             type: 'box',
                             layout: 'vertical',
                             margin: 'lg',
+                            spacing: 'sm',
                             contents: [
+                                // คำขอ HR (ลา/เบิก/แลกกะ) อนุมัติในแชทได้ — ปุ่มเรียกตัวตัดสินตัวเดียวกับหน้าเว็บ สิทธิ์ตรวจที่ server ตอนกด
+                                ...(IN_CHAT_APPROVAL.includes(req.moduleType) ? [{
+                                    type: 'box', layout: 'horizontal', spacing: 'sm',
+                                    contents: [
+                                        { type: 'button', style: 'primary', height: 'sm', color: '#16A34A',
+                                          action: { type: 'postback', label: 'อนุมัติ', data: `action=approve_req&id=${req.id}`, displayText: `อนุมัติ ${req.requestNumber}` } },
+                                        { type: 'button', style: 'secondary', height: 'sm',
+                                          action: { type: 'postback', label: 'ไม่อนุมัติ', data: `action=reject_req&id=${req.id}`, displayText: `ไม่อนุมัติ ${req.requestNumber}` } },
+                                    ],
+                                }] : []),
                                 {
                                     type: 'button',
                                     style: 'primary',
