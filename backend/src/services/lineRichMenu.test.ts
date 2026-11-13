@@ -37,7 +37,10 @@ describe('ริชเมนู LINE', () => {
             expect(m.areas.map(a => a.bounds.width)).toEqual(Array(8).fill(625))
         }
         expect(buildRichMenu('guest').size).toEqual({ width: 2500, height: 843 })
-        expect(buildRichMenu('staff').areas.map(a => a.action.label)).toContain('เปลี่ยนบริษัท')
+        for (const k of ['exec', 'manager', 'staff'] as MenuKey[]) {
+            expect(MENUS[k].buttons.length).toBe(8)
+            expect(buildRichMenu(k).areas.map(a => a.action.label)).not.toContain('เปลี่ยนบริษัท')
+        }
     })
 
     it('role → เมนู และบัญชี master_* ที่ไม่มีแถวใน users นับเป็น MASTER', () => {

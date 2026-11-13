@@ -16,11 +16,11 @@ const T = { blue: ['#EEF0FD', '#3B4CE6'], amber: ['#FEF3E0', '#D98A1E'], green: 
 // [ชื่อ, คำอธิบาย, ไอคอน lucide, สี]
 const MENUS = {
     exec: [['ยอดขายวันนี้', 'บิล POS · ช่องทางจ่าย', 'trending-up'], ['กำไรเดือนนี้', 'รายได้ – ต้นทุน', 'chart-pie', 'green'], ['รออนุมัติ', 'คำขอที่ค้างอยู่', 'clipboard-check', 'amber'], ['สต็อกต่ำ', 'ต่ำกว่าจุดสั่งซื้อ', 'triangle-alert', 'red'],
-        ['Phopy Board', 'เปิดภาพรวมในเว็บ', 'layout-dashboard', 'blue'], ['ของฉัน', 'เช็คอิน · ลา · สลิป', 'user-round', 'green'], ['เปลี่ยนบริษัท', 'สลับร้านที่ผูกไว้', 'arrow-left-right', 'amber'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray']],
+        ['Phopy Board', 'เปิดภาพรวมในเว็บ', 'layout-dashboard', 'blue'], ['ออเดอร์', 'ใบสั่งขายล่าสุด', 'shopping-bag', 'green'], ['ของฉัน', 'เช็คอิน · ลา · สลิป', 'user-round', 'green'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray']],
     manager: [['รออนุมัติ', 'คำขอที่ค้างอยู่', 'clipboard-check'], ['สต็อกต่ำ', 'ต่ำกว่าจุดสั่งซื้อ', 'triangle-alert', 'red'], ['เช็คสต็อก', 'พิมพ์ชื่อสินค้า', 'search', 'blue'], ['งานผลิต', 'กำลังผลิตอยู่', 'clipboard-list', 'blue'],
-        ['ออเดอร์', 'ใบสั่งขายล่าสุด', 'shopping-bag', 'green'], ['ของฉัน', 'เช็คอิน · ลา · สลิป', 'user-round', 'amber'], ['เปลี่ยนบริษัท', 'สลับร้านที่ผูกไว้', 'arrow-left-right', 'amber'], ['เปิด ERP', 'erp.phopy.net', 'monitor', 'gray']],
+        ['ออเดอร์', 'ใบสั่งขายล่าสุด', 'shopping-bag', 'green'], ['ของฉัน', 'เช็คอิน · ลา · สลิป', 'user-round', 'amber'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray'], ['เปิด ERP', 'erp.phopy.net', 'monitor', 'gray']],
     staff: [['เช็คอิน', 'ลงเวลาเข้างาน', 'log-in'], ['ขอลา', 'ยื่นใบลา', 'calendar-x', 'amber'], ['สลิป', 'สลิปเงินเดือน', 'receipt', 'green'], ['ตารางกะ', 'กะงานของฉัน', 'calendar-days', 'blue'],
-        ['เช็คสต็อก', 'พิมพ์ชื่อสินค้า', 'search', 'blue'], ['งานผลิต', 'กำลังผลิตอยู่', 'clipboard-list', 'blue'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray'], ['เปลี่ยนบริษัท', 'สลับร้านที่ผูกไว้', 'arrow-left-right', 'amber']],
+        ['ขอเบิก', 'เบิกเงินล่วงหน้า', 'hand-coins', 'amber'], ['เช็คสต็อก', 'พิมพ์ชื่อสินค้า', 'search', 'blue'], ['งานผลิต', 'กำลังผลิตอยู่', 'clipboard-list', 'blue'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray']],
 }
 
 // ข้อความ → <path> (fontkit จัดสระ/วรรณยุกต์ตาม GPOS); กึ่งกลางที่ cx, baseline y, หด font ถ้ากว้างเกิน maxW

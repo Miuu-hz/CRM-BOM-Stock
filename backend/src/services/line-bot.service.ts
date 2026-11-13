@@ -885,7 +885,7 @@ class LineBotService {
     private linkedUser(tenantId: string, lineUserId: string) {
         const db = getDb()
         const m = db.prepare(`
-            SELECT lum.user_id, lum.role, lum.linked_at, u.role AS user_role, u.name, u.email, u.status AS user_status
+            SELECT lum.user_id, lum.role, lum.demo_role, lum.linked_at, u.role AS user_role, u.name, u.email, u.status AS user_status
             FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
             WHERE lum.tenant_id = ? AND lum.line_user_id = ?
         `).get(tenantId, lineUserId) as any
@@ -896,7 +896,11 @@ class LineBotService {
         if (role !== m.role) {
             db.prepare('UPDATE line_user_mappings SET role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role, tenantId, lineUserId)
         }
-        return { ...m, role, menu: menuKeyForRole(role) as MenuKey }
+        // demo: MASTER ดูบอทเป็นตำแหน่งที่ต่ำกว่าได้ — ใช้เฉพาะเมื่อ role จริงเป็น MASTER (ค่าค้างของคนที่ไม่ใช่ MASTER ถูกเมินเสมอ)
+        if (role === 'MASTER' && ['ADMIN', 'MANAGER', 'USER'].includes(m.demo_role)) {
+            return { ...m, role: m.demo_role as string, menu: menuKeyForRole(m.demo_role) as MenuKey, realRole: 'MASTER', demo: true }
+        }
+        return { ...m, role, menu: menuKeyForRole(role) as MenuKey, realRole: role, demo: false }
     }
 
     // ── เมนูผู้บริหาร / หัวหน้า (ตรวจสิทธิ์ที่นี่ ไม่พึ่งว่าเมนูซ่อนปุ่มไว้) ─────────
@@ -943,10 +947,12 @@ class LineBotService {
     }
 
     private async handleMe(tenantId: string, me: any, replyToken: string, client: any) {
-        await client.replyMessage(replyToken, flexTemplates.meCard({
+        const card = flexTemplates.meCard({
             company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), name: me.name ?? '', email: me.email ?? '',
-            roleLabel: ROLE_LABEL[me.role] ?? me.role, menuLabel: MENUS[me.menu as MenuKey].label, linkedAt: me.linked_at,
-        }))
+            roleLabel: (ROLE_LABEL[me.role] ?? me.role) + (me.demo ? ' (โหมด demo)' : ''), menuLabel: MENUS[me.menu as MenuKey].label, linkedAt: me.linked_at,
+        }) as any
+        if (me.realRole === 'MASTER') card.quickReply = { items: [{ type: 'action', action: { type: 'message', label: 'โหมด demo', text: 'demo' } }] }
+        await client.replyMessage(replyToken, card)
     }
 
     private async handleHowToLinkCommand(replyToken: string, client: any) {
@@ -1273,6 +1279,21 @@ class LineBotService {
                 return
             }
 
+            // ── โหมด demo: MASTER ดูบอทเป็นตำแหน่งที่ต่ำกว่า (ลดสิทธิ์อย่างเดียว) ──
+            if (me && ['demo', 'โหมด demo'].includes(lower)) {
+                const deny = (t: string) => client.replyMessage(event.replyToken, { type: 'text', text: t })
+                if (src !== 'user') await deny('โหมด demo ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ')
+                else if (me.realRole !== 'MASTER') await deny('🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ')
+                else {
+                    const btn = (label: string, role: string) => ({ type: 'action', action: { type: 'postback', label, data: `action=demo_role&role=${role}`, displayText: label } })
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text', text: `โหมด demo: เลือกตำแหน่งที่อยากดู\nตอนนี้: ${ROLE_LABEL[me.role] ?? me.role}`,
+                        quickReply: { items: [btn(ROLE_LABEL.ADMIN, 'ADMIN'), btn(ROLE_LABEL.MANAGER, 'MANAGER'), btn(ROLE_LABEL.USER, 'USER'), btn('กลับเป็น Master', 'off')] },
+                    })
+                }
+                return
+            }
+
             // ── คำสั่ง: สถานะ / status / -status ─────────────────────────────
             if (['สถานะ', 'status', '-status'].includes(lower)) {
                 await this.handleStatusCommand(tenantId, event.replyToken, client)
@@ -1337,6 +1358,24 @@ class LineBotService {
                 this.setActiveTenant(event.source.userId, id)
                 await client.replyMessage(event.replyToken, { type: 'text', text: `✅ ตอนนี้ใช้งาน: ${companyName(id) || id}\nคำสั่งและเมนูในแชทนี้เป็นของบริษัทนี้แล้ว` })
                 await richMenus.syncUser(id, client.token, event.source.userId, to.menu)
+                return
+            }
+
+            // โหมด demo: เปลี่ยนได้เฉพาะ MASTER จริง (เช็คจาก realRole ที่มาจากตาราง users ไม่ใช่จากปุ่ม) · เก็บต่อบริษัท
+            if (action === 'demo_role' && event.source?.type === 'user') {
+                const lineUserId = event.source.userId, role = params.get('role') ?? ''
+                const me = this.linkedUser(tenantId, lineUserId)
+                if (!me) return
+                if (me.realRole !== 'MASTER') {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: '🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ' })
+                    return
+                }
+                if (!['ADMIN', 'MANAGER', 'USER', 'off'].includes(role)) return
+                db.prepare('UPDATE line_user_mappings SET demo_role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role === 'off' ? null : role, tenantId, lineUserId)
+                const now = this.linkedUser(tenantId, lineUserId)
+                if (!now) return
+                await richMenus.syncUser(tenantId, client.token, lineUserId, now.menu)
+                await client.replyMessage(event.replyToken, { type: 'text', text: role === 'off' ? 'กลับเป็น Master แล้ว' : `ตอนนี้ดูแบบ: ${ROLE_LABEL[role]} (โหมด demo)\nพิมพ์ demo เพื่อเปลี่ยนหรือกลับเป็น Master` })
                 return
             }
 

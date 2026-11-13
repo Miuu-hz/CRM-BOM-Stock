@@ -22,21 +22,20 @@ const uri = (u: string) => ({ type: 'uri', uri: u })
 const ask = (prefix: string) => ({ type: 'postback', data: 'action=kbd', inputOption: 'openKeyboard', fillInText: prefix })
 
 type Menu = { chatBarText: string; label: string; cols: number; buttons: [string, any][] }
-const SWITCH: [string, any] = ['เปลี่ยนบริษัท', msg('เปลี่ยนบริษัท')]
 const MINE: [string, any] = ['ของฉัน', msg('ของฉัน')]
 const ACCOUNT: [string, any] = ['บัญชีของฉัน', msg('บัญชีของฉัน')]
 export const MENUS: Record<MenuKey, Menu> = {
     exec: { chatBarText: 'เมนูผู้บริหาร', label: 'ผู้บริหาร', cols: 4, buttons: [
         ['ยอดขายวันนี้', msg('ยอดขายวันนี้')], ['กำไรเดือนนี้', msg('กำไรเดือนนี้')], ['รออนุมัติ', msg('รออนุมัติ')], ['สต็อกต่ำ', msg('สต็อกต่ำ')],
-        ['Phopy Board', uri(`${APP_URL}/accounting/phopy-board`)], MINE, SWITCH, ACCOUNT,
+        ['Phopy Board', uri(`${APP_URL}/accounting/phopy-board`)], ['ออเดอร์', msg('ออเดอร์')], MINE, ACCOUNT,
     ] },
     manager: { chatBarText: 'เมนูหัวหน้า', label: 'หัวหน้า / ผู้จัดการ', cols: 4, buttons: [
         ['รออนุมัติ', msg('รออนุมัติ')], ['สต็อกต่ำ', msg('สต็อกต่ำ')], ['เช็คสต็อก', ask('สต็อก ')], ['งานผลิต', msg('สถานะ')],
-        ['ออเดอร์', msg('ออเดอร์')], MINE, SWITCH, ['เปิด ERP', uri(APP_URL)],
+        ['ออเดอร์', msg('ออเดอร์')], MINE, ACCOUNT, ['เปิด ERP', uri(APP_URL)],
     ] },
     staff: { chatBarText: 'เมนูพนักงาน', label: 'พนักงาน', cols: 4, buttons: [
         ['เช็คอิน', msg('เช็คอิน')], ['ขอลา', msg('ขอลา')], ['สลิป', msg('สลิป')], ['ตารางกะ', msg('ตารางกะ')],
-        ['เช็คสต็อก', ask('สต็อก ')], ['งานผลิต', msg('สถานะ')], ACCOUNT, SWITCH,
+        ['ขอเบิก', msg('ขอเบิก')], ['เช็คสต็อก', ask('สต็อก ')], ['งานผลิต', msg('สถานะ')], ACCOUNT,
     ] },
     guest: { chatBarText: 'เริ่มใช้งาน', label: 'ยังไม่ผูกบัญชี', cols: 3, buttons: [
         ['เชื่อมบัญชี', msg('วิธีเชื่อมบัญชี')], ['วิธีใช้', msg('ช่วยเหลือ')], ['เปิดเว็บ', uri(APP_URL)],

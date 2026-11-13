@@ -3497,6 +3497,12 @@ export function runMonthCloseMigrations(db: any): void {
   } catch (e) {
     console.error('⚠️ HR Face Enrollments migration error:', e)
   }
+
+  // LINE demo mode: MASTER ดูบอทเป็นตำแหน่งที่ต่ำกว่า (ต่อบริษัท) — ค่าว่าง = ใช้ role จริง
+  try {
+    const lumCols = (db.prepare('PRAGMA table_info(line_user_mappings)').all() as any[]).map((c: any) => c.name)
+    if (lumCols.length && !lumCols.includes('demo_role')) db.exec('ALTER TABLE line_user_mappings ADD COLUMN demo_role TEXT')
+  } catch (e) { console.warn('Migration line_user_mappings.demo_role skipped:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
