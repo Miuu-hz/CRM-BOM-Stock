@@ -18,10 +18,26 @@ describe('ริชเมนู LINE', () => {
                 expect(a.bounds.x + a.bounds.width).toBeLessThanOrEqual(m.size.width)
                 expect(a.bounds.y + a.bounds.height).toBeLessThanOrEqual(m.size.height)
             }
+            expect(m.areas.length).toBe(m.size.height / 843 * MENUS[k].cols)
+            for (let r = 0; r < m.size.height / 843; r++) {
+                const row = m.areas.filter(a => a.bounds.y === r * 843)
+                expect(row.reduce((n, a) => n + a.bounds.width, 0)).toBe(2500)
+                row.forEach((a, i) => expect(a.bounds.x).toBe(row.slice(0, i).reduce((n, b) => n + b.bounds.width, 0)))
+            }
             const png = fs.readFileSync(path.join(__dirname, '../../assets/line-richmenu', `${k}.png`))
             expect(png.length).toBeLessThan(1024 * 1024)
             expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([m.size.width, m.size.height])
         }
+    })
+
+    it('exec/manager/staff = 4×2 (625 ต่อช่อง) · guest = 3×1', () => {
+        for (const k of ['exec', 'manager', 'staff'] as MenuKey[]) {
+            const m = buildRichMenu(k)
+            expect(m.size).toEqual({ width: 2500, height: 1686 })
+            expect(m.areas.map(a => a.bounds.width)).toEqual(Array(8).fill(625))
+        }
+        expect(buildRichMenu('guest').size).toEqual({ width: 2500, height: 843 })
+        expect(buildRichMenu('staff').areas.map(a => a.action.label)).toContain('เปลี่ยนบริษัท')
     })
 
     it('role → เมนู และบัญชี master_* ที่ไม่มีแถวใน users นับเป็น MASTER', () => {

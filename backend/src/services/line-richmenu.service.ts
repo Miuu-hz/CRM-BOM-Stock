@@ -10,7 +10,7 @@ import { getDb } from '../db/sqlite'
  *   manager = MANAGER
  *   exec    = MASTER / ADMIN / OWNER
  * เมนูแค่ซ่อนปุ่ม — สิทธิ์ดูข้อมูลยังตรวจที่ handler ทุกครั้ง (line-bot.service.ts)
- * รูปอยู่ที่ backend/assets/line-richmenu/<key>.png สร้างจาก scratch HTML ลำดับปุ่มต้องตรงกับ MENUS
+ * รูปอยู่ที่ backend/assets/line-richmenu/<key>.png สร้างด้วย backend/scripts/gen-richmenu.mjs ลำดับปุ่มต้องตรงกับ MENUS
  */
 
 export type MenuKey = 'guest' | 'staff' | 'manager' | 'exec'
@@ -21,20 +21,24 @@ const uri = (u: string) => ({ type: 'uri', uri: u })
 // เปิดคีย์บอร์ดพร้อมคำนำหน้า ผู้ใช้พิมพ์ชื่อต่อแล้วส่ง → เข้า handler "สต็อก xxx"/"สูตร xxx" เดิม
 const ask = (prefix: string) => ({ type: 'postback', data: 'action=kbd', inputOption: 'openKeyboard', fillInText: prefix })
 
-export const MENUS: Record<MenuKey, { chatBarText: string; label: string; buttons: [string, any][] }> = {
-    exec: { chatBarText: 'เมนูผู้บริหาร', label: 'ผู้บริหาร', buttons: [
-        ['ยอดขายวันนี้', msg('ยอดขายวันนี้')], ['กำไรเดือนนี้', msg('กำไรเดือนนี้')], ['รออนุมัติ', msg('รออนุมัติ')],
-        ['สต็อกต่ำ', msg('สต็อกต่ำ')], ['Phopy Board', uri(`${APP_URL}/accounting/phopy-board`)], ['บัญชีของฉัน', msg('บัญชีของฉัน')],
+type Menu = { chatBarText: string; label: string; cols: number; buttons: [string, any][] }
+const SWITCH: [string, any] = ['เปลี่ยนบริษัท', msg('เปลี่ยนบริษัท')]
+const MINE: [string, any] = ['ของฉัน', msg('ของฉัน')]
+const ACCOUNT: [string, any] = ['บัญชีของฉัน', msg('บัญชีของฉัน')]
+export const MENUS: Record<MenuKey, Menu> = {
+    exec: { chatBarText: 'เมนูผู้บริหาร', label: 'ผู้บริหาร', cols: 4, buttons: [
+        ['ยอดขายวันนี้', msg('ยอดขายวันนี้')], ['กำไรเดือนนี้', msg('กำไรเดือนนี้')], ['รออนุมัติ', msg('รออนุมัติ')], ['สต็อกต่ำ', msg('สต็อกต่ำ')],
+        ['Phopy Board', uri(`${APP_URL}/accounting/phopy-board`)], MINE, SWITCH, ACCOUNT,
     ] },
-    manager: { chatBarText: 'เมนูหัวหน้า', label: 'หัวหน้า / ผู้จัดการ', buttons: [
-        ['รออนุมัติ', msg('รออนุมัติ')], ['สต็อกต่ำ', msg('สต็อกต่ำ')], ['เช็คสต็อก', ask('สต็อก ')],
-        ['งานผลิต', msg('สถานะ')], ['ออเดอร์', msg('ออเดอร์')], ['เปิด ERP', uri(APP_URL)],
+    manager: { chatBarText: 'เมนูหัวหน้า', label: 'หัวหน้า / ผู้จัดการ', cols: 4, buttons: [
+        ['รออนุมัติ', msg('รออนุมัติ')], ['สต็อกต่ำ', msg('สต็อกต่ำ')], ['เช็คสต็อก', ask('สต็อก ')], ['งานผลิต', msg('สถานะ')],
+        ['ออเดอร์', msg('ออเดอร์')], MINE, SWITCH, ['เปิด ERP', uri(APP_URL)],
     ] },
-    staff: { chatBarText: 'เมนูพนักงาน', label: 'พนักงาน', buttons: [
-        ['เช็คสต็อก', ask('สต็อก ')], ['สูตร', ask('สูตร ')], ['งานผลิต', msg('สถานะ')],
-        ['ออเดอร์', msg('ออเดอร์')], ['บัญชีของฉัน', msg('บัญชีของฉัน')], ['เปิด ERP', uri(APP_URL)],
+    staff: { chatBarText: 'เมนูพนักงาน', label: 'พนักงาน', cols: 4, buttons: [
+        ['เช็คอิน', msg('เช็คอิน')], ['ขอลา', msg('ขอลา')], ['สลิป', msg('สลิป')], ['ตารางกะ', msg('ตารางกะ')],
+        ['เช็คสต็อก', ask('สต็อก ')], ['งานผลิต', msg('สถานะ')], ACCOUNT, SWITCH,
     ] },
-    guest: { chatBarText: 'เริ่มใช้งาน', label: 'ยังไม่ผูกบัญชี', buttons: [
+    guest: { chatBarText: 'เริ่มใช้งาน', label: 'ยังไม่ผูกบัญชี', cols: 3, buttons: [
         ['เชื่อมบัญชี', msg('วิธีเชื่อมบัญชี')], ['วิธีใช้', msg('ช่วยเหลือ')], ['เปิดเว็บ', uri(APP_URL)],
     ] },
 }
@@ -45,20 +49,22 @@ export function menuKeyForRole(role: string | null | undefined): MenuKey {
     return 'staff'
 }
 
-/** ตาราง 3 คอลัมน์ × 1–2 แถว ขนาดเต็ม 2500 กว้าง แต่ละแถวสูง 843 */
+/** ตาราง N คอลัมน์ (ตาม menu.cols) × 1–2 แถว เต็ม 2500 กว้าง แต่ละแถวสูง 843 · คอลัมน์สุดท้ายรับเศษ */
 export function buildRichMenu(key: MenuKey) {
-    const m = MENUS[key]
-    const rows = m.buttons.length / 3
-    const xs = [0, 833, 1666], ws = [833, 833, 834]
+    const m = MENUS[key], n = m.cols
+    const rows = m.buttons.length / n, w = Math.floor(2500 / n)
     return {
         size: { width: 2500, height: 843 * rows },
         selected: true,
         name: `phopy-${key}`,
         chatBarText: m.chatBarText,
-        areas: m.buttons.map(([label, action], i) => ({
-            bounds: { x: xs[i % 3], y: Math.floor(i / 3) * 843, width: ws[i % 3], height: 843 },
-            action: { ...action, label },
-        })),
+        areas: m.buttons.map(([label, action], i) => {
+            const c = i % n
+            return {
+                bounds: { x: c * w, y: Math.floor(i / n) * 843, width: c === n - 1 ? 2500 - c * w : w, height: 843 },
+                action: { ...action, label },
+            }
+        }),
     }
 }
 
