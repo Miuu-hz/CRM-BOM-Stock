@@ -52,7 +52,7 @@ vi.mock('../../services/hrDocument.service', () => ({
   default: { getMyDocuments: vi.fn() },
 }))
 vi.mock('../../services/hrDiscipline.service', () => ({
-  default: { getMyDisciplinary: vi.fn(), acknowledgeSelf: vi.fn() },
+  default: { getMyDisciplinary: vi.fn(), acknowledgeSelf: vi.fn(), downloadDisciplinaryPdf: vi.fn() },
 }))
 
 vi.mock('./PayslipPrint', () => ({
@@ -76,6 +76,7 @@ const mockLoans = hrAssetService.getMyAssetLoans as unknown as ReturnType<typeof
 const mockDocs = hrDocumentService.getMyDocuments as unknown as ReturnType<typeof vi.fn>
 const mockDisc = hrDisciplineService.getMyDisciplinary as unknown as ReturnType<typeof vi.fn>
 const mockAck = hrDisciplineService.acknowledgeSelf as unknown as ReturnType<typeof vi.fn>
+const mockDiscPdf = hrDisciplineService.downloadDisciplinaryPdf as unknown as ReturnType<typeof vi.fn>
 const mockCaptureFace = captureFaceDescriptor as unknown as ReturnType<typeof vi.fn>
 
 const mockHr = hrService as unknown as {
@@ -147,6 +148,31 @@ beforeEach(() => {
 })
 
 describe('หน้าของฉัน /hr/me (MyHr)', () => {
+  it('หนังสือเตือน: กด ดาวน์โหลด PDF → เรียก downloadDisciplinaryPdf ด้วย id', async () => {
+    mockHr.getMe.mockResolvedValue({ id: 'emp-1', code: 'EMP-001', first_name: 'สมชาย', last_name: 'ใจดี' })
+    mockDisc.mockResolvedValue([
+      {
+        id: 'disc-1',
+        employee_id: 'emp-1',
+        incident_date: '2026-11-01',
+        category: 'มาสาย',
+        detail: 'มาสายบ่อย',
+        level: 'WRITTEN',
+        expires_on: '2027-11-01',
+        active: true,
+      },
+    ])
+    mockDiscPdf.mockResolvedValue(undefined)
+
+    render(<MyHr />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'ดาวน์โหลด PDF' }))
+
+    await waitFor(() => {
+      expect(mockDiscPdf).toHaveBeenCalledWith('disc-1')
+    })
+  })
+
   it('ผู้ใช้ที่ยังไม่ได้ผูกกับพนักงาน (getMe 404) จะเห็นการ์ดแจ้งเตือนและไม่เห็นส่วนอื่น', async () => {
     mockHr.getMe.mockRejectedValue({
       response: { status: 404, data: { message: 'Employee not found' } },

@@ -1101,6 +1101,15 @@ export const hrService = {
     await api.delete('/hr/me/face')
   },
 
+  async getEmployeeFace(id: string): Promise<FaceEnrollmentStatus> {
+    const res = await api.get(`/hr/employees/${id}/face`)
+    return res.data.data
+  },
+
+  async deleteEmployeeFace(id: string): Promise<void> {
+    await api.delete(`/hr/employees/${id}/face`)
+  },
+
   async checkinWithFace(data: CheckinFaceInput): Promise<CheckinResult> {
     const res = await api.post('/hr/checkin/face', data)
     return res.data.data

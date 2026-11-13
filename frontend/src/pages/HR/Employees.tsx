@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, Plus, Search, Pencil, UserMinus, X, MessageCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, OrgUnit, PayItem, Shift } from '../../services/hr.service'
+import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, FaceEnrollmentStatus, OrgUnit, PayItem, Shift } from '../../services/hr.service'
 
 const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   MONTHLY: 'รายเดือน',
@@ -92,6 +92,21 @@ export default function Employees() {
 
   const [lineInvite, setLineInvite] = useState<{ code: string; created_line_only_account: boolean } | null>(null)
 
+  const [face, setFace] = useState<FaceEnrollmentStatus | null>(null)
+  const [confirmFace, setConfirmFace] = useState(false)
+
+  const handleDeleteFace = async () => {
+    if (!editing) return
+    try {
+      await hrService.deleteEmployeeFace(editing.id)
+      toast.success('ลบข้อมูลใบหน้าแล้ว')
+      setFace({ enrolled: false, consent_at: null })
+      setConfirmFace(false)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'ลบข้อมูลใบหน้าไม่สำเร็จ')
+    }
+  }
+
   const handleLineInvite = async (emp: Employee) => {
     try {
       setLineInvite(await hrService.inviteEmployeeToLine(emp.id))
@@ -162,6 +177,11 @@ export default function Employees() {
       notes: emp.notes || '',
     })
     setEmpPayItems({})
+    setFace(null)
+    setConfirmFace(false)
+    Promise.resolve(hrService.getEmployeeFace?.(emp.id))
+      .then((f) => setFace(f || { enrolled: false, consent_at: null }))
+      .catch(() => setFace({ enrolled: false, consent_at: null }))
     if (hrService.getPayItems && hrService.getEmployeePayItems) {
       Promise.all([hrService.getPayItems(), hrService.getEmployeePayItems(emp.id)])
         .then(([items, assigned]) => {
@@ -671,6 +691,46 @@ export default function Employees() {
                 />
                 <label htmlFor="sso_enrolled" className="text-sm text-[var(--fg-2)]">ขึ้นทะเบียนประกันสังคม (SSO)</label>
               </div>
+
+              {editing && (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-xs font-medium text-[var(--fg-2)]">สแกนหน้า</span>
+                  <span data-testid="emp-face-status" className="text-[var(--fg-1)]">
+                    {face?.enrolled
+                      ? `ลงทะเบียนแล้ว · ยินยอมเมื่อ ${face.consent_at || '-'}`
+                      : 'ยังไม่ได้ลงทะเบียน'}
+                  </span>
+                  {face?.enrolled && !confirmFace && (
+                    <button
+                      type="button"
+                      data-testid="emp-face-delete"
+                      onClick={() => setConfirmFace(true)}
+                      className="text-[11px] text-[var(--danger)] hover:underline"
+                    >
+                      ลบข้อมูลใบหน้า
+                    </button>
+                  )}
+                  {face?.enrolled && confirmFace && (
+                    <>
+                      <button
+                        type="button"
+                        data-testid="emp-face-delete-confirm"
+                        onClick={handleDeleteFace}
+                        className="text-[11px] text-[var(--danger)] hover:underline"
+                      >
+                        ยืนยันลบ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmFace(false)}
+                        className="text-[11px] text-[var(--fg-3)] hover:underline"
+                      >
+                        ยกเลิก
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
               {payItems.length > 0 && (
                 <div className="border-t border-[var(--border)] pt-3 space-y-2">

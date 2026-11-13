@@ -646,6 +646,14 @@ export default function MyHr() {
     }
   }
 
+  const handleDownloadDiscPdf = async (id: string) => {
+    try {
+      await hrDisciplineService.downloadDisciplinaryPdf(id)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'ดาวน์โหลด PDF ไม่สำเร็จ')
+    }
+  }
+
   // Reload swaps
   const reloadSwaps = async () => {
     try {
@@ -1826,6 +1834,15 @@ export default function MyHr() {
                   </span>
                 </div>
                 <div className="text-[var(--fg-2)]">{rec.detail}</div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadDiscPdf(rec.id)}
+                    className="px-2.5 py-1 rounded-lg text-xs border border-[var(--border)] text-[var(--fg-2)]"
+                  >
+                    ดาวน์โหลด PDF
+                  </button>
+                </div>
                 <div className="text-[var(--fg-3)] flex flex-wrap items-center justify-between gap-2">
                   <span>มีผลถึง {rec.expires_on}</span>
                   {rec.acknowledged_at ? (

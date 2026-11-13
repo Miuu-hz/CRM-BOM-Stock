@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
@@ -13,6 +13,8 @@ vi.mock('../../services/hr.service', () => ({
     updateEmployee: vi.fn(),
     offboardEmployee: vi.fn(),
     inviteEmployeeToLine: vi.fn(),
+    getEmployeeFace: vi.fn(),
+    deleteEmployeeFace: vi.fn(),
   },
 }))
 
@@ -27,6 +29,7 @@ const mockHr = hrService as unknown as {
 beforeEach(() => {
   vi.clearAllMocks()
   mockHr.getOrgUnits.mockResolvedValue([])
+  ;(hrService as any).getEmployeeFace.mockResolvedValue({ enrolled: false, consent_at: null })
 })
 
 describe('หน้าทะเบียนพนักงาน (Employees)', () => {
@@ -107,5 +110,35 @@ describe('หน้าทะเบียนพนักงาน (Employees)', (
 
     expect(await screen.findByText('123456')).toBeTruthy()
     expect(invite).toHaveBeenCalledWith('e3')
+  })
+
+  it('แก้ไขพนักงาน: แสดงสถานะสแกนหน้า และลบข้อมูลใบหน้าได้หลังยืนยัน', async () => {
+    mockHr.getEmployees.mockResolvedValue([
+      {
+        id: 'e4', tenant_id: 't1', code: 'EMP-004', first_name: 'สมปอง', last_name: 'ตั้งใจ',
+        org_unit_id: null, position: null, employment_type: 'MONTHLY', start_date: '2026-02-01',
+        end_date: null, status: 'ACTIVE', sso_enrolled: 1,
+      },
+    ])
+    const getFace = (hrService as any).getEmployeeFace as ReturnType<typeof vi.fn>
+    const delFace = (hrService as any).deleteEmployeeFace as ReturnType<typeof vi.fn>
+    getFace.mockResolvedValue({ enrolled: true, consent_at: '2026-11-01 10:00:00' })
+    delFace.mockResolvedValue(undefined)
+
+    render(<Employees />)
+    fireEvent.click(await screen.findByTitle('แก้ไข'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('emp-face-status').textContent).toContain('ลงทะเบียนแล้ว')
+    })
+    expect(getFace).toHaveBeenCalledWith('e4')
+
+    fireEvent.click(screen.getByTestId('emp-face-delete'))
+    fireEvent.click(screen.getByTestId('emp-face-delete-confirm'))
+
+    await waitFor(() => {
+      expect(delFace).toHaveBeenCalledWith('e4')
+      expect(screen.getByTestId('emp-face-status').textContent).toBe('ยังไม่ได้ลงทะเบียน')
+    })
   })
 })
