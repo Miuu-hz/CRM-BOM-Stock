@@ -8,10 +8,10 @@ interface LayoutProps {
 }
 
 // มือถือทั่วไป + Fold ตอนพับ (~340-430px) = โหมดมือถือ: ซ่อนเมนูข้าง กด ☰ แล้วเลื่อนออกมาทับ
-// Fold ตอนกาง (~700-900px) / แท็บเล็ต = แถบไอคอน · จอใหญ่ ≥1280 = เมนูเต็ม
+// ตั้งแต่ 768px (Fold ตอนกาง / แท็บเล็ต / จอคอม) = เมนูเต็ม ตามที่เจ้าของเลือก 2026-11-17 · แถบไอคอนเหลือไว้ให้กด ☰ ย่อเอง
 // ฟังการเปลี่ยนขนาดจอสด ๆ เพราะพับ/กาง Fold คือ viewport เปลี่ยนโดยไม่โหลดหน้าใหม่
 const PHONE_MQ = '(max-width: 767px)'
-const WIDE_MQ = '(min-width: 1280px)'
+const WIDE_MQ = '(min-width: 768px)'
 const matches = (q: string) => typeof window !== 'undefined' && window.matchMedia(q).matches
 
 function Layout({ children }: LayoutProps) {

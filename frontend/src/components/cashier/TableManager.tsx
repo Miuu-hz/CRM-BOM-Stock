@@ -79,12 +79,12 @@ export default function TableManager({ tables, settings, onClose, onChanged }: P
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="table-manager-title" onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-5 shadow-xl">
-        <div className="flex items-center justify-between">
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4 sm:p-5 space-y-4 sm:space-y-5 shadow-xl">
+        <div className="flex items-center justify-between gap-2">
           <h2 id="table-manager-title" className="text-lg font-bold text-[var(--fg-1)]">จัดการโต๊ะ / QR</h2>
-          <button onClick={onClose} aria-label="ปิด" className="p-2 rounded-lg text-[var(--fg-3)] hover:bg-[var(--surface-2)]"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} aria-label="ปิด" className="p-2 rounded-lg text-[var(--fg-3)] hover:bg-[var(--surface-2)] shrink-0"><X className="w-5 h-5" /></button>
         </div>
 
         {/* โหมด QR */}
@@ -93,7 +93,7 @@ export default function TableManager({ tables, settings, onClose, onChanged }: P
             <p className="text-sm font-semibold text-[var(--fg-2)]">แบบของ QR</p>
             {!canConfigMode && <span className="text-xs text-[var(--fg-4)]">เฉพาะ Admin / Master เปลี่ยนได้</span>}
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {([['static', 'QR ถาวรบนโต๊ะ', 'พิมพ์สติกเกอร์ครั้งเดียว ใช้ได้เมื่อแคชเชียร์เปิดโต๊ะ'],
                ['rotate', 'เปลี่ยนทุกรอบ', 'พิมพ์ใบ QR ใหม่ตอนเปิดโต๊ะ ใบเก่าใช้ไม่ได้ทันทีที่ปิดบิล']] as const).map(([mode, label, sub]) => (
               <button key={mode} disabled={!canConfigMode} onClick={() => saveSettings({ pos_qr_mode: mode })} aria-pressed={settings.mode === mode}
@@ -113,34 +113,34 @@ export default function TableManager({ tables, settings, onClose, onChanged }: P
               onKeyDown={e => { if (e.key === 'Enter') add(parseNames(names)) }}
               placeholder="เช่น T-01, T-02, ห้อง VIP" className="phopy-input flex-1 min-w-0" aria-label="ชื่อโต๊ะที่จะเพิ่ม" />
             <button onClick={() => add(parseNames(names))} disabled={saving || !parseNames(names).length}
-              className="px-4 rounded-lg bg-[var(--primary)] text-white text-sm font-medium disabled:opacity-40">เพิ่ม</button>
+              className="px-4 min-h-[40px] rounded-lg bg-[var(--primary)] text-white text-sm font-medium disabled:opacity-40 shrink-0">เพิ่ม</button>
           </div>
           <button onClick={() => add(batch)} disabled={saving}
-            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline disabled:opacity-40">
-            <Plus className="w-4 h-4" /> เพิ่มเร็ว 10 โต๊ะ ({batch[0]} – {batch[batch.length - 1]})
+            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline disabled:opacity-40 text-left">
+            <Plus className="w-4 h-4 shrink-0" /> เพิ่มเร็ว 10 โต๊ะ ({batch[0]} – {batch[batch.length - 1]})
           </button>
         </section>
 
         {/* รายการโต๊ะ */}
         {tables.length > 0 && (
           <section className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-semibold text-[var(--fg-2)]">โต๊ะทั้งหมด ({tables.length})</p>
-              <button onClick={stickers} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo/50">
-                <Printer className="w-4 h-4" /> พิมพ์สติกเกอร์ QR ทุกโต๊ะ
+              <button onClick={stickers} className="flex items-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[36px] rounded-lg text-sm border border-[var(--border)] text-[var(--fg-2)] hover:border-phopy-indigo/50">
+                <Printer className="w-4 h-4 shrink-0" /> พิมพ์สติกเกอร์ QR ทุกโต๊ะ
               </button>
             </div>
             <ul className="divide-y divide-[var(--border)] border border-[var(--border)] rounded-xl">
               {tables.map(t => (
-                <li key={t.id} className="flex items-center gap-2 px-3 py-2">
+                <li key={t.id} className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2">
                   <input defaultValue={t.name} maxLength={20} aria-label={`ชื่อโต๊ะ ${t.name}`}
                     onBlur={e => rename(t, e.target)} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                     className="flex-1 min-w-0 bg-transparent px-2 py-1 rounded-md text-sm font-medium text-[var(--fg-1)] hover:bg-[var(--surface-2)] focus:bg-[var(--surface-2)]" />
-                  {t.bill_id && <span className="text-xs text-[var(--primary)]">เปิดอยู่</span>}
+                  {t.bill_id && <span className="text-xs text-[var(--primary)] shrink-0">เปิดอยู่</span>}
                   <button onClick={() => regenerate(t)} title="สร้าง QR ใหม่ (สติกเกอร์เดิมใช้ไม่ได้)" aria-label={`สร้าง QR ใหม่ โต๊ะ ${t.name}`}
-                    className="p-1.5 rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface-2)]"><RefreshCw className="w-4 h-4" /></button>
+                    className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-md text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-[var(--surface-2)] shrink-0"><RefreshCw className="w-4 h-4" /></button>
                   <button onClick={() => remove(t)} disabled={!!t.bill_id} title={t.bill_id ? 'ปิดบิลก่อนจึงลบได้' : 'ลบโต๊ะ'} aria-label={`ลบโต๊ะ ${t.name}`}
-                    className="p-1.5 rounded-md text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                    className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-md text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] disabled:opacity-30 shrink-0"><Trash2 className="w-4 h-4" /></button>
                 </li>
               ))}
             </ul>

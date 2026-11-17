@@ -116,7 +116,7 @@ export default function QCPage() {
 
   const tabBtn = (key: typeof tab, labelKey: string, Icon: any) => (
     <button onClick={() => setTab(key)}
-      className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all text-sm ${
+      className={`flex items-center gap-2 px-3 sm:px-5 py-3 rounded-t-lg font-semibold transition-all text-sm ${
         tab === key
           ? 'bg-[var(--primary-soft)] text-[var(--primary)] border-b-2 border-phopy-indigo'
           : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
@@ -147,7 +147,7 @@ export default function QCPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[var(--border)]">
+      <div className="flex gap-1 border-b border-[var(--border)] tab-scroll">
         {tabBtn('overview', 'qc.tab.overview', Activity)}
         {tabBtn('checklists', 'qc.tab.checklists', ListChecks)}
         {tabBtn('inspections', 'qc.tab.inspections', Gauge)}
@@ -173,7 +173,7 @@ export default function QCPage() {
 
           {/* Recent inspections */}
           <div className="phopy-card overflow-hidden">
-            <div className="px-5 py-3 border-b border-[var(--border)]">
+            <div className="px-3 sm:px-5 py-3 border-b border-[var(--border)]">
               <p className="font-semibold text-[var(--fg-1)] text-sm">{t('qc.recentInspections')}</p>
             </div>
             {inspections.slice(0, 10).length === 0 ? (
@@ -275,7 +275,7 @@ export default function QCPage() {
       {/* Inspections */}
       {tab === 'inspections' && (
         <div className="phopy-card overflow-hidden">
-          <div className="px-5 py-3 border-b border-[var(--border)] flex justify-between items-center">
+          <div className="px-3 sm:px-5 py-3 border-b border-[var(--border)] flex justify-between items-center">
             <p className="font-semibold text-[var(--fg-1)] text-sm">{t('qc.inspectionHistory', { count: inspections.length })}</p>
           </div>
           {inspections.length === 0 ? (
@@ -674,7 +674,7 @@ function RunInspectionModal({ inspection, onClose, onCompleted }: {
         </div>
 
         {/* Progress bar */}
-        <div className="px-5 py-3 bg-[var(--surface-2)] border-b border-[var(--border)] flex items-center gap-4 text-sm">
+        <div className="px-3 sm:px-5 py-3 bg-[var(--surface-2)] border-b border-[var(--border)] flex items-center gap-4 text-sm">
           <span className="text-success font-medium"><Check className="w-4 h-4" /> {passCount}</span>
           <span className="text-danger font-medium"><X className="w-4 h-4" /> {failCount}</span>
           <span className="text-[var(--fg-4)] flex items-center gap-1"><Clock className="w-3 h-3" /> {pendCount} {t('qc.pendingCount')}</span>

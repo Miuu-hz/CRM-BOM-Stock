@@ -419,27 +419,27 @@ export default function JournalEntries() {
             {draftCount > 0 && <span className="ml-2 text-warning">· {draftCount} รอดำเนินการ</span>}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={fetchEntries} className="p-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={() => setShowQuickModal(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors">
+            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors whitespace-nowrap">
             <Zap className="w-4 h-4" /> บันทึกด่วน
           </button>
           <button onClick={() => setShowPayrollModal(true)} disabled={!accountsLoaded}
-            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors disabled:opacity-50">
+            className="flex items-center gap-2 px-4 py-2 border border-phopy-indigo text-[var(--primary)] rounded-lg hover:bg-phopy-indigo/10 transition-colors disabled:opacity-50 whitespace-nowrap">
             <Banknote className="w-4 h-4" /> บันทึกเงินเดือน
           </button>
           <button onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80">
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 whitespace-nowrap w-full sm:w-auto">
             <Plus className="w-4 h-4" /> บันทึกรายการ
           </button>
         </div>
       </div>
 
       {/* Summary Bar */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-xs text-[var(--fg-4)] mb-0.5">เดบิตรวม{chips.length > 0 && ' (ตามตัวกรอง)'}</p>
           <p className="text-lg font-bold text-[var(--primary)]">฿{fmt(totalDebit)}</p>

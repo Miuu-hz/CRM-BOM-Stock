@@ -291,7 +291,7 @@ function ModalShell({ title, icon: Icon, iconColor = 'text-[var(--primary)]', on
         </button>
       </div>
       <div className="overflow-y-auto modal-scroll p-5 space-y-4">{children}</div>
-      <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">{footer}</div>
+      <div className="p-5 border-t border-[var(--border)] flex flex-wrap gap-3 shrink-0">{footer}</div>
     </motion.div>
   </div>
   )
@@ -705,7 +705,7 @@ const CloseShiftModal = ({ shift, onClose, onClosed }: { shift: POSShift; onClos
           </Field>
           </>)}
         </div>
-        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+        <div className="p-5 border-t border-[var(--border)] flex flex-wrap gap-3 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
           <button onClick={handleClose} disabled={saving || !cur}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 text-white font-semibold rounded-lg hover:bg-red-500 disabled:opacity-50">
@@ -769,7 +769,7 @@ const VoidBillModal = ({ bill, onClose, onVoided }: { bill: POSPendingBill; onCl
               placeholder={t('sales.placeholders.cancelReason')} />
           </Field>
         </div>
-        <div className="p-5 border-t border-[var(--border)] flex gap-3">
+        <div className="p-5 border-t border-[var(--border)] flex flex-wrap gap-3">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.close')}</button>
           <button onClick={handleVoid} disabled={saving || !reason.trim()}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-500/80 hover:bg-red-500 text-white font-semibold rounded-lg disabled:opacity-50">
@@ -1181,7 +1181,7 @@ const Sales = () => {
   // ── Search filter ──────────────────────────────────────────────────────────
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo,   setDateTo]   = useState('')
-  const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'card'>(typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches ? 'card' : 'list')
   const [filterStatus, setFilterStatus] = useState<string>('')
   // เปลี่ยนคำค้น/ช่วงวันที่/ตัวกรองสถานะ → กลับหน้า 1 ไม่งั้นค้างหน้าที่ไม่มีแถวแล้ว
   useEffect(() => { setCurrentPage(1) }, [searchQuery, dateFrom, dateTo, filterStatus])
@@ -1462,7 +1462,7 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyQuotation')}</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1632,7 +1632,7 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyOrder')}</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -1884,7 +1884,7 @@ const Sales = () => {
             <p>{t('sales.emptyInvoice')}</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -2038,7 +2038,7 @@ const Sales = () => {
             <p>{t('sales.emptyCreditNote')}</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -2145,7 +2145,7 @@ const Sales = () => {
             <p>{t('sales.emptyBackorder')}</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -2237,7 +2237,7 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyDelivery')}</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
@@ -2553,7 +2553,7 @@ const Sales = () => {
 
       {/* Tabs */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap gap-1.5 bg-[var(--surface)] p-1.5 rounded-xl border border-[var(--border)]">
+        className="flex flex-wrap gap-1.5 bg-[var(--surface)] p-1.5 rounded-xl border border-[var(--border)] tab-scroll">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setSearchQuery(''); setActiveTab(tab.id as any) }}
             className={`relative flex items-center gap-2 px-3 py-2.5 rounded-lg font-medium text-sm transition-all ${
@@ -2562,7 +2562,7 @@ const Sales = () => {
                 : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)]'
             }`}>
             <tab.icon className="w-4 h-4" />
-            <span className="hidden md:inline">{tab.label}</span>
+            <span>{tab.label}</span>
             {tab.badge > 0 && (
               <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
                 activeTab === tab.id ? 'bg-[var(--bg)] text-[var(--primary)]' : 'bg-[var(--warning-soft)] text-warning'
@@ -2785,7 +2785,7 @@ function QuickAddCustomerModal({ onClose, onCreated }: {
           </div>
           <VatModeField value={vatMode} onChange={setVatMode} />
         </div>
-        <div className="p-4 border-t border-[var(--border)] flex gap-2">
+        <div className="p-4 border-t border-[var(--border)] flex flex-wrap gap-2">
           <button onClick={onClose} className="px-3 py-2 text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 py-2 bg-phopy-indigo text-white font-semibold rounded-lg text-sm hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center justify-center gap-1">
@@ -3043,8 +3043,8 @@ function LineItemsEditor({
         const selectedProduct = products.find(p => p.id === item.productId)
         return (
         <div key={item._key ?? `i${i}`} className="bg-[var(--surface-2)] p-3 rounded-lg space-y-2">
-          <div className="grid grid-cols-12 gap-2 items-end">
-            <div className="col-span-5">
+          <div className="grid grid-cols-2 gap-2 items-end sm:grid-cols-12">
+            <div className="col-span-2 sm:col-span-5">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.product')}</label>
               <ProductSearch
                 value={item.productId ? { id: item.productId, name: item.productName } : item.productName ? { id: undefined, name: item.productName } : null}
@@ -3079,13 +3079,13 @@ onClear={() => update(i, { productId: undefined, productName: '', unit: '', unit
                   className="mt-1 w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo" />
               )}
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.qty')}</label>
               <input type="number" value={item.quantity} min={0.01} step={0.01}
                 onChange={e => update(i, { quantity: parseFloat(e.target.value) || 0 })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.unit')}</label>
               <UnitSelectForRow
                 productId={item.productId}
@@ -3108,19 +3108,19 @@ onClear={() => update(i, { productId: undefined, productName: '', unit: '', unit
                 baseUnit={selectedProduct?.base_unit || selectedProduct?.unit}
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.unitPrice')}</label>
               <input type="number" value={item.unitPrice} min={0} step={0.01}
                 onChange={e => update(i, { unitPrice: parseFloat(e.target.value) || 0, priceEdited: true })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.itemEditor.discountPercent')}</label>
               <input type="number" value={item.discountPercent} min={0} max={100}
                 onChange={e => update(i, { discountPercent: parseFloat(e.target.value) || 0 })}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
-            <div className="col-span-1 flex justify-end pb-1">
+            <div className="col-span-2 sm:col-span-1 flex justify-end pb-1">
               {items.length > 1 && (
                 <button type="button" onClick={() => remove(i)} className="p-1.5 text-danger hover:bg-[var(--danger-soft)] rounded-lg">
                   <X className="w-3.5 h-3.5" />
@@ -3375,7 +3375,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
           <TotalsSummary items={items} mode={effectiveVatMode} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} extraCharge={extraCharge} setExtraCharge={setExtraCharge} onEditVat={scrollToVatSelector} />
         </div>
 
-        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+        <div className="p-5 border-t border-[var(--border)] flex flex-wrap gap-3 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 disabled:opacity-50 text-sm">
@@ -3716,7 +3716,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
           <TotalsSummary items={items} mode={effectiveVatMode} discountAmount={discountAmount} setDiscountAmount={setDiscountAmount} extraCharge={extraCharge} setExtraCharge={setExtraCharge} onEditVat={scrollToVatSelector} />
         </div>
 
-        <div className="p-5 border-t border-[var(--border)] flex gap-3 shrink-0">
+        <div className="p-5 border-t border-[var(--border)] flex flex-wrap gap-3 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-purple-500 text-[var(--fg-1)] font-semibold rounded-lg hover:bg-purple-600 disabled:opacity-50 text-sm">
@@ -4149,7 +4149,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               <div>
                 <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.common.items')}</p>
                 <div className="border border-[var(--border)] rounded-xl overflow-hidden">
-                  <div className="grid grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
+                  <div className="hidden sm:grid sm:grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
                     <span className="col-span-5">{t('sales.common.product')}</span>
                     <span className="col-span-2 text-center">{t('sales.common.qty')}</span>
                     <span className="col-span-2 text-right">{t('sales.common.unitPrice')}</span>
@@ -4157,15 +4157,15 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                     <span className="col-span-2 text-right">{t('sales.common.lineTotal')}</span>
                   </div>
                   {(detail?.items || []).map((it: any, i: number) => (
-                    <div key={i} className={`grid grid-cols-12 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
-                      <div className="col-span-5">
+                    <div key={i} className={`grid grid-cols-2 gap-2 sm:grid-cols-12 sm:gap-0 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
+                      <div className="col-span-2 sm:col-span-5">
                         <p className="text-[var(--fg-1)] font-medium">{it.product_name || `${t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
                         {it.product_code && <p className="text-xs text-[var(--fg-4)] font-mono">{it.product_code}</p>}
                       </div>
-                      <p className="col-span-2 text-center text-[var(--fg-2)]">{it.quantity} {unitLabel(it.unit || '')}</p>
-                      <p className="col-span-2 text-right text-[var(--fg-2)]">{fmt(it.unit_price)}</p>
-                      <p className="col-span-1 text-right text-[var(--fg-4)] text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
-                      <p className="col-span-2 text-right text-[var(--fg-1)] font-semibold">{fmt(it.total_price)}</p>
+                      <p className="col-span-1 sm:col-span-2 sm:text-center text-[var(--fg-2)]">{it.quantity} {unitLabel(it.unit || '')}</p>
+                      <p className="col-span-1 sm:col-span-2 text-right text-[var(--fg-2)]">{fmt(it.unit_price)}</p>
+                      <p className="col-span-1 sm:col-span-1 sm:text-right text-[var(--fg-4)] text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
+                      <p className="col-span-1 sm:col-span-2 text-right text-[var(--fg-1)] font-semibold">{fmt(it.total_price)}</p>
                     </div>
                   ))}
                 </div>
@@ -4219,7 +4219,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                             </div>
                             <p className="text-success font-bold ml-3">{fmt(r.amount)}</p>
                           </div>
-                          <div className="flex gap-1 mt-2">
+                          <div className="flex flex-wrap gap-1 mt-2">
                             <button onClick={() => handlePrintReceipt(r, 'a4')}
                               className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
                               <Printer className="w-3 h-3" /> A4
@@ -4303,7 +4303,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                     { dr: false, account: t('sales.paymentAccount.receivable'), label: t('sales.paymentModal.creditLabel'), amount: parseFloat(payAmount) || 0 },
                   ]} />
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
                     <button onClick={handleRecordPayment} disabled={saving}
                       className="flex-1 py-2 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-1">
@@ -4548,30 +4548,30 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
                 <div className="text-center py-6 text-[var(--fg-4)] text-sm">{t('sales.creditNoteModal.noReturnItems')}</div>
               ) : (
                 <div className="border border-[var(--border)] rounded-xl overflow-hidden">
-                  <div className="grid grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
+                  <div className="hidden sm:grid sm:grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
                     <span className="col-span-1"></span>
                     <span className="col-span-5">{t('sales.common.product')}</span>
                     <span className="col-span-3 text-center">{t('sales.creditNoteModal.returnQty')}</span>
                     <span className="col-span-3 text-right">{t('sales.common.lineTotal')}</span>
                   </div>
                   {returnLines.map((l, i) => (
-                    <div key={l.invoiceItemId} className={`grid grid-cols-12 px-3 py-2.5 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
-                      <div className="col-span-1">
+                    <div key={l.invoiceItemId} className={`grid grid-cols-2 gap-2 sm:grid-cols-12 sm:gap-0 px-3 py-2.5 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
+                      <div className="col-span-2 sm:col-span-1">
                         <button type="button" onClick={() => toggleLine(i)}
                           className={`w-5 h-5 rounded border flex items-center justify-center ${l.checked ? 'bg-warning border-warning text-white' : 'border-[var(--border)] text-transparent'}`}>
                           <Check className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <div className="col-span-5">
+                      <div className="col-span-2 sm:col-span-5">
                         <p className="text-[var(--fg-1)] font-medium">{l.productName}</p>
                         <p className="text-xs text-[var(--fg-4)]">{t('sales.creditNoteModal.soldQty')}: {l.maxQty}</p>
                       </div>
-                      <div className="col-span-3 flex justify-center">
+                      <div className="col-span-1 sm:col-span-3 flex sm:justify-center">
                         <input type="number" min={0} max={l.maxQty} step="any" disabled={!l.checked}
                           value={l.qty} onChange={e => setLineQty(i, parseFloat(e.target.value) || 0)}
                           className="w-20 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-center text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo disabled:opacity-40" />
                       </div>
-                      <p className="col-span-3 text-right text-[var(--fg-1)] font-semibold">{fmt(l.checked ? l.qty * l.unitPrice : 0)}</p>
+                      <p className="col-span-1 sm:col-span-3 text-right text-[var(--fg-1)] font-semibold">{fmt(l.checked ? l.qty * l.unitPrice : 0)}</p>
                     </div>
                   ))}
                 </div>
@@ -4609,7 +4609,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
           </div>
         </div>
 
-        <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-3">
+        <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap gap-3">
           <button onClick={onClose} className="px-4 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
           <button onClick={handleSave} disabled={saving || exceedsRemaining}
             className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-1">
@@ -4711,7 +4711,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
           </div>
         </div>
 
-        <div className="p-5 border-t border-[var(--border)] shrink-0 flex gap-2">
+        <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap gap-2">
           <button onClick={handlePrint} title={t('sales.actions.printCreditNoteA4')}
             className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
             <Printer className="w-4 h-4" />
@@ -4806,7 +4806,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
               {items.map((item: any, i: number) => (
                 <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
                   <p className="text-[var(--fg-1)] font-medium">{item.product_name || item.productName}</p>
-                  <div className="flex gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
+                  <div className="flex flex-wrap gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
                     <span>{t('sales.backorderDetail.ordered')} <span className="text-[var(--fg-1)]">{item.ordered_qty ?? item.quantity}</span></span>
                     <span>{t('sales.backorderDetail.delivered')} <span className="text-success">{item.delivered_qty ?? 0}</span></span>
                     <span>{t('sales.backorderDetail.remaining')} <span className="text-warning">{item.remaining_qty ?? ((item.ordered_qty ?? item.quantity) - (item.delivered_qty ?? 0))}</span></span>
@@ -4822,7 +4822,7 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
         </div>
 
         {backorder.status === 'PENDING' && (
-          <div className="p-5 border-t border-[var(--border)] shrink-0">
+          <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap">
             <button onClick={handleFulfill} disabled={saving}
               className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-4 h-4" />}
@@ -4905,7 +4905,7 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
               {items.map((item: any, i: number) => (
                 <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
                   <p className="text-[var(--fg-1)] font-medium">{item.product_name}</p>
-                  <div className="flex gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
+                  <div className="flex flex-wrap gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
                     <span>{t('sales.backorderDetail.ordered')} <span className="text-[var(--fg-1)]">{item.ordered_qty ?? '-'}</span></span>
                     <span>{t('sales.backorderDetail.delivered')} <span className="text-success">{item.quantity}</span> {item.unit || ''}</span>
                   </div>
@@ -4920,7 +4920,7 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
         </div>
 
         {deliveryOrder.status === 'SHIPPED' && (
-          <div className="p-5 border-t border-[var(--border)] shrink-0">
+          <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap">
             <button onClick={handleDeliver} disabled={saving}
               className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
