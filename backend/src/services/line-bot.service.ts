@@ -1267,7 +1267,8 @@ class LineBotService {
         // ── text message ──────────────────────────────────────────────────────
         if (event.type === 'message' && event.message.type === 'text') {
             const text = event.message.text.trim()
-            const lower = text.toLowerCase()
+            // คนชินพิมพ์ /demo /help แบบแอปแชทอื่น — ตัด / นำหน้าทิ้ง ไม่งั้นหลุดไป AI fallback
+            const lower = text.toLowerCase().replace(/^\//, '')
 
             // ── Registration gate ─────────────────────────────────────────────
             // คนที่ยังไม่ผูกใช้ได้แค่ "ลิงก์ XXXXXX" + ปุ่มในเมนู guest (วิธีเชื่อมบัญชี / ช่วยเหลือ)
