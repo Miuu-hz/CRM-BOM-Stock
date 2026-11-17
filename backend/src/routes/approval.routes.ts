@@ -292,7 +292,8 @@ router.get('/pending', async (req: Request, res: Response) => {
 
     const hasLeavePerm = isBlanketApprover || moduleTypes.includes('leave')
     const hasSwapPerm = isBlanketApprover || moduleTypes.includes('shift_swap')
-    const queryModules = [...moduleTypes, ...(hasLeavePerm ? [] : ['leave']), ...(hasSwapPerm ? [] : ['shift_swap'])]
+    const hasOffsitePerm = isBlanketApprover || moduleTypes.includes('offsite')
+    const queryModules = [...moduleTypes, ...(hasLeavePerm ? [] : ['leave']), ...(hasSwapPerm ? [] : ['shift_swap']), ...(hasOffsitePerm ? [] : ['offsite'])]
 
     // Get pending requests for these modules
     const placeholders = queryModules.map(() => '?').join(',')
@@ -314,7 +315,8 @@ router.get('/pending', async (req: Request, res: Response) => {
     // หมวดลา/แลกกะ: ไม่มีสิทธิ์รวม → เห็นเฉพาะของลูกทีมแผนกตรง
     const requests = rows.filter(r =>
       (r.module_type !== 'leave' || hasLeavePerm || isLeaveManagerFor(tenantId, userId, r.reference_id)) &&
-      (r.module_type !== 'shift_swap' || hasSwapPerm || isLeaveManagerFor(tenantId, userId, r.reference_id, 'shift_swap')))
+      (r.module_type !== 'shift_swap' || hasSwapPerm || isLeaveManagerFor(tenantId, userId, r.reference_id, 'shift_swap')) &&
+      (r.module_type !== 'offsite' || hasOffsitePerm || isLeaveManagerFor(tenantId, userId, r.reference_id, 'offsite')))
 
     res.json({ success: true, data: requests })
   } catch (error) {
@@ -643,6 +645,10 @@ function executeApprovedAction(request: any, executorId: string, executorName: s
     db.prepare(
       "UPDATE employee_advances SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
     ).run(executorId, now, now, request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'offsite_requests') {
+    db.prepare(
+      "UPDATE offsite_requests SET status = 'APPROVED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(executorId, now, now, request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'shift_swaps') {
     // สลับกะที่มีผลจริงของสองคนในวันนั้น (แถว shift_assignments ชนะกะประจำ; ไม่มีแถว = กะประจำ)
     const sw = db.prepare("SELECT * FROM shift_swaps WHERE id = ? AND tenant_id = ? AND status = 'PENDING'").get(request.reference_id, request.tenant_id) as any
@@ -725,6 +731,10 @@ function revertReferenceStatus(request: any, actorId?: string, now = new Date().
     ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)  } else if (request.reference_type === 'employee_advances') {
     db.prepare(
       "UPDATE employee_advances SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
+    ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)
+  } else if (request.reference_type === 'offsite_requests') {
+    db.prepare(
+      "UPDATE offsite_requests SET status = 'REJECTED', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND status = 'PENDING'"
     ).run(actorId ?? null, now, now, request.reference_id, request.tenant_id)
   } else if (request.reference_type === 'shift_swaps') {
     db.prepare(

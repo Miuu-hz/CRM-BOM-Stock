@@ -469,7 +469,7 @@ class LineBotService {
         blanketUsers.forEach(u => targets.add(u.line_user_id))
         specificUsers.forEach(u => targets.add(u.line_user_id))
         // คำขอ HR: หัวหน้าแผนกอนุมัติลาลูกทีมได้โดยไม่ต้องเป็น ADMIN → แจ้งทุกคนที่อนุมัติรายการนี้ได้จริง (กติกาเดียวกับปุ่ม "รออนุมัติ")
-        if (['leave', 'advance', 'shift_swap'].includes(req.module_type)) {
+        if (['leave', 'advance', 'shift_swap', 'offsite'].includes(req.module_type)) {
             const linked = db.prepare(`
                 SELECT lum.line_user_id, lum.user_id, u.email, COALESCE(u.role, lum.role) AS role
                 FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id

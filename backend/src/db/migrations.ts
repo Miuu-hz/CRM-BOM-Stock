@@ -3549,6 +3549,31 @@ export function runMonthCloseMigrations(db: any): void {
       CREATE INDEX IF NOT EXISTS idx_line_event_logs_tenant_time ON line_event_logs(tenant_id, created_at);
     `)
   } catch (e) { console.error('⚠️ line_event_logs migration error:', e) }
+
+  // ==================== ขอทำงานนอกสถานที่ (สัญญากลาง docs/contracts/hr-offsite.md) ====================
+  // อนุมัติแล้ว → วันในช่วงนั้นเช็คอินได้ทุกที่ แถว attendance_logs ติด offsite_request_id
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS offsite_requests (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        place TEXT NOT NULL,
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED')),
+        approval_request_id TEXT,
+        requested_by TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_offsite_requests_emp ON offsite_requests(tenant_id, employee_id, start_date);
+    `)
+    try { db.exec('ALTER TABLE attendance_logs ADD COLUMN offsite_request_id TEXT') } catch { /* มีแล้ว */ }
+  } catch (e) { console.error('⚠️ offsite_requests migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

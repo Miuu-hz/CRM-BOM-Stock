@@ -42,13 +42,14 @@ const MODULE_LABELS: Record<string, string> = {
   leave:             'ขอลา',
   advance:           'ขอเบิก/ยืมเงิน',
   shift_swap:        'ขอแลกกะ',
+  offsite:           'ขอทำงานนอกสถานที่',
 }
 
 const MODULE_ICON: Record<string, string> = {
   pos_void: '🧾', pos_discount: '🏷️', pos_price_override: '💲', pos_item_void: '🍳', pos_cash_move: '💵', pos_shift_close: '🔒',
   pos_invoice: '🧾', stock_adjust: '📦', stock_adjustments: '📦', doc_edit: '✏️',
   purchase_request: '📝', purchase_order: '🛒', sales_order: '📄', work_orders: '🏭',
-  pos_shift_expense: '💸', sales_cancel: '🚫', purchase_cancel: '🚫', leave: '🌴', advance: '💵', shift_swap: '🔁',
+  pos_shift_expense: '💸', sales_cancel: '🚫', purchase_cancel: '🚫', leave: '🌴', advance: '💵', shift_swap: '🔁', offsite: '📍',
 }
 
 // ระดับความร้ายแรง: backend ใส่ไว้ใน payload.severity ตอนลงบันทึก · แถวเก่า/หมวดอื่นเดาจากหมวด
