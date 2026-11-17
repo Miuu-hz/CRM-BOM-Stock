@@ -212,10 +212,10 @@ function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <>
-    <header className="phopy-header px-6 py-3 sticky top-0 z-40 h-16 transition-colors">
+    <header className="phopy-header px-2 sm:px-6 py-3 sticky top-0 z-40 h-16 transition-colors">
       <div className="flex items-center justify-between h-full">
         {/* Left Section */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1 sm:gap-4">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -308,7 +308,7 @@ function Header({ onMenuClick }: HeaderProps) {
         </div>
 
         {/* Right Section */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5 sm:gap-2">
 
           {/* Notifications */}
           <div ref={notifRef} className="relative">
@@ -386,7 +386,7 @@ function Header({ onMenuClick }: HeaderProps) {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/settings')}
-            className="p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] hidden sm:flex items-center justify-center cursor-pointer"
             aria-label={t('header.settings')}
           >
             <Settings className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
@@ -395,7 +395,7 @@ function Header({ onMenuClick }: HeaderProps) {
           {/* User Profile */}
           <motion.div
             whileHover={{ scale: 1.02 }}
-            className="phopy-profile-pill flex items-center gap-3 pl-2.5 pr-4 py-1.5 rounded-full transition-all cursor-pointer shadow-sm" 
+            className="phopy-profile-pill flex items-center gap-3 p-1 lg:pl-2.5 lg:pr-4 lg:py-1.5 rounded-full transition-all cursor-pointer shadow-sm" 
             onClick={() => navigate('/settings')}
           >
             <div className={`w-9 h-9 rounded-full flex items-center justify-center ${

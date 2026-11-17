@@ -501,3 +501,13 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* phone-mode: มือถือ + Fold ตอนพับ (< 640px)
+   หน้าเพจเกือบทุกหน้าเขียนหัวเป็น flex justify-between ไม่ wrap + ราก p-6 ซ้อนกับ main อีกชั้น
+   ponytail: กฎกลางตัวเดียวแทนแก้ทีละหน้า — หน้าไหนอยากคุมเองให้ใส่ class sm: ของตัวเอง */
+@media (max-width: 639px) {
+  #main-content > div > .p-6 { padding: 0; }
+  #main-content .p-6 { padding: 1rem; }
+  #main-content .flex.justify-between { flex-wrap: wrap; row-gap: 0.75rem; }
+  #main-content h1.text-3xl { font-size: 1.5rem; line-height: 2rem; }
+}

@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import Sidebar, { SidebarMode } from './Sidebar'
 import Header from './Header'
@@ -7,13 +7,48 @@ interface LayoutProps {
   children: ReactNode
 }
 
+// มือถือทั่วไป + Fold ตอนพับ (~340-430px) = โหมดมือถือ: ซ่อนเมนูข้าง กด ☰ แล้วเลื่อนออกมาทับ
+// Fold ตอนกาง (~700-900px) / แท็บเล็ต = แถบไอคอน · จอใหญ่ ≥1280 = เมนูเต็ม
+// ฟังการเปลี่ยนขนาดจอสด ๆ เพราะพับ/กาง Fold คือ viewport เปลี่ยนโดยไม่โหลดหน้าใหม่
+const PHONE_MQ = '(max-width: 767px)'
+const WIDE_MQ = '(min-width: 1280px)'
+const matches = (q: string) => typeof window !== 'undefined' && window.matchMedia(q).matches
+
 function Layout({ children }: LayoutProps) {
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'rail' : 'full'))
+  const [isPhone, setIsPhone] = useState(() => matches(PHONE_MQ))
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => (matches(WIDE_MQ) ? 'full' : 'rail'))
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const location = useLocation()
   const path = location.pathname
 
+  useEffect(() => {
+    const phone = window.matchMedia(PHONE_MQ)
+    const wide = window.matchMedia(WIDE_MQ)
+    const sync = () => {
+      setIsPhone(phone.matches)
+      setSidebarMode(wide.matches ? 'full' : 'rail')
+      setDrawerOpen(false)
+    }
+    phone.addEventListener('change', sync)
+    wide.addEventListener('change', sync)
+    return () => {
+      phone.removeEventListener('change', sync)
+      wide.removeEventListener('change', sync)
+    }
+  }, [])
+
+  // เลือกเมนูแล้วปิดลิ้นชักเอง
+  useEffect(() => setDrawerOpen(false), [path])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawerOpen(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
   const toggleSidebar = () =>
-    setSidebarMode(m => (m === 'full' ? 'rail' : 'full'))
+    isPhone ? setDrawerOpen(o => !o) : setSidebarMode(m => (m === 'full' ? 'rail' : 'full'))
 
   // Tier 3: ปิดแสงสำหรับหน้าที่ต้องการความคมชัดสูงสุด / POS / จอครัว / ภาษี
   const noLimelightRoutes = ['/cashier', '/kds', '/tax']
@@ -24,7 +59,7 @@ function Layout({ children }: LayoutProps) {
   const isSubtle = subtleRoutes.some(r => path.startsWith(r))
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
+    <div className="flex h-screen h-[100dvh] overflow-hidden bg-[var(--bg)]">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-phopy-indigo focus:text-white focus:font-semibold focus:rounded-md"
@@ -32,7 +67,17 @@ function Layout({ children }: LayoutProps) {
         ข้ามไปเนื้อหาหลัก
       </a>
 
-      <Sidebar mode={sidebarMode} />
+      {!isPhone && <Sidebar mode={sidebarMode} />}
+
+      {/* ลิ้นชักมือถือ — ห้ามใส่ class "flex" ที่ตัว fixed inset-0 ไม่งั้นโดนกฎกลาง modal ใน index.css ตัดความสูง */}
+      {isPhone && drawerOpen && (
+        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} aria-hidden="true" />
+          <div className="relative flex h-full w-[280px] max-w-[85vw] shadow-2xl">
+            <Sidebar mode="full" />
+          </div>
+        </div>
+      )}
 
       <div className="relative flex-1 flex flex-col overflow-hidden min-w-0">
         {/* แสงสาด Limelight Backdrop ส่องตั้งแต่ขอบบนสุดของหน้าต่าง
@@ -50,7 +95,7 @@ function Layout({ children }: LayoutProps) {
 
         <main
           id="main-content"
-          className={`relative flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-4 sm:p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
+          className={`relative flex-1 overflow-y-auto overflow-x-hidden phopy-scrollbar p-3 sm:p-6 ${isSubtle ? 'limelight-subtle' : ''}`}
         >
           <div className="max-w-[1920px] mx-auto">
             {children}
