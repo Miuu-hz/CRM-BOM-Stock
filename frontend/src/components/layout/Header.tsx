@@ -227,7 +227,7 @@ function Header({ onMenuClick }: HeaderProps) {
           </motion.button>
 
           {/* Search Bar */}
-          <div ref={searchRef} className="relative hidden md:block" role="search">
+          <div ref={searchRef} className="relative hidden lg:block" role="search">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-4)] pointer-events-none" aria-hidden="true" />
             <input
               ref={inputRef}
@@ -243,7 +243,7 @@ function Header({ onMenuClick }: HeaderProps) {
                 else if (e.key === 'ArrowUp') { e.preventDefault(); setShowResults(true); setActiveIndex(i => (i <= 0 ? flatItems.length - 1 : i - 1)) }
                 else if (e.key === 'Enter' && showResults) { e.preventDefault(); handleResultClick(flatItems[activeIndex >= 0 ? activeIndex : 0]) }
               }}
-              className="w-64 lg:w-96 h-10 pl-10 pr-10 text-sm rounded-full bg-[var(--surface-2)]/60 hover:bg-[var(--surface)]/90 focus:bg-[var(--surface)] border border-[var(--border)]/60 hover:border-phopy-indigo/40 focus:border-phopy-indigo text-[var(--fg-1)] placeholder-[var(--fg-4)] transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-phopy-indigo/15 shadow-sm"
+              className="w-64 xl:w-96 h-10 pl-10 pr-10 text-sm rounded-full bg-[var(--surface-2)]/60 hover:bg-[var(--surface)]/90 focus:bg-[var(--surface)] border border-[var(--border)]/60 hover:border-phopy-indigo/40 focus:border-phopy-indigo text-[var(--fg-1)] placeholder-[var(--fg-4)] transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-phopy-indigo/15 shadow-sm"
             />
             {isSearching ? (
               <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--primary)] animate-spin" aria-hidden="true" />
