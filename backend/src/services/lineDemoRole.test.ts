@@ -34,14 +34,32 @@ const press = (t: string, u: string, role: string) => send(t, u, { type: 'postba
 const row = (t: string, u: string) => db.prepare('SELECT role, demo_role FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?').get(t, u) as any
 
 describe('LINE โหมด demo', () => {
-    it('MASTER พิมพ์ demo → ได้ quick reply 4 ปุ่ม postback', async () => {
+    it('ยังไม่ผูกบัญชี → เมนู guest, คำสั่งทั่วไปโดนด่านผูกบัญชี, ช่วยเหลือยังใช้ได้, พิมพ์ demo กลับมาเลือกใหม่ได้', async () => {
+        const { replies, sync } = rig(), u = 'U' + generateId(), t = member('MASTER', u)
+        await press(t, u, 'GUEST')
+        expect(row(t, u)).toEqual({ role: 'MASTER', demo_role: 'GUEST' })
+        expect(sync).toHaveBeenLastCalledWith(t, 't', u, 'guest')
+
+        await say(t, u, 'ยอดขายวันนี้')
+        expect(replies.at(-1).text).toContain('ยังไม่ได้เชื่อม')
+        await say(t, u, 'เช็คอิน')
+        expect(replies.at(-1).text).toContain('ยังไม่ได้เชื่อม')
+
+        await say(t, u, 'demo')
+        expect(replies.at(-1).quickReply.items).toHaveLength(5)
+        await press(t, u, 'off')
+        await say(t, u, 'ยอดขายวันนี้')
+        expect(replies.at(-1).text ?? '').not.toContain('ยังไม่ได้เชื่อม')
+    })
+
+    it('MASTER พิมพ์ demo → ได้ quick reply 5 ปุ่ม postback', async () => {
         const { replies } = rig(), u = 'U' + generateId(), t = member('MASTER', u)
         await say(t, u, 'demo')
         const items = replies[0].quickReply.items
-        expect(items).toHaveLength(4)
+        expect(items).toHaveLength(5)
         expect(items.every((i: any) => i.action.type === 'postback')).toBe(true)
         expect(items.map((i: any) => i.action.data)).toEqual([
-            'action=demo_role&role=ADMIN', 'action=demo_role&role=MANAGER', 'action=demo_role&role=USER', 'action=demo_role&role=off',
+            'action=demo_role&role=ADMIN', 'action=demo_role&role=MANAGER', 'action=demo_role&role=USER', 'action=demo_role&role=GUEST', 'action=demo_role&role=off',
         ])
     })
 

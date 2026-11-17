@@ -96,7 +96,7 @@ import { getLowStockItems } from '../routes/dashboard.routes'
 import { intakeBillImage, MAX_PENDING_PER_TENANT } from './billInbox.service'
 import { logLine, describeEvent, describeMessages } from './lineLog'
 
-const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน' }
+const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน', GUEST: 'ยังไม่ผูกบัญชี' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
 function centralChannel(): any {
     return getDb().prepare('SELECT * FROM line_channels WHERE is_active = 1 ORDER BY created_at LIMIT 1').get()
@@ -917,8 +917,9 @@ class LineBotService {
             db.prepare('UPDATE line_user_mappings SET role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role, tenantId, lineUserId)
         }
         // demo: MASTER ดูบอทเป็นตำแหน่งที่ต่ำกว่าได้ — ใช้เฉพาะเมื่อ role จริงเป็น MASTER (ค่าค้างของคนที่ไม่ใช่ MASTER ถูกเมินเสมอ)
-        if (role === 'MASTER' && ['ADMIN', 'MANAGER', 'USER'].includes(m.demo_role)) {
-            return { ...m, role: m.demo_role as string, menu: menuKeyForRole(m.demo_role) as MenuKey, realRole: 'MASTER', demo: true }
+        if (role === 'MASTER' && ['ADMIN', 'MANAGER', 'USER', 'GUEST'].includes(m.demo_role)) {
+            const menu: MenuKey = m.demo_role === 'GUEST' ? 'guest' : menuKeyForRole(m.demo_role)
+            return { ...m, role: m.demo_role as string, menu, realRole: 'MASTER', demo: true }
         }
         return { ...m, role, menu: menuKeyForRole(role) as MenuKey, realRole: role, demo: false }
     }
@@ -1277,11 +1278,13 @@ class LineBotService {
             const isLinkAttempt = bareOtp || lower.startsWith('ลิงก์ ') || lower.startsWith('/ลิงก์ ')
             const isHelp = ['-help', '/help', 'help', 'ช่วยเหลือ', '?', 'menu', 'เมนู'].includes(lower)
             const isHowToLink = ['วิธีเชื่อมบัญชี', 'เชื่อมบัญชี', 'link', '-link'].includes(lower)
-            const me = this.linkedUser(tenantId, event.source.userId)
-            if (me) {
+            const linked = this.linkedUser(tenantId, event.source.userId)
+            if (linked) {
                 // ไม่ await — อย่าให้การผูกเมนู (ครั้งแรกต้องอัปโหลดรูป) ถ่วงการตอบ
-                richMenus.syncUser(tenantId, client.token, event.source.userId, me.menu).catch(() => {})
+                richMenus.syncUser(tenantId, client.token, event.source.userId, linked.menu).catch(() => {})
             }
+            // demo "ยังไม่ผูกบัญชี": Master เห็นบอทแบบคนที่เพิ่งเพิ่มเพื่อน — ทุกข้อความทำเหมือนไม่มีการผูก ยกเว้นคำสั่ง demo (ทางกลับ)
+            const me = linked?.demo && linked.role === 'GUEST' && !['demo', 'โหมด demo'].includes(lower) ? null : linked
             if (!isLinkAttempt && !(src === 'user' && (isHelp || isHowToLink))) {
                 if (!me) {
                     if (src === 'user') {
@@ -1399,7 +1402,7 @@ class LineBotService {
                     const btn = (label: string, role: string) => ({ type: 'action', action: { type: 'postback', label, data: `action=demo_role&role=${role}`, displayText: label } })
                     await client.replyMessage(event.replyToken, {
                         type: 'text', text: `โหมด demo: เลือกตำแหน่งที่อยากดู\nตอนนี้: ${ROLE_LABEL[me.role] ?? me.role}`,
-                        quickReply: { items: [btn(ROLE_LABEL.ADMIN, 'ADMIN'), btn(ROLE_LABEL.MANAGER, 'MANAGER'), btn(ROLE_LABEL.USER, 'USER'), btn('กลับเป็น Master', 'off')] },
+                        quickReply: { items: [btn(ROLE_LABEL.ADMIN, 'ADMIN'), btn(ROLE_LABEL.MANAGER, 'MANAGER'), btn(ROLE_LABEL.USER, 'USER'), btn(ROLE_LABEL.GUEST, 'GUEST'), btn('กลับเป็น Master', 'off')] },
                     })
                 }
                 return
@@ -1481,7 +1484,7 @@ class LineBotService {
                     await client.replyMessage(event.replyToken, { type: 'text', text: '🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ' })
                     return
                 }
-                if (!['ADMIN', 'MANAGER', 'USER', 'off'].includes(role)) return
+                if (!['ADMIN', 'MANAGER', 'USER', 'GUEST', 'off'].includes(role)) return
                 db.prepare('UPDATE line_user_mappings SET demo_role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role === 'off' ? null : role, tenantId, lineUserId)
                 const now = this.linkedUser(tenantId, lineUserId)
                 if (!now) return
