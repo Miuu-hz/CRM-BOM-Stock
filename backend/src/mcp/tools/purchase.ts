@@ -2,6 +2,9 @@ import { z } from 'zod'
 import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import { invoiceUploadDir } from '../../routes/sales/shared'
 import { normalizeUnit } from '../../services/unitConversion.service'
 import { ok, checkApprovalPermission, checkCanApprove, matchStockItem, saveBase64Attachment, findDuplicateAttachment, resolveDocRef } from './shared'
 import { formatDocumentNumber, docYear, thaiDateStr } from '../../utils/id'
@@ -986,7 +989,8 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
     'attach_document_evidence',
     `แนบรูปภาพหรือเอกสารหลักฐาน (สลิปโอนเงิน, รูปใบเสร็จ/บิล, ใบส่งของ) เข้ากับเอกสารใดๆ ในระบบ / Attach evidence slip/photo to any document.
 รองรับทุกประเภทเอกสาร: PURCHASE_ORDER, GOODS_RECEIPT, PURCHASE_INVOICE, SUPPLIER_PAYMENT, PURCHASE_REQUEST, INVOICE, RECEIPT, POS_PAYMENT, STOCK_ADJUSTMENT
-ค้นหาด้วย ID หรือเลขที่เอกสาร (เช่น "PO-2026-00035", "GR-2026-00001", "INV-2026-00010") ได้อัตโนมัติ`,
+ค้นหาด้วย ID หรือเลขที่เอกสาร (เช่น "PO-2026-00035", "GR-2026-00001", "INV-2026-00010") ได้อัตโนมัติ
+รูปจาก LINE ให้ส่ง inbox_id แทน image_base64`,
     {
       doc_type: z.enum([
         'PURCHASE_ORDER',
@@ -1000,13 +1004,24 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
         'STOCK_ADJUSTMENT',
       ]).describe('ประเภทเอกสาร'),
       doc_id_or_number: z.string().describe('ID หรือเลขที่เอกสาร เช่น "PO-2026-00035", "GR-2026-00001", "INV-2026-00010"'),
-      image_base64: z.string().describe('ข้อมูลรูปภาพหรือเอกสารแบบ Base64 (มีหรือไม่มี data:image/...;base64, ก็ได้)'),
+      image_base64: z.string().optional().describe('ข้อมูลรูปภาพหรือเอกสารแบบ Base64 (มีหรือไม่มี data:image/...;base64, ก็ได้)'),
+      inbox_id: z.string().optional().describe('ID จากกล่องรับบิล LINE (รูปจาก LINE ให้ส่ง inbox_id แทน image_base64)'),
       file_name: z.string().optional().describe('ชื่อไฟล์ เช่น "slip.jpg", "receipt_20260918.png"'),
       mime_type: z.string().optional().describe('MIME type เช่น "image/jpeg", "image/png", "application/pdf"'),
       notes: z.string().optional().describe('บันทึกช่วยจำ'),
     },
     async (args) => {
-      const { doc_type, doc_id_or_number, image_base64, file_name, mime_type } = args
+      const { doc_type, doc_id_or_number, image_base64, inbox_id, file_name, mime_type } = args
+
+      const hasBase64 = typeof image_base64 === 'string' && image_base64.trim().length > 0
+      const hasInbox = typeof inbox_id === 'string' && inbox_id.trim().length > 0
+      if ((hasBase64 && hasInbox) || (!hasBase64 && !hasInbox)) {
+        return ok({
+          success: false,
+          message: 'กรุณาระบุ image_base64 หรือ inbox_id อย่างใดอย่างหนึ่งเท่านั้น',
+        })
+      }
+
       const resolved = resolveDocRef(tenantId, doc_type, doc_id_or_number)
       if (!resolved) {
         return ok({
@@ -1015,39 +1030,118 @@ SUBMITTED = ส่งขออนุมัติ | APPROVED = อนุมัต
         })
       }
 
-      const dupImg = await findDuplicateAttachment(tenantId, image_base64)
-      if (dupImg) {
+      if (hasBase64) {
+        const dupImg = await findDuplicateAttachment(tenantId, image_base64!)
+        if (dupImg) {
+          return ok({
+            success: false,
+            code: 'DUPLICATE_ATTACHMENT',
+            existingDocNumber: dupImg.docNum,
+            message: `ไฟล์แนบซ้ำ: รูปหลักฐานนี้เคยอัปโหลดแนบไว้แล้วใน${dupImg.label} ${dupImg.docNum}`,
+          })
+        }
+
+        try {
+          const att = await saveBase64Attachment({
+            tenantId,
+            userId,
+            refType: doc_type,
+            refId: resolved.id,
+            base64Data: image_base64!,
+            fileName: file_name,
+            mimeType: mime_type,
+          })
+
+          return ok({
+            success: true,
+            message: `แนบหลักฐานเข้ากับ ${doc_type} (${resolved.doc_num}) สำเร็จ`,
+            attachment: {
+              id: att.id,
+              doc_type,
+              doc_id: resolved.id,
+              doc_number: resolved.doc_num,
+              original_name: att.original_name,
+              file_size_bytes: att.file_size,
+              file_path: att.file_path,
+            },
+          })
+        } catch (err: any) {
+          return ok({
+            success: false,
+            message: `เกิดข้อผิดพลาดในการบันทึกไฟล์แนบ: ${err?.message || err}`,
+          })
+        }
+      }
+
+      // ทาง inbox_id
+      const trimmedInboxId = inbox_id!.trim()
+      const inboxRow = db.prepare(
+        'SELECT * FROM bill_inbox WHERE id = ? AND tenant_id = ?'
+      ).get(trimmedInboxId, tenantId) as any
+
+      if (!inboxRow) {
         return ok({
           success: false,
-          code: 'DUPLICATE_ATTACHMENT',
-          existingDocNumber: dupImg.docNum,
-          message: `ไฟล์แนบซ้ำ: รูปหลักฐานนี้เคยอัปโหลดแนบไว้แล้วใน${dupImg.label} ${dupImg.docNum}`,
+          message: `ไม่พบบิล ID "${trimmedInboxId}" ในกล่องรับบิลของกิจการนี้`,
+        })
+      }
+      if (inboxRow.status !== 'PENDING') {
+        return ok({
+          success: false,
+          message: `บิล "${trimmedInboxId}" ไม่อยู่ในสถานะ PENDING (สถานะปัจจุบัน: ${inboxRow.status})`,
         })
       }
 
-      try {
-        const att = await saveBase64Attachment({
-          tenantId,
-          userId,
-          refType: doc_type,
-          refId: resolved.id,
-          base64Data: image_base64,
-          fileName: file_name,
-          mimeType: mime_type,
+      const absFilePath = path.join(invoiceUploadDir, path.basename(inboxRow.file_path))
+      if (!fs.existsSync(absFilePath)) {
+        return ok({
+          success: false,
+          message: `ไม่พบไฟล์รูปภาพของบิล "${trimmedInboxId}" บนดิสก์`,
         })
+      }
+
+      const ext = path.extname(inboxRow.file_path) || '.jpg'
+      const createdAt10 = (inboxRow.created_at || '').substring(0, 10)
+      const inboxId6 = trimmedInboxId.substring(0, 6)
+      const originalName = file_name?.trim() || `bill-${createdAt10}-${inboxId6}${ext}`
+      const fileSize = Number(inboxRow.file_size) || (fs.existsSync(absFilePath) ? fs.statSync(absFilePath).size : 0)
+      const uploadedBy = inboxRow.user_id || userId
+      const attachmentId = randomUUID().replace(/-/g, '').substring(0, 25)
+      const now = new Date().toISOString()
+
+      try {
+        const attachTx = db.transaction(() => {
+          db.prepare(`
+            INSERT INTO payment_attachments (id, tenant_id, ref_type, ref_id, file_path, original_name, file_size, uploaded_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(attachmentId, tenantId, doc_type, resolved.id, inboxRow.file_path, originalName, fileSize, uploadedBy, now)
+
+          db.prepare(`
+            UPDATE bill_inbox
+            SET status = 'ATTACHED',
+                ref_type = ?,
+                ref_id = ?,
+                attachment_id = ?,
+                processed_by = ?,
+                processed_at = ?
+            WHERE id = ? AND tenant_id = ?
+          `).run(doc_type, resolved.id, attachmentId, userId, now, trimmedInboxId, tenantId)
+        })
+        attachTx()
 
         return ok({
           success: true,
           message: `แนบหลักฐานเข้ากับ ${doc_type} (${resolved.doc_num}) สำเร็จ`,
           attachment: {
-            id: att.id,
+            id: attachmentId,
             doc_type,
             doc_id: resolved.id,
             doc_number: resolved.doc_num,
-            original_name: att.original_name,
-            file_size_bytes: att.file_size,
-            file_path: att.file_path,
+            original_name: originalName,
+            file_size_bytes: fileSize,
+            file_path: `/storage/payment-attachments/${inboxRow.file_path}`,
           },
+          inbox_id: trimmedInboxId,
         })
       } catch (err: any) {
         return ok({

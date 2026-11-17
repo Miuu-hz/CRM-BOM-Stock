@@ -93,6 +93,7 @@ import { richMenus, menuKeyForRole, effectiveRole, MENUS, MenuKey } from './line
 import { posSales, ledgerRevenue, ledgerCogs, ledgerOpex, thaiToday, addDaysStr } from './phopyBoard.service'
 import { canApprove } from './approvalGate.service'
 import { getLowStockItems } from '../routes/dashboard.routes'
+import { intakeBillImage, MAX_PENDING_PER_TENANT } from './billInbox.service'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -222,6 +223,15 @@ class LineBotService {
                 inner.getGroupMemberProfile(groupId, userId),
             getRoomMemberProfile: (roomId: string, userId: string) =>
                 inner.getRoomMemberProfile(roomId, userId),
+            getMessageContent: async (messageId: string): Promise<Buffer> => {
+                const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+                    headers: { Authorization: `Bearer ${config.channel_access_token}` },
+                })
+                if (!res.ok) throw new Error(`LINE content fetch failed: HTTP ${res.status}`)
+                const buf = Buffer.from(await res.arrayBuffer())
+                if (buf.length > 10 * 1024 * 1024) throw new Error('LINE content exceeds 10MB')
+                return buf
+            },
         }
     }
 
@@ -1152,6 +1162,80 @@ class LineBotService {
             const groupId = event.source.groupId ?? event.source.roomId
             if (groupId) getDb().prepare('UPDATE line_group_mappings SET is_active = 0 WHERE group_id = ?').run(groupId)
             return
+        }
+
+        // ── image message (bill inbox) ─────────────────────────────────────────
+        if (event.type === 'message' && event.message.type === 'image') {
+            if (src !== 'user') return
+
+            const lineUserId = event.source?.userId
+            const mapping = lineUserId && tenantId
+                ? getDb().prepare('SELECT user_id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?').get(tenantId, lineUserId) as { user_id: string } | undefined
+                : undefined
+
+            if (!tenantId || !mapping) {
+                await this.handleHowToLinkCommand(event.replyToken, client)
+                return
+            }
+
+            let raw: Buffer
+            try {
+                raw = await client.getMessageContent(String(event.message.id))
+                if (!raw || raw.length > 10 * 1024 * 1024) throw new Error('Too large')
+            } catch {
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: 'ดึงรูปไม่สำเร็จ ลองส่งใหม่อีกครั้ง',
+                })
+                return
+            }
+
+            const res = await intakeBillImage({
+                tenantId,
+                lineUserId,
+                userId: mapping.user_id ?? null,
+                lineMessageId: String(event.message.id),
+                raw,
+            })
+
+            const imageSet = event.message.imageSet
+            const shouldReply = !imageSet || imageSet.index === imageSet.total
+            if (!shouldReply) return
+
+            if (res.ok) {
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: `📥 รับบิลแล้ว · รอลงบัญชี ${res.pending} ใบ`,
+                })
+                return
+            }
+
+            switch (res.reason) {
+                case 'DUPLICATE_IMAGE': {
+                    const text = res.docNum
+                        ? `⚠️ รูปนี้เคยแนบไว้แล้วใน${res.label} ${res.docNum} ไม่ได้เก็บซ้ำ`
+                        : '⚠️ รูปนี้ส่งมาแล้ว และยังรอลงบัญชีอยู่ ไม่ได้เก็บซ้ำ'
+                    await client.replyMessage(event.replyToken, { type: 'text', text })
+                    return
+                }
+                case 'INBOX_FULL': {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: `⚠️ บิลรอลงเต็ม ${MAX_PENDING_PER_TENANT} ใบแล้ว แจ้งผู้ดูแลให้เคลียร์ก่อน`,
+                    })
+                    return
+                }
+                case 'NOT_IMAGE': {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: 'ไฟล์นี้อ่านเป็นรูปไม่ได้ ลองถ่ายใหม่อีกครั้ง',
+                    })
+                    return
+                }
+                case 'DUPLICATE_MESSAGE':
+                default:
+                    return
+            }
         }
 
         // ── text message ──────────────────────────────────────────────────────

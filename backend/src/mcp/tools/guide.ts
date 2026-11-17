@@ -17,7 +17,7 @@ export const GUIDE_TOPICS: Record<string, string> = {
   overview: `(a) Area tools:
 - search(...): find stock items, BOMs, and customers using DB-anchored retrieval
 - summary: get_summary(...), get_sales(...), get_orders(...)
-- purchase: create_purchase_request(...), update_purchase_request(...), approve_purchase_request(...), reject_purchase_request(...), get_purchase_requests(...), convert_pr_to_po(...), create_draft_po(...), update_purchase_order(...), update_po_status(...), create_goods_receipt(...), confirm_goods_receipt(...), get_suppliers(...), attach_document_evidence(...)
+- purchase: create_purchase_request(...), update_purchase_request(...), approve_purchase_request(...), reject_purchase_request(...), get_purchase_requests(...), convert_pr_to_po(...), create_draft_po(...), update_purchase_order(...), update_po_status(...), create_goods_receipt(...), confirm_goods_receipt(...), get_suppliers(...), attach_document_evidence(...), list_bill_inbox(...), get_bill_image(...), discard_bill_inbox(...)
 - binding: bind_document_item(...)
 - purchase_billing: create_purchase_invoice(...), edit_purchase_invoice(...), pay_supplier(...), complete_purchase_bill(...)
 - stock: record_stock_movement(...), manage_unit_conversion(...), check_unit_issues(...), get_stock_movements(...), set_product_image(...)
@@ -58,9 +58,13 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - create_goods_receipt(...): create draft goods receipt (GR) from PO.
 - confirm_goods_receipt(...): confirm receipt, moving goods into inventory.
 - attach_document_evidence(...): attach image slip or evidence to document.
+- list_bill_inbox(...): list bills received from LINE inbox waiting to be processed.
+- get_bill_image(...): view bill image data and metadata by inbox_id.
+- discard_bill_inbox(...): discard pending bill with reason.
 (b) Call-order recipes:
 - PR to GR: create_purchase_request(...) -> approve_purchase_request(...) -> get_suppliers(...) -> convert_pr_to_po(...) -> update_po_status(...) -> create_goods_receipt(...) -> confirm_goods_receipt(...).
 - Direct PO: get_suppliers(...) -> create_draft_po(...) -> (if unbound lines, bind_document_item(...)) -> update_po_status(...) -> create_goods_receipt(...) -> confirm_goods_receipt(...).
+- Bill inbox to PO: list_bill_inbox(...) -> get_bill_image(...) -> search(...)/get_suppliers(...) -> create_draft_po(...) -> attach_document_evidence(...) with inbox_id.
 (c) Server guards & Thai errors:
 - Role & dept: requires purchasing department ("ไม่มีสิทธิ์สร้างใบสั่งซื้อ — ต้องเป็นฝ่ายจัดซื้อ"), receiving requires warehouse/purchase ("ไม่มีสิทธิ์ยืนยันรับสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง").
 - Approval limits: exceeding threshold blocks action ("วงเงินอนุมัติของคุณไม่เพียงพอ").
@@ -70,7 +74,8 @@ export const GUIDE_TOPICS: Record<string, string> = {
 (d) Pitfalls & fixes:
 - Unbound PO lines: inspect via bind_document_item(...) and bind to stock, or set skipStock: true + expenseAccountCode.
 - Converting PR without supplier: invoke get_suppliers(...) to obtain supplier_id before convert_pr_to_po(...).
-- Closed accounting period: confirm_goods_receipt(...) rejects if period is closed ("งวด ... ปิดแล้ว ยืนยันรับสินค้าวันที่นี้ไม่ได้"); change date to open period.`,
+- Closed accounting period: confirm_goods_receipt(...) rejects if period is closed ("งวด ... ปิดแล้ว ยืนยันรับสินค้าวันที่นี้ไม่ได้"); change date to open period.
+- Unclear bill image: if an image is unreadable or not a bill, ask the user before discard_bill_inbox(...); never discard on your own. One bill = one inbox_id (cannot attach one bill to multiple documents).`,
 
   purchase_billing: `(a) Area tools:
 - create_purchase_invoice(...): issue purchase invoice (PI) from confirmed goods receipts (GR).

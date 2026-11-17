@@ -8,7 +8,7 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface IMcpServer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tool(name: string, description: string, inputSchema: any, handler: (args: any) => Promise<{ content: Array<{ type: string; text: string }> }>): void
+  tool(name: string, description: string, inputSchema: any, handler: (args: any) => Promise<{ content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> }>): void
   connect(transport: ISSETransport | IStreamableHTTPTransport): Promise<void>
   close(): Promise<void>
 }

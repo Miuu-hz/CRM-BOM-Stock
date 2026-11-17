@@ -7,7 +7,8 @@ import { compressImage } from '../../utils/compressImage'
 import { approvalDenyReason } from '../../services/approvalGate.service'
 import { normName, findAliasTarget, isSellableItem } from '../../services/stockItem.service'
 
-export type ToolResult = { content: Array<{ type: 'text'; text: string }> }
+export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+export type ToolResult = { content: ToolContent[] }
 
 export const ok = (data: unknown): ToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],

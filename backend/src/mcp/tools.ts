@@ -11,6 +11,7 @@ import { registerSearchTool } from './tools/search'
 import { registerGuideTool } from './tools/guide'
 import { registerSummaryTools } from './tools/summary'
 import { registerPurchaseTools } from './tools/purchase'
+import { registerBillInboxTools } from './tools/billInbox'
 import { registerSalesTools } from './tools/sales'
 import { registerStockTools } from './tools/stock'
 import { registerProductionTools } from './tools/production'
@@ -39,11 +40,12 @@ export const READ_ONLY_TOOLS = new Set([
   'check_unit_issues', 'get_lead_source_performance',
   'get_close_checklist', 'get_close_pack',
   'hr_attendance_summary',
+  'list_bill_inbox', 'get_bill_image',
 ])
 
 // อ่านอย่างเดียวจริง แต่ไม่ติด readOnlyHint เพราะ client จะเก็บผลไว้ในเครื่องได้
 // ข้อมูลเวลาทำงานเป็นข้อมูลส่วนบุคคลของพนักงาน ไม่ควรค้างในมือถือ · ไม่กระทบสิทธิ์ของ READ_ONLY_TOOLS
-export const NO_READONLY_HINT = new Set(['hr_attendance_summary'])
+export const NO_READONLY_HINT = new Set(['hr_attendance_summary', 'get_bill_image'])
 
 export function registerTools(server: IMcpServer, tenantId: string, userId = 'mcp-agent'): void {
   // Resolve display name + role for audit trail and approval-permission checks
@@ -78,6 +80,7 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   registerGuideTool(target, tenantId)
   registerSummaryTools(target, tenantId)
   registerPurchaseTools(target, tenantId, userId, callerName, callerRole)
+  registerBillInboxTools(target, tenantId, userId)
   registerSalesTools(target, tenantId, userId, callerName, callerRole)
   registerStockTools(target, tenantId, userId, callerName, callerRole)
   registerProductionTools(target, tenantId, userId, callerRole)

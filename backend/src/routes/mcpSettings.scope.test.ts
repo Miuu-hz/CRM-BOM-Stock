@@ -23,6 +23,7 @@ const READ_ONLY_ALLOWLIST = new Set([
   'list_marketing_shops', 'platform_month_status', 'get_customer_insights', 'get_quotations',
   'check_unit_issues', 'get_lead_source_performance',
   'get_close_checklist', 'get_close_pack',
+  'list_bill_inbox', 'get_bill_image',
 ])
 
 // ตัวแทน write tool ที่ชื่อขึ้นต้นด้วย create_/update_/confirm_/pay_ ฯลฯ — ต้องไม่หลุดมาในโหมด readonly
