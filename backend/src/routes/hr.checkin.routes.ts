@@ -186,8 +186,27 @@ function ensureDevicePin(tenantId: string, employeeId: string, existingPin: stri
 function executeCheckin(
   tenantId: string,
   emp: any,
-  geo: { lat?: unknown; lng?: unknown; accuracy?: unknown }
+  geo: { lat?: unknown; lng?: unknown; accuracy?: unknown },
+  options: { allowOffsite?: boolean } = { allowOffsite: false }
 ): { status: number; body: any } {
+  const nowThai = thaiNowDateTime()
+  const today = nowThai.slice(0, 10)
+  const nowEpochMs = Date.parse(nowThai.replace(' ', 'T') + 'Z')
+
+  let approvedOffsite: { id: string } | undefined
+  if (options.allowOffsite) {
+    approvedOffsite = db
+      .prepare(
+        `SELECT id FROM offsite_requests
+         WHERE tenant_id = ? AND employee_id = ? AND status = 'APPROVED'
+           AND start_date <= ? AND end_date >= ?
+         ORDER BY created_at DESC LIMIT 1`
+      )
+      .get(tenantId, emp.id, today, today) as { id: string } | undefined
+  }
+
+  const isOffsite = Boolean(approvedOffsite)
+
   const loc = db
     .prepare('SELECT lat, lng, radius_m FROM hr_checkin_locations WHERE tenant_id = ?')
     .get(tenantId) as { lat: number; lng: number; radius_m: number } | undefined
@@ -207,7 +226,12 @@ function executeCheckin(
     lngNum <= 180
 
   let distanceM: number | null = null
-  if (loc) {
+  if (isOffsite) {
+    // ข้ามด่านรัศมี และไม่บังคับ GPS · ถ้าส่งพิกัดถูกต้องมาก็เก็บ lat/lng และ distance_m (เมื่อร้านตั้งจุดไว้) ตามเดิม
+    if (loc && validCoords) {
+      distanceM = Math.round(haversineMeters(Number(loc.lat), Number(loc.lng), latNum, lngNum))
+    }
+  } else if (loc) {
     if (!validCoords) {
       return {
         status: 400,
@@ -223,17 +247,18 @@ function executeCheckin(
     const accuracy = Number.isFinite(rawAcc) && rawAcc > 0 ? rawAcc : 0
     const maxDist = Number(loc.radius_m) + Math.min(accuracy, 100)
     if (rawDist > maxDist) {
+      const suffix =
+        options.allowOffsite
+          ? ' · ถ้าทำงานนอกสถานที่ให้ยื่นคำขอก่อน'
+          : ''
       return {
         status: 400,
-        body: { success: false, message: `อยู่นอกพื้นที่ร้าน (ห่าง ${distanceM} ม.)` },
+        body: { success: false, message: `อยู่นอกพื้นที่ร้าน (ห่าง ${distanceM} ม.)${suffix}` },
       }
     }
   }
 
   const devicePin = ensureDevicePin(tenantId, emp.id, emp.device_pin ?? null)
-  const nowThai = thaiNowDateTime()
-  const today = nowThai.slice(0, 10)
-  const nowEpochMs = Date.parse(nowThai.replace(' ', 'T') + 'Z')
 
   try {
     return db.transaction(() => {
@@ -264,10 +289,12 @@ function executeCheckin(
         .get(tenantId, devicePin, `${today} 00:00:00`, `${today} 23:59:59`)
       const kind: 'IN' | 'OUT' = existingToday ? 'OUT' : 'IN'
 
+      const offsiteRequestId = isOffsite ? approvedOffsite!.id : null
+
       db.prepare(
         `INSERT INTO attendance_logs (
-           id, tenant_id, device_pin, punched_at, source, import_id, lat, lng, distance_m, created_at
-         ) VALUES (?, ?, ?, ?, 'WEB', NULL, ?, ?, ?, ?)`
+           id, tenant_id, device_pin, punched_at, source, import_id, lat, lng, distance_m, created_at, offsite_request_id
+         ) VALUES (?, ?, ?, ?, 'WEB', NULL, ?, ?, ?, ?, ?)`
       ).run(
         generateId(),
         tenantId,
@@ -276,20 +303,26 @@ function executeCheckin(
         validCoords ? latNum : null,
         validCoords ? lngNum : null,
         distanceM,
-        new Date().toISOString()
+        new Date().toISOString(),
+        offsiteRequestId
       )
 
       const employeeName = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim()
+      const data: Record<string, any> = {
+        punched_at: nowThai,
+        kind,
+        employee_name: employeeName,
+        distance_m: distanceM,
+      }
+      if (options.allowOffsite) {
+        data.offsite = isOffsite
+      }
+
       return {
         status: 201,
         body: {
           success: true,
-          data: {
-            punched_at: nowThai,
-            kind,
-            employee_name: employeeName,
-            distance_m: distanceM,
-          },
+          data,
         },
       }
     })()
@@ -395,7 +428,7 @@ router.post('/checkin', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'บัญชีนี้ยังไม่ได้ผูกกับพนักงาน' })
     }
 
-    const result = executeCheckin(tenantId, emp, req.body || {})
+    const result = executeCheckin(tenantId, emp, req.body || {}, { allowOffsite: true })
     return res.status(result.status).json(result.body)
   } catch (error: any) {
     console.error('Self checkin error:', error)
@@ -461,7 +494,7 @@ router.post('/checkin/face', (req: Request, res: Response) => {
     }
 
     faceFailures.delete(lockKey)
-    const result = executeCheckin(tenantId, emp, req.body || {})
+    const result = executeCheckin(tenantId, emp, req.body || {}, { allowOffsite: true })
     return res.status(result.status).json(result.body)
   } catch (error: any) {
     console.error('Face checkin error:', error)
@@ -512,7 +545,7 @@ router.post('/checkin/pin', requirePermission('hr', 'read'), async (req: Request
 
     pinFailures.delete(lockKey)
 
-    const result = executeCheckin(tenantId, emp, body)
+    const result = executeCheckin(tenantId, emp, body, { allowOffsite: false })
     return res.status(result.status).json(result.body)
   } catch (error: any) {
     console.error('PIN checkin error:', error)
@@ -597,7 +630,7 @@ router.post('/checkin/face-kiosk', requirePermission('hr', 'read'), (req: Reques
     }
 
     faceFailures.delete(lockKey)
-    const result = executeCheckin(tenantId, winner, req.body || {})
+    const result = executeCheckin(tenantId, winner, req.body || {}, { allowOffsite: false })
     return res.status(result.status).json(result.body)
   } catch (error: any) {
     console.error('Kiosk face checkin error:', error)
@@ -632,7 +665,7 @@ router.get('/me/attendance', (req: Request, res: Response) => {
       ? (
           db
             .prepare(
-              `SELECT punched_at, source, distance_m
+              `SELECT punched_at, source, distance_m, offsite_request_id
                FROM attendance_logs
                WHERE tenant_id = ? AND device_pin = ? AND punched_at >= ? AND punched_at <= ?
                ORDER BY punched_at DESC, id DESC`
@@ -641,12 +674,22 @@ router.get('/me/attendance', (req: Request, res: Response) => {
             punched_at: string
             source: 'FILE' | 'MCP' | 'WEB' | 'DEVICE'
             distance_m: number | null
+            offsite_request_id: string | null
           }[]
-        ).map((r) => ({
-          punched_at: r.punched_at,
-          source: r.source,
-          distance_m: r.distance_m !== null && r.distance_m !== undefined ? Number(r.distance_m) : null,
-        }))
+        ).map((r) => {
+          const item: {
+            punched_at: string
+            source: 'FILE' | 'MCP' | 'WEB' | 'DEVICE'
+            distance_m: number | null
+            offsite?: boolean
+          } = {
+            punched_at: r.punched_at,
+            source: r.source,
+            distance_m: r.distance_m !== null && r.distance_m !== undefined ? Number(r.distance_m) : null,
+          }
+          item.offsite = Boolean(r.offsite_request_id)
+          return item
+        })
       : []
 
     const fullName = `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim()

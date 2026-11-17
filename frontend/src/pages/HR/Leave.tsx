@@ -20,6 +20,7 @@ import hrService, {
   Employee,
   LeaveStatus,
 } from '../../services/hr.service'
+import OffsiteList from './OffsiteList'
 
 type TabKey = 'requests' | 'balances' | 'types' | 'holidays'
 
@@ -1121,6 +1122,8 @@ export default function Leave() {
           </div>
         </div>
       )}
+      {/* ทำงานนอกสถานที่ (docs/contracts/hr-offsite.md O5) */}
+      <OffsiteList />
     </div>
   )
 }

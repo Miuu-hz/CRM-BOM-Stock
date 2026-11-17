@@ -48,6 +48,7 @@ import hrAssetService, { HrAssetLoan } from '../../services/hrAsset.service'
 import hrDocumentService, { EmployeeDocument, DocType } from '../../services/hrDocument.service'
 import hrDisciplineService, { DisciplinaryRecord } from '../../services/hrDiscipline.service'
 import PayslipPrint from './PayslipPrint'
+import MyOffsite from './MyOffsite'
 
 // ponytail: client-side formatted date helpers
 const getTodayStr = () => {
@@ -366,7 +367,8 @@ export default function MyHr() {
         const timeStr = fmtTime(res.punched_at)
         const kindText = res.kind === 'IN' ? 'เข้างาน' : 'ออกงาน'
         const distText = res.distance_m != null ? ` · ห่างร้าน ${Math.round(res.distance_m)} ม.` : ''
-        const bannerText = `${kindText} ${timeStr}${distText}`
+        const offsiteText = res.offsite ? ' · นอกสถานที่' : ''
+        const bannerText = `${kindText} ${timeStr}${distText}${offsiteText}`
         setCheckinSuccess(bannerText)
         toast.success(bannerText)
         reloadAttendance()
@@ -495,7 +497,8 @@ export default function MyHr() {
       const timeStr = fmtTime(res.punched_at)
       const kindText = res.kind === 'IN' ? 'เข้างาน' : 'ออกงาน'
       const distText = res.distance_m != null ? ` · ห่างร้าน ${Math.round(res.distance_m)} ม.` : ''
-      const bannerText = `${kindText} ${timeStr}${distText}`
+      const offsiteText = res.offsite ? ' · นอกสถานที่' : ''
+      const bannerText = `${kindText} ${timeStr}${distText}${offsiteText}`
       setCheckinSuccess(bannerText)
       toast.success(bannerText)
       reloadAttendance()
@@ -1346,6 +1349,11 @@ export default function MyHr() {
                         <span className="px-2 py-0.5 rounded text-xs bg-[var(--surface-2)] text-[var(--fg-3)]">
                           {log.source}
                         </span>
+                        {log.offsite && (
+                          <span className="ml-1.5 px-2 py-0.5 rounded text-xs bg-blue-500/15 text-blue-600 dark:text-blue-400 font-medium">
+                            นอกสถานที่
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 px-2 whitespace-nowrap font-mono">
                         {log.distance_m != null ? `${Math.round(log.distance_m)} ม.` : '-'}
@@ -1508,6 +1516,9 @@ export default function MyHr() {
           )}
         </div>
       </div>
+
+      {/* ทำงานนอกสถานที่ Card */}
+      <MyOffsite />
 
       {/* 4. สลิปเงินเดือน Card */}
       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
