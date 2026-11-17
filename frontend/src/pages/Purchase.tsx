@@ -1156,7 +1156,7 @@ const ReceiptListDialog = ({ docs, gaps, onClose }: { docs: any[]; gaps: any[]; 
                 </span>
               </button>
               {openId === d.id && (
-                <div className="px-3 pb-3">
+                <div className="px-3 pb-3 overflow-x-auto">
                   {!items[d.id] ? <div className="h-10 rounded-lg bg-[var(--surface-2)] animate-pulse" /> : (
                     <table className="w-full text-[11px]">
                       <thead><tr className="text-[var(--fg-4)]">
@@ -1397,7 +1397,7 @@ const Purchase = () => {
   // เปิดใบสั่งซื้อจากใบขอซื้อ = ผูกพันเงินกับผู้ขาย ใช้เกณฑ์เดียวกับงานที่ย้อนยากอื่น ๆ
   const canMakePO = canCancelDoc
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'orders' | 'receipts' | 'invoices' | 'payments' | 'returns'>('overview')
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
+  const [viewMode, setViewMode] = useState<'card' | 'list'>(typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches ? 'card' : 'list')
   // กางได้ทีละใบ — เก็บ id ใบเดียว จึงยิง doc-trail ครั้งละคำขอเดียว ไม่ถล่ม backend
   const [openRow, setOpenRow] = useState<string | null>(null)
   // ชิปกรองบนแถบค้นหา: ทั้งหมด / รอคุณจัดการ / ค้างจ่าย
@@ -3250,7 +3250,7 @@ const Purchase = () => {
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
           </div>
         </div>
-        <div className="p-5 border-t border-[var(--border)] flex gap-3">
+        <div className="p-5 border-t border-[var(--border)] flex flex-wrap gap-3">
           <button onClick={() => setConvertPRId(null)} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm transition-colors">{t('purchase.common.cancel')}</button>
           <button onClick={handleDoConvert} disabled={converting || !convertForm.supplier_id}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 transition-colors">
@@ -4118,7 +4118,7 @@ const Purchase = () => {
       onClose={closeModal}
       footer={
         modalMode === 'create' ? (
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={() => submitRequestFlow()} disabled={formLoading}
               className="px-4 py-2.5 text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-xl disabled:opacity-50 text-sm font-medium min-h-[44px]">
@@ -4139,7 +4139,7 @@ const Purchase = () => {
             />
           </div>
         ) : modalMode === 'edit' ? (
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={handleUpdateRequest} disabled={formLoading}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
@@ -4257,15 +4257,15 @@ const Purchase = () => {
                   className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
               {/* Row 2: qty + unit + price + total + delete */}
-              <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-2">
+              <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-center">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.quantity')}</label>
                   <input type="number" min="0" step="any" value={item.quantity}
                     onChange={e => updateRequestItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
                   <UnitPicker
                     value={item.unit || ''}
@@ -4278,7 +4278,7 @@ const Purchase = () => {
                     restrict="strict"
                   />
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-2 sm:col-span-3">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.requestModal.estimatedUnitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
@@ -4288,7 +4288,7 @@ const Purchase = () => {
                       className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
-                <div className="col-span-4 flex items-end justify-between">
+                <div className="col-span-2 sm:col-span-4 flex items-end justify-between">
                   <div>
                     <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.lineTotal')}</label>
                     <span className="text-sm font-semibold text-[var(--primary)]">{formatCurrency(item.estimated_total_price)}</span>
@@ -4391,7 +4391,7 @@ const Purchase = () => {
       onClose={closeModal}
       footer={
         modalMode === 'create' ? (
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={() => submitOrderFlow()} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
               className="px-4 py-2.5 text-[var(--fg-2)] hover:text-[var(--fg-1)] bg-[var(--bg)] rounded-xl disabled:opacity-50 text-sm font-medium min-h-[44px]">
@@ -4412,7 +4412,7 @@ const Purchase = () => {
             />
           </div>
         ) : modalMode === 'edit' ? (
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={handleUpdateOrder} disabled={formLoading || !orderForm.supplier_id || orderForm.items.length === 0}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
@@ -4622,15 +4622,15 @@ const Purchase = () => {
                   disabled={modalMode === 'view'}
                   className="w-full px-2.5 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
               </div>
-              <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-2">
+              <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-center">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.quantity')}</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateOrderItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     disabled={modalMode === 'view'}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
                   <UnitPicker
                     value={item.unit || ''}
@@ -4643,7 +4643,7 @@ const Purchase = () => {
                     restrict="strict"
                   />
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-2 sm:col-span-3">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.orderModal.unitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
@@ -4653,7 +4653,7 @@ const Purchase = () => {
                       className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
                   </div>
                 </div>
-                <div className="col-span-5 flex items-end justify-between">
+                <div className="col-span-2 sm:col-span-5 flex items-end justify-between">
                   <div>
                     <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.lineTotal')}</label>
                     <span className="text-sm font-semibold text-[var(--primary)]">{formatCurrency(item.total_price)}</span>
@@ -5165,7 +5165,7 @@ const Purchase = () => {
       onClose={closeModal}
       footer={
         !isView ? (
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap justify-end gap-3">
             <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
             <button onClick={isEdit ? handleUpdateInvoice : handleCreateInvoice} disabled={!canSubmit}
               className="px-6 py-2.5 bg-phopy-indigo text-white font-semibold rounded-xl hover:bg-phopy-indigo/80 disabled:opacity-50 flex items-center gap-2 text-sm">
@@ -5271,7 +5271,7 @@ const Purchase = () => {
         <>
           <StepHead n={2} title={t('purchase.invoiceModal.stepLines')} hint={t('purchase.invoiceModal.stepLinesHint')} />
           <div className="border border-[var(--border)] rounded-xl overflow-hidden">
-            <div className="grid grid-cols-12 gap-2 px-3 py-1.5 bg-[var(--surface-2)] text-[10px] text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
+            <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-1.5 bg-[var(--surface-2)] text-[10px] text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
               <span className="col-span-5">{t('purchase.invoiceModal.lineDescription')}</span>
               <span className="col-span-2 text-center">{t('purchase.common.quantity')}</span>
               <span className="col-span-1 text-center">{t('purchase.common.unit')}</span>
@@ -5282,15 +5282,15 @@ const Purchase = () => {
               const key = (line.grItemId || line.id) as string
               return (
                 <div key={key} className="grid grid-cols-12 gap-2 items-center px-3 py-2 border-b border-[var(--border)]/30 last:border-b-0 text-sm">
-                  <span className="col-span-5 truncate text-[var(--fg-1)]">{line.description}</span>
+                  <span className="col-span-12 sm:col-span-5 truncate text-[var(--fg-1)]">{line.description}</span>
                   <input type="number" min="0" step="0.01" value={line.quantity} disabled={isView}
                     onChange={e => updateInvoiceLine(key, 'quantity', parseFloat(e.target.value) || 0)}
-                    className="col-span-2 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
-                  <span className="col-span-1 text-center text-xs text-[var(--fg-4)] truncate">{line.unit}</span>
+                    className="col-span-4 sm:col-span-2 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                  <span className="col-span-2 sm:col-span-1 text-center text-xs text-[var(--fg-4)] truncate">{line.unit}</span>
                   <input type="number" min="0" step="any" value={line.unitPrice} disabled={isView}
                     onChange={e => updateInvoiceLine(key, 'unitPrice', parseFloat(e.target.value) || 0)}
-                    className="col-span-2 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-right focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
-                  <span className="col-span-2 text-right font-mono font-semibold text-[var(--primary)]">{formatCurrency(line.quantity * line.unitPrice)}</span>
+                    className="col-span-3 sm:col-span-2 px-2 py-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] text-right focus:outline-none focus:border-phopy-indigo disabled:opacity-50" />
+                  <span className="col-span-3 sm:col-span-2 text-right font-mono font-semibold text-[var(--primary)]">{formatCurrency(line.quantity * line.unitPrice)}</span>
                 </div>
               )
             })}
@@ -5821,7 +5821,7 @@ const Purchase = () => {
             )
           })()}
         </div>
-        <div className="p-5 border-t border-[var(--border)] flex justify-end gap-3 shrink-0">
+        <div className="p-5 border-t border-[var(--border)] flex flex-wrap justify-end gap-3 shrink-0">
           <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
           <button onClick={handleCreatePayment} disabled={formLoading || !paymentForm.supplier_id || !paymentForm.amount || bankChoiceRequired}
             className="px-6 py-2.5 bg-success text-white font-semibold rounded-xl hover:bg-success/80 disabled:opacity-50 flex items-center gap-2 text-sm">
@@ -5860,7 +5860,7 @@ const Purchase = () => {
       title={t('purchase.returnModal.title')}
       onClose={closeModal}
       footer={
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-wrap justify-end gap-3">
           <button onClick={closeModal} className="px-4 py-2 text-[var(--fg-3)] hover:text-[var(--fg-1)] text-sm">{t('purchase.common.cancel')}</button>
           <button onClick={handleCreateReturn}
             disabled={formLoading || !returnForm.reason || returnForm.items.length === 0}
@@ -5937,14 +5937,14 @@ const Purchase = () => {
                   const mat = materials.find(m => m.id === id)
                   updateReturnItemFields(index, { material_id: id, unit: item.unit || mat?.unit || '', ...(item.unit_price ? {} : { unit_price: returnGrItems.find(g => g.material_id === id)?.unit_price || 0 }) })
                 }} />
-              <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-2">
+              <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-center">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.returnModal.returnQty')}</label>
                   <input type="number" min="0" step="0.01" value={item.quantity}
                     onChange={e => updateReturnItem(index, 'quantity', parseFloat(e.target.value) || 0)}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-danger/30 rounded-lg text-sm text-[var(--fg-1)] text-center focus:outline-none focus:border-red-400" />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unit')}</label>
                   <UnitPicker
                     value={item.unit || ''}
@@ -5956,7 +5956,7 @@ const Purchase = () => {
                     restrict="strict"
                   />
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-2 sm:col-span-3">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.unitPrice')}</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--fg-4)] text-xs">฿</span>
@@ -5965,17 +5965,17 @@ const Purchase = () => {
                       className="w-full pl-5 pr-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
                   </div>
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-2 sm:col-span-2">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.returnModal.itemNote')}</label>
                   <input type="text" value={item.reason} placeholder={t('purchase.returnModal.itemNotePlaceholder')}
                     onChange={e => updateReturnItem(index, 'reason', e.target.value)}
                     className="w-full px-2 py-1.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
                 </div>
-                <div className="col-span-2 text-right">
+                <div className="sm:col-span-2 text-right">
                   <label className="text-xs text-[var(--fg-4)] mb-0.5 block">{t('purchase.common.lineTotal')}</label>
                   <span className="text-sm font-semibold text-danger">{formatCurrency(item.total_price)}</span>
                 </div>
-                <div className="col-span-1 flex items-end justify-center pb-0.5">
+                <div className="sm:col-span-1 flex items-end justify-center pb-0.5">
                   <button onClick={() => removeReturnItem(index)}
                     className="p-1.5 hover:bg-[var(--danger-soft)] rounded-lg text-danger transition-colors">
                     <Trash2 className="w-4 h-4" />
@@ -6100,14 +6100,14 @@ const Purchase = () => {
 
       {/* Tab navigation */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-wrap gap-1.5 bg-[var(--surface)] p-2 rounded-2xl border border-[var(--border)]">
+        className="tab-scroll flex flex-wrap gap-1.5 bg-[var(--surface)] p-2 rounded-2xl border border-[var(--border)]">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchQuery(''); setCurrentPage(1); setRowFilter('all'); setOpenRow(null) }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all relative ${
               activeTab === tab.id ? 'bg-phopy-indigo text-white shadow-lg' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg)]'
             }`}>
             <tab.icon className="w-4 h-4" />
-            <span className="hidden md:inline">{tab.label}</span>
+            <span>{tab.label}</span>
             {tab.badge > 0 && (
               <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === tab.id ? 'bg-[var(--bg)]/30 text-[var(--fg-1)]' : 'bg-yellow-500 text-black'

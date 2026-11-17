@@ -49,7 +49,7 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
       onClick={onClose}
     >
       <div
@@ -60,13 +60,13 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
         className="w-full max-w-lg max-h-[90vh] flex flex-col bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl overflow-hidden"
       >
         {/* Header */}
-        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
-          <div>
-            <h2 id="move-table-dialog-title" className="text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
-              <ArrowRightLeft className="w-5 h-5 text-[var(--primary)]" />
-              ย้าย / รวมโต๊ะ
+        <div className="p-4 sm:p-5 border-b border-[var(--border)] flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 id="move-table-dialog-title" className="text-base sm:text-lg font-bold text-[var(--fg-1)] flex items-center gap-2">
+              <ArrowRightLeft className="w-5 h-5 text-[var(--primary)] shrink-0" />
+              <span className="truncate">ย้าย / รวมโต๊ะ</span>
             </h2>
-            <p className="text-xs text-[var(--fg-3)] mt-1">
+            <p className="text-xs text-[var(--fg-3)] mt-1 truncate sm:whitespace-normal">
               โต๊ะต้นทาง:{' '}
               <span className="font-semibold text-[var(--fg-1)]">{sourceTable.name}</span>
               {sourceTable.bill_number && ` (บิล ${sourceTable.bill_number})`} · ฿
@@ -76,18 +76,18 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
           <button
             onClick={onClose}
             aria-label="ปิด"
-            className="p-2 rounded-lg text-[var(--fg-3)] hover:bg-[var(--surface-2)]"
+            className="p-2 rounded-lg text-[var(--fg-3)] hover:bg-[var(--surface-2)] shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 overflow-y-auto space-y-5">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 sm:space-y-5">
           {confirming ? (
             /* One-step confirmation inside the dialog */
             <div className="space-y-4 py-2">
-              <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] space-y-2.5">
+              <div className="p-3.5 sm:p-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] space-y-2.5">
                 <div className="flex items-center gap-2 text-[var(--fg-1)] font-semibold text-base">
                   {confirming.type === 'move' ? (
                     <>
@@ -126,12 +126,12 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
                 )}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setConfirming(null)}
                   disabled={submitting}
-                  className="px-4 py-2 rounded-xl text-sm font-medium border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
+                  className="w-full sm:w-auto px-4 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-sm font-medium border border-[var(--border)] text-[var(--fg-2)] hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
                 >
                   กลับ
                 </button>
@@ -139,7 +139,7 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
                   type="button"
                   onClick={handleConfirm}
                   disabled={submitting}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-[var(--primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="w-full sm:w-auto px-4 py-2.5 sm:py-2 min-h-[40px] rounded-xl text-sm font-semibold bg-[var(--primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   {submitting
                     ? 'กำลังดำเนินการ…'
@@ -154,7 +154,7 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
               <p className="text-sm">ไม่มีโต๊ะอื่นในระบบให้ย้ายหรือรวม</p>
             </div>
           ) : (
-            <div className="space-y-5">
+            <div className="space-y-4 sm:space-y-5">
               {/* โต๊ะว่าง -> ย้ายไปโต๊ะนี้ */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-[var(--fg-3)] mb-2.5">
@@ -167,16 +167,16 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
                     {freeTables.map(t => (
                       <div
                         key={t.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-phopy-indigo/40 transition-colors"
+                        className="flex items-center justify-between gap-2 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-phopy-indigo/40 transition-colors"
                       >
-                        <div>
-                          <p className="font-bold text-sm text-[var(--fg-1)]">{t.name}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-sm text-[var(--fg-1)] truncate">{t.name}</p>
                           <p className="text-xs text-[var(--fg-4)]">โต๊ะว่าง</p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setConfirming({ type: 'move', target: t })}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-2)] hover:border-phopy-indigo hover:text-[var(--primary)] transition-all"
+                          className="px-3 py-2 sm:py-1.5 min-h-[36px] shrink-0 rounded-lg text-xs font-semibold border border-[var(--border)] bg-[var(--surface-2)] text-[var(--fg-2)] hover:border-phopy-indigo hover:text-[var(--primary)] transition-all"
                         >
                           ย้ายไปโต๊ะนี้
                         </button>
@@ -198,18 +198,18 @@ export default function MoveTableDialog({ sourceTable, tables, onClose, onSucces
                     {occupiedTables.map(t => (
                       <div
                         key={t.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-phopy-indigo/40 transition-colors"
+                        className="flex items-center justify-between gap-2 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-phopy-indigo/40 transition-colors"
                       >
-                        <div>
-                          <p className="font-bold text-sm text-[var(--fg-1)]">{t.name}</p>
-                          <p className="text-xs text-[var(--primary)] font-medium">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-sm text-[var(--fg-1)] truncate">{t.name}</p>
+                          <p className="text-xs text-[var(--primary)] font-medium truncate">
                             บิล {t.bill_number || '-'} · ฿{(t.total_amount || 0).toLocaleString()}
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setConfirming({ type: 'merge', target: t })}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/40 hover:bg-phopy-indigo hover:text-white transition-all"
+                          className="px-3 py-2 sm:py-1.5 min-h-[36px] shrink-0 rounded-lg text-xs font-semibold bg-[var(--primary-soft)] text-[var(--primary)] border border-phopy-indigo/40 hover:bg-phopy-indigo hover:text-white transition-all"
                         >
                           รวมเข้าโต๊ะนี้
                         </button>

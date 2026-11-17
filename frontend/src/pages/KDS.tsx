@@ -214,14 +214,14 @@ const KDS: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-[var(--bg)] text-[var(--fg-2)]" onClick={handleUserTap}>
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[var(--primary)] flex items-center gap-2">
             <MonitorPlay className="w-6 h-6" />
             Kitchen Display System
           </h1>
           <p className="text-[var(--fg-3)] text-sm mt-1">Polling ทุก 3 วินาที · {tickets.length} ticket ที่รอดำเนินการ</p>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--fg-3)]" aria-label="สีการ์ดตามเวลาที่รอ">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5 text-xs text-[var(--fg-3)]" aria-label="สีการ์ดตามเวลาที่รอ">
             {TIME_TONES.map(t => (
               <span key={t.label} className="flex items-center gap-1">
                 <span className={`w-2.5 h-2.5 rounded-sm ${t.swatch}`} /> {t.label}
@@ -229,10 +229,10 @@ const KDS: React.FC = () => {
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={unlockAudio}
-            className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-2 transition-colors ${
+            className={`px-3 py-2 min-h-[40px] rounded-lg border text-sm font-medium flex items-center gap-2 transition-colors ${
               soundEnabled && notifPermission === 'granted'
                 ? 'bg-success/10 border-success/40 text-success'
                 : 'bg-[var(--warning-soft)] border-yellow-500/40 text-warning animate-pulse'
@@ -244,20 +244,20 @@ const KDS: React.FC = () => {
               ? <><Bell className="w-4 h-4" /> เสียงเปิด · กดขออนุญาตแจ้งเตือน</>
               : <><BellOff className="w-4 h-4" /> กดเพื่อเปิดเสียง + แจ้งเตือน</>}
           </button>
-          <div className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg flex items-center gap-2">
+          <div className="px-3 sm:px-4 py-2 min-h-[40px] bg-[var(--surface)] border border-[var(--border)] rounded-lg flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-sm font-medium">Live</span>
           </div>
           <button
             onClick={fetchTickets}
-            className="p-2 bg-[var(--primary-soft)] hover:bg-phopy-indigo/40 text-[var(--primary)] rounded-lg transition-colors border border-phopy-indigo/50"
+            className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center bg-[var(--primary-soft)] hover:bg-phopy-indigo/40 text-[var(--primary)] rounded-lg transition-colors border border-phopy-indigo/50"
             title="รีเฟรช"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={toggleFullscreen}
-            className="p-2 bg-[var(--surface)] hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg-1)] rounded-lg transition-colors border border-[var(--border)]"
+            className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center bg-[var(--surface)] hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--fg-1)] rounded-lg transition-colors border border-[var(--border)]"
             title={isFullscreen ? 'ออกจากโหมดเต็มจอ' : 'เต็มจอ (เหมาะสำหรับครัว)'}
           >
             {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
@@ -266,7 +266,7 @@ const KDS: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-3">
+        <div className="mb-4 p-3 sm:p-4 bg-[var(--danger-soft)] border border-danger/30 rounded-lg flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-danger" />
           <p className="text-danger">{error}</p>
         </div>
@@ -284,7 +284,7 @@ const KDS: React.FC = () => {
           <p className="text-[var(--fg-4)] text-sm mt-1">รอ POS ส่งออร์เดอร์มาครัว...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 overflow-y-auto phopy-scrollbar pr-2 pb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 overflow-y-auto phopy-scrollbar pr-2 pb-6">
           {tickets.map(ticket => {
             const cfg = statusConfig[ticket.status]
             const elapsed = getElapsedMinutes(ticket.sent_at)
@@ -302,18 +302,18 @@ const KDS: React.FC = () => {
                 aria-label={isCancelled ? `บิล ${ticket.bill_number} ถูกยกเลิก หยุดทำ` : undefined}
               >
                 {/* Ticket Header */}
-                <div className={`p-4 border-b border-[var(--border)] ${isCancelled ? cfg.bg : tone.header} rounded-t-xl`}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-[var(--fg-1)]">{ticket.table_name}</h3>
-                        <span className="px-2 py-0.5 bg-[var(--bg)] rounded text-xs text-[var(--primary)] font-mono">
+                <div className={`p-3 sm:p-4 border-b border-[var(--border)] ${isCancelled ? cfg.bg : tone.header} rounded-t-xl`}>
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-lg font-bold text-[var(--fg-1)] truncate">{ticket.table_name}</h3>
+                        <span className="px-2 py-0.5 bg-[var(--bg)] rounded text-xs text-[var(--primary)] font-mono shrink-0">
                           รอบ {ticket.round}
                         </span>
                       </div>
                       <p className="text-xs text-[var(--fg-3)] font-mono mt-0.5">{ticket.bill_number}</p>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
+                    <div className="flex flex-wrap sm:flex-col items-start sm:items-end gap-1">
                       <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cfg.text}`}>
                         <div className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${ticket.status === 'PENDING' ? 'animate-pulse' : ''}`} />
                         {cfg.label}
@@ -338,7 +338,7 @@ const KDS: React.FC = () => {
                 )}
 
                 {/* Items */}
-                <div className="p-3 flex-1 space-y-2">
+                <div className="p-2.5 sm:p-3 flex-1 space-y-2">
                   {canTick && (
                     <p className="text-[11px] text-[var(--fg-4)] px-1">แตะเมนูเพื่อติ๊กว่าทำเสร็จ · แตะซ้ำเพื่อเอาติ๊กออก</p>
                   )}
@@ -355,7 +355,7 @@ const KDS: React.FC = () => {
                       tabIndex={tickable ? 0 : undefined}
                       onClick={tickable ? (e) => { e.stopPropagation(); toggleItemDone(ticket.id, item) } : undefined}
                       onKeyDown={tickable ? (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleItemDone(ticket.id, item) } } : undefined}
-                      className={`flex items-start gap-3 rounded-lg p-3 border-2 transition-colors ${
+                      className={`flex items-start gap-2.5 sm:gap-3 rounded-lg p-2.5 sm:p-3 min-h-[40px] border-2 transition-colors ${
                         gone ? 'bg-[var(--danger-soft)] border-transparent'
                         : itemDone ? 'bg-[var(--success-soft)] border-success/60'
                         : voided ? 'bg-[var(--warning-soft)] border-transparent'
@@ -374,7 +374,7 @@ const KDS: React.FC = () => {
                       ) : (
                         <span className={`font-bold text-lg leading-none ${gone ? 'text-danger line-through' : 'text-success'}`}>{item.quantity}×</span>
                       )}
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <p className={`font-semibold ${gone ? 'text-danger line-through' : itemDone ? 'text-success' : 'text-[var(--fg-1)]'}`}>
                           {item.product_name}
                           {itemDone && <span className="ml-2 text-xs font-bold">✓ เสร็จแล้ว</span>}
@@ -396,11 +396,11 @@ const KDS: React.FC = () => {
                 </div>
 
                 {/* Action buttons */}
-                <div className="p-3 border-t border-[var(--border)] flex gap-2">
+                <div className="p-2.5 sm:p-3 border-t border-[var(--border)] flex gap-2">
                   {isCancelled && (
                     <button
                       onClick={() => handleStatus(ticket.id, 'CANCEL_ACK')}
-                      className="flex-1 py-2.5 rounded-lg bg-danger text-white hover:bg-danger/90 transition-all text-sm font-bold flex items-center justify-center gap-1"
+                      className="flex-1 min-h-[40px] py-2.5 rounded-lg bg-danger text-white hover:bg-danger/90 transition-all text-sm font-bold flex items-center justify-center gap-1"
                     >
                       <Check className="w-4 h-4" />
                       รับทราบ (เอาการ์ดออก)
@@ -409,7 +409,7 @@ const KDS: React.FC = () => {
                   {ticket.status === 'PENDING' && (
                     <button
                       onClick={() => handleStatus(ticket.id, 'IN_PROGRESS')}
-                      className="flex-1 py-2 rounded-lg bg-[var(--info-soft)] border border-[var(--primary)]/50 text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-all text-sm font-medium flex items-center justify-center gap-1"
+                      className="flex-1 min-h-[40px] py-2.5 sm:py-2 rounded-lg bg-[var(--info-soft)] border border-[var(--primary)]/50 text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-all text-sm font-medium flex items-center justify-center gap-1"
                     >
                       <ChefHat className="w-4 h-4" />
                       รับงาน
@@ -418,7 +418,7 @@ const KDS: React.FC = () => {
                   {ticket.status === 'IN_PROGRESS' && (
                     <button
                       onClick={() => handleStatus(ticket.id, 'DONE')}
-                      className="flex-1 py-2 rounded-lg bg-[var(--success-soft)] border border-success/50 text-success hover:bg-success/30 transition-all text-sm font-medium flex items-center justify-center gap-1"
+                      className="flex-1 min-h-[40px] py-2.5 sm:py-2 rounded-lg bg-[var(--success-soft)] border border-success/50 text-success hover:bg-success/30 transition-all text-sm font-medium flex items-center justify-center gap-1"
                     >
                       <Check className="w-4 h-4" />
                       เสร็จแล้ว

@@ -180,7 +180,7 @@ function Tax() {
       className="space-y-6"
     >
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold text-[var(--fg-1)] mb-2">
             <span className="text-[var(--fg-1)]">Tax Management</span>
@@ -250,7 +250,7 @@ function Tax() {
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex gap-2 border-b border-[var(--border)] pb-2">
+      <div className="flex gap-2 border-b border-[var(--border)] pb-2 tab-scroll">
         <TabButton
           active={activeTab === 'dashboard'}
           onClick={() => setActiveTab('dashboard')}
@@ -566,7 +566,7 @@ function Tax() {
               </div>
 
               <div className="p-4 bg-phopy-indigo/10 border border-phopy-indigo/30 rounded-lg">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-3">
                   <div>
                     <p className="text-[var(--fg-3)] text-sm">ภาษีเงินได้นิติบุคคลโดยประมาณ</p>
                     <p className="text-3xl font-bold text-[var(--primary)]">{formatCurrency(dashboard?.cit?.estimatedTax || 0)}</p>
@@ -688,7 +688,7 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-3 rounded-t-lg font-semibold transition-all ${
+      className={`flex items-center gap-2 px-3 sm:px-5 py-3 rounded-t-lg font-semibold transition-all ${
         active
           ? 'bg-[var(--primary-soft)] text-[var(--primary)] border-b-2 border-phopy-indigo'
           : 'text-[var(--fg-3)] hover:text-[var(--fg-2)] hover:bg-[var(--bg)]'

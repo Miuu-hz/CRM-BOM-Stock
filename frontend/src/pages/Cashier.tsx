@@ -168,6 +168,10 @@ export default function Cashier() {
   const [drawerMoves, setDrawerMoves] = useState<CashMovement[]>([])
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [currentBill, setCurrentBill] = useState<CurrentBill | null>(null)
+  // มือถือ (< md): แผงบิลเป็นชั้นเต็มจอ เปิดจากแถบล่าง — md ขึ้นไปแผงบิลแสดงตลอดเหมือนเดิม
+  const [mobileBillOpen, setMobileBillOpen] = useState(false)
+  // ponytail: ปิดชั้นบิลมือถือเองทุกครั้งที่บิลถูกล้าง/สลับ (ชำระสำเร็จ, ยกเลิก, กด X) — จุดเดียวแทนการแก้ทุก handler
+  useEffect(() => { setMobileBillOpen(false) }, [currentBill?.id])
   const [menus, setMenus] = useState<POSMenu[]>([])
   const [categories, setCategories] = useState<POSCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -799,19 +803,19 @@ export default function Cashier() {
       {approvalGate.modal}
 
       {/* Header */}
-      <div className="bg-[var(--surface)] border-b border-[var(--border)] px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-phopy-indigo to-purple-500 rounded-xl">
-              <Store className="w-6 h-6 text-white" />
+      <div className="bg-[var(--surface)] border-b border-[var(--border)] px-3 py-3 sm:px-6 sm:py-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="p-2 sm:p-3 bg-gradient-to-br from-phopy-indigo to-purple-500 rounded-xl">
+              <Store className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-[var(--fg-1)]">ระบบขายหน้าร้าน</h1>
-              <p className="text-sm text-[var(--fg-3)]">Open Bill / POS</p>
+              <p className="hidden sm:block text-sm text-[var(--fg-3)]">Open Bill / POS</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Shift widget — เปิด/ปิดกะ + เงินเข้า/ออกลิ้นชัก จากหน้า POS โดยตรง */}
             {currentShift ? (
               <div className="flex items-center gap-2">
@@ -880,8 +884,8 @@ export default function Cashier() {
       )}
 
       <div className="flex flex-col md:flex-row md:h-[calc(100vh-80px)]">
-        {/* Left Panel */}
-        <div className="flex-1 p-6 overflow-auto">
+        {/* Left Panel — มือถือเว้นท้าย pb-28 ให้แถบบิลด้านล่างไม่บังแถวสุดท้าย (ไม่ใช้ p-6 บนมือถือเพราะกฎ #main-content .p-6 ใน index.css ทับ pb) */}
+        <div className="flex-1 p-4 pb-28 sm:p-6 sm:pb-28 md:pb-6 overflow-auto">
           <AnimatePresence mode="wait">
             {view === 'bills' ? (
               <motion.div
@@ -893,7 +897,7 @@ export default function Cashier() {
               >
                 {/* Create Bill Button + โหมดเปิดอยู่/ชำระแล้ว */}
                 <div className="flex justify-between items-center flex-wrap gap-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-lg font-semibold text-[var(--fg-1)]">
                       {billsMode === 'OPEN' ? 'บิลที่เปิดอยู่' : billsMode === 'TABLES' ? 'ผังโต๊ะ' : 'สรุปวันนี้'}
                     </h2>
@@ -964,7 +968,7 @@ export default function Cashier() {
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-lg font-bold text-[var(--fg-1)] truncate">
+                          <span className="text-lg font-bold text-[var(--fg-1)] truncate min-w-0">
                             {bill.display_name}
                           </span>
                           {bill.item_count > 0 && (
@@ -1096,7 +1100,7 @@ export default function Cashier() {
                       <h3 className="font-semibold text-[var(--fg-1)] group-hover:text-[var(--primary)] transition-colors truncate">
                         {menu.product_name}
                       </h3>
-                      <p className="text-xs text-[var(--fg-4)]">{menu.product_code}</p>
+                      <p className="text-xs text-[var(--fg-4)] truncate">{menu.product_code}</p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-lg font-bold text-success">
                           ฿{menu.pos_price?.toLocaleString()}
@@ -1113,8 +1117,16 @@ export default function Cashier() {
           </AnimatePresence>
         </div>
 
-        {/* Right Panel - Current Bill */}
-        <div className="w-full md:w-[400px] bg-[var(--surface)] border-l border-[var(--border)] flex flex-col">
+        {/* Right Panel - Current Bill — มือถือ: ซ่อน / ชั้นเต็มจอเมื่อ mobileBillOpen · md ขึ้นไป: แผงข้างเหมือนเดิม
+            (ห้ามใส่ class "flex" ที่ตัว fixed inset-0 — โดนกฎกลาง modal ใน index.css จึงใส่ flex ที่กล่องข้างใน) */}
+        <div className={`${mobileBillOpen ? 'fixed inset-0 z-40 overflow-y-auto' : 'hidden'} md:static md:z-auto md:overflow-visible md:flex md:flex-col w-full md:w-[400px] bg-[var(--surface)] border-l border-[var(--border)]`}>
+          <div className="h-full min-h-0 flex-1 flex flex-col">
+          <button
+            onClick={() => setMobileBillOpen(false)}
+            className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-[var(--border)] text-sm font-medium text-[var(--fg-2)] hover:text-[var(--fg-1)]"
+          >
+            <ArrowLeft className="w-4 h-4" /> กลับไปเลือกสินค้า
+          </button>
           {currentBill ? (
             <>
               {/* Bill Header */}
@@ -1222,8 +1234,8 @@ export default function Cashier() {
                       className="p-3 bg-[var(--bg)] rounded-lg group"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h4 className="font-medium text-[var(--fg-1)]">{item.product_name}</h4>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-[var(--fg-1)] break-words">{item.product_name}</h4>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             {item.special_instructions ? (
                               <button
@@ -1246,7 +1258,7 @@ export default function Cashier() {
                               </button>
                             )}
                           </div>
-                          <div className="flex items-center justify-between gap-2 mt-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => updateQuantity(item.id, -1, item.quantity)}
@@ -1382,7 +1394,7 @@ export default function Cashier() {
                                 className={`px-2 py-1 transition-colors ${discount.type === 'fixed' ? 'bg-[var(--warning-soft)] text-warning' : 'bg-[var(--bg)] text-[var(--fg-3)]'}`}
                               >฿</button>
                             </div>
-                            <div className="flex gap-1 flex-1">
+                            <div className="flex gap-1 flex-1 min-w-0">
                               <input
                                 type="number"
                                 min={0}
@@ -1408,7 +1420,7 @@ export default function Cashier() {
                                   }
                                 }}
                                 autoFocus
-                                className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-warning"
+                                className="flex-1 min-w-0 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-warning"
                               />
                             </div>
                             {discount.value > 0 && (
@@ -1475,7 +1487,7 @@ export default function Cashier() {
                               placeholder="ชื่อ"
                               value={extraCharge.label}
                               onChange={e => setExtraCharge(c => ({ ...c, label: e.target.value }))}
-                              className="flex-1 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
+                              className="flex-1 min-w-0 px-2 py-1 bg-[var(--bg)] border border-[var(--border)] rounded text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]"
                             />
                             <input
                               type="number"
@@ -1548,7 +1560,7 @@ export default function Cashier() {
                           setShowPaymentModal(true)
                         }}
                         disabled={currentBill.items.length === 0 || !isBillEditable(currentBill)}
-                        className="flex-1 px-4 py-4 rounded-xl bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 min-w-0 px-4 py-4 rounded-xl bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <CreditCard className="w-5 h-5" />
                         ชำระเงิน ฿{finalTotal.toLocaleString()}
@@ -1614,8 +1626,29 @@ export default function Cashier() {
               </button>
             </div>
           )}
+          </div>
         </div>
       </div>
+
+      {/* แถบบิลด้านล่าง (มือถือเท่านั้น) — ยอดคิดแบบเดียวกับ "ยอดสุทธิ" ในแผงบิล */}
+      {currentBill && (
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-[var(--surface)] border-t border-[var(--border)]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-[var(--fg-3)] truncate">{currentBill.display_name} · {currentBill.items.length} รายการ</p>
+              <p className="text-lg font-bold text-success">
+                ฿{billTotals(currentBill, billing, { discount: billDiscountAmount(currentBill), extraCharge: extraCharge.amount }).totalAmount.toLocaleString()}
+              </p>
+            </div>
+            <button
+              onClick={() => setMobileBillOpen(true)}
+              className="shrink-0 px-4 py-3 rounded-xl bg-gradient-to-r from-phopy-indigo to-purple-500 text-white font-semibold flex items-center gap-2"
+            >
+              <CreditCard className="w-5 h-5" /> ดูบิล / ชำระเงิน
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create Bill Modal */}
       <CreateBillModal

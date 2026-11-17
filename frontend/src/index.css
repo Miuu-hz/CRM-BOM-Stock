@@ -511,3 +511,40 @@
   #main-content .flex.justify-between { flex-wrap: wrap; row-gap: 0.75rem; }
   #main-content h1.text-3xl { font-size: 1.5rem; line-height: 2rem; }
 }
+
+/* phone-mode: แถบแท็บ — จอแคบ (< 768px) ให้เลื่อนแนวนอนในตัว ไม่ตกบรรทัดและไม่ดันหน้าให้ล้น
+   ใช้: ใส่ class "tab-scroll" ที่กล่องที่ครอบปุ่มแท็บ (ปุ่มต้องแสดงชื่อแท็บบนมือถือด้วย ไม่ใช่แค่ไอคอน) */
+@media (max-width: 767px) {
+  .tab-scroll { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .tab-scroll::-webkit-scrollbar { display: none; }
+  .tab-scroll > * { flex: none; white-space: nowrap; }
+}
+
+/* phone-mode: แปลง modal ทุกตัวเป็น bottom sheet บนมือถือ (< 640px)
+   ตัด padding ซ้าย/ขวา/ล่างของฉากหลัง ดันแผงชิดขอบล่างเต็มความกว้างจอ และให้แถวปุ่มท้ายแผงพับบรรทัดได้ไม่ล้นขอบ
+   ยกเว้น spinner โหลด (svg) และพรีวิวรูปเต็มจอ (img/.object-contain) ให้คงอยู่กลางจอเหมือนเดิม
+   ponytail: ใช้ global selector จับ .fixed.inset-0.flex แทนการไล่แก้ ~119 ไฟล์ (เพดาน: ผูกกับโครงสร้าง class ของแต่ละหน้า · ทางอัปเกรด: ยุบรวมเป็น shared Modal component ตัวเดียว) */
+@media (max-width: 639px) {
+  .fixed.inset-0.flex {
+    padding: 0.5rem 0 0;
+    align-items: flex-end;
+  }
+  .fixed.inset-0.flex > :not(.absolute):not(.fixed):not(svg):not(img):not(.object-contain) {
+    width: 100%;
+    max-width: 100% !important;
+    max-height: calc(100vh - 0.5rem);
+    max-height: calc(100dvh - 0.5rem);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .fixed.inset-0.flex > :is(svg, img, .object-contain) {
+    margin: auto;
+  }
+  .fixed.inset-0.flex .flex.justify-end:not(button),
+  .fixed.inset-0.flex > :not(.absolute):not(.fixed) > .flex.gap-2:not(button),
+  .fixed.inset-0.flex > :not(.absolute):not(.fixed) > .flex.gap-3:not(button),
+  .fixed.inset-0.flex .flex.gap-2:last-child:not(button),
+  .fixed.inset-0.flex .flex.gap-3:last-child:not(button) {
+    flex-wrap: wrap;
+  }
+}
