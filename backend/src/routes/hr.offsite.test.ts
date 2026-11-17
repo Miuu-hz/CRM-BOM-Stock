@@ -285,4 +285,45 @@ describe('HR Offsite Requests API (/api/hr/offsite-requests)', () => {
       .set('Authorization', `Bearer ${adminB.token}`)
     expect(cancelB.status).toBe(404)
   })
+
+  it('cancelling an APPROVED request whose start_date is today returns 409; an APPROVED future request can be cancelled by hr:write', async () => {
+    const admin = newAdmin()
+    const user = newUser(admin.tenantId)
+    const empId = insertEmployee(admin.tenantId, 'EMP-001', 'สมชาย', 'ใจดี', user.userId)
+
+    const today = thaiDateStr()
+    const future = offsetDate(today, 2)
+
+    // 1) Request starting today, approved -> cancelling returns 409 even for hr:write
+    const resToday = await request(app)
+      .post('/api/hr/offsite-requests')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ employee_id: empId, start_date: today, end_date: today, place: 'สาขาหลัก' })
+    expect(resToday.status).toBe(201)
+    const idToday = resToday.body.data.id
+
+    db.prepare("UPDATE offsite_requests SET status = 'APPROVED' WHERE id = ?").run(idToday)
+
+    const cancelTodayRes = await request(app)
+      .post(`/api/hr/offsite-requests/${idToday}/cancel`)
+      .set('Authorization', `Bearer ${admin.token}`)
+    expect(cancelTodayRes.status).toBe(409)
+    expect(cancelTodayRes.body.message).toBe('ไม่สามารถยกเลิกคำขอนี้ได้')
+
+    // 2) Request starting in the future, approved -> hr:write can cancel (200)
+    const resFuture = await request(app)
+      .post('/api/hr/offsite-requests')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .send({ employee_id: empId, start_date: future, end_date: future, place: 'สาขาย่อย' })
+    expect(resFuture.status).toBe(201)
+    const idFuture = resFuture.body.data.id
+
+    db.prepare("UPDATE offsite_requests SET status = 'APPROVED' WHERE id = ?").run(idFuture)
+
+    const cancelFutureRes = await request(app)
+      .post(`/api/hr/offsite-requests/${idFuture}/cancel`)
+      .set('Authorization', `Bearer ${admin.token}`)
+    expect(cancelFutureRes.status).toBe(200)
+    expect(cancelFutureRes.body.data.status).toBe('CANCELLED')
+  })
 })

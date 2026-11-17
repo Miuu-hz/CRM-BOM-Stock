@@ -16,13 +16,13 @@ const STATUS_LABELS: Record<OffsiteStatus, string> = {
   PENDING: 'รออนุมัติ',
   APPROVED: 'อนุมัติแล้ว',
   REJECTED: 'ไม่อนุมัติ',
-  CANCELLED: 'ยกเลิก',
+  CANCELLED: 'ยกเลิกแล้ว',
 }
 
 const STATUS_BADGE: Record<OffsiteStatus, string> = {
-  PENDING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-  APPROVED: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  REJECTED: 'bg-red-500/15 text-red-600 dark:text-red-400',
+  PENDING: 'bg-[var(--warning-soft)] text-[var(--warning-strong)]',
+  APPROVED: 'bg-[var(--success-soft)] text-[var(--success)]',
+  REJECTED: 'bg-[var(--danger-soft)] text-[var(--danger)]',
   CANCELLED: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
 }
 
@@ -48,9 +48,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
     reason: '',
   })
 
-  // ponytail: tolerate failed or undefined load (e.g. unmocked in MyHr.test.tsx)
   const loadRequests = useCallback(async () => {
-    if (typeof hrService?.getOffsiteRequests !== 'function') return
     setLoading(true)
     try {
       const data = await hrService.getOffsiteRequests({ mine: 1 })
@@ -119,6 +117,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
   }
 
   const handleCancel = async (id: string) => {
+    if (!confirm('ต้องการยกเลิกคำขอนี้ใช่หรือไม่?')) return
     setCardError(null)
     setCancellingId(id)
     try {
@@ -145,7 +144,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
-            <MapPin className="w-4 h-4 text-phopy-indigo" />
+            <MapPin className="w-4 h-4 text-[var(--primary)]" />
             <span>ทำงานนอกสถานที่</span>
           </div>
           <button
@@ -163,7 +162,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
 
         {/* Success Banner */}
         {successBanner && (
-          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm font-semibold text-center flex items-center justify-center gap-2">
+          <div className="p-3.5 rounded-xl bg-[var(--success-soft)] border border-[var(--border)] text-[var(--success-strong)] text-xs sm:text-sm font-semibold text-center flex items-center justify-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successBanner}</span>
           </div>
@@ -171,7 +170,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
 
         {/* Card Error Banner */}
         {cardError && (
-          <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium flex items-center gap-2">
+          <div className="p-3.5 rounded-xl bg-[var(--danger-soft)] border border-[var(--border)] text-[var(--danger)] text-xs sm:text-sm font-medium flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{cardError}</span>
           </div>
@@ -225,7 +224,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
                           type="button"
                           onClick={() => handleCancel(req.id)}
                           disabled={cancellingId === req.id}
-                          className="px-2.5 py-1 rounded-lg text-xs border border-red-300 dark:border-red-900 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition flex items-center gap-1 min-h-[32px] disabled:opacity-50"
+                          className="px-2.5 py-1 rounded-lg text-xs border border-[var(--border)] text-[var(--danger)] hover:bg-[var(--danger-soft)] transition flex items-center gap-1 min-h-[32px] disabled:opacity-50"
                         >
                           <Ban className="w-3.5 h-3.5" />
                           <span>ยกเลิก</span>
@@ -250,7 +249,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
               <h3 className="font-bold text-base sm:text-lg text-[var(--fg)] flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-phopy-indigo" />
+                <MapPin className="w-5 h-5 text-[var(--primary)]" />
                 <span>ขอทำงานนอกสถานที่</span>
               </h3>
               <button
@@ -263,7 +262,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
             </div>
 
             {modalError && (
-              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs sm:text-sm font-medium flex items-center gap-2">
+              <div className="p-3.5 rounded-xl bg-[var(--danger-soft)] border border-[var(--border)] text-[var(--danger)] text-xs sm:text-sm font-medium flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{modalError}</span>
               </div>
@@ -273,7 +272,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="offsite-start-date" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
-                    วันเริ่ม <span className="text-red-500">*</span>
+                    วันเริ่ม <span className="text-[var(--danger)]">*</span>
                   </label>
                   <input
                     id="offsite-start-date"
@@ -286,7 +285,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
                 </div>
                 <div>
                   <label htmlFor="offsite-end-date" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
-                    วันสิ้นสุด <span className="text-red-500">*</span>
+                    วันสิ้นสุด <span className="text-[var(--danger)]">*</span>
                   </label>
                   <input
                     id="offsite-end-date"
@@ -302,7 +301,7 @@ export default function MyOffsite({ className, defaultOpen = false }: MyOffsiteP
 
               <div>
                 <label htmlFor="offsite-place" className="block text-xs font-medium text-[var(--fg-2)] mb-1">
-                  สถานที่ <span className="text-red-500">*</span>
+                  สถานที่ <span className="text-[var(--danger)]">*</span>
                 </label>
                 <input
                   id="offsite-place"

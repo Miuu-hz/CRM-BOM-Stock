@@ -39,13 +39,13 @@ Row ที่ส่งออกทุก endpoint (= `OffsiteRequest` ใน `fr
 |---|---|---|
 | `GET /hr/offsite-requests?mine=1&status=&from=&to=` | `mine=1` = พนักงานที่ผูกกับ user นี้ (ไม่มีทะเบียน → 403) · ไม่ส่ง mine = ต้องมี hr:read | เรียง start_date ใหม่ก่อน · from/to กรองช่วงที่ทับกัน · จำกัด 200 แถว |
 | `POST /hr/offsite-requests` | ไม่ส่ง `employee_id` = ขอให้ตัวเอง (ต้องมีทะเบียนพนักงาน ACTIVE ผูกกับ user) · ส่ง `employee_id` ของคนอื่นต้องมี hr:write | ดูด้านล่าง |
-| `POST /hr/offsite-requests/:id/cancel` | เจ้าของคำขอยกเลิกได้เมื่อ PENDING · hr:write ยกเลิกได้ทั้ง PENDING และ APPROVED | → `CANCELLED` + ยกเลิก approval request ที่ค้าง (ทำแบบเดียวกับ cancel ของใบลา) · สถานะอื่น → 409 |
+| `POST /hr/offsite-requests/:id/cancel` | เจ้าของคำขอยกเลิกได้เมื่อ PENDING · hr:write ยกเลิกได้ทั้ง PENDING และ APPROVED ที่ยังไม่เริ่ม (`start_date > thaiDateStr()`) | → `CANCELLED` + ยกเลิก approval request ที่ค้าง (ทำแบบเดียวกับ cancel ของใบลา) · สถานะอื่น หรือ APPROVED ที่เริ่มแล้ว → 409 |
 
 POST validation (400 พร้อมข้อความไทย): วันที่ต้องเป็น ISO `YYYY-MM-DD` จริง · `start_date <= end_date` · ช่วงไม่เกิน 31 วัน ·
 `start_date` ต้องไม่ย้อนหลัง (เทียบวันไทย ใช้ `thaiDateStr()` จาก `utils/id`) · `place` ต้องไม่ว่าง ยาวไม่เกิน 200 · `reason` ไม่เกิน 500 ·
 ช่วงวันทับกับคำขอ PENDING/APPROVED เดิมของพนักงานคนเดียวกัน → 409 "มีคำขอทำงานนอกสถานที่ช่วงนี้อยู่แล้ว"
 
-การอนุมัติ: ทำตาม POST ของใบลา **ทุกประการ** (ใช้ `hasBypass` / `createRequest` / `recordAutoAction` ชุดเดียวกัน) แต่ `category: 'offsite'`, `refType: 'offsite_requests'`, `amount: 0`,
+การอนุมัติ: คำขอทำงานนอกสถานที่ส่งเข้ากล่องอนุมัติเสมอแบบเดียวกับใบลา (ไม่มี bypass / auto-approve) โดยใช้ `category: 'offsite'`, `refType: 'offsite_requests'`, `amount: 0`,
 description = `ขอทำงานนอกสถานที่ {start_date}–{end_date} · {place} ({employee_name})` (วันเดียวแสดงวันเดียว)
 ถ้าใบลาส่งแจ้งเตือน LINE หลัง createRequest ก็ทำแบบเดียวกัน
 

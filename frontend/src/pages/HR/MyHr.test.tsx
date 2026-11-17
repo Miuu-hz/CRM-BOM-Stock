@@ -42,6 +42,9 @@ vi.mock('../../services/hr.service', () => ({
     acceptShiftSwap: vi.fn(),
     declineShiftSwap: vi.fn(),
     cancelShiftSwap: vi.fn(),
+    getOffsiteRequests: vi.fn().mockResolvedValue([]),
+    createOffsiteRequest: vi.fn(),
+    cancelOffsiteRequest: vi.fn(),
   },
 }))
 
@@ -109,6 +112,9 @@ const mockHr = hrService as unknown as {
   acceptShiftSwap: ReturnType<typeof vi.fn>
   declineShiftSwap: ReturnType<typeof vi.fn>
   cancelShiftSwap: ReturnType<typeof vi.fn>
+  getOffsiteRequests: ReturnType<typeof vi.fn>
+  createOffsiteRequest: ReturnType<typeof vi.fn>
+  cancelOffsiteRequest: ReturnType<typeof vi.fn>
 }
 
 beforeEach(() => {
@@ -127,6 +133,7 @@ beforeEach(() => {
   mockHr.getLeaveRequests.mockResolvedValue([])
   mockHr.getMyAdvances.mockResolvedValue([])
   mockHr.getMyTraining.mockResolvedValue([])
+  mockHr.getOffsiteRequests.mockResolvedValue([])
   mockHr.getMyRoster.mockResolvedValue({
     week_start: '2026-11-09',
     employee_id: 'emp-1',
@@ -297,6 +304,12 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
       lng: 100.5018,
       radius_m: 150,
     })
+    mockHr.checkin.mockResolvedValue({
+      punched_at: '2026-11-02 08:57:00',
+      kind: 'IN',
+      employee_name: 'สมชาย ใจดี',
+      distance_m: null,
+    })
 
     const mockGetCurrentPosition = vi.fn().mockImplementation((_success, error) => {
       error({ code: 1, message: 'User denied Geolocation' })
@@ -313,7 +326,7 @@ describe('หน้าของฉัน /hr/me (MyHr)', () => {
 
     expect(await screen.findByText('ไม่สามารถเข้าถึงตำแหน่ง (GPS) ได้')).toBeTruthy()
     expect(screen.getByText(/บริการหาตำแหน่ง/)).toBeTruthy()
-    expect(mockHr.checkin).not.toHaveBeenCalled()
+    expect(mockHr.checkin).toHaveBeenCalledWith({})
   })
 
   it('แสดงตารางเวลา 14 วันล่าสุดและแถวสรุปยอดรวม (totals)', async () => {

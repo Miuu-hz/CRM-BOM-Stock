@@ -602,6 +602,9 @@ export default function Leave() {
               </div>
             )}
           </div>
+
+          {/* ทำงานนอกสถานที่ (docs/contracts/hr-offsite.md O5) */}
+          <OffsiteList />
         </div>
       )}
 
@@ -1122,8 +1125,6 @@ export default function Leave() {
           </div>
         </div>
       )}
-      {/* ทำงานนอกสถานที่ (docs/contracts/hr-offsite.md O5) */}
-      <OffsiteList />
     </div>
   )
 }

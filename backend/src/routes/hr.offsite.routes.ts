@@ -3,17 +3,10 @@ import db from '../db/sqlite'
 import { generateId, thaiDateStr } from '../utils/id'
 import { can } from '../services/rbac.service'
 import { createRequest } from '../services/approvalGate.service'
+import { isValidIsoDate } from '../services/hr/attendanceStore'
 
 // ขอทำงานนอกสถานที่ — สัญญากลาง docs/contracts/hr-offsite.md (งาน O1)
 const router = Router()
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-function isValidDate(val: unknown): val is string {
-  if (typeof val !== 'string' || !DATE_RE.test(val)) return false
-  const d = new Date(`${val}T00:00:00Z`)
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === val
-}
 
 function userHasHr(req: Request, action: 'read' | 'write'): boolean {
   if (!req.user) return false
@@ -74,7 +67,7 @@ router.get('/offsite-requests', (req: Request, res: Response) => {
 
     if (typeof req.query.from === 'string' && req.query.from.trim()) {
       const fromStr = req.query.from.trim()
-      if (!isValidDate(fromStr)) {
+      if (!isValidIsoDate(fromStr)) {
         return res.status(400).json({ success: false, message: 'วันที่เริ่มต้นไม่ถูกต้อง' })
       }
       conditions.push('o.end_date >= ?')
@@ -83,7 +76,7 @@ router.get('/offsite-requests', (req: Request, res: Response) => {
 
     if (typeof req.query.to === 'string' && req.query.to.trim()) {
       const toStr = req.query.to.trim()
-      if (!isValidDate(toStr)) {
+      if (!isValidIsoDate(toStr)) {
         return res.status(400).json({ success: false, message: 'วันที่สิ้นสุดไม่ถูกต้อง' })
       }
       conditions.push('o.start_date <= ?')
@@ -150,7 +143,7 @@ router.post('/offsite-requests', (req: Request, res: Response) => {
       }
     }
 
-    if (!isValidDate(start_date) || !isValidDate(end_date)) {
+    if (!isValidIsoDate(start_date) || !isValidIsoDate(end_date)) {
       return res.status(400).json({ success: false, message: 'วันที่ไม่ถูกต้อง' })
     }
     if (start_date > end_date) {
@@ -206,43 +199,45 @@ router.post('/offsite-requests', (req: Request, res: Response) => {
     const id = generateId()
     const now = new Date().toISOString()
 
-    db.prepare(`
-      INSERT INTO offsite_requests (
-        id, tenant_id, employee_id, start_date, end_date, place,
-        reason, status, approval_request_id, requested_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NULL, ?, ?, ?)
-    `).run(
-      id,
-      tenantId,
-      emp.id,
-      start_date,
-      end_date,
-      placeStr,
-      reasonStr,
-      req.user!.userId,
-      now,
-      now
-    )
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO offsite_requests (
+          id, tenant_id, employee_id, start_date, end_date, place,
+          reason, status, approval_request_id, requested_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NULL, ?, ?, ?)
+      `).run(
+        id,
+        tenantId,
+        emp.id,
+        start_date,
+        end_date,
+        placeStr,
+        reasonStr,
+        req.user!.userId,
+        now,
+        now
+      )
 
-    const apr = createRequest({
-      tenantId,
-      user: {
-        userId: req.user!.userId,
-        email: req.user!.email,
-        role: req.user!.role,
-        departments: req.user!.departments,
-        customPermissions: req.user!.customPermissions,
-      },
-      category: 'offsite',
-      refType: 'offsite_requests',
-      refId: id,
-      description: desc,
-      amount: 0,
-    })
+      const apr = createRequest({
+        tenantId,
+        user: {
+          userId: req.user!.userId,
+          email: req.user!.email,
+          role: req.user!.role,
+          departments: req.user!.departments,
+          customPermissions: req.user!.customPermissions,
+        },
+        category: 'offsite',
+        refType: 'offsite_requests',
+        refId: id,
+        description: desc,
+        amount: 0,
+      })
 
-    db.prepare(
-      'UPDATE offsite_requests SET approval_request_id = ? WHERE id = ? AND tenant_id = ?'
-    ).run(apr.id, id, tenantId)
+      db.prepare(
+        'UPDATE offsite_requests SET approval_request_id = ? WHERE id = ? AND tenant_id = ?'
+      ).run(apr.id, id, tenantId)
+    })()
 
     res.status(201).json({
       success: true,
@@ -289,49 +284,53 @@ router.post('/offsite-requests/:id/cancel', (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยกเลิกคำขอนี้' })
     }
 
+    // ponytail: ยกเลิกได้เมื่อ PENDING หรือ APPROVED ที่ยังไม่ถึง start_date (เทียบกับเวลาไทย ณ วันนี้)
+    const today = thaiDateStr()
     const canCancel =
       row.status === 'PENDING' ||
-      (hasHrWrite && row.status === 'APPROVED')
+      (hasHrWrite && row.status === 'APPROVED' && row.start_date > today)
 
     if (!canCancel) {
       return res.status(409).json({ success: false, message: 'ไม่สามารถยกเลิกคำขอนี้ได้' })
     }
 
     const now = new Date().toISOString()
-    db.prepare(`
-      UPDATE offsite_requests
-      SET status = 'CANCELLED', updated_at = ?
-      WHERE id = ? AND tenant_id = ?
-    `).run(now, row.id, tenantId)
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE offsite_requests
+        SET status = 'CANCELLED', updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(now, row.id, tenantId)
 
-    if (row.approval_request_id) {
-      const apr = db.prepare(
-        'SELECT id, status FROM approval_requests WHERE id = ? AND tenant_id = ?'
-      ).get(row.approval_request_id, tenantId) as any
+      if (row.approval_request_id) {
+        const apr = db.prepare(
+          'SELECT id, status FROM approval_requests WHERE id = ? AND tenant_id = ?'
+        ).get(row.approval_request_id, tenantId) as any
 
-      if (apr && apr.status === 'PENDING') {
-        db.prepare(`
-          UPDATE approval_requests
-          SET status = 'CANCELLED', updated_at = ?
-          WHERE id = ? AND tenant_id = ?
-        `).run(now, apr.id, tenantId)
+        if (apr && apr.status === 'PENDING') {
+          db.prepare(`
+            UPDATE approval_requests
+            SET status = 'CANCELLED', updated_at = ?
+            WHERE id = ? AND tenant_id = ?
+          `).run(now, apr.id, tenantId)
 
-        db.prepare(`
-          INSERT INTO approval_logs (
-            id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role,
-            comment, old_status, new_status, created_at
-          ) VALUES (?, ?, ?, 'CANCEL', ?, ?, ?, 'ผู้ขอยกเลิกเอง', 'PENDING', 'CANCELLED', ?)
-        `).run(
-          generateId(),
-          tenantId,
-          apr.id,
-          req.user!.userId,
-          req.user!.email,
-          req.user!.role,
-          now
-        )
+          db.prepare(`
+            INSERT INTO approval_logs (
+              id, tenant_id, approval_request_id, action, actor_id, actor_name, actor_role,
+              comment, old_status, new_status, created_at
+            ) VALUES (?, ?, ?, 'CANCEL', ?, ?, ?, 'ผู้ขอยกเลิกเอง', 'PENDING', 'CANCELLED', ?)
+          `).run(
+            generateId(),
+            tenantId,
+            apr.id,
+            req.user!.userId,
+            req.user!.email,
+            req.user!.role,
+            now
+          )
+        }
       }
-    }
+    })()
 
     res.json({
       success: true,

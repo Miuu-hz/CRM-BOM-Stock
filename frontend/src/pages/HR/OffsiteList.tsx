@@ -11,16 +11,16 @@ const STATUS_LABELS: Record<OffsiteStatus, string> = {
 }
 
 const STATUS_BADGE: Record<OffsiteStatus, string> = {
-  PENDING: 'bg-amber-500/15 text-amber-600',
+  PENDING: 'bg-[var(--warning-soft)] text-[var(--warning-strong)]',
   APPROVED: 'bg-[var(--success-soft)] text-[var(--success)]',
-  REJECTED: 'bg-[var(--danger-soft)] text-danger',
+  REJECTED: 'bg-[var(--danger-soft)] text-[var(--danger)]',
   CANCELLED: 'bg-[var(--surface-2)] text-[var(--fg-3)]',
 }
 
 const FILTER_OPTIONS: Array<{ value: '' | OffsiteStatus; label: string }> = [
   { value: '', label: 'ทั้งหมด' },
   { value: 'PENDING', label: 'รออนุมัติ' },
-  { value: 'APPROVED', label: 'อนุมัติแล้ว' },
+  { value: 'APPROVED', label: 'อนุมัติ' },
   { value: 'REJECTED', label: 'ไม่อนุมัติ' },
   { value: 'CANCELLED', label: 'ยกเลิก' },
 ]
@@ -30,17 +30,12 @@ export default function OffsiteList() {
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState<string>('')
 
-  // ponytail: load offsite requests with status filter; tolerates unmocked service in tests
   const loadRequests = useCallback(async () => {
     setLoading(true)
     try {
-      if (typeof hrService.getOffsiteRequests === 'function') {
-        const params = filterStatus ? { status: filterStatus as OffsiteStatus } : {}
-        const list = await hrService.getOffsiteRequests(params)
-        setRequests(Array.isArray(list) ? list : [])
-      } else {
-        setRequests([])
-      }
+      const params = filterStatus ? { status: filterStatus as OffsiteStatus } : {}
+      const list = await hrService.getOffsiteRequests(params)
+      setRequests(Array.isArray(list) ? list : [])
     } catch {
       setRequests([])
     } finally {
@@ -55,11 +50,9 @@ export default function OffsiteList() {
   const handleCancel = async (id: string) => {
     if (!window.confirm('ยืนยันยกเลิกคำขอนี้?')) return
     try {
-      if (typeof hrService.cancelOffsiteRequest === 'function') {
-        await hrService.cancelOffsiteRequest(id)
-        toast.success('ยกเลิกคำขอสำเร็จ')
-        loadRequests()
-      }
+      await hrService.cancelOffsiteRequest(id)
+      toast.success('ยกเลิกคำขอสำเร็จ')
+      loadRequests()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'ยกเลิกคำขอไม่สำเร็จ')
     }
@@ -70,12 +63,12 @@ export default function OffsiteList() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-blue-600/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
+          <div className="p-2.5 rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
             <MapPin className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">ทำงานนอกสถานที่</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <h2 className="text-xl font-bold text-[var(--fg)]">ทำงานนอกสถานที่</h2>
+            <p className="text-sm text-[var(--fg-3)]">
               รายการคำขอทำงานนอกสถานที่ของพนักงานทั้งร้าน
             </p>
           </div>
@@ -95,7 +88,7 @@ export default function OffsiteList() {
               onClick={() => setFilterStatus(opt.value)}
               className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
                 active
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-[var(--primary)] text-white'
                   : 'text-[var(--fg-2)] hover:bg-[var(--surface-2)] border border-[var(--border)]'
               }`}
             >
@@ -152,7 +145,7 @@ export default function OffsiteList() {
                         <button
                           type="button"
                           onClick={() => handleCancel(r.id)}
-                          className="text-xs text-red-600 hover:text-red-700 hover:underline font-medium"
+                          className="text-xs text-[var(--danger)] hover:underline font-medium"
                         >
                           ยกเลิก
                         </button>

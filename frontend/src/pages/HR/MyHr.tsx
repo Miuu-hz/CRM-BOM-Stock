@@ -383,8 +383,7 @@ export default function MyHr() {
 
     if (checkinLocation) {
       if (!navigator.geolocation) {
-        setCheckingIn(false)
-        setCheckinError('อุปกรณ์ของคุณไม่รองรับการระบุตำแหน่ง (GPS)')
+        sendPunch({})
         return
       }
 
@@ -397,14 +396,10 @@ export default function MyHr() {
           })
         },
         (geoErr) => {
-          setCheckingIn(false)
           if (geoErr.code === 1 /* PERMISSION_DENIED */) {
             setPermissionDenied(true)
-          } else if (geoErr.code === 3 /* TIMEOUT */) {
-            setCheckinError('หมดเวลาค้นหาพิกัด GPS (10 วินาที) กรุณาลองใหม่อีกครั้ง')
-          } else {
-            setCheckinError('ไม่สามารถระบุตำแหน่ง GPS ได้ กรุณาลองใหม่อีกครั้ง')
           }
+          sendPunch({})
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       )
@@ -1270,6 +1265,11 @@ export default function MyHr() {
                     <tr key={day.workDate} className="hover:bg-[var(--surface-2)]/50 transition">
                       <td className="py-2 px-2 whitespace-nowrap font-medium text-[var(--fg)]">
                         {day.workDate}
+                        {attendance?.logs?.some((l) => l.offsite && l.punched_at?.startsWith(day.workDate)) && (
+                          <span className="ml-1.5 px-2 py-0.5 rounded text-xs bg-[var(--primary-soft)] text-[var(--primary)] font-medium">
+                            นอกสถานที่
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 px-2 whitespace-nowrap font-mono">
                         {day.in ? fmtTime(day.in) : '-'}
@@ -1350,7 +1350,7 @@ export default function MyHr() {
                           {log.source}
                         </span>
                         {log.offsite && (
-                          <span className="ml-1.5 px-2 py-0.5 rounded text-xs bg-blue-500/15 text-blue-600 dark:text-blue-400 font-medium">
+                          <span className="ml-1.5 px-2 py-0.5 rounded text-xs bg-[var(--primary-soft)] text-[var(--primary)] font-medium">
                             นอกสถานที่
                           </span>
                         )}

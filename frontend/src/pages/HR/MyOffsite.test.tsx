@@ -28,6 +28,7 @@ beforeEach(() => {
   mockHr.getOffsiteRequests.mockResolvedValue([])
   mockHr.createOffsiteRequest.mockResolvedValue({} as any)
   mockHr.cancelOffsiteRequest.mockResolvedValue({} as any)
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
 describe('การ์ดทำงานนอกสถานที่ MyOffsite', () => {
@@ -177,6 +178,33 @@ describe('การ์ดทำงานนอกสถานที่ MyOffsite
     })
 
     expect(toast.success).toHaveBeenCalledWith('ยกเลิกคำขอเรียบร้อยแล้ว')
+  })
+
+  it('ยกเลิกคำขอ: เมื่อปฏิเสธการยืนยัน จะไม่เรียก cancelOffsiteRequest', async () => {
+    mockHr.getOffsiteRequests.mockResolvedValue([
+      {
+        id: 'off-pending-99',
+        employee_id: 'emp-1',
+        employee_code: 'EMP001',
+        employee_name: 'สมชาย ใจดี',
+        start_date: '2026-11-25',
+        end_date: '2026-11-25',
+        place: 'ไซต์งานทดสอบ',
+        reason: null,
+        status: 'PENDING',
+        decided_at: null,
+        created_at: '2026-11-17T10:00:00Z',
+      },
+    ])
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    render(<MyOffsite />)
+
+    const cancelBtn = await screen.findByRole('button', { name: /ยกเลิก/ })
+    fireEvent.click(cancelBtn)
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(mockHr.cancelOffsiteRequest).not.toHaveBeenCalled()
   })
 
   it('แสดง error จาก server ตรง ๆ เมื่อส่งคำขอไม่สำเร็จ', async () => {
