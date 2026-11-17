@@ -94,6 +94,7 @@ import { posSales, ledgerRevenue, ledgerCogs, ledgerOpex, thaiToday, addDaysStr 
 import { canApprove } from './approvalGate.service'
 import { getLowStockItems } from '../routes/dashboard.routes'
 import { intakeBillImage, MAX_PENDING_PER_TENANT } from './billInbox.service'
+import { logLine, describeEvent, describeMessages } from './lineLog'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -212,12 +213,21 @@ class LineBotService {
         const inner = new Client({ channelAccessToken: config.channel_access_token })
         // Wrap v11 API to be compatible with v8 call signatures used throughout this service
         const wrap = (msgs: any) => Array.isArray(msgs) ? msgs : [msgs]
+        // ทุกข้อความขาออกผ่าน 2 ทางนี้เท่านั้น → บันทึก log ที่เดียว (สำเร็จ/ล้มเหลว) แล้วส่งผลเดิมต่อ
+        const sent = <T>(kind: string, to: string | undefined, messages: any, p: Promise<T>): Promise<T> => {
+            const t0 = Date.now()
+            const base = { tenantId, direction: 'OUT' as const, kind, target: to, summary: describeMessages(messages) }
+            return p.then(
+                r => { logLine({ ...base, ms: Date.now() - t0 }); return r },
+                e => { logLine({ ...base, ok: false, error: e, ms: Date.now() - t0 }); throw e },
+            )
+        }
         return {
             token: config.channel_access_token as string,
             replyMessage: (replyToken: string, messages: any) =>
-                inner.replyMessage({ replyToken, messages: wrap(messages) }),
+                sent('reply', undefined, messages, inner.replyMessage({ replyToken, messages: wrap(messages) })),
             pushMessage: (to: string, messages: any) =>
-                inner.pushMessage({ to, messages: wrap(messages) }),
+                sent('push', to, messages, inner.pushMessage({ to, messages: wrap(messages) })),
             getProfile: (userId: string) => inner.getProfile(userId),
             getGroupMemberProfile: (groupId: string, userId: string) =>
                 inner.getGroupMemberProfile(groupId, userId),
@@ -1123,6 +1133,22 @@ class LineBotService {
 
     // ── Main event dispatcher ─────────────────────────────────────────────────
     public async handleEvent(tenantId: string, event: any) {
+        const d = describeEvent(event)
+        const t0 = Date.now()
+        const base = d && {
+            tenantId, direction: 'IN' as const, kind: d.kind, summary: d.summary,
+            sourceType: event.source?.type, target: event.source?.groupId ?? event.source?.roomId ?? event.source?.userId,
+        }
+        try {
+            await this.dispatchEvent(tenantId, event)
+            if (base) logLine({ ...base, ms: Date.now() - t0 })
+        } catch (e) {
+            if (base) logLine({ ...base, ok: false, error: e, ms: Date.now() - t0 })
+            throw e
+        }
+    }
+
+    private async dispatchEvent(tenantId: string, event: any) {
         const client = this.getClient(tenantId)
         if (!client) return
 

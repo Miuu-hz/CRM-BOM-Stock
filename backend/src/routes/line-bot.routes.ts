@@ -186,6 +186,20 @@ router.get('/linked-users', authenticate, requireMaster, (req: Request, res: Res
 });
 
 // Unlink current user's LINE account
+// GET /api/line/logs — บันทึกการทำงานของ LINE ของร้านนี้ (ใหม่ก่อน) · ?limit=1..200 &before=<created_at> &status=ERROR
+router.get('/logs', authenticate, requireRole('ADMIN', 'MASTER'), (req: Request, res: Response) => {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
+    const before = typeof req.query.before === 'string' ? req.query.before : '9'
+    const status = req.query.status === 'ERROR' ? 'ERROR' : null
+    const rows = getDb().prepare(`
+        SELECT id, direction, kind, source_type, target, summary, status, error, duration_ms, created_at
+        FROM line_event_logs
+        WHERE tenant_id = ? AND created_at < ? AND (? IS NULL OR status = ?)
+        ORDER BY created_at DESC, id DESC LIMIT ?
+    `).all(req.user!.tenantId, before, status, status, limit)
+    res.json({ success: true, data: rows })
+})
+
 router.delete('/link', authenticate, (req: Request, res: Response) => {
     try {
         const { tenantId, userId } = req.user!;

@@ -26,7 +26,7 @@ export function registerBillInboxTools(server: IMcpServer, tenantId: string, use
       const total = countRow?.total ?? 0
 
       const rows = db.prepare(`
-        SELECT b.id, b.status, b.created_at, b.file_size, b.ref_type, b.ref_id, u.name as user_name
+        SELECT b.id, b.status, b.created_at, b.file_size, b.ref_type, b.ref_id, COALESCE(u.name, CASE WHEN b.user_id LIKE 'master_%' THEN 'Master' END) as user_name
         FROM bill_inbox b
         LEFT JOIN users u ON b.user_id = u.id
         WHERE b.tenant_id = ? AND b.status = ?
@@ -71,7 +71,7 @@ export function registerBillInboxTools(server: IMcpServer, tenantId: string, use
     async (args) => {
       const inboxId = (args.inbox_id ?? '').trim()
       const row = db.prepare(`
-        SELECT b.id, b.status, b.file_path, b.mime_type, b.created_at, u.name as user_name
+        SELECT b.id, b.status, b.file_path, b.mime_type, b.created_at, COALESCE(u.name, CASE WHEN b.user_id LIKE 'master_%' THEN 'Master' END) as user_name
         FROM bill_inbox b
         LEFT JOIN users u ON b.user_id = u.id
         WHERE b.id = ? AND b.tenant_id = ?

@@ -3529,6 +3529,26 @@ export function runMonthCloseMigrations(db: any): void {
       CREATE INDEX IF NOT EXISTS idx_bill_inbox_tenant_status ON bill_inbox(tenant_id, status, created_at);
     `)
   } catch (e) { console.error('⚠️ bill_inbox migration error:', e) }
+
+  // ==================== บันทึกการทำงานของ LINE OA (ขาเข้าจาก webhook + ขาออก reply/push) ====================
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS line_event_logs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT '',
+        direction TEXT NOT NULL CHECK(direction IN ('IN', 'OUT')),
+        kind TEXT NOT NULL,
+        source_type TEXT,
+        target TEXT,
+        summary TEXT,
+        status TEXT NOT NULL DEFAULT 'OK' CHECK(status IN ('OK', 'ERROR')),
+        error TEXT,
+        duration_ms INTEGER,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_line_event_logs_tenant_time ON line_event_logs(tenant_id, created_at);
+    `)
+  } catch (e) { console.error('⚠️ line_event_logs migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
