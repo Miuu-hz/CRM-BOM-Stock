@@ -1408,6 +1408,28 @@ class LineBotService {
                 return
             }
 
+            // ── ร้านสาธิต Testshop: สลับ LINE นี้ระหว่างบัญชีทดสอบ พนักงาน (EMP-TEST) ↔ ผู้จัดการ (MGR-TEST) ──
+            // LINE เดียวผูกได้บัญชีเดียวต่อร้าน จึงย้ายการผูกไปมา · ล็อกไว้ที่ Testshop + ต้องเป็นบัญชีทดสอบอยู่แล้ว (ร้านจริงใช้ยกสิทธิ์ไม่ได้)
+            if (me && tenantId === 'Testshop' && src === 'user' && lower === 'สลับทดสอบ') {
+                const db = getDb()
+                const cur = db.prepare('SELECT code FROM employees WHERE tenant_id = ? AND user_id = ?').get(tenantId, me.user_id) as any
+                const other = cur?.code === 'EMP-TEST' ? 'MGR-TEST' : cur?.code === 'MGR-TEST' ? 'EMP-TEST' : null
+                const to = other && db.prepare(`
+                    SELECT e.user_id, u.role, u.name FROM employees e JOIN users u ON u.id = e.user_id AND u.tenant_id = e.tenant_id
+                    WHERE e.tenant_id = ? AND e.code = ? AND e.status = 'ACTIVE' AND u.status = 'active'
+                `).get(tenantId, other) as any
+                if (!to) {
+                    await client.replyMessage(event.replyToken, { type: 'text', text: 'คำสั่งนี้ใช้ได้เฉพาะบัญชีทดสอบของร้านสาธิตครับ' })
+                    return
+                }
+                db.prepare('UPDATE line_user_mappings SET user_id = ?, role = ?, demo_role = NULL WHERE tenant_id = ? AND line_user_id = ?')
+                    .run(to.user_id, to.role, tenantId, event.source.userId)
+                await richMenus.syncUser(tenantId, client.token, event.source.userId, menuKeyForRole(to.role))
+                await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้เป็น: ${to.name} (${ROLE_LABEL[to.role] ?? to.role})
+พิมพ์ สลับทดสอบ เพื่อสลับกลับ` })
+                return
+            }
+
             // ── คำสั่ง: สถานะ / status / -status ─────────────────────────────
             if (['สถานะ', 'status', '-status'].includes(lower)) {
                 await this.handleStatusCommand(tenantId, event.replyToken, client)
