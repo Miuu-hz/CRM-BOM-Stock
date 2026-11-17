@@ -33,6 +33,8 @@ export type GateCategory = 'stock_adjust' | 'pos_void' | 'doc_edit' | 'sales_ord
   | 'advance'
   // คำขอแลกกะ (HR Phase 7) — เพื่อนตกลงแล้ว รออนุมัติ → สลับกะใน shift_assignments
   | 'shift_swap'
+  // คำขอทำงานนอกสถานที่ — อนุมัติแล้ว offsite_requests → APPROVED วันนั้นเช็คอินได้ทุกที่
+  | 'offsite'
 
 /** ระดับความร้ายแรงในบันทึกความเคลื่อนไหว — เก็บใน payload.severity หน้า /approvals ใช้เลือกอีโมจิ */
 export type Severity = 'high' | 'medium' | 'low' | 'info'
@@ -74,6 +76,7 @@ const CATEGORY_RESOURCE: Record<GateCategory, string> = {
   leave: 'hr',
   advance: 'hr',
   shift_swap: 'hr',
+  offsite: 'hr',
 }
 
 /** GM ตามที่เจ้าของกำหนด (2026-10-24) = ADMIN/MASTER/OWNER หรือแผนก CEO */
@@ -95,7 +98,7 @@ export function isLeaveManagerFor(tenantId: string, userId: string, leaveRequest
   // shift_swap: หัวหน้าแผนกตรงของคนขอแลก (ทั้งสองคนควรอยู่แผนกเดียวกันอยู่แล้ว)
   const source = moduleType === 'shift_swap'
     ? '(SELECT id, tenant_id, requester_employee_id AS employee_id FROM shift_swaps)'
-    : 'leave_requests'
+    : moduleType === 'offsite' ? 'offsite_requests' : 'leave_requests'
   const row = db.prepare(`
     SELECT 1
     FROM ${source} lr
@@ -114,7 +117,7 @@ export function isLeaveManagerFor(tenantId: string, userId: string, leaveRequest
 /** ADMIN/MASTER/OWNER อนุมัติได้เสมอ นอกนั้นต้องถูกมอบสิทธิ์รายคน และไม่เกิน 5,000 บาท (หมวด leave เพิ่มหัวหน้าแผนกตรง) */
 export function canApprove(tenantId: string, user: GateUser, moduleType?: string, amount = 0, referenceId?: string): boolean {
   if (APPROVER_ROLES.has(user.role) || gmActsOn(user, moduleType)) return true
-  if ((moduleType === 'leave' || moduleType === 'shift_swap') && referenceId && isLeaveManagerFor(tenantId, user.userId, referenceId, moduleType)) return true
+  if ((moduleType === 'leave' || moduleType === 'shift_swap' || moduleType === 'offsite') && referenceId && isLeaveManagerFor(tenantId, user.userId, referenceId, moduleType)) return true
   // Non-admins capped at 5,000 THB max
   if (amount > 5000) return false
 

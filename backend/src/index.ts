@@ -191,6 +191,7 @@ import hrTrainingRoutes from './routes/hr.training.routes'
 import hrAdvanceRoutes from './routes/hr.advance.routes'
 import hrRosterRoutes from './routes/hr.roster.routes'
 import hrSwapRoutes from './routes/hr.swap.routes'
+import hrOffsiteRoutes from './routes/hr.offsite.routes'
 import hrLifecycleRoutes from './routes/hr.lifecycle.routes'
 import hrAssetRoutes from './routes/hr.asset.routes'
 import hrDocumentRoutes from './routes/hr.document.routes'
@@ -259,7 +260,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "https://static.cloudflareinsights.com"],
 
 
-      imgSrc: ["'self'", "data:", "blob:"],
+      imgSrc: ["'self'", "data:", "blob:", "https://tile.openstreetmap.org"], // แผนที่ปักหมุดจุดเช็คอิน (HR settings)
 
 
       connectSrc: ["'self'"],
@@ -670,6 +671,7 @@ app.use('/api/hr', hrTrainingRoutes)
 app.use('/api/hr', hrAdvanceRoutes)
 app.use('/api/hr', hrRosterRoutes)
 app.use('/api/hr', hrSwapRoutes)
+app.use('/api/hr', hrOffsiteRoutes)
 app.use('/api/hr', hrLifecycleRoutes)
 app.use('/api/hr', hrAssetRoutes)
 app.use('/api/hr', hrDocumentRoutes)

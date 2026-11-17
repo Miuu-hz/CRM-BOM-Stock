@@ -111,10 +111,11 @@ export const APPROVAL_MODULES: Record<string, { label: string; icon: string; bg:
     leave:             { label: 'ขอลา',              icon: '🌴', bg: '#ECFDF5', color: '#059669' },
     advance:           { label: 'เบิกล่วงหน้า/เงินยืม', icon: '💸', bg: '#FEF3C7', color: '#D97706' },
     shift_swap:        { label: 'ขอแลกกะ',           icon: '🔁', bg: '#EEF2FF', color: '#4F46E5' },
+    offsite:           { label: 'ขอทำงานนอกสถานที่',  icon: '📍', bg: '#ECFEFF', color: '#0891B2' },
 }
 
 /** หมวดที่กดอนุมัติจากการ์ดใน LINE ได้ — เฉพาะคำขอ HR ที่ไม่กระทบสต็อก/เอกสารบัญชี */
-export const IN_CHAT_APPROVAL = ['leave', 'advance', 'shift_swap']
+export const IN_CHAT_APPROVAL = ['leave', 'advance', 'shift_swap', 'offsite']
 
 export const flexTemplates = {
     card,

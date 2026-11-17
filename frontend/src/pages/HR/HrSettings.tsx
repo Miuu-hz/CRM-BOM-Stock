@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { Settings as SettingsIcon, Plus, Sparkles, Pencil, Save, X, MapPin, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, { HrSettingsData, PayItem, PayItemCalc, CheckinLocation } from '../../services/hr.service'
+
+const LocationPickerMap = lazy(() => import('../../components/hr/LocationPickerMap'))
 
 const DEFAULT_SETTINGS: HrSettingsData = {
   workHoursPerDay: 8,
@@ -160,6 +162,11 @@ export default function HrSettings() {
     } finally {
       setSavingItem(false)
     }
+  }
+
+  const handleMapChange = (lat: number, lng: number) => {
+    setLocLat(lat.toFixed(6))
+    setLocLng(lng.toFixed(6))
   }
 
   const handleUseCurrentPosition = () => {
@@ -619,6 +626,23 @@ export default function HrSettings() {
             </div>
 
             <form onSubmit={handleSaveLocation} className="space-y-4">
+              <Suspense
+                fallback={
+                  <div className="w-full h-[280px] rounded-xl bg-[var(--surface-2)] border border-[var(--border)] flex items-center justify-center text-xs text-[var(--fg-3)]">
+                    กำลังโหลดแผนที่...
+                  </div>
+                }
+              >
+                <div className="w-full h-[280px] rounded-xl overflow-hidden border border-[var(--border)]">
+                  <LocationPickerMap
+                    lat={locLat ? parseFloat(locLat) : null}
+                    lng={locLng ? parseFloat(locLng) : null}
+                    radius={parseFloat(locRadius) || 150}
+                    onChange={handleMapChange}
+                  />
+                </div>
+              </Suspense>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[var(--fg-2)] mb-1">

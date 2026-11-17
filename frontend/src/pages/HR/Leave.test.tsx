@@ -20,6 +20,9 @@ vi.mock('../../services/hr.service', () => {
     createLeaveRequest: vi.fn(),
     cancelLeaveRequest: vi.fn(),
     getLeaveBalances: vi.fn(),
+    getOffsiteRequests: vi.fn().mockResolvedValue([]),
+    createOffsiteRequest: vi.fn(),
+    cancelOffsiteRequest: vi.fn(),
   }
   return {
     default: service,
@@ -43,6 +46,9 @@ const mockHr = hrService as unknown as {
   createLeaveRequest: ReturnType<typeof vi.fn>
   cancelLeaveRequest: ReturnType<typeof vi.fn>
   getLeaveBalances: ReturnType<typeof vi.fn>
+  getOffsiteRequests: ReturnType<typeof vi.fn>
+  createOffsiteRequest: ReturnType<typeof vi.fn>
+  cancelOffsiteRequest: ReturnType<typeof vi.fn>
 }
 
 beforeEach(() => {
@@ -94,6 +100,7 @@ beforeEach(() => {
   mockHr.getLeaveRequests.mockResolvedValue([])
   mockHr.getHolidays.mockResolvedValue([])
   mockHr.getLeaveBalances.mockResolvedValue([])
+  mockHr.getOffsiteRequests.mockResolvedValue([])
 })
 
 describe('หน้าการลาและวันหยุด (Leave)', () => {

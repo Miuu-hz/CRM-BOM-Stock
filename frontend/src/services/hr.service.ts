@@ -534,12 +534,40 @@ export interface CheckinResult {
   kind: 'IN' | 'OUT'
   employee_name: string
   distance_m: number | null
+  /** true = เช็คอินด้วยคำขอทำงานนอกสถานที่ที่อนุมัติแล้ว */
+  offsite?: boolean
+}
+
+export type OffsiteStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export interface OffsiteRequest {
+  id: string
+  employee_id: string
+  employee_code: string
+  employee_name: string
+  start_date: string
+  end_date: string
+  place: string
+  reason: string | null
+  status: OffsiteStatus
+  decided_at: string | null
+  created_at: string
+}
+
+export interface OffsiteRequestInput {
+  /** ไม่ส่ง = ขอให้ตัวเอง · ส่งได้เฉพาะคนที่มีสิทธิ์ hr:write */
+  employee_id?: string
+  start_date: string
+  end_date: string
+  place: string
+  reason?: string
 }
 
 export interface MyAttendanceLog {
   punched_at: string
   source: 'FILE' | 'MCP' | 'WEB' | 'DEVICE'
   distance_m: number | null
+  offsite?: boolean
 }
 
 export interface MyAttendance {
@@ -1059,6 +1087,22 @@ export const hrService = {
 
   async cancelLeaveRequest(id: string): Promise<LeaveRequest> {
     const res = await api.post(`/hr/leave-requests/${id}/cancel`)
+    return res.data.data
+  },
+
+  // ── ขอทำงานนอกสถานที่ (docs/contracts/hr-offsite.md) ──
+  async getOffsiteRequests(params?: { mine?: 1; status?: OffsiteStatus; from?: string; to?: string }): Promise<OffsiteRequest[]> {
+    const res = await api.get('/hr/offsite-requests', { params })
+    return res.data.data || []
+  },
+
+  async createOffsiteRequest(data: OffsiteRequestInput): Promise<OffsiteRequest> {
+    const res = await api.post('/hr/offsite-requests', data)
+    return res.data.data
+  },
+
+  async cancelOffsiteRequest(id: string): Promise<OffsiteRequest> {
+    const res = await api.post(`/hr/offsite-requests/${id}/cancel`)
     return res.data.data
   },
 

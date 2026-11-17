@@ -243,7 +243,7 @@ describe('HR Phase 4 (B4) — Web Check-in, Kiosk PIN Check-in & My Attendance',
       .set(authUser2)
       .send({ lat: 13.7593, lng: 100.5018, accuracy: 10 })
     expect(outsideRes.status).toBe(400)
-    expect(outsideRes.body.message).toMatch(/^อยู่นอกพื้นที่ร้าน \(ห่าง \d+ ม\.\)$/)
+    expect(outsideRes.body.message).toMatch(/^อยู่นอกพื้นที่ร้าน \(ห่าง \d+ ม\.\) · ถ้าทำงานนอกสถานที่ให้ยื่นคำขอก่อน$/)
 
     // Inside radius (~56m away <= 150m) -> 201, stores WEB, lat, lng, distance_m, and unique W#### pin
     const insideRes = await request(app)
@@ -444,8 +444,8 @@ describe('HR Phase 4 (B4) — Web Check-in, Kiosk PIN Check-in & My Attendance',
       shift_name: 'กะปกติ 09-18',
     })
     expect(resWithShift.body.data.logs).toEqual([
-      { punched_at: '2026-03-02 18:05:00', source: 'WEB', distance_m: 30 },
-      { punched_at: '2026-03-02 09:10:00', source: 'WEB', distance_m: 25 },
+      { punched_at: '2026-03-02 18:05:00', source: 'WEB', distance_m: 30, offsite: false },
+      { punched_at: '2026-03-02 09:10:00', source: 'WEB', distance_m: 25, offsite: false },
     ])
     expect(resWithShift.body.data.days).toHaveLength(2)
     expect(resWithShift.body.data.totals).toMatchObject({
@@ -463,7 +463,7 @@ describe('HR Phase 4 (B4) — Web Check-in, Kiosk PIN Check-in & My Attendance',
     expect(resNoShift.status).toBe(200)
     expect(resNoShift.body.data.employee.shift_name).toBeNull()
     expect(resNoShift.body.data.logs).toEqual([
-      { punched_at: '2026-03-02 08:50:00', source: 'FILE', distance_m: null },
+      { punched_at: '2026-03-02 08:50:00', source: 'FILE', distance_m: null, offsite: false },
     ])
     expect(resNoShift.body.data.days).toEqual([])
     expect(resNoShift.body.data.totals).toBeNull()
@@ -485,7 +485,7 @@ describe('HR Phase 4 (B4) — Web Check-in, Kiosk PIN Check-in & My Attendance',
       .set('Authorization', `Bearer ${userB.token}`)
     expect(resB.status).toBe(200)
     expect(resB.body.data.logs).toEqual([
-      { punched_at: '2026-03-02 07:00:00', source: 'DEVICE', distance_m: null },
+      { punched_at: '2026-03-02 07:00:00', source: 'DEVICE', distance_m: null, offsite: false },
     ])
   })
 
