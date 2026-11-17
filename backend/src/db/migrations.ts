@@ -3503,6 +3503,32 @@ export function runMonthCloseMigrations(db: any): void {
     const lumCols = (db.prepare('PRAGMA table_info(line_user_mappings)').all() as any[]).map((c: any) => c.name)
     if (lumCols.length && !lumCols.includes('demo_role')) db.exec('ALTER TABLE line_user_mappings ADD COLUMN demo_role TEXT')
   } catch (e) { console.warn('Migration line_user_mappings.demo_role skipped:', e) }
+
+  // ==================== กล่องรับบิลผ่าน LINE (สัญญากลาง docs/contracts/bill-inbox.md) ====================
+  // รูปบิลที่พนักงานส่งเข้า LINE OA รอ AI (MCP) อ่านแล้วแนบเข้าเอกสาร · ไฟล์อยู่โฟลเดอร์เดียวกับ payment_attachments
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bill_inbox (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        line_message_id TEXT NOT NULL UNIQUE,
+        line_user_id TEXT NOT NULL,
+        user_id TEXT,
+        file_path TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'ATTACHED', 'DISCARDED')),
+        ref_type TEXT,
+        ref_id TEXT,
+        attachment_id TEXT,
+        discard_reason TEXT,
+        processed_by TEXT,
+        processed_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_bill_inbox_tenant_status ON bill_inbox(tenant_id, status, created_at);
+    `)
+  } catch (e) { console.error('⚠️ bill_inbox migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
