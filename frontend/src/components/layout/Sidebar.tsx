@@ -33,17 +33,13 @@ import {
   Building2,
   Box,
   UserCircle,
-  GraduationCap,
-  Banknote,
-  CalendarDays,
-  CalendarRange,
-  Scale, UserPlus,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
 import { canViewMenu, isMenuLocked } from '../../config/menuPermissions'
 import { useSubscription } from '../../contexts/SubscriptionContext'
+import { HR_GROUPS, inPath } from './HrTabs'
 
 export type SidebarMode = 'full' | 'rail'
 
@@ -59,6 +55,7 @@ interface MenuItem {
   isParent?: boolean
   subMenu?: MenuItem[]
   beta?: boolean // ยังไม่พร้อมใช้งานเต็มรูปแบบ → ป้าย Beta
+  group?: string[] // หลายหน้าในเมนูเดียว (แท็บด้านบน) — ลิงก์ไปหน้าแรกที่ผู้ใช้เปิดได้ และไฮไลต์เมื่ออยู่หน้าไหนก็ได้ในกลุ่ม
 }
 
 const KANBAN_SSO_PATH = 'https://kanban.phopy.net'
@@ -118,20 +115,9 @@ const menuItems: MenuItem[] = [
     isParent: true,
     subMenu: [
       { path: '/hr/me', tKey: 'sidebar.myHr', icon: UserCircle },
-      { path: '/hr/employees', tKey: 'sidebar.employees', icon: Users },
-      { path: '/hr/org', tKey: 'sidebar.orgUnits', icon: Building2 },
-      { path: '/hr/attendance', tKey: 'sidebar.attendance', icon: Clock },
-      { path: '/hr/roster', tKey: 'sidebar.roster', icon: CalendarRange },
-      { path: '/hr/leave', tKey: 'sidebar.leave', icon: CalendarDays },
-      { path: '/hr/payroll', tKey: 'sidebar.payroll', icon: Wallet },
-      { path: '/hr/advances', tKey: 'sidebar.advances', icon: Banknote },
-      { path: '/hr/training', tKey: 'sidebar.training', icon: GraduationCap },
-      { path: '/hr/lifecycle', tKey: 'sidebar.lifecycle', icon: ClipboardCheck },
-      { path: '/hr/assets', tKey: 'sidebar.hrAssets', icon: Package },
-      { path: '/hr/documents', tKey: 'sidebar.hrDocuments', icon: FileText },
-      { path: '/hr/discipline', tKey: 'sidebar.discipline', icon: Scale },
-      { path: '/hr/recruit', tKey: 'sidebar.recruit', icon: UserPlus },
-      { path: '/hr/settings', tKey: 'sidebar.hrSettings', icon: Settings },
+      ...[Users, Clock, Wallet, ClipboardCheck].map((icon, i) => ({
+        path: HR_GROUPS[i].tabs[0].path, tKey: HR_GROUPS[i].tKey, icon, group: HR_GROUPS[i].tabs.map(tab => tab.path),
+      })),
     ],
   },
   { path: '/approvals', tKey: 'sidebar.approvals', icon: ShieldCheck },
@@ -371,7 +357,10 @@ function Sidebar({ mode }: SidebarProps) {
           {menuItems
             .filter((item) => canViewMenu(user?.role, item.path, user?.departments))
             .filter((item) => item.path !== '/hr' || !isLocked('/hr'))
-            .map((item) => item.subMenu ? { ...item, subMenu: item.subMenu.filter((sub) => canViewMenu(user?.role, sub.path, user?.departments)) } : item)
+            .map((item) => item.subMenu ? { ...item, subMenu: item.subMenu.flatMap((sub) => {
+              const first = (sub.group ?? [sub.path]).find((p) => canViewMenu(user?.role, p, user?.departments))
+              return first ? [{ ...sub, path: first }] : []
+            }) } : item)
             .filter((item) => !item.subMenu || item.subMenu.length > 0)
             .map((item) => {
             const label = t(item.tKey)
@@ -406,9 +395,7 @@ function Sidebar({ mode }: SidebarProps) {
             }
 
             if (item.subMenu) {
-              const isChildActive = item.subMenu.some(
-                sub => location.pathname === sub.path || location.pathname.startsWith(sub.path + '/')
-              )
+              const isChildActive = item.subMenu.some(sub => (sub.group ?? [sub.path]).some(p => inPath(location.pathname, p)))
 
               const allChildrenLocked = item.subMenu.every(sub => isLocked(sub.path))
 
@@ -478,7 +465,7 @@ function Sidebar({ mode }: SidebarProps) {
                             `flex items-center gap-3 px-4 py-2 rounded-lg transition-all text-sm ${
                               subLocked ? 'opacity-70 hover:opacity-100' : ''
                             } ${
-                              isActive
+                              isActive || sub.group?.some(p => inPath(location.pathname, p))
                                 ? 'bg-[var(--primary-soft)] text-[var(--primary)]'
                                 : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                             }`

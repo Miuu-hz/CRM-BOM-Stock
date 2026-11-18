@@ -1,0 +1,34 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import HrTabs, { HR_GROUPS } from './HrTabs'
+
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1', role: 'ADMIN', departments: [] } }) }))
+
+const at = (path: string) => render(
+  <MemoryRouter initialEntries={[path]}>
+    <Routes>
+      <Route element={<HrTabs />}>
+        <Route path="/hr/:page" element={<div>page</div>} />
+      </Route>
+    </Routes>
+  </MemoryRouter>
+)
+
+describe('HrTabs', () => {
+  it('ทุกหน้า HR (ยกเว้นของฉัน/คีออสก์/พิมพ์) อยู่ในกลุ่มเดียวเท่านั้น', () => {
+    const paths = HR_GROUPS.flatMap(g => g.tabs.map(t => t.path))
+    expect(new Set(paths).size).toBe(paths.length)
+    expect(paths.sort()).toEqual(['/hr/advances', '/hr/assets', '/hr/attendance', '/hr/discipline', '/hr/documents', '/hr/employees',
+      '/hr/leave', '/hr/lifecycle', '/hr/org', '/hr/payroll', '/hr/recruit', '/hr/roster', '/hr/settings', '/hr/training'])
+  })
+
+  it('อยู่หน้าตารางกะ → เห็นแท็บของกลุ่มเวลาทำงาน 3 แท็บ และแท็บตารางกะ active', () => {
+    at('/hr/roster')
+    const links = screen.getAllByRole('link')
+    expect(links.map(l => l.getAttribute('href'))).toEqual(['/hr/attendance', '/hr/roster', '/hr/leave'])
+    expect(links[1].className).toContain('border-[var(--primary)]')
+    expect(screen.getByText('page')).toBeTruthy()
+  })
+})

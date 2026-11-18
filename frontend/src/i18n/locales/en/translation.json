@@ -115,7 +115,7 @@
     "digitalTwin": "3D Digital Twin",
     "digitalTwinDesc": "3D Digital Twin of SME Operations Hub",
     "hr": "HR",
-    "hrDesc": "Employees & Org Chart",
+    "hrDesc": "People, time and payroll",
     "employees": "Employees",
     "orgUnits": "Org Units",
     "attendance": "Attendance",
@@ -130,7 +130,11 @@
     "hrAssets": "Loaned Assets",
     "hrDocuments": "Employee Documents",
     "discipline": "Discipline",
-    "recruit": "Recruitment"
+    "recruit": "Recruitment",
+    "hrPeople": "People",
+    "hrTime": "Time",
+    "payrollRuns": "Payroll runs",
+    "onOffboard": "On/offboarding"
   },
   "dashboard": {
     "title": "Executive Dashboard",

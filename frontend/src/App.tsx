@@ -19,6 +19,7 @@ import Purchase from './pages/Purchase'
 import WorkOrders from './pages/WorkOrders'
 import QC from './pages/QC'
 import Settings from './pages/Settings'
+import HrTabs from './components/layout/HrTabs'
 import { AccountingBooks, AccountingReconcile, AccountingReports, PhopyBoard, PeriodClosing } from './pages/Accounting'
 import Tax from './pages/Tax'
 import Cashier from './pages/Cashier'
@@ -148,23 +149,26 @@ function AppContent() {
 
         {/* HR Routes */}
         <Route path="/hr" element={<Navigate to="/hr/employees" replace />} />
-        <Route path="/hr/employees" element={<Guard path="/hr/employees"><Employees /></Guard>} />
-        <Route path="/hr/org" element={<Guard path="/hr/org"><OrgUnits /></Guard>} />
-        <Route path="/hr/attendance" element={<Guard path="/hr/attendance"><Attendance /></Guard>} />
-        <Route path="/hr/payroll" element={<Guard path="/hr/payroll"><Payroll /></Guard>} />
+        {/* HR: แท็บด้านบนต่อกลุ่ม (HrTabs) — เมนูข้างเหลือ 5 รายการ */}
+        <Route element={<HrTabs />}>
+          <Route path="/hr/employees" element={<Guard path="/hr/employees"><Employees /></Guard>} />
+          <Route path="/hr/org" element={<Guard path="/hr/org"><OrgUnits /></Guard>} />
+          <Route path="/hr/attendance" element={<Guard path="/hr/attendance"><Attendance /></Guard>} />
+          <Route path="/hr/payroll" element={<Guard path="/hr/payroll"><Payroll /></Guard>} />
+          <Route path="/hr/settings" element={<Guard path="/hr/settings"><HrSettings /></Guard>} />
+          <Route path="/hr/leave" element={<Guard path="/hr/leave"><Leave /></Guard>} />
+          <Route path="/hr/training" element={<Guard path="/hr/training"><Training /></Guard>} />
+          <Route path="/hr/advances" element={<Guard path="/hr/advances"><Advances /></Guard>} />
+          <Route path="/hr/roster" element={<Guard path="/hr/roster"><Roster /></Guard>} />
+          <Route path="/hr/lifecycle" element={<Guard path="/hr/lifecycle"><Lifecycle /></Guard>} />
+          <Route path="/hr/assets" element={<Guard path="/hr/assets"><Assets /></Guard>} />
+          <Route path="/hr/documents" element={<Guard path="/hr/documents"><Documents /></Guard>} />
+          <Route path="/hr/discipline" element={<Guard path="/hr/discipline"><Discipline /></Guard>} />
+          <Route path="/hr/recruit" element={<Guard path="/hr/recruit"><Recruit /></Guard>} />
+        </Route>
         <Route path="/hr/payroll/:id/print" element={<Guard path="/hr/payroll"><PayslipPrint /></Guard>} />
-        <Route path="/hr/settings" element={<Guard path="/hr/settings"><HrSettings /></Guard>} />
-        <Route path="/hr/leave" element={<Guard path="/hr/leave"><Leave /></Guard>} />
         <Route path="/hr/me" element={<Guard path="/hr/me"><MyHr /></Guard>} />
         <Route path="/hr/kiosk" element={<Guard path="/hr/kiosk"><CheckinKiosk /></Guard>} />
-        <Route path="/hr/training" element={<Guard path="/hr/training"><Training /></Guard>} />
-        <Route path="/hr/advances" element={<Guard path="/hr/advances"><Advances /></Guard>} />
-        <Route path="/hr/roster" element={<Guard path="/hr/roster"><Roster /></Guard>} />
-        <Route path="/hr/lifecycle" element={<Guard path="/hr/lifecycle"><Lifecycle /></Guard>} />
-        <Route path="/hr/assets" element={<Guard path="/hr/assets"><Assets /></Guard>} />
-        <Route path="/hr/documents" element={<Guard path="/hr/documents"><Documents /></Guard>} />
-        <Route path="/hr/discipline" element={<Guard path="/hr/discipline"><Discipline /></Guard>} />
-        <Route path="/hr/recruit" element={<Guard path="/hr/recruit"><Recruit /></Guard>} />
         <Route path="/hr/documents/print" element={<Guard path="/hr/documents"><DocumentPrint /></Guard>} />
 
         {/* Cashier & KDS Route */}
