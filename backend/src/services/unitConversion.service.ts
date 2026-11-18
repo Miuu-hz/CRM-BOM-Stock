@@ -73,6 +73,9 @@ const STANDARD_CONVERSIONS: Record<string, number> = {
   // พื้นที่
   'm2->cm2': 10000,
   'cm2->m2': 0.0001,
+  // 1 นิ้ว = 2.54 ซม. พอดี → 1 ตร.นิ้ว = 2.54² = 6.4516 ตร.ซม. (ไม่ใช่ 2.5)
+  'in2->cm2': 6.4516,
+  'cm2->in2': 1 / 6.4516,
 
   // หน่วยนับบรรจุภัณฑ์ที่มีค่าตายตัวสากล
   'dozen->pcs': 12,      // โหล = 12 ชิ้น
@@ -109,6 +112,7 @@ const UNIT_NAME_MAP: Record<string, string> = {
   // sqm/sqcm are spellings of the same units — fold them in so the picker
   // does not offer "ตารางเมตร" twice under two different codes.
   'sqm': 'm2', 'sqcm': 'cm2',
+  'ตารางนิ้ว': 'in2', 'ตร.นิ้ว': 'in2', 'ตร.ม.': 'm2', 'ตร.ซม.': 'cm2', 'sqin': 'in2',
   // หน่วยนับ
   'ชิ้น': 'pcs', 'โหล': 'dozen', 'โกรส': 'gross', 'คู่': 'pair',
   'กล่อง': 'box', 'แพ็ค': 'pack', 'แพ๊ค': 'pack', 'แพค': 'pack',
@@ -144,7 +148,7 @@ export const UNIT_LABELS: Record<string, string> = {
   inch: 'นิ้ว', cm: 'เซนติเมตร', mm: 'มิลลิเมตร', m: 'เมตร', km: 'กิโลเมตร',
   ft: 'ฟุต', yard: 'หลา',
   l: 'ลิตร', ml: 'มิลลิลิตร', gallon: 'แกลลอน', fl_oz: 'ฟลูอิดออนซ์',
-  m2: 'ตารางเมตร', cm2: 'ตารางเซนติเมตร',
+  m2: 'ตารางเมตร', cm2: 'ตารางเซนติเมตร', in2: 'ตารางนิ้ว',
   pcs: 'ชิ้น', dozen: 'โหล', gross: 'โกรส', pair: 'คู่',
   box: 'กล่อง', pack: 'แพ็ค', set: 'ชุด', roll: 'ม้วน', sheet: 'แผ่น',
   bottle: 'ขวด', bag: 'ถุง', sachet: 'ซอง', case: 'ลัง', can: 'กระป๋อง',
@@ -166,7 +170,7 @@ const UNIT_LABELS_EN: Record<string, string> = {
   inch: 'inch', cm: 'centimetre', mm: 'millimetre', m: 'metre', km: 'kilometre',
   ft: 'foot', yard: 'yard',
   l: 'litre', ml: 'millilitre', gallon: 'gallon', fl_oz: 'fluid ounce',
-  m2: 'square metre', cm2: 'square centimetre',
+  m2: 'square metre', cm2: 'square centimetre', in2: 'square inch',
   pcs: 'piece', dozen: 'dozen', gross: 'gross', pair: 'pair',
   box: 'box', pack: 'pack', set: 'set', roll: 'roll', sheet: 'sheet',
   bottle: 'bottle', bag: 'bag', sachet: 'sachet', case: 'case', can: 'can',
@@ -223,7 +227,7 @@ const UNIT_CATEGORIES: Record<string, string[]> = {
   weight: ['kg', 'g', 'mg', 'hg', 'lb', 'oz'],
   length: ['inch', 'cm', 'mm', 'm', 'km', 'ft', 'yard'],
   volume: ['l', 'ml', 'gallon', 'fl_oz', 'tsp', 'tbsp'],
-  area: ['m2', 'cm2'],
+  area: ['m2', 'cm2', 'in2'],
   count: [
     'dozen', 'pcs', 'gross', 'pair', 'box', 'pack', 'set', 'roll', 'sheet',
     'bottle', 'bag', 'sachet', 'case', 'can', 'tube', 'tablet', 'glass',

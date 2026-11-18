@@ -44,7 +44,7 @@ export const UNIT_LABELS: Record<string, string> = {
   item: 'รายการ', scoop: 'สกู๊ป',
   // เพิ่มใหม่ — พบใน stock_items จริง
   tank: 'ถัง', slice: 'สไลซ์', unit: 'หน่วย',
-  m2: 'ตารางเมตร', cm2: 'ตารางเซนติเมตร',
+  m2: 'ตารางเมตร', cm2: 'ตารางเซนติเมตร', in2: 'ตารางนิ้ว',
 }
 
 /** หมวดของแต่ละหน่วย ใช้จัดกลุ่มใน UnitPicker */
@@ -59,7 +59,7 @@ export const UNIT_CATEGORY: Record<string, UnitCategory> = {
   l: 'volume', ltr: 'volume', ml: 'volume', gallon: 'volume', tsp: 'volume', tbsp: 'volume',
   m: 'length', cm: 'length', mm: 'length', km: 'length', inch: 'length',
   ft: 'length', yard: 'length',
-  m2: 'area', cm2: 'area',
+  m2: 'area', cm2: 'area', in2: 'area',
 }
 
 /** คำพ้องสำหรับการค้นหา — พิมพ์ 'กก' หรือ 'กิโล' หรือ 'kg' ต้องเจอเหมือนกัน */
@@ -107,7 +107,8 @@ export const UNIT_ALIASES: Record<string, string[]> = {
   yard: ['หลา'],
   gallon: ['แกลลอน'],
   m2: ['ตารางเมตร', 'ตร.ม.'],
-  cm2: ['ตารางเซนติเมตร'],
+  cm2: ['ตารางเซนติเมตร', 'ตร.ซม.'],
+  in2: ['ตารางนิ้ว', 'ตร.นิ้ว'],
   lb: ['ปอนด์'],
   oz: ['ออนซ์'],
 }
@@ -122,7 +123,7 @@ export const UNIT_LABELS_EN: Record<string, string> = {
   lb: 'pound', oz: 'ounce', m: 'metre', cm: 'centimetre',
   mm: 'millimetre', km: 'kilometre', inch: 'inch', ft: 'foot',
   yard: 'yard', l: 'litre', ml: 'millilitre',
-  gallon: 'gallon', fl_oz: 'fluid ounce', m2: 'square metre', cm2: 'square centimetre',
+  gallon: 'gallon', fl_oz: 'fluid ounce', m2: 'square metre', cm2: 'square centimetre', in2: 'square inch',
   roll: 'roll', box: 'box', pack: 'pack',
   set: 'set', pair: 'pair', sheet: 'sheet', bottle: 'bottle',
   bag: 'bag', sachet: 'sachet', dozen: 'dozen', gross: 'gross',

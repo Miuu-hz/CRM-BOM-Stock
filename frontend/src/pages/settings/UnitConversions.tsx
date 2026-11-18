@@ -69,7 +69,7 @@ const registerCategory = (cat: string, units: string[]) => units.forEach(u => { 
 registerCategory('weight', ['mg', 'g', 'hg', 'kg', 'ton', 'lb', 'oz'])
 registerCategory('volume', ['ml', 'cc', 'l', 'ltr', 'gallon', 'tsp', 'tbsp', 'cup'])
 registerCategory('length', ['mm', 'cm', 'm', 'km', 'inch', 'ft', 'yard'])
-registerCategory('area', ['m2', 'cm2'])
+registerCategory('area', ['m2', 'cm2', 'in2'])
 registerCategory('count', ['pcs', 'piece', 'dozen', 'gross', 'pair', 'item', 'egg', 'tablet', 'sheet'])
 registerCategory('container', [
   'pack', 'box', 'case', 'bag', 'set', 'bottle', 'can', 'sachet', 'tube',
