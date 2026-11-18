@@ -2193,6 +2193,7 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
 
   if (!isOpen) return null
 
+  const billHasVat = Number(bill.tax_amount || 0) > 0
   const hasInvoice = !!bill.invoice
   const showForm = !bill.customer_id || editingCustomer
 
@@ -2266,13 +2267,13 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
     try {
       const res = await api.post(`/pos/bills/${bill.id}/invoice`, { customerId: bill.customer_id })
       if (res.data?.success) {
-        toast.success(`ออกใบกำกับภาษีสำเร็จ: ${res.data.data.invoice.invoice_number}`)
+        toast.success(billHasVat ? `ออกใบกำกับภาษีสำเร็จ: ${res.data.data.invoice.invoice_number}` : `ออกใบเสร็จรับเงินสำเร็จ: ${res.data.data.invoice.invoice_number}`)
         const r = await posBillService.getBill(bill.id)
         if (r.success) onBillUpdated(r.data)
         onListRefresh()
       }
     } catch (e: any) {
-      setIssueError(e.response?.data?.message || 'ออกใบกำกับภาษีไม่สำเร็จ')
+      setIssueError(e.response?.data?.message || (billHasVat ? 'ออกใบกำกับภาษีไม่สำเร็จ' : 'ออกใบเสร็จรับเงินไม่สำเร็จ'))
     } finally { setIssuing(false) }
   }
 
@@ -2285,7 +2286,9 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
         className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-[var(--fg-1)]">ข้อมูลผู้ซื้อสำหรับใบกำกับภาษี</h2>
+          <h2 className="text-lg font-bold text-[var(--fg-1)]">
+            {billHasVat ? 'ข้อมูลผู้ซื้อสำหรับใบกำกับภาษี' : 'ข้อมูลผู้ซื้อสำหรับใบเสร็จรับเงิน'}
+          </h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
             <X className="w-4 h-4" />
           </button>
@@ -2293,8 +2296,8 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
 
         {hasInvoice && (
           <div className="mb-4 p-3 bg-success/10 border border-success/30 rounded-xl">
-            <p className="text-sm font-semibold text-success">ออกใบกำกับภาษีแล้ว {bill.invoice!.invoice_number}</p>
-            <p className="text-xs text-[var(--fg-3)] mt-1">ต้องยกเลิกใบกำกับก่อนถ้าจะแก้ผู้ซื้อ (ผู้มีสิทธิ์อนุมัติเท่านั้น)</p>
+            <p className="text-sm font-semibold text-success">{billHasVat ? 'ออกใบกำกับภาษีแล้ว' : 'ออกใบเสร็จรับเงินแล้ว'} {bill.invoice!.invoice_number}</p>
+            <p className="text-xs text-[var(--fg-3)] mt-1">{billHasVat ? 'ต้องยกเลิกใบกำกับก่อนถ้าจะแก้ผู้ซื้อ' : 'ต้องยกเลิกใบเสร็จก่อนถ้าจะแก้ผู้ซื้อ'} (ผู้มีสิทธิ์อนุมัติเท่านั้น)</p>
           </div>
         )}
 
@@ -2457,7 +2460,7 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
                 onClick={handlePrintTaxInvoice}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-success/15 text-success font-semibold text-sm hover:bg-success/25"
               >
-                <Printer className="w-4 h-4" /> พิมพ์ใบกำกับภาษี
+                <Printer className="w-4 h-4" /> {billHasVat ? 'พิมพ์ใบกำกับภาษี' : 'พิมพ์ใบเสร็จรับเงิน'}
               </button>
             ) : bill.status === 'PAID' ? (
               <>
@@ -2467,11 +2470,15 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
                   disabled={issuing}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-phopy-indigo text-white font-semibold text-sm hover:bg-phopy-indigo/80 disabled:opacity-50"
                 >
-                  {issuing ? 'กำลังออกใบกำกับ...' : 'ยืนยันออกใบกำกับภาษี'}
+                  {issuing
+                    ? (billHasVat ? 'กำลังออกใบกำกับ...' : 'กำลังออกใบเสร็จ...')
+                    : (billHasVat ? 'ยืนยันออกใบกำกับภาษี' : 'ยืนยันออกใบเสร็จรับเงิน')}
                 </button>
               </>
             ) : (
-              <p className="text-xs text-center text-warning">ต้องชำระเงินก่อนจึงจะออกใบกำกับภาษีได้</p>
+              <p className="text-xs text-center text-warning">
+                {billHasVat ? 'ต้องชำระเงินก่อนจึงจะออกใบกำกับภาษีได้' : 'ต้องชำระเงินก่อนจึงจะออกใบเสร็จรับเงินได้'}
+              </p>
             )}
           </div>
         )}
