@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from '../db/sqlite'
-import { formatDocumentNumber } from '../utils/id'
+import { formatDocumentNumber, thaiDateStr } from '../utils/id'
 import { normalizeUnit } from './unitConversion.service'
 
 // ─── BOM Command Parser ───────────────────────────────────────────────────────
@@ -95,6 +95,7 @@ import { canApprove } from './approvalGate.service'
 import { getLowStockItems } from '../routes/dashboard.routes'
 import { intakeBillImage, MAX_PENDING_PER_TENANT } from './billInbox.service'
 import { logLine, describeEvent, describeMessages } from './lineLog'
+import { buildShiftSummary } from './posShiftSummary.service'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน', GUEST: 'ยังไม่ผูกบัญชี' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -413,6 +414,12 @@ class LineBotService {
         return Math.max(0, BULK_PUSH_CAP() - (row?.n ?? 0))
     }
 
+    /** จอง 1 ข้อความจากเพดาน push รายเดือนของบริษัท (อะตอมมิก) — false = เต็มแล้ว */
+    private claimPush(tenantId: string): boolean {
+        return getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, 1)
+            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + 1 WHERE n < ?`).run(tenantId, thaiToday().slice(0, 7), BULK_PUSH_CAP()).changes > 0
+    }
+
     public async pushToUser(tenantId: string, userId: string, message: any): Promise<boolean> {
         const client = this.getClient(tenantId)
         if (!client) return false
@@ -422,9 +429,7 @@ class LineBotService {
         `).get(tenantId, userId) as { line_user_id: string } | undefined
         if (!m) return false
         // จองโควตาก่อนส่ง (อะตอมมิก) — เต็มแล้วไม่ส่ง
-        const claimed = getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, 1)
-            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + 1 WHERE n < ?`).run(tenantId, thaiToday().slice(0, 7), BULK_PUSH_CAP())
-        if (!claimed.changes) { console.warn(`pushToUser: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`); return false }
+        if (!this.claimPush(tenantId)) { console.warn(`pushToUser: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`); return false }
         // รับข้อความตัวอักษรเปล่าด้วย — LINE รับเฉพาะ object
         try { await client.pushMessage(m.line_user_id, typeof message === 'string' ? { type: 'text', text: message } : message); return true }
         catch (err) { console.error(`pushToUser failed → ${userId}:`, err); return false }
@@ -508,28 +513,28 @@ class LineBotService {
         `).all(tenantId) as { line_user_id: string }[]
     }
 
-    // ── สรุปปิดกะ POS → LINE ส่วนตัวของ Admin เสมอ + กลุ่มเมื่อติ๊ก line_shift_expense_groups ──
-    // (2026-10-16 เคยห้ามเข้ากลุ่ม · 2026-10-28 เจ้าของสั่งให้กลุ่มได้การ์ดเดียวกัน แทนข้อความค่าใช้จ่ายล้วน)
+    // โควตา LINE: push/multicast/broadcast นับต่อ "ผู้รับ" — push เข้ากลุ่มกิน 1 ข้อความต่อสมาชิกทุกคน (กลุ่ม 10 คน = 10)
+    // reply (replyToken) ฟรีไม่นับโควตา → กลุ่มดูสรุปปิดกะด้วยคำสั่ง "สรุปการปิดกะ" แทนการ push (OA กลางมี 300/เดือนรวมทุกบริษัท)
     public async notifyShiftClosed(tenantId: string, summary: any) {
         const client = this.getClient(tenantId)
         if (!client || !summary) return
         const card = flexTemplates.shiftCloseCard({ ...summary, webUrl: process.env.APP_URL ?? 'https://erp.phopy.net' })
         for (const line_user_id of new Set([...this.adminLineUsers(tenantId).map(u => u.line_user_id), ...this.masterSubscribers(tenantId, 'shift')])) {
+            if (!this.claimPush(tenantId)) { console.warn(`notifyShiftClosed: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`); break }
             try { await client.pushMessage(line_user_id, card) } catch (err) {
                 console.error(`notifyShiftClosed push failed → ${line_user_id}:`, err)
             }
         }
-        if (this.shiftToGroups(tenantId)) await this.pushToAllGroups(tenantId, card)
     }
 
-    // ponytail: ชื่อคอลัมน์เดิมยังเป็น line_shift_expense_groups — ตอนนี้คุม "สรุปปิดกะเข้ากลุ่ม" ทั้งใบ
+    // ponytail: ชื่อคอลัมน์เดิมยังเป็น line_shift_expense_groups — ตอนนี้คุมว่า "คนในกลุ่มพิมพ์ สรุปการปิดกะ ดูได้ไหม" (ไม่ push เข้ากลุ่มแล้ว)
     private shiftToGroups(tenantId: string): boolean {
         const cfg = getDb().prepare('SELECT line_shift_expense_groups FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
         return cfg?.line_shift_expense_groups === 1
     }
 
     // ── ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ → LINE ส่วนตัวของ Admin/Master + Manager ──
-    // กลุ่มไม่ได้ข้อความนี้ — ได้การ์ดสรุปปิดกะแทน (เงินออกลิ้นชักอยู่ในหัวข้อ "ซื้อสูงสุด")
+    // กลุ่มไม่ได้ข้อความนี้ — ดูสรุปปิดกะด้วยคำสั่ง "สรุปการปิดกะ" (เงินออกลิ้นชักอยู่ในหัวข้อ "ซื้อสูงสุด")
     // ไม่ต้องอนุมัติ แต่เจ้าของต้องรู้ทุกรายการ (เจ้าของสั่ง 2026-10-22)
     public async notifyShiftExpenses(
         tenantId: string,
@@ -553,6 +558,7 @@ class LineBotService {
         const targets = new Set<string>([...this.adminLineUsers(tenantId), ...managers].map(u => u.line_user_id))
         this.masterSubscribers(tenantId, 'shift').forEach(id => targets.add(id))
         for (const lineUserId of targets) {
+            if (!this.claimPush(tenantId)) { console.warn(`notifyShiftExpenses: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`); break }
             try { await client.pushMessage(lineUserId, msg) } catch (err) {
                 console.error(`notifyShiftExpenses push failed → ${lineUserId}:`, err)
             }
@@ -1113,6 +1119,40 @@ class LineBotService {
         await client.replyMessage(replyToken, card)
     }
 
+    // ── "สรุปการปิดกะ": กะของบริษัทที่ปิดวันนี้ (ไทย) · reply เท่านั้น ไม่ push · LINE รับ reply ได้สูงสุด 5 ข้อความ ──
+    private async handleShiftSummaryCommand(tenantId: string, src: string, me: any, replyToken: string, client: any) {
+        const text = (t: string) => ({ type: 'text', text: t })
+        if (src !== 'user' && !this.shiftToGroups(tenantId)) {
+            await client.replyMessage(replyToken, text('🔒 บริษัทนี้ยังไม่เปิดให้ดูสรุปปิดกะในกลุ่ม · ผู้ดูแลเปิดได้ที่ ตั้งค่า > LINE'))
+            return
+        }
+        if (src === 'user' && !['ADMIN', 'MASTER', 'MANAGER'].includes(me?.role)) {
+            await client.replyMessage(replyToken, text('🔒 สรุปปิดกะดูได้เฉพาะหัวหน้าและผู้ดูแล'))
+            return
+        }
+        const appUrl = process.env.APP_URL ?? 'https://erp.phopy.net'
+        const card = (id: string) => {
+            const s = buildShiftSummary(tenantId, id)
+            return s ? flexTemplates.shiftCloseCard({ ...s, webUrl: appUrl }) : null
+        }
+        // ponytail: อ่านล่าสุด 200 กะแล้วกรองวันในโค้ด (วันไทยแปลงด้วย thaiDateStr เหมือน buildShiftSummary)
+        const rows = (getDb().prepare(`SELECT id, closed_at FROM pos_shifts WHERE tenant_id = ? AND status = 'CLOSED' AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 200`)
+            .all(tenantId) as { id: string; closed_at: string }[]).reverse()
+        if (!rows.length) { await client.replyMessage(replyToken, text('ยังไม่มีกะที่ปิดเลยครับ')); return }
+        const today = thaiDateStr()
+        const todays = rows.filter(r => thaiDateStr(r.closed_at) === today)
+        let messages: any[]
+        if (!todays.length) {
+            const c = card(rows[rows.length - 1].id)
+            messages = c ? [text('วันนี้ยังไม่มีกะที่ปิด · กะล่าสุด:'), c] : [text('ยังไม่มีกะที่ปิดเลยครับ')]
+        } else {
+            const shown = todays.length > 5 ? todays.slice(-4) : todays
+            messages = shown.map(r => card(r.id)).filter(Boolean)
+            if (todays.length > 5) messages.push(text(`วันนี้ปิดไปแล้ว ${todays.length} กะ · ดูทั้งหมดในเว็บ ${appUrl}`))
+        }
+        await client.replyMessage(replyToken, messages)
+    }
+
     private async handleHowToLinkCommand(replyToken: string, client: any) {
         await client.replyMessage(replyToken, {
             type: 'text',
@@ -1437,6 +1477,12 @@ class LineBotService {
             }
             // demo "ยังไม่ผูกบัญชี": Master เห็นบอทแบบคนที่เพิ่งเพิ่มเพื่อน — ทุกข้อความทำเหมือนไม่มีการผูก ยกเว้นคำสั่ง demo (ทางกลับ)
             const me = linked?.demo && linked.role === 'GUEST' && !['demo', 'โหมด demo'].includes(lower) ? null : linked
+            // ── สรุปปิดกะ: ตอบด้วย reply เท่านั้น (ฟรี ไม่กินโควตา push) · ก่อนด่านลงทะเบียนเพราะในกลุ่มที่ผูกแล้วใครก็ใช้ได้ ──
+            // กลุ่มที่ยังไม่ผูก (tenantId ว่าง) และแชทส่วนตัวที่ยังไม่ผูก (me ว่าง) ไม่เข้าตรงนี้ → ไปด่านลงทะเบียนตามเดิม
+            if (['สรุปการปิดกะ', 'สรุปปิดกะ', 'ปิดกะ'].includes(lower) && (src === 'user' ? !!me : !!tenantId)) {
+                await this.handleShiftSummaryCommand(tenantId, src, me, event.replyToken, client)
+                return
+            }
             if (!isLinkAttempt && !(src === 'user' && (isHelp || isHowToLink))) {
                 if (!me) {
                     if (src === 'user') {

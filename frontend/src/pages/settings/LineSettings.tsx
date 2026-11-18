@@ -234,7 +234,7 @@ export default function LineSettings() {
   )
 }
 
-// การ์ดสรุปปิดกะ ส่ง LINE หา admin รายคนเสมอ — ติ๊กนี้ให้ส่งการ์ดเดียวกันเข้ากลุ่มที่ผูกไว้ด้วย
+// การ์ดสรุปปิดกะ ส่ง LINE หา admin รายคนเสมอ — ไม่ push เข้ากลุ่ม (นับโควตาตามสมาชิก) · ติ๊กนี้ให้คนในกลุ่มพิมพ์ "สรุปการปิดกะ" ดูเองได้ (bot reply ฟรี)
 function ShiftExpenseGroupToggle() {
   const [on, setOn] = useState<boolean | null>(null)
   useEffect(() => {
@@ -262,8 +262,8 @@ function ShiftExpenseGroupToggle() {
           className="rounded bg-[var(--bg)] border-[var(--border)] text-[var(--primary)] focus:ring-phopy-indigo"
         />
         <label htmlFor="line_shift_expense_groups" className="text-[var(--fg-2)]">
-          ส่งสรุปปิดกะ (ยอดขาย · เงินในลิ้นชัก · ขายดี/ซื้อ) เข้ากลุ่ม LINE ด้วย
-          <span className="block text-xs text-[var(--fg-4)]">การ์ดเดียวกับที่ส่งหา Admin รายคน — ทุกคนในกลุ่มจะเห็นเงินขาด/เกิน</span>
+          ให้คนในกลุ่ม LINE พิมพ์ "สรุปการปิดกะ" เพื่อดูยอดปิดกะได้
+          <span className="block text-xs text-[var(--fg-4)]">บอทตอบกลับในกลุ่ม ไม่กินโควตาข้อความ · ระบบไม่ส่งการ์ดปิดกะเข้ากลุ่มเองแล้ว เพราะการส่งเข้ากลุ่มนับโควตาตามจำนวนสมาชิก</span>
         </label>
       </div>
     </div>
