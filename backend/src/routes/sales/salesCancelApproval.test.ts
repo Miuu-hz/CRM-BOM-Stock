@@ -367,7 +367,8 @@ describe('Task 8 — ปิดกะ: ค่าใช้จ่ายเงิน
     const accId = generateId()
     db.prepare(`INSERT INTO accounts (id, tenant_id, code, name, type, category, normal_balance) VALUES (?, ?, '5998', 'ค่าน้ำแข็ง', 'EXPENSE', 'OPEX', 'DEBIT')`)
       .run(accId, s.t)
-    const spy = vi.spyOn(lineBotService, 'notifyShiftExpenses').mockRejectedValue(new Error('LINE ล่ม'))
+    // ค่าใช้จ่ายไม่ส่ง LINE แยกแล้ว — รวมอยู่ในการ์ดปิดกะ
+    const spy = vi.spyOn(lineBotService, 'notifyShiftClosed').mockRejectedValue(new Error('LINE ล่ม'))
     const shiftId = await openShift(s)
     const r = await request(app).post(`/api/sales/pos-shifts/${shiftId}/close`).set(auth(s.master.token)).send({
       closing_cash_counted: 350,
@@ -381,7 +382,7 @@ describe('Task 8 — ปิดกะ: ค่าใช้จ่ายเงิน
     expect(logs.map(l => l.amount)).toEqual([50, 100])
     expect(logs.every(l => l.status === 'AUTO' && JSON.parse(l.payload).severity === 'medium')).toBe(true)
     expect(spy).toHaveBeenCalledTimes(1)
-    expect(spy.mock.calls[0][1].expenses).toHaveLength(2)
+    expect(spy.mock.calls[0][1].buys.top.map((b: any) => b.label)).toEqual(expect.arrayContaining(['น้ำแข็ง', 'ผงซักฟอก']))
   })
 })
 

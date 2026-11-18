@@ -106,7 +106,6 @@ describe('สรุปปิดกะเข้ากลุ่ม LINE', () => {
     vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ pushMessage: push })
     vi.spyOn(lineBotService as any, 'adminLineUsers').mockReturnValue([{ line_user_id: 'U-admin' }])
     const groups = vi.spyOn(lineBotService, 'pushToAllGroups').mockResolvedValue(undefined)
-    await lineBotService.notifyShiftExpenses(a.tenantId, { shiftNumber: 'SH-1', expenses: [{ reason: 'น้ำแข็ง', amount: 50 }] })
     await lineBotService.notifyShiftClosed(a.tenantId, summary)
     return { push, groups }
   }
@@ -117,10 +116,11 @@ describe('สรุปปิดกะเข้ากลุ่ม LINE', () => {
     expect(groups).not.toHaveBeenCalled()
   })
 
-  it('เปิด → กลุ่มได้การ์ดสรุปปิดกะใบเดียวกับ admin (ไม่ใช่ข้อความค่าใช้จ่ายล้วน)', async () => {
+  // push เข้ากลุ่มกินโควตาตามจำนวนสมาชิก → เปิดแล้วก็ไม่ push เข้ากลุ่ม คนในกลุ่มพิมพ์ "สรุปการปิดกะ" แทน (reply ฟรี)
+  it('เปิด → ยังไม่ push เข้ากลุ่ม · admin ได้การ์ดใบเดียว (ค่าใช้จ่ายรวมอยู่ในการ์ด)', async () => {
     const { push, groups } = await run(true)
-    const adminCard = push.mock.calls.find(c => c[1]?.type === 'flex')?.[1]
-    expect(groups).toHaveBeenCalledTimes(1)
-    expect(groups.mock.calls[0][1]).toBe(adminCard)
+    expect(groups).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push.mock.calls[0][1].type).toBe('flex')
   })
 })
