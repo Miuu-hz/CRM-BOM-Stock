@@ -336,7 +336,10 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
   // รอรูป (โลโก้ร้าน/QR) โหลดเสร็จก่อน — สั่งพิมพ์ก่อนรูปมา = โลโก้ไม่ติด และวัดความสูงบิลได้สั้นกว่าจริง (ท้ายบิลโดนตัด)
   await waitForImages(w.document)
   if (w.closed) return
-  if (format === 'thermal') { await waitForLayout(w); if (w.closed) return; fitThermalPage(w.document) }
+  // รอฟอนต์/จัดหน้าทุกขนาด — A4 เคยข้ามขั้นนี้ บนมือถือ print() ทำงานก่อนหน้าวาดเสร็จ ได้ PDF หน้าเปล่า
+  await waitForLayout(w)
+  if (w.closed) return
+  if (format === 'thermal') fitThermalPage(w.document)
   w.print()
 }
 
