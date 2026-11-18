@@ -4070,8 +4070,18 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   }
   const handlePrintReceipt = (r: any, format: 'a4' | 'thermal') => {
     const co = getCachedCompanySettings()
+    // ใบเสร็จต้องบอกว่าลูกค้าซื้ออะไร (เจ้าของขอ 2026-11-18) — ดึงรายการจากใบแจ้งหนี้ต้นทาง
+    // จ่ายครบใบ = ยกยอดก่อนส่วนลด/ส่วนลด/VAT มาด้วย · จ่ายบางส่วน = แสดงรายการ แต่ยอดรวมเป็นยอดที่รับจริง
+    const inv = detail ?? invoice
+    const fullPayment = Math.abs(Number(r.amount || 0) - Number(inv.total_amount || 0)) < 0.005
+    const breakdown = fullPayment
+      ? { subtotal: inv.subtotal, discount_amount: inv.discount_amount, tax_amount: inv.tax_amount, tax_rate: inv.tax_rate,
+          vat_inclusive: inv.vat_inclusive, extra_charge_amount: inv.extra_charge_amount, extra_charge_label: inv.extra_charge_label }
+      : { notes: [`ชำระบางส่วนของใบแจ้งหนี้ ${invoice.invoice_number} ยอดเต็ม ${fmt(inv.total_amount)}`, r.notes].filter(Boolean).join(' · ') }
     printBill('rc', {
       ...r,
+      items: detail?.items || [],
+      ...breakdown,
       customer_name: invoice.customer_name,
       customer_code: invoice.customer_code,
       // ใบเสร็จ/ใบกำกับภาษีอย่างย่อต้องมีเลขภาษีผู้ซื้อ ข้อมูลมีอยู่แล้วในใบแจ้งหนี้

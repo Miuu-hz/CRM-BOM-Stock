@@ -129,3 +129,17 @@ describe('ค่าขนส่งบนใบแจ้งหนี้ไม่�
     expect(bill.items).toHaveLength(2)
   })
 })
+
+describe('ใบเสร็จมีรายการสินค้าจากใบแจ้งหนี้', () => {
+  const items = [{ product_name: 'หมอนอิง สีขาว', quantity: 20, unit: 'pcs', unit_price: 150, total_price: 3000 }]
+  it('จ่ายครบ: แสดงรายการ ยอดรวม = ยอดรับ', () => {
+    const d = toBillData('rc', { receipt_number: 'RC-1', amount: 3000, items, subtotal: 3000 })
+    expect(d.items.map(i => i.name)).toEqual(['หมอนอิง สีขาว'])
+    expect(d.total).toBe(3000)
+  })
+  it('จ่ายบางส่วน: ยังแสดงรายการ แต่ยอดรวมเป็นยอดที่รับจริง ไม่ใช่ยอดเต็มใบ', () => {
+    const d = toBillData('rc', { receipt_number: 'RC-2', amount: 1000, items, notes: 'ชำระบางส่วน' })
+    expect(d.items).toHaveLength(1)
+    expect(d.total).toBe(1000)
+  })
+})
