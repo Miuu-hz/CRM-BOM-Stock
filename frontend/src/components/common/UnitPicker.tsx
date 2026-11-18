@@ -501,7 +501,7 @@ export function UnitPicker({
                       </span>
                     )}
                     {isDimGroup && (
-                      <AlertTriangle className="ml-auto w-3 h-3 text-warning shrink-0" />
+                      <AlertTriangle className="ml-auto w-3 h-3 text-[var(--warning-strong)] shrink-0" />
                     )}
                     {sp && (
                       <span
@@ -518,7 +518,7 @@ export function UnitPicker({
                     )}
                   </div>
                   {isDimGroup && (
-                    <div className="text-[11px] text-warning mt-0.5 truncate">
+                    <div className="text-[11px] text-[var(--warning-strong)] mt-0.5 truncate">
                       {t('unitPicker.unreachableRowHint', { base: baseUnitLabel })}
                       {disabledRow && <span className="underline"> · {t('unitPicker.unreachableRowSetup')}</span>}
                     </div>
@@ -572,7 +572,7 @@ export function UnitPicker({
               role="button"
               onClick={(e) => { e.stopPropagation(); setChainOpen(true) }}
               title={t('unitPicker.unreachableHint', { base: baseUnitLabel })}
-              className="text-warning hover:text-[var(--warning-strong)] p-0.5 cursor-pointer"
+              className="text-[var(--warning-strong)] hover:opacity-75 p-0.5 cursor-pointer"
             >
               <AlertTriangle className="w-3.5 h-3.5" />
             </span>
@@ -584,7 +584,7 @@ export function UnitPicker({
       </button>
       {open && createPortal(dropdown, document.body)}
       {valueUnreachable && !hideUnreachableHint && (
-        <div className="mt-1 flex items-start gap-1 text-[11px] text-warning">
+        <div className="mt-1 flex items-start gap-1 text-[11px] text-[var(--warning-strong)]">
           <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
           <span>
             {t('unitPicker.unreachableHint', { base: baseUnitLabel })}{' '}

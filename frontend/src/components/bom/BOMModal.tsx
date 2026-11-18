@@ -827,10 +827,10 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                   {conversionIssues.length > 0 && (
                     <div className="mt-3 space-y-2">
                       {conversionIssues.map((issue) => (
-                        <div key={issue.rowId} className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                        <div key={issue.rowId} className="flex items-start gap-2 p-3 bg-[var(--warning-soft)] border border-warning/40 rounded-lg">
+                          <AlertTriangle className="w-4 h-4 text-[var(--warning-strong)] mt-0.5 shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-amber-300">
+                            <p className="text-xs text-[var(--warning-strong)]">
                               <span className="font-medium">{issue.materialName}</span>
                               {t('bomModal.conversionIssue', { from: issue.from, to: issue.to })}
                             </p>
@@ -861,7 +861,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                     })
                                   }
                                 }}
-                                className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
+                                className="text-xs px-2 py-1 bg-[var(--surface)] border border-warning/40 text-[var(--warning-strong)] rounded hover:bg-[var(--warning-soft)] transition-colors"
                               >
                                 {t('bomModal.editUnitInStock')}
                               </button>
@@ -869,7 +869,7 @@ function BOMModal({ isOpen, onClose, onSuccess, editBOM, copyFrom }: BOMModalPro
                                 type="button"
                                 // เดิมเปิดแท็บใหม่ไป /settings?tab=units — แก้เสร็จต้องกลับมาเอง และคำเตือนไม่หาย
                                 onClick={() => setChainIssue({ from: issue.from, to: issue.to })}
-                                className="text-xs px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors"
+                                className="text-xs px-2 py-1 bg-[var(--surface)] border border-warning/40 text-[var(--warning-strong)] rounded hover:bg-[var(--warning-soft)] transition-colors"
                               >
                                 {t('bomModal.globalUnitSettings')}
                               </button>
