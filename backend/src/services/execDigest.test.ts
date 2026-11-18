@@ -7,6 +7,7 @@ import { buildExecDigest } from './execDigest.service'
 import { lineBotService } from './line-bot.service'
 import lineBotRouter, { parseDonutQuery, buildDonutSvg } from '../routes/line-bot.routes'
 import { thaiToday } from './phopyBoard.service'
+import { flexTemplates } from './line-flex-templates'
 
 const tenants: string[] = []
 
@@ -260,7 +261,7 @@ describe('Executive Digest Service & LINE Push', () => {
         db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, 'ADMIN')`).run(generateId(), tenantWithData, adminUser, adminLine)
 
         const masterLine = 'U_master_' + generateId()
-        db.prepare(`INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id) VALUES (?, 'm1', ?)`).run(masterLine, tenantWithData)
+        db.prepare(`INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id) VALUES (?, ?, ?)`).run(masterLine, `master_${process.env.MASTER_BB_USERNAME || 'm1@ex.com'}`, tenantWithData)
         db.prepare(`INSERT INTO line_master_notify (line_user_id, tenant_id, kind) VALUES (?, ?, 'daily')`).run(masterLine, tenantWithData)
 
         // ผู้รับของ tenantEmpty (มี admin แต่ไม่มีข้อมูลอะไรเลย)
@@ -282,8 +283,13 @@ describe('Executive Digest Service & LINE Push', () => {
         // ร้านที่ไม่มีข้อมูลเลยต้องถูกข้าม
         expect(pushedTargets).not.toContain(emptyAdminLine)
 
-        // 2. ทดสอบกรณีโควตาเต็ม (claimPush = false)
+        // 2. เรียกซ้ำวันเดียวกัน (cron ซ้ำ/รีสตาร์ท) → ไม่ส่งซ้ำ
         pushedTargets.length = 0
+        await lineBotService.sendExecDigests(today)
+        expect(pushedTargets).toHaveLength(0)
+
+        // 3. ทดสอบกรณีโควตาเต็ม (claimPush = false) — ล้างตัวกันส่งซ้ำก่อน
+        db.prepare('DELETE FROM line_master_alerts WHERE key LIKE ?').run(`exec_digest:${tenantWithData}:%`)
         vi.spyOn(lineBotService as any, 'claimPush').mockReturnValue(false)
 
         await lineBotService.sendExecDigests(today)
@@ -322,5 +328,23 @@ describe('Executive Digest Service & LINE Push', () => {
         expect(resOk.headers['content-type']).toContain('image/png')
         expect(resOk.headers['cache-control']).toBe('public, max-age=86400')
         expect(resOk.body.length).toBeGreaterThan(0)
+    })
+
+    it('(f) บิลซื้อที่จับคู่เงินออกลิ้นชักแล้ว ไม่นับซ้ำ · การ์ดทุก box มี contents (LINE ปฏิเสธถ้าไม่มี)', () => {
+        const t = setupTenant()
+        const acc = insertAccount(t, '1182', 'เงินสดจ่ายรอบิล', 'ASSET', 'CURRENT_ASSET')
+        const mv = insertCashMovement(t, { type: 'PAID_OUT', amount: 500, reason: 'ซื้อผัก', createdAtUtc: '2026-11-17T03:00:00Z', accountId: acc, shiftNumber: 'S-F' })
+        const pi = insertPurchaseInvoice(t, insertSupplier(t, 'ตลาดผัก'), 500, '2026-11-17')
+        db.prepare('UPDATE purchase_invoices SET pos_cash_movement_id = ? WHERE id = ?').run(mv, pi)
+        const d = buildExecDigest(t, '2026-11-17', '2026-11-18')
+        expect(d.purchases).toBe(500)
+        const card = flexTemplates.execDigestCard({ ...d, sales: 100, withdrawals: 50, company: 'ร้าน' })
+        const walk = (n: any): void => {
+            if (!n || typeof n !== 'object') return
+            if (n.type === 'box') expect(Array.isArray(n.contents), JSON.stringify(n).slice(0, 120)).toBe(true)
+            Object.values(n).forEach(walk)
+        }
+        walk(card)
+        expect(JSON.stringify(card).length).toBeLessThan(30000)
     })
 })

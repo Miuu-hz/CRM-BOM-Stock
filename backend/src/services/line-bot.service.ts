@@ -310,9 +310,9 @@ class LineBotService {
     /** LINE ของ Master ที่เปิดรับแจ้งเตือนชนิดนี้ของบริษัทนี้ */
     private masterSubscribers(tenantId: string, kind: string): string[] {
         return (getDb().prepare(`
-            SELECT n.line_user_id FROM line_master_notify n JOIN line_master_links l ON l.line_user_id = n.line_user_id
+            SELECT n.line_user_id, l.master_id FROM line_master_notify n JOIN line_master_links l ON l.line_user_id = n.line_user_id
             WHERE n.tenant_id = ? AND n.kind = ?
-        `).all(tenantId, kind) as any[]).map(r => r.line_user_id as string)
+        `).all(tenantId, kind) as any[]).filter(r => isMasterId(String(r.master_id))).map(r => r.line_user_id as string)
     }
 
     /** ข้อความรายการแจ้งเตือนของบริษัทที่ Master ดูอยู่ + ปุ่มเปิด/ปิด */
@@ -341,7 +341,7 @@ class LineBotService {
         try {
             const client = this.getClient('')
             if (!client) return
-            const rows = getDb().prepare('SELECT line_user_id FROM line_master_links').all() as { line_user_id: string }[]
+            const rows = (getDb().prepare('SELECT line_user_id, master_id FROM line_master_links').all() as { line_user_id: string; master_id: string }[]).filter(r => isMasterId(String(r.master_id)))
             for (const r of rows) {
                 try { await client.pushMessage(r.line_user_id, { type: 'text', text }) } catch (err) {
                     console.error(`notifyMasters push failed → ${r.line_user_id}:`, err)
@@ -576,6 +576,8 @@ class LineBotService {
                     logoUrl: companyLogoUrl(tenantId),
                 })
 
+                // วันละครั้งต่อบริษัท — cron ซ้ำ/รีสตาร์ทตอน 9 โมงต้องไม่ส่งซ้ำ (claim แบบ sync ก่อน await แรก)
+                if (!getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(`exec_digest:${tenantId}:${today}`).changes) continue
                 for (const lineUserId of recipients) {
                     if (!this.claimPush(tenantId)) {
                         console.warn(`sendExecDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)

@@ -25,7 +25,7 @@ export function buildExecDigest(tenantId: string, day: string /* YYYY-MM-DD Thai
     SELECT pi.total_amount, sp.name AS supplier_name
     FROM purchase_invoices pi
     LEFT JOIN suppliers sp ON sp.id = pi.supplier_id AND (sp.tenant_id = pi.tenant_id OR sp.tenant_id IS NULL)
-    WHERE pi.tenant_id = ? AND date(pi.invoice_date) = ? AND (pi.status IS NULL OR pi.status NOT IN ('CANCELLED', 'DRAFT', 'VOID'))
+    WHERE pi.tenant_id = ? AND date(pi.invoice_date) = ? AND pi.pos_cash_movement_id IS NULL -- บิลที่จับคู่เงินออกลิ้นชักแล้ว นับในฝั่งลิ้นชัก (กันนับซ้ำ) AND (pi.status IS NULL OR pi.status NOT IN ('CANCELLED', 'DRAFT', 'VOID'))
   `).all(tenantId, day) as Array<{ total_amount: number; supplier_name: string | null }>
 
   const supplierTotals = new Map<string, number>()

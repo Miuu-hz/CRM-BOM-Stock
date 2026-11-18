@@ -25,6 +25,7 @@ import hrFaceRoutes from '../routes/hr.face.routes'
 import hrCheckinRoutes, { resetCheckinFaceLockout } from '../routes/hr.checkin.routes'
 import hrRoutes from '../routes/hr.routes'
 import { encryptDescriptor } from '../services/hr/face'
+import lineBotRouter from '../routes/line-bot.routes'
 
 // Stress / concurrency over HR + LINE features. Every scenario fires overlapping requests and asserts DB invariants.
 function buildApp(publicLimit = 100000) {
@@ -54,7 +55,7 @@ const tenants: string[] = []
 const TABLES = [
   'hr_face_enrollments', 'attendance_logs', 'hr_checkin_locations', 'hr_doc_templates',
   'approval_logs', 'approval_requests', 'leave_requests', 'leave_types', 'shift_assignments', 'hr_roster_publishes', 'shifts',
-  'hr_expiry_digest_runs', 'journal_lines', 'journal_entries', 'payroll_run_lines', 'payroll_runs', 'accounts', 'org_units','hr_asset_loans', 'hr_assets', 'hr_disciplinary_records', 'hr_employee_documents', 'hr_checklist_items', 'hr_checklist_templates',
+  'hr_expiry_digest_runs', 'pos_payments', 'pos_running_bills', 'line_push_counts', 'line_master_notify', 'journal_lines', 'journal_entries', 'payroll_run_lines', 'payroll_runs', 'accounts', 'org_units','hr_asset_loans', 'hr_assets', 'hr_disciplinary_records', 'hr_employee_documents', 'hr_checklist_items', 'hr_checklist_templates',
   'hr_applicants', 'hr_job_postings', 'line_login_tokens', 'line_link_tokens', 'line_user_mappings', 'employees', 'company_settings', 'tenant_subscriptions', 'users'
 ]
 afterAll(() => {
@@ -607,5 +608,76 @@ describe('HR/LINE stress', () => {
       .get(`/api/hr/doc-templates/${tplId}/pdf?employee_id=${e}`)
       .set(auth(foreignAdmin))
     expect(foreignRes.status).toBe(404)
+  }, 60000)
+  // ── 18 พ.ย.: ปิดกะ/สรุปผู้บริหาร/วงแหวน/Master ลอย — โควตา LINE 300/เดือนรวมทุกบริษัท ทุก push ต้องนับและไม่ซ้ำ ──
+  function execShop(admins: number) {
+    const a = admin(), t = a.tenantId, ids = [a.userId]
+    try { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(t, 'ร้านสเตรสผู้บริหาร-' + t.slice(-6)) } catch { /* มีแล้ว */ }
+    for (let i = 1; i < admins; i++) ids.push(createTestUser({ role: 'ADMIN', tenantId: t }).userId)
+    const lines = ids.map(u => { const uid = 'U' + generateId(); db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, 'ADMIN')`).run(generateId(), t, u, uid); return uid })
+    const bill = generateId()
+    db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, subtotal, total_amount, status, opened_at, closed_at) VALUES (?, ?, ?, 'โต๊ะ', 500, 500, 'PAID', ?, ?)`)
+      .run(bill, t, 'B-' + bill.slice(0, 6), '2031-05-01T05:00:00Z', '2031-05-01T05:00:00Z')
+    return { t, lines }
+  }
+
+  it('21. exec digest 09:00: 10 parallel runs -> one push per admin, push counter = admins', async () => {
+    const { t, lines } = execShop(3)
+    const pushed: string[] = []
+    vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: vi.fn(), pushMessage: async (to: string) => { pushed.push(to) } })
+    await Promise.all(Array.from({ length: 10 }, () => lineBotService.sendExecDigests('2031-05-02')))
+    expect(pushed.filter(x => lines.includes(x)).sort()).toEqual([...lines].sort())
+    expect(count('SELECT COALESCE(SUM(n), 0) c FROM line_push_counts WHERE tenant_id = ?', t)).toBe(3)
+    vi.restoreAllMocks()
+  }, 60000)
+
+  it('22. command burst: 150 x สรุปผู้บริหาร/สรุปการปิดกะ/ยอดขายวันนี้ -> one reply each, zero pushes', async () => {
+    const { lines } = execShop(5)
+    const replies = new Map<string, number>(), push = vi.fn()
+    vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: async (rt: string, m: any) => { JSON.stringify(m); replies.set(rt, (replies.get(rt) || 0) + 1) }, pushMessage: push })
+    vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
+    const texts = ['สรุปผู้บริหาร', 'สรุปการปิดกะ', 'ยอดขายวันนี้']
+    const evs = Array.from({ length: 150 }, (_, i) => ({ type: 'message', replyToken: `x22-${i}`, source: { type: 'user', userId: lines[i % 5] }, message: { type: 'text', text: texts[i % 3] } }))
+    const t0 = Date.now()
+    await Promise.all(evs.map(e => lineBotService.handleEvent(lineBotService.resolveTenant(e), e)))
+    console.log(`[stress 22] 150 summary commands in ${Date.now() - t0}ms`)
+    for (const e of evs) expect(replies.get(e.replyToken), e.message.text).toBe(1)
+    expect(push).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
+  }, 60000)
+
+  it('23. donut.png burst: 200 parallel valid/invalid -> only 200 png / 400, never 5xx', async () => {
+    const a = express(); a.use('/api/line', lineBotRouter)
+    const srv = a.listen(0)
+    try {
+      const qs = ['1000,500,200', '0,0,0', '1,2,3,4,5,6,7', 'abc', '-1', '1e13', '5', '', '1,,2', '999999999999,1']
+      const rs = await Promise.all(Array.from({ length: 200 }, (_, i) => request(srv).get('/api/line/donut.png').query({ v: qs[i % qs.length] })))
+      const t = tally(rs)
+      expect(Object.keys(t).sort()).toEqual(['200', '400'])
+      rs.filter(r => r.status === 200).forEach(r => expect(r.headers['content-type']).toBe('image/png'))
+    } finally { srv.close() }
+  }, 60000)
+
+  it('24. floating Master burst: 120 mixed switch/demo/master/สลับ events -> one link row, valid state, zero pushes', async () => {
+    const shops = [0, 1].map(() => { const t = 'tenant_st_' + generateId().slice(0, 8); tenants.push(t); try { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(t, 'ร้านลอย-' + t.slice(-6)) } catch { /* มีแล้ว */ } return t })
+    const uid = 'U' + generateId(), mid = `master_${process.env.MASTER_BB_USERNAME || 'stress@float.test'}`
+    db.prepare('INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id) VALUES (?, ?, ?)').run(uid, mid, shops[0])
+    const push = vi.fn()
+    vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: vi.fn(), pushMessage: push })
+    vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
+    const pb = (data: string) => ({ type: 'postback', postback: { data } })
+    const kinds = [pb(`action=switch_tenant&id=${shops[0]}`), pb(`action=switch_tenant&id=${shops[1]}`), pb('action=demo_role&role=USER'), pb('action=demo_role&role=off'),
+      { type: 'message', message: { type: 'text', text: 'master' } }, pb('action=master_notify&kind=daily'), { type: 'message', message: { type: 'text', text: 'แจ้งเตือน' } }]
+    const evs = Array.from({ length: 120 }, (_, i) => ({ replyToken: `x24-${i}`, source: { type: 'user', userId: uid }, ...kinds[i % kinds.length] }))
+    await Promise.all(evs.map(e => lineBotService.handleEvent(lineBotService.resolveTenant(e), e)))
+    const rows = db.prepare('SELECT * FROM line_master_links WHERE line_user_id = ?').all(uid) as any[]
+    expect(rows).toHaveLength(1)
+    expect(shops).toContain(rows[0].view_tenant_id)
+    expect([null, 'USER']).toContain(rows[0].demo_role)
+    expect(count('SELECT COUNT(*) c FROM line_user_mappings WHERE line_user_id = ?', uid)).toBe(0)
+    expect(push).not.toHaveBeenCalled()
+    db.prepare('DELETE FROM line_master_links WHERE line_user_id = ?').run(uid)
+    db.prepare('DELETE FROM line_master_notify WHERE line_user_id = ?').run(uid)
+    vi.restoreAllMocks()
   }, 60000)
 })

@@ -1177,7 +1177,7 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
         const dotRow = (color: string, label: string, amount: number) => ({
             type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'sm', margin: 'sm',
             contents: [
-                { type: 'box', layout: 'vertical', width: '10px', height: '10px', cornerRadius: '5px', backgroundColor: color },
+                { type: 'box', layout: 'vertical', width: '10px', height: '10px', cornerRadius: '5px', backgroundColor: color, contents: [] }, // LINE ปฏิเสธ box ที่ไม่มี contents
                 txt(label, { size: 'sm', color: P.ink900, flex: 1 }),
                 txt(baht(amount), { size: 'sm', weight: 'bold', color: P.ink900, flex: 0, align: 'end' }),
             ],
