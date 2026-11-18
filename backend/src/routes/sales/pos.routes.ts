@@ -781,8 +781,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
       payload: { severity: cashDifference < 0 ? 'high' : cashDifference > 0 ? 'medium' : 'info', difference: cashDifference },
     })
 
-    // ค่าใช้จ่ายเงินสดตอนปิดกะ: ไม่ต้องอนุมัติ แต่แจ้งเตือนทุกรายการ — บันทึกความเคลื่อนไหวรายการละแถว + LINE
-    // (บันทึก/LINE พังต้องไม่ทำให้การปิดกะที่สำเร็จแล้วล้ม — recordAutoAction ไม่ throw, LINE ยิงแบบไม่รอ)
+    // ค่าใช้จ่ายเงินสดตอนปิดกะ: บันทึกความเคลื่อนไหวรายการละแถว (แจ้งเตือนรวมอยู่ในการ์ดปิดกะแล้ว)
     validExpenses.forEach((exp, i) => {
       recordAutoAction({
         tenantId, user: req.user as any, category: 'pos_shift_expense', refType: 'pos_shift_cash_movements',
@@ -791,15 +790,6 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         payload: { severity: 'medium', shiftId: id, shiftNumber: shift.shift_number, reason: exp.reason, accountId: exp.account_id || null },
       })
     })
-    if (validExpenses.length > 0) {
-      try {
-        lineBotService.notifyShiftExpenses(tenantId, {
-          shiftNumber: shift.shift_number, cashier: req.user!.email, expenses: validExpenses,
-        }).catch((err: any) => console.error('[ปิดกะ] ส่งแจ้งเตือนค่าใช้จ่ายเข้า LINE ไม่สำเร็จ:', err))
-      } catch (err) {
-        console.error('[ปิดกะ] แจ้งเตือนค่าใช้จ่ายเข้า LINE ไม่สำเร็จ (ปิดกะสำเร็จแล้ว):', err)
-      }
-    }
 
     try {
       lineBotService.notifyShiftClosed(tenantId, buildShiftSummary(tenantId, id))

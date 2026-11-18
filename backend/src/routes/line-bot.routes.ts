@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { getDb } from '../db/sqlite'
 import { authenticate, requireMaster, requireRole } from '../middleware/auth.middleware'
 import { lineBotService } from '../services/line-bot.service'
+import sharp from 'sharp'
 
 const router = Router()
 
@@ -278,6 +279,78 @@ router.get('/logo/:tenantId', (req: Request, res: Response) => {
     } catch (error) {
         console.error('Error serving company logo:', error);
         res.status(500).json({ success: false, message: 'Failed to fetch logo' });
+    }
+});
+
+// ==========================================
+// 5. Public Donut Chart Endpoint (No Auth)
+// ==========================================
+export const DONUT_PALETTE = ['#3949E5', '#F5A524', '#DC2626', '#16A34A', '#8B5CF6', '#06B6D4'];
+
+export function parseDonutQuery(vQuery: unknown): number[] | null {
+    if (typeof vQuery !== 'string') return null;
+    const trimmed = vQuery.trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split(',');
+    if (parts.length === 0 || parts.length > 6) return null;
+    const nums: number[] = [];
+    for (const p of parts) {
+        const s = p.trim();
+        if (!s) return null;
+        const n = Number(s);
+        if (!Number.isFinite(n) || n < 0 || n > 1e12 || isNaN(n)) return null;
+        nums.push(n);
+    }
+    return nums;
+}
+
+export function buildDonutSvg(values: number[]): string {
+    const size = 600;
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = 200;
+    const strokeWidth = 80;
+    const circ = 2 * Math.PI * r;
+    const sum = values.reduce((s, v) => s + v, 0);
+
+    let circles = '';
+    if (sum <= 0) {
+        circles = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E2E8F0" stroke-width="${strokeWidth}"/>`;
+    } else {
+        let accumulated = 0;
+        for (let i = 0; i < values.length; i++) {
+            const v = values[i];
+            if (v <= 0) continue;
+            const frac = v / sum;
+            const dash = frac * circ;
+            const offset = accumulated * circ;
+            const color = DONUT_PALETTE[i % DONUT_PALETTE.length];
+            circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+            accumulated += frac;
+        }
+    }
+
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="${size}" height="${size}" fill="transparent"/>
+  ${circles}
+</svg>`;
+}
+
+router.get('/donut.png', async (req: Request, res: Response) => {
+    try {
+        const nums = parseDonutQuery(req.query.v);
+        if (!nums) {
+            return res.status(400).json({ success: false, message: 'Invalid query parameter v: expected up to 6 non-negative finite numbers' });
+        }
+        const svg = buildDonutSvg(nums);
+        const png = await sharp(Buffer.from(svg)).png().toBuffer();
+        res.set({
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=86400',
+        }).send(png);
+    } catch (error) {
+        console.error('Error generating donut chart:', error);
+        res.status(500).json({ success: false, message: 'Failed to generate donut chart' });
     }
 });
 

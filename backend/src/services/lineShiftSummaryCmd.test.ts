@@ -119,14 +119,13 @@ describe('LINE สรุปปิดกะ', () => {
         expect(msgs[4].text).toContain('วันนี้ปิดไปแล้ว 7 กะ')
     })
 
-    it('g) วันนี้ไม่มี มีเมื่อวาน → ข้อความ + การ์ดของเมื่อวาน', async () => {
+    it('g) วันนี้ไม่มี มีเมื่อวาน → ตอบเฉพาะข้อความ วันนี้ยังไม่มีกะที่ปิดครับ', async () => {
         const s = setup({ groupOn: true })
         insertShift(s.tenantId, 'SH-G1', new Date(Date.now() - 24 * HOUR))
         await s.say('สรุปการปิดกะ', s.group)
         const msgs = s.replies[0]
-        expect(msgs).toHaveLength(2)
+        expect(msgs).toHaveLength(1)
         expect(msgs[0].type).toBe('text')
-        expect(msgs[0].text).toContain('วันนี้ยังไม่มีกะที่ปิด')
-        expect(json(msgs[1])).toContain('SH-G1')
+        expect(msgs[0].text).toBe('วันนี้ยังไม่มีกะที่ปิดครับ')
     })
 })

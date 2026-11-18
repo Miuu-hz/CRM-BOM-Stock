@@ -484,7 +484,7 @@ export const flexTemplates = {
             guest:   [['ลิงก์ [รหัส 6 หลัก]', 'เชื่อมบัญชี LINE กับ ERP'], ['วิธีเชื่อมบัญชี', 'ขั้นตอนขอรหัส']],
             staff:   [['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['สูตร [ชื่อ]', 'ส่วนผสม + ต้นทุน'], ['สถานะ', 'ใบสั่งผลิตที่กำลังทำ'], ['ออเดอร์', 'ใบสั่งขายล่าสุด'], ['บัญชีของฉัน', 'บริษัทและตำแหน่งที่ผูกไว้']],
             manager: [['รออนุมัติ', 'คำขอที่คุณอนุมัติได้'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สรุปการปิดกะ', 'ยอดปิดกะวันนี้'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['สถานะ', 'ใบสั่งผลิตที่กำลังทำ'], ['ออเดอร์', 'ใบสั่งขายล่าสุด']],
-            exec:    [['ยอดขายวันนี้', 'POS วันนี้เทียบสัปดาห์ก่อน'], ['กำไรเดือนนี้', 'จากสมุดบัญชีที่ลงแล้ว'], ['รออนุมัติ', 'คำขอที่ค้างทั้งหมด'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สรุปการปิดกะ', 'ยอดปิดกะวันนี้'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง']],
+            exec:    [['ยอดขายวันนี้', 'POS วันนี้เทียบสัปดาห์ก่อน'], ['สรุปผู้บริหาร', 'สรุปยอดเมื่อวาน'], ['กำไรเดือนนี้', 'จากสมุดบัญชีที่ลงแล้ว'], ['รออนุมัติ', 'คำขอที่ค้างทั้งหมด'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สรุปการปิดกะ', 'ยอดปิดกะวันนี้'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง']],
         }
         return card({
             alt: 'คำสั่งที่ใช้ได้', kicker: 'Phopy ERP', title: '📖 คำสั่งที่ใช้ได้',
@@ -1052,6 +1052,14 @@ export const flexTemplates = {
 
         const sales = s.topSales.map(t => ({ title: t.name, sub: `× ${t.qty.toLocaleString('th-TH')}`, amount: t.amount }))
         const buys = s.buys.top.map(b => ({ title: b.label, sub: b.sub, amount: b.amount }))
+        const shownBuys = buys.slice(0, 8)
+        const buyRankRows = rankList(shownBuys, C.mango50, C.mango, shownBuys[0]?.amount || 0)
+        if (buys.length > 8) {
+            buyRankRows.push({
+                type: 'box', layout: 'horizontal', margin: 'sm',
+                contents: [{ type: 'text', text: `และอีก ${buys.length - 8} รายการ`, size: 'xs', color: C.ink500 }]
+            } as any)
+        }
         const chips = [
             s.alerts.voids ? `🔴 ยกเลิกบิล ${s.alerts.voids}` : '',
             s.alerts.itemVoids ? `🟠 ลบรายการหลังส่งครัว ${s.alerts.itemVoids}` : '',
@@ -1130,7 +1138,7 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
                         ...(deliveryRows.length ? [
                             section('🛵 ยอด Delivery / ส่วนลด > 20%', `รวม ${s.deliveryDiscounts!.reduce((t, d) => t + d.count, 0)} บิล`, deliveryRows, '')
                         ] : []),
-                        section('🛒 ซื้อสูงสุด 5 อันดับ', `รวม ${baht(s.buys.total)}`, rankList(buys, C.mango50, C.mango, buys[0]?.amount || 0), 'ไม่มีการซื้อหรือจ่ายออกในกะนี้'),
+                        section('🛒 ซื้อและเบิกในกะนี้', `รวม ${baht(s.buys.total)}`, buyRankRows, 'ไม่มีการซื้อหรือเบิกในกะนี้'),
                         ...(chips.length ? [{ type: 'box', layout: 'vertical', margin: 'xl', spacing: 'xs', contents: chips.map(c => ({
                             type: 'box', layout: 'horizontal', contents: [{ type: 'box', layout: 'vertical', flex: 0, backgroundColor: C.sand100, cornerRadius: 'xxl',
                                 paddingStart: '10px', paddingEnd: '10px', paddingTop: '4px', paddingBottom: '4px',
@@ -1147,6 +1155,102 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
                 },
             },
         }
+    },
+
+    // ─── สรุปผู้บริหาร (09:00 Exec Dashboard) ───────────────────────────────────
+    execDigestCard: (d: {
+        company?: string
+        logoUrl?: string
+        logo?: string
+        day: string
+        sales: number
+        purchases: number
+        withdrawals: number
+        purchaseSources: { label: string; amount: number }[]
+        withdrawalItems: { reason: string; amount: number; shiftNumber: string }[]
+        deliveries: { doNumber: string; customer: string; status: string; address: string }[]
+        totalDeliveries?: number
+    }) => {
+        const hasDonut = (d.sales > 0 || d.purchases > 0 || d.withdrawals > 0)
+        const donutUrl = `${APP_URL}/api/line/donut.png?v=${d.sales},${d.purchases},${d.withdrawals}`
+
+        const dotRow = (color: string, label: string, amount: number) => ({
+            type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'sm', margin: 'sm',
+            contents: [
+                { type: 'box', layout: 'vertical', width: '10px', height: '10px', cornerRadius: '5px', backgroundColor: color },
+                txt(label, { size: 'sm', color: P.ink900, flex: 1 }),
+                txt(baht(amount), { size: 'sm', weight: 'bold', color: P.ink900, flex: 0, align: 'end' }),
+            ],
+        })
+
+        const body: any[] = []
+
+        if (hasDonut) {
+            body.push({
+                type: 'image',
+                url: donutUrl,
+                size: 'full',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+            })
+            body.push({
+                type: 'box', layout: 'vertical', margin: 'md', contents: [
+                    dotRow('#3949E5', 'ยอดขาย', d.sales),
+                    dotRow('#F5A524', 'ยอดซื้อ', d.purchases),
+                    dotRow('#DC2626', 'ยอดเบิก', d.withdrawals),
+                ],
+            })
+        } else {
+            body.push(hero('ยอดของเมื่อวาน', '฿0', 'ไม่มียอดขาย ซื้อ หรือเบิก', P.sand100, P.ink500))
+        }
+
+        // Section แหล่งซื้อ
+        body.push(sectionTitle('แหล่งซื้อ'))
+        if (d.purchaseSources && d.purchaseSources.length > 0) {
+            d.purchaseSources.forEach(s => {
+                body.push(listRow(s.label, '', baht(s.amount), P.ink900))
+            })
+        } else {
+            body.push(txt('ไม่มีรายการซื้อ', { size: 'xs', color: P.ink500, margin: 'sm' }))
+        }
+
+        // Section รายละเอียดเบิก
+        body.push(sectionTitle('รายละเอียดเบิก'))
+        if (d.withdrawalItems && d.withdrawalItems.length > 0) {
+            d.withdrawalItems.forEach(w => {
+                const sub = w.shiftNumber ? `กะ ${w.shiftNumber}` : ''
+                body.push(listRow(w.reason, sub, baht(w.amount), P.danger))
+            })
+        } else {
+            body.push(txt('ไม่มีรายการเบิก', { size: 'xs', color: P.ink500, margin: 'sm' }))
+        }
+
+        // Section ส่งของวันนี้
+        const totalDel = d.totalDeliveries ?? (d.deliveries ? d.deliveries.length : 0)
+        body.push(sectionTitle('ส่งของวันนี้'))
+        if (d.deliveries && d.deliveries.length > 0) {
+            d.deliveries.forEach(del => {
+                const sub = [del.customer, del.address].filter(Boolean).join(' · ')
+                body.push(listRow(del.doNumber, sub, del.status, P.indigo))
+            })
+            if (totalDel > d.deliveries.length) {
+                body.push(txt(`และอีก ${totalDel - d.deliveries.length} รายการ`, { size: 'xs', color: P.ink500, margin: 'sm' }))
+            }
+        } else {
+            body.push(txt('วันนี้ไม่มีรายการส่งของ', { size: 'xs', color: P.ink500, margin: 'sm' }))
+        }
+
+        return card({
+            alt: `☀️ สรุปผู้บริหาร · ${thDate(d.day)} · ขาย ${baht(d.sales)} · ซื้อ ${baht(d.purchases)} · เบิก ${baht(d.withdrawals)}`,
+            kicker: d.company || 'Phopy ERP',
+            title: '☀️ สรุปผู้บริหาร',
+            sub: `${thDate(d.day)} (ยอดของเมื่อวาน)`,
+            logoUrl: d.logoUrl ?? d.logo,
+            body,
+            buttons: [
+                uriBtn('เปิด Phopy Board', `${APP_URL}/accounting/phopy-board`, true),
+            ],
+        })
     },
 
 };

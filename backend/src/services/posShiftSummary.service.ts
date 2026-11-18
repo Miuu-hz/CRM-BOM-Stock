@@ -152,7 +152,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     countedCash: r2(s.closing_cash_counted),
     difference: r2(s.cash_difference),
     topSales,
-    buys: { total: r2(buyRows.reduce((t, b) => t + b.amount, 0)), top: buyRows.slice(0, 5) },
+    buys: { total: r2(buyRows.reduce((t, b) => t + b.amount, 0)), top: buyRows },
     alerts: {
       voids: logs.filter(l => l.module_type === 'pos_void').length,
       itemVoids: logs.filter(l => l.module_type === 'pos_item_void').length,

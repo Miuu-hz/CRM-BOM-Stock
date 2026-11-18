@@ -96,6 +96,7 @@ import { getLowStockItems } from '../routes/dashboard.routes'
 import { intakeBillImage, MAX_PENDING_PER_TENANT } from './billInbox.service'
 import { logLine, describeEvent, describeMessages } from './lineLog'
 import { buildShiftSummary } from './posShiftSummary.service'
+import { buildExecDigest } from './execDigest.service'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน', GUEST: 'ยังไม่ผูกบัญชี' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -120,7 +121,8 @@ const companyName = (tenantId: string) =>
     ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
 // แจ้งเตือนของบริษัทที่ Master (LINE ลอย) เปิดรับเองได้ — ปิดเป็นค่าเริ่มต้น
-const MASTER_NOTIFY_KINDS: [string, string][] = [['shift', 'ปิดกะ'], ['approval', 'คำขออนุมัติ'], ['work_order', 'ใบสั่งผลิต'], ['purchase', 'ใบขอซื้อ']]
+// ป้ายปุ่มตอบด่วนของ LINE ยาวได้ไม่เกิน 20 ตัวอักษร (รวมเครื่องหมายหน้าชื่อ) → ชื่อชนิดต้องสั้น
+const MASTER_NOTIFY_KINDS: [string, string][] = [['shift', 'ปิดกะ'], ['approval', 'คำขออนุมัติ'], ['work_order', 'ใบสั่งผลิต'], ['purchase', 'ใบขอซื้อ'], ['daily', 'สรุปผู้บริหาร']]
 
 export const companyLogoUrl = (tenantId: string) => {
     const row = getDb().prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
@@ -533,34 +535,51 @@ class LineBotService {
         return cfg?.line_shift_expense_groups === 1
     }
 
-    // ── ค่าใช้จ่ายเงินสดที่แคชเชียร์ลงตอนปิดกะ → LINE ส่วนตัวของ Admin/Master + Manager ──
-    // กลุ่มไม่ได้ข้อความนี้ — ดูสรุปปิดกะด้วยคำสั่ง "สรุปการปิดกะ" (เงินออกลิ้นชักอยู่ในหัวข้อ "ซื้อสูงสุด")
-    // ไม่ต้องอนุมัติ แต่เจ้าของต้องรู้ทุกรายการ (เจ้าของสั่ง 2026-10-22)
-    public async notifyShiftExpenses(
-        tenantId: string,
-        info: { shiftNumber: string; cashier?: string; expenses: { reason: string; amount: number }[] }
-    ) {
-        const client = this.getClient(tenantId)
-        if (!client || !info?.expenses?.length) return
-        const total = info.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)
-        const lines = info.expenses.map(e => `• ${e.reason} ฿${Number(e.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`)
-        const msg = {
-            type: 'text',
-            text: `💸 ค่าใช้จ่ายเงินสดตอนปิดกะ ${info.shiftNumber}${info.cashier ? `\nโดย ${info.cashier}` : ''}\n${lines.join('\n')}`
-                + `\nรวม ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2 })}\nดูที่หน้า อนุมัติ > บันทึกความเคลื่อนไหว`,
-        }
-        const db = getDb()
-        const managers = db.prepare(`
-            SELECT DISTINCT lum.line_user_id FROM line_user_mappings lum
-            LEFT JOIN users u ON lum.user_id = u.id
-            WHERE lum.tenant_id = ? AND (u.role = 'MANAGER' OR lum.role = 'MANAGER')
-        `).all(tenantId) as { line_user_id: string }[]
-        const targets = new Set<string>([...this.adminLineUsers(tenantId), ...managers].map(u => u.line_user_id))
-        this.masterSubscribers(tenantId, 'shift').forEach(id => targets.add(id))
-        for (const lineUserId of targets) {
-            if (!this.claimPush(tenantId)) { console.warn(`notifyShiftExpenses: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`); break }
-            try { await client.pushMessage(lineUserId, msg) } catch (err) {
-                console.error(`notifyShiftExpenses push failed → ${lineUserId}:`, err)
+    // ── สรุปผู้บริหาร 09:00 (Exec Dashboard Digest) ─────────────────────────
+    public async sendExecDigests(today: string) {
+        const tenants = (getDb().prepare(`
+            SELECT DISTINCT tenant_id FROM company_settings WHERE tenant_id IS NOT NULL AND tenant_id != ''
+            UNION
+            SELECT DISTINCT tenant_id FROM line_user_mappings WHERE tenant_id IS NOT NULL AND tenant_id != ''
+        `).all() as any[]).map(r => r.tenant_id as string)
+
+        const yesterday = addDaysStr(today, -1)
+
+        for (const tenantId of tenants) {
+            try {
+                const tenantClient = this.getClient(tenantId)
+                if (!tenantClient) continue
+
+                const recipients = new Set<string>([
+                    ...this.adminLineUsers(tenantId).map(u => u.line_user_id),
+                    ...this.masterSubscribers(tenantId, 'daily'),
+                ])
+                if (recipients.size === 0) continue
+
+                const digest = buildExecDigest(tenantId, yesterday, today)
+                if (digest.sales === 0 && digest.purchases === 0 && digest.withdrawals === 0 && (!digest.deliveries || digest.deliveries.length === 0)) {
+                    continue
+                }
+
+                const card = flexTemplates.execDigestCard({
+                    ...digest,
+                    company: companyName(tenantId),
+                    logoUrl: companyLogoUrl(tenantId),
+                })
+
+                for (const lineUserId of recipients) {
+                    if (!this.claimPush(tenantId)) {
+                        console.warn(`sendExecDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)
+                        break
+                    }
+                    try {
+                        await tenantClient.pushMessage(lineUserId, card)
+                    } catch (err) {
+                        console.error(`sendExecDigests push failed → ${lineUserId}:`, err)
+                    }
+                }
+            } catch (err: any) {
+                console.error(`[sendExecDigests] tenant ${tenantId} failed:`, err.message)
             }
         }
     }
@@ -1138,19 +1157,28 @@ class LineBotService {
         // ponytail: อ่านล่าสุด 200 กะแล้วกรองวันในโค้ด (วันไทยแปลงด้วย thaiDateStr เหมือน buildShiftSummary)
         const rows = (getDb().prepare(`SELECT id, closed_at FROM pos_shifts WHERE tenant_id = ? AND status = 'CLOSED' AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 200`)
             .all(tenantId) as { id: string; closed_at: string }[]).reverse()
-        if (!rows.length) { await client.replyMessage(replyToken, text('ยังไม่มีกะที่ปิดเลยครับ')); return }
         const today = thaiDateStr()
         const todays = rows.filter(r => thaiDateStr(r.closed_at) === today)
-        let messages: any[]
         if (!todays.length) {
-            const c = card(rows[rows.length - 1].id)
-            messages = c ? [text('วันนี้ยังไม่มีกะที่ปิด · กะล่าสุด:'), c] : [text('ยังไม่มีกะที่ปิดเลยครับ')]
-        } else {
-            const shown = todays.length > 5 ? todays.slice(-4) : todays
-            messages = shown.map(r => card(r.id)).filter(Boolean)
-            if (todays.length > 5) messages.push(text(`วันนี้ปิดไปแล้ว ${todays.length} กะ · ดูทั้งหมดในเว็บ ${appUrl}`))
+            await client.replyMessage(replyToken, text('วันนี้ยังไม่มีกะที่ปิดครับ'))
+            return
         }
+        const shown = todays.length > 5 ? todays.slice(-4) : todays
+        const messages: any[] = shown.map(r => card(r.id)).filter(Boolean)
+        if (todays.length > 5) messages.push(text(`วันนี้ปิดไปแล้ว ${todays.length} กะ · ดูทั้งหมดในเว็บ ${appUrl}`))
         await client.replyMessage(replyToken, messages)
+    }
+
+    private async handleExecDigest(tenantId: string, replyToken: string, client: any) {
+        const today = thaiToday()
+        const yesterday = addDaysStr(today, -1)
+        const digest = buildExecDigest(tenantId, yesterday, today)
+        const card = flexTemplates.execDigestCard({
+            ...digest,
+            company: companyName(tenantId),
+            logoUrl: companyLogoUrl(tenantId),
+        })
+        await client.replyMessage(replyToken, card)
     }
 
     private async handleHowToLinkCommand(replyToken: string, client: any) {
@@ -1529,7 +1557,7 @@ class LineBotService {
 
             // ── เมนูตามตำแหน่ง (ข้อมูลเงิน/อนุมัติ → แชทส่วนตัวเท่านั้น ไม่โชว์ในกลุ่ม) ──
             const menuCmd: Record<string, MenuKey[]> = {
-                'ยอดขายวันนี้': ['exec'], 'กำไรเดือนนี้': ['exec'],
+                'ยอดขายวันนี้': ['exec'], 'สรุปผู้บริหาร': ['exec'], 'กำไรเดือนนี้': ['exec'],
                 'รออนุมัติ': ['exec', 'manager', 'staff'], 'สต็อกต่ำ': ['exec', 'manager'],
                 'บัญชีของฉัน': ['exec', 'manager', 'staff'],
             }
@@ -1543,6 +1571,7 @@ class LineBotService {
                     return
                 }
                 if (text === 'ยอดขายวันนี้') await this.handleDailySales(tenantId, event.replyToken, client)
+                else if (text === 'สรุปผู้บริหาร') await this.handleExecDigest(tenantId, event.replyToken, client)
                 else if (text === 'กำไรเดือนนี้') await this.handleMonthProfit(tenantId, event.replyToken, client)
                 else if (text === 'รออนุมัติ') await this.handlePendingApprovals(tenantId, me, event.replyToken, client)
                 else if (text === 'สต็อกต่ำ') await this.handleLowStock(tenantId, event.replyToken, client)
