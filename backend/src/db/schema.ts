@@ -903,7 +903,6 @@ export function applySchema(db: any): void {
     CREATE INDEX IF NOT EXISTS idx_return_supplier ON purchase_returns(supplier_id);
     CREATE INDEX IF NOT EXISTS idx_wo_status ON work_orders(status);
     CREATE INDEX IF NOT EXISTS idx_wo_bom ON work_orders(bom_id);
-    CREATE INDEX IF NOT EXISTS idx_wo_sales_order ON work_orders(sales_order_id);
     CREATE INDEX IF NOT EXISTS idx_activity_customer ON activity_logs(customer_id);
     CREATE INDEX IF NOT EXISTS idx_activity_tenant ON activity_logs(tenant_id);
 
