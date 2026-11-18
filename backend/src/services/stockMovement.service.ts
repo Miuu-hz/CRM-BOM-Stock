@@ -4,6 +4,7 @@ import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit, getUni
 import { roundQty, roundPackQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from './accounting.service'
+import { isServiceItem } from './stockItem.service'
 
 /**
  * ตรรกะ "ขยับสต็อกจริง" ยกออกมาจาก routes/stock.routes.ts POST /movement
@@ -40,6 +41,8 @@ export interface StockMovementPayload {
 // อ่านแค่ db เหมือนกัน ไม่ได้ import ไฟล์นี้กลับ จึงไม่เกิด import วงกลม
 import { getCostBasis } from './stockCostBasis.service'
 
+export const SERVICE_NO_STOCK_MESSAGE = (name: string) => `"${name}" เป็นรายการบริการ ไม่มีสต็อก — รับเข้า/ตัดออก/ปรับยอดไม่ได้`
+
 export class StockMovementError extends Error {
   constructor(
     public code:
@@ -48,7 +51,8 @@ export class StockMovementError extends Error {
       | 'NO_CONVERSION'
       | 'NO_PACK_UNIT'
       | 'INSUFFICIENT_SEALED'
-      | 'SEALED_CHANGED',
+      | 'SEALED_CHANGED'
+      | 'SERVICE_ITEM',
     message: string
   ) {
     super(message)
@@ -119,6 +123,9 @@ export function applyStockMovement(
   const item = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(stockItemId, tenantId) as any
   if (!item) {
     throw new StockMovementError('STOCK_ITEM_NOT_FOUND', 'Stock item not found')
+  }
+  if (isServiceItem(item)) {
+    throw new StockMovementError('SERVICE_ITEM', SERVICE_NO_STOCK_MESSAGE(item.name))
   }
 
   const baseUnit = item.base_unit || item.unit

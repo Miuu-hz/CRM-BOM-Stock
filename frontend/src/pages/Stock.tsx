@@ -2209,6 +2209,7 @@ export function EditModal({
                       <option value="wip">กึ่งสำเร็จรูป</option>
                       <option value="finished">สำเร็จรูป</option>
                       <option value="material">วัสดุสิ้นเปลือง</option>
+                      <option value="SERVICE">บริการ (ค่าขนส่ง/ค่าแพ็ค · ไม่นับสต็อก)</option>
                     </select>
                   </div>
                   <div>
@@ -2463,7 +2464,8 @@ export function EditModal({
                 )}
               </div>
 
-              {/* ── จุดเตือน ── */}
+              {/* ── จุดเตือน ── บริการไม่มีสต็อก ไม่ต้องมีจุดสั่งซื้อ */}
+              {getCategoryGroup(formData.category) !== 'service' && (
               <div className="rounded-2xl border border-[var(--border)] p-3.5">
                 <p className="text-xs font-semibold text-[var(--fg-2)] mb-2.5">จุดเตือน</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2501,6 +2503,7 @@ export function EditModal({
                   </div>
                 </div>
               </div>
+              )}
 
             </div>
 
@@ -3513,6 +3516,7 @@ function AddStockModal({
                     <option value="wip">กึ่งสำเร็จรูป</option>
                     <option value="finished">สำเร็จรูป</option>
                     <option value="material">วัสดุ/อื่นๆ</option>
+                    <option value="SERVICE">บริการ (ค่าขนส่ง/ค่าแพ็ค · ไม่นับสต็อก)</option>
                   </select>
                 </div>
               </div>
@@ -3532,6 +3536,7 @@ function AddStockModal({
             {/* ── Section: หน่วยนับ ── */}
             <div className="space-y-3">
               <p className="text-xs font-medium text-[var(--fg-4)] uppercase tracking-wider">หน่วยนับ</p>
+              {getCategoryGroup(formData.category) !== 'service' && (
               <div>
                 <label className="block text-xs text-[var(--fg-3)] mb-1">จำนวนเริ่มต้น</label>
                 <input
@@ -3543,6 +3548,7 @@ function AddStockModal({
                   min="0"
                 />
               </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-[var(--fg-3)] mb-1">หน่วยฐาน</label>
@@ -3626,6 +3632,7 @@ function AddStockModal({
                   />
                 </div>
               </div>
+              {getCategoryGroup(formData.category) !== 'service' && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-[var(--fg-3)] mb-1">ต่ำกว่านี้ต้องสั่งเพิ่ม</label>
@@ -3650,6 +3657,7 @@ function AddStockModal({
                   />
                 </div>
               </div>
+              )}
             </div>
 
             {/* ── Section: อื่นๆ ── */}

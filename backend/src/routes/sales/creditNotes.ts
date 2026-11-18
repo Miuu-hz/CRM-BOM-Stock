@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { ACC, ACC_META } from '../../config/accountCodes'
-import { getOrCreateAccount, issuedBasePerUnit, reverseSalesJournalByRef } from './shared'
+import { getOrCreateAccount, issuedBasePerUnit, reverseSalesJournalByRef, invoiceServiceShare } from './shared'
+import { isServiceItem } from '../../services/stockItem.service'
 import { gateSalesCancel, pendingCancelBody, SalesCancelError } from '../../services/salesCancel.service'
 import { recordAutoAction } from '../../services/approvalGate.service'
 import { postJournal, JournalError } from '../../services/accounting.service'
@@ -51,8 +52,18 @@ function postCreditNoteJournal(tenantId: string, cn: any) {
 
   let lineNum = 1
   // Dr Revenue — reduces previously recognized revenue
-  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
-    .run(generateId(), tenantId, entryId, revId, lineNum++, description, subtotal)
+  // แบ่ง 4101/4201 ตามสัดส่วนเดียวกับตอนลงใบแจ้งหนี้ (createSalesJournal) ไม่งั้นรายได้ค่าบริการค้างสูงเกิน
+  const serviceRevenue = cn.invoice_id ? Math.round(subtotal * invoiceServiceShare(tenantId, cn.invoice_id) * 100) / 100 : 0
+  if (subtotal - serviceRevenue !== 0 || serviceRevenue === 0) {
+    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+      .run(generateId(), tenantId, entryId, revId, lineNum++, description, subtotal - serviceRevenue)
+  }
+  if (serviceRevenue !== 0) {
+    const svcMeta = ACC_META[ACC.REVENUE_SERVICE]!
+    const svcId = getOrCreateAccount(tenantId, ACC.REVENUE_SERVICE, svcMeta.name, svcMeta.type, svcMeta.category, svcMeta.normalBalance)
+    db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
+      .run(generateId(), tenantId, entryId, svcId, lineNum++, `${description} (ค่าบริการ)`, serviceRevenue)
+  }
   // Dr Output VAT — reduces VAT liability owed on the original sale
   if (taxAmount > 0) {
     db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
@@ -122,7 +133,7 @@ function restoreCreditNoteStock(tenantId: string, cn: any, userId: string, now: 
         // Fallback for legacy/edge-case rows that do carry a real product_id link.
         stockItem = db.prepare('SELECT * FROM stock_items WHERE product_id = ? AND tenant_id = ?').get(item.product_id, tenantId)
       }
-      if (!stockItem) continue
+      if (!stockItem || isServiceItem(stockItem)) continue   // ค่าขนส่ง/ค่าแพ็ค ไม่มีของรับคืนเข้าคลัง
 
       let cnUnit = ''
       let issuedUnitCost = 0
