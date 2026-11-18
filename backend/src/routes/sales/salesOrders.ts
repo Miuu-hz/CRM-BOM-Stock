@@ -9,6 +9,9 @@ import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../service
 import { gateSalesCancel, pendingCancelBody, assertSalesOrderCancellable, cancelSalesOrderNow, SalesCancelError } from '../../services/salesCancel.service'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
+import { evaluateSalesOrderStock, planSalesOrderProduction, produceForSalesOrder } from '../../services/salesOrderProduction.service'
+import { WorkOrderTransitionError } from '../../services/workOrderTransition.service'
+import { WO_PRIVILEGED_ROLES } from '../../services/stockMovement.service'
 
 const router = Router()
 
@@ -67,7 +70,14 @@ router.get('/:id', async (req: Request, res: Response) => {
       WHERE soi.sales_order_id = ? AND soi.tenant_id = ?
     `).all(req.params.id, tenantId)
 
-    res.json({ success: true, data: { ...salesOrder, items } })
+    const workOrders = db.prepare(`
+      SELECT id, wo_number, status, quantity, product_name, completed_date
+      FROM work_orders
+      WHERE sales_order_id = ? AND tenant_id = ?
+      ORDER BY created_at ASC
+    `).all(req.params.id, tenantId)
+
+    res.json({ success: true, data: { ...salesOrder, items, work_orders: workOrders } })
   } catch (error) {
     console.error('Get sales order error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch sales order' })
@@ -423,62 +433,16 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // เช็ค stock ก่อน CONFIRMED
     if (status === 'CONFIRMED') {
-      const soItems = db.prepare(`
-        SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, si.sealed_qty as stock_sealed,
-               si.base_unit as stock_base_unit, si.display_unit as stock_display_unit, si.category as stock_category,
-               COALESCE(soi.product_name, si.name) as item_name
-        FROM sales_order_items soi
-        LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
-        WHERE soi.sales_order_id = ? AND soi.tenant_id = ?
-      `).all(req.params.id, tenantId) as any[]
-
-      const shortItems = soItems.filter(it => {
-        if (!it.stock_item_id) return false
-        if (isServiceItem({ category: it.stock_category })) return false   // ค่าขนส่ง/ค่าแพ็ค ไม่มีสต็อกให้เช็ค (deductStockForSO ก็ข้าม)
-        let needQty = Number(it.quantity || 0)
-        const soUnit = it.unit || ''
-        // stock_items.quantity (it.stock_qty here) is in base_unit — the SELECT above
-        // already pulls si.base_unit as stock_base_unit for the sealed-pack math below,
-        // but this comparison used to target the legacy `unit` column instead, so a
-        // sufficient-stock check could pass/fail against the wrong unit for items where
-        // unit != base_unit (e.g. shrimp: unit=kg, base_unit=g).
-        const stockUnit = it.stock_base_unit || it.stock_unit || ''
-        if (soUnit && stockUnit && normalizeUnit(soUnit) !== normalizeUnit(stockUnit)) {
-          const converted = convertQuantityBidirectional(needQty, soUnit, stockUnit, tenantId, it.stock_item_id, it.product_name)
-          if (converted) {
-            needQty = converted.converted
-          } else {
-            // No rule: the raw number is not comparable across units. Flag it as short
-            // so the user is stopped here with a clear message rather than at deduct time.
-            console.warn(`[qty] SO stock check: no conversion ${soUnit} → ${stockUnit} for stock item ${it.stock_item_id}; treating as insufficient`)
-            return true
-          }
-        }
-        // Unopened packs are real stock — delivery unpacks them automatically at
-        // deduct time, so counting only loose quantity here blocked confirming an
-        // order while full packs sat in the warehouse.
-        const stockBase = it.stock_base_unit || it.stock_unit
-        const stockDisplay = it.stock_display_unit || it.stock_unit
-        let sealedInBase = 0
-        if (stockBase && stockDisplay && normalizeUnit(stockBase) !== normalizeUnit(stockDisplay)) {
-          const pack = convertQuantityBidirectional(1, stockDisplay, stockBase, tenantId, it.stock_item_id)
-          if (pack && pack.factor > 0) {
-            it.pack_factor = pack.factor
-            sealedInBase = (it.stock_sealed || 0) * pack.factor
-          }
-        }
-        it.sealed_in_base = sealedInBase
-        it.available_total = (it.stock_qty ?? 0) + sealedInBase
-        return it.available_total < needQty
-      })
+      const stockEvaluation = evaluateSalesOrderStock(tenantId, req.params.id)
+      const shortItems = stockEvaluation.filter(it => it.isShort)
       if (shortItems.length > 0) {
-        const details = shortItems.map((it: any) => {
-          const sealedNote = it.sealed_in_base > 0
-            ? ` (แกะแล้ว ${it.stock_qty ?? 0} + ในแพ็คอีก ${it.stock_sealed} ${getUnitDisplayName(it.stock_display_unit || '')} = ${it.sealed_in_base})`
+        const details = shortItems.map(it => {
+          const sealedNote = it.sealedInBase > 0
+            ? ` (แกะแล้ว ${it.stockQty} + ในแพ็คอีก ${it.sealedQty} ${getUnitDisplayName(it.stockDisplayUnit || '')} = ${it.sealedInBase})`
             : ''
-          return `${it.item_name || 'สินค้า'}: ต้องการ ${it.quantity} ${it.unit || ''} มีในสต็อก ${it.available_total ?? it.stock_qty ?? 0} ${it.stock_unit || ''}${sealedNote}`
+          return `${it.itemName || 'สินค้า'}: ต้องการ ${it.orderedQtyOriginal} ${it.soUnit || ''} มีในสต็อก ${it.availableTotal} ${it.stockUnit}${sealedNote}`
         }).join(', ')
-        return res.status(400).json({ success: false, message: `สต็อกไม่เพียงพอ: ${details}` })
+        return res.status(400).json({ success: false, code: 'INSUFFICIENT_STOCK', message: `สต็อกไม่เพียงพอ: ${details}` })
       }
     }
 
@@ -547,6 +511,51 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     if (error instanceof SalesCancelError) return res.status(error.status).json({ success: false, message: error.message })
     console.error('Update sales order status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update status' })
+  }
+})
+
+// GET production plan for shortfall
+router.get('/:id/production-plan', async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const plan = planSalesOrderProduction(tenantId, req.params.id)
+    res.json({ success: true, data: plan })
+  } catch (error: any) {
+    if (error instanceof WorkOrderTransitionError) {
+      return res.status(error.status).json({ success: false, message: error.message })
+    }
+    console.error('Get SO production plan error:', error)
+    res.status(500).json({ success: false, message: 'Failed to generate production plan' })
+  }
+})
+
+// POST produce shortfall for this sales order
+router.post('/:id/produce-shortfall', async (req: Request, res: Response) => {
+  try {
+    const isMaster = req.user?.role === 'MASTER'
+    const role = req.user?.role || ''
+    if (!isMaster && !WO_PRIVILEGED_ROLES.includes(role)) {
+      return res.status(403).json({
+        success: false,
+        message: `ไม่มีสิทธิ์สั่งผลิต — ต้องเป็น ${WO_PRIVILEGED_ROLES.join('/')}`,
+      })
+    }
+
+    const tenantId = req.user!.tenantId
+    const actor = {
+      email: req.user?.email || 'system',
+      role,
+      isMaster,
+    }
+
+    const result = produceForSalesOrder(tenantId, req.params.id, actor)
+    res.json({ success: true, data: result })
+  } catch (error: any) {
+    if (error instanceof WorkOrderTransitionError) {
+      return res.status(error.status).json({ success: false, message: error.message })
+    }
+    console.error('Produce for SO error:', error)
+    res.status(500).json({ success: false, message: error?.message || 'Failed to produce for sales order' })
   }
 })
 

@@ -22,6 +22,8 @@ export interface WorkOrder {
   material_count?: number
   materials?: WorkOrderMaterial[]
   inspections?: QCInspectionSummary[]
+  sales_order_id?: string | null
+  so_number?: string | null
   created_at: string
 }
 

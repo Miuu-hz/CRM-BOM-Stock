@@ -208,6 +208,13 @@ function WorkOrders() {
                     <motion.tr key={wo.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
                       <td>
                         <span className="text-[var(--primary)] font-mono font-semibold">{wo.wo_number}</span>
+                        {wo.so_number && (
+                          <div className="mt-0.5">
+                            <span className="inline-block text-[10px] text-[var(--fg-4)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded font-mono">
+                              จาก {wo.so_number}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div>
@@ -823,7 +830,14 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
           onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
             <div>
-              <h2 className="text-xl font-bold text-[var(--fg-1)]">{wo.wo_number}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-[var(--fg-1)]">{wo.wo_number}</h2>
+                {wo.so_number && (
+                  <span className="text-xs text-[var(--fg-4)] bg-[var(--surface-2)] border border-[var(--border)] px-2 py-0.5 rounded font-mono">
+                    จาก {wo.so_number}
+                  </span>
+                )}
+              </div>
               <p className="text-[var(--fg-3)] text-sm">{wo.product_name}</p>
             </div>
             <div className="flex items-center gap-3">

@@ -106,6 +106,47 @@ export interface CreateSOPayload {
   items: SOItem[]
 }
 
+export interface ProductionPlanItem {
+  soItemId: string
+  stockItemId: string
+  name: string
+  unit: string
+  orderedQty: number
+  stockQty: number
+  shortQty: number
+  produceQty: number
+  bomId: string | null
+  problem: string | null
+}
+
+export interface ProductionPlanMaterial {
+  materialId: string
+  name: string
+  unit: string
+  requiredQty: number
+  stockQty: number
+  shortQty: number
+  problem: string | null
+}
+
+export interface ProductionPlan {
+  ok: boolean
+  allowNegativeStock: boolean
+  items: ProductionPlanItem[]
+  materials: ProductionPlanMaterial[]
+  blockers: string[]
+}
+
+export interface ProduceShortfallResult {
+  workOrders: Array<{
+    id: string
+    wo_number: string
+    product_name?: string
+    quantity?: number
+    status?: string
+  }>
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 const salesService = {
@@ -198,6 +239,16 @@ const salesService = {
   updateSalesOrder: async (id: string, payload: CreateSOPayload) => {
     const { data } = await api.put(`/sales/sales-orders/${id}`, payload)
     return data
+  },
+
+  getProductionPlan: async (id: string): Promise<ProductionPlan> => {
+    const { data } = await api.get(`/sales/sales-orders/${id}/production-plan`)
+    return data.data
+  },
+
+  produceShortfall: async (id: string): Promise<ProduceShortfallResult> => {
+    const { data } = await api.post(`/sales/sales-orders/${id}/produce-shortfall`)
+    return data.data
   },
 
   // Invoices

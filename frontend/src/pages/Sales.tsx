@@ -23,6 +23,7 @@ import { unitLabel } from '../hooks/useUnits'
 import { timeAgo } from '../utils/timeAgo'
 import { calcVat, calcDocTotals, type VatMode, vatModeOf, vatModeToFields, defaultVatMode, vatModeWarning, VAT_MODE_LABEL } from '../utils/vat'
 import { priceForSaleUnit, applyRepricedRow } from '../utils/salePrice'
+import { ProduceShortfallDialog } from '../components/sales/ProduceShortfallDialog'
 
 // Types
 // รายการเดียวในฟีด "ความเคลื่อนไหวล่าสุด" — มาจากคิวรี UNION ฝั่ง backend
@@ -865,6 +866,7 @@ const Sales = () => {
   const [detailBO, setDetailBO]             = useState<Backorder | null>(null)
   const [detailDO, setDetailDO]             = useState<DeliveryOrder | null>(null)
   const [convertQT, setConvertQT]           = useState<Quotation | null>(null)  // QT → SO
+  const [produceShortfallSO, setProduceShortfallSO] = useState<{ id: string; so_number?: string } | null>(null)
 
   // Prime the bank-account cache (used by print templates for the QR/payment block)
   // — mirrors how Stock.tsx primes getCachedCompanySettings() on mount.
@@ -1108,7 +1110,14 @@ const Sales = () => {
       // กด "ส่งของแล้ว" แล้ว backend ออกใบส่งของให้อัตโนมัติ ต้องโหลดมาใหม่
       // ไม่งั้นป้าย "DO ×n" ในแถวคำสั่งขายจะยังไม่ขึ้นจนกว่าจะเข้าแท็บใบส่งของ
       if (status === 'DELIVERED' || status === 'COMPLETED') fetchDeliveryOrders()
-    } catch (err: any) { toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed')) }
+    } catch (err: any) {
+      if (status === 'CONFIRMED' && err?.response?.status === 400 && err?.response?.data?.code === 'INSUFFICIENT_STOCK') {
+        const so = salesOrders.find(o => o.id === id)
+        setProduceShortfallSO({ id, so_number: so?.so_number })
+        return
+      }
+      toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed'))
+    }
   }
   const handleIssueDeliveryOrder = async (id: string) => {
     try {
@@ -2648,6 +2657,23 @@ const Sales = () => {
           companyName={tenant?.name}
           hasDeliveryOrder={deliveryOrders.some(d => d.so_number === detailSO.so_number && d.status !== 'CANCELLED')}
           onIssueDO={() => handleIssueDeliveryOrder(detailSO.id)}
+          onConfirmShortfall={(so) => setProduceShortfallSO({ id: so.id, so_number: so.so_number })}
+        />
+      )}
+      {produceShortfallSO && (
+        <ProduceShortfallDialog
+          salesOrderId={produceShortfallSO.id}
+          soNumber={produceShortfallSO.so_number}
+          onClose={() => setProduceShortfallSO(null)}
+          onSuccess={async () => {
+            fetchSalesOrders()
+            if (detailSO && detailSO.id === produceShortfallSO.id) {
+              try {
+                const r = await salesService.getSalesOrder(detailSO.id)
+                setDetailSO(r.data)
+              } catch { /* ignore */ }
+            }
+          }}
         />
       )}
       {detailInv && (
@@ -3776,11 +3802,12 @@ function DealTimeline({ soId }: { soId: string }) {
   )
 }
 
-function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, companyName, hasDeliveryOrder, onIssueDO }: {
+function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, companyName, hasDeliveryOrder, onIssueDO, onConfirmShortfall }: {
   salesOrder: SalesOrder; onClose: () => void; onRefresh: () => void; onCreateInvoice: () => void; companyName?: string
   /** มีใบส่งของของ SO นี้แล้วหรือยัง — ถ้ามีแล้วไม่ต้องเสนอปุ่มออกใบส่งของอีก */
   hasDeliveryOrder?: boolean
   onIssueDO?: () => Promise<void>
+  onConfirmShortfall?: (so: SalesOrder) => void
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -3797,7 +3824,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
 
   useEffect(() => {
     salesService.getSalesOrder(salesOrder.id).then(r => setDetail(r.data)).catch(() => toast.error(t('sales.error.loadOrders'))).finally(() => setLoading(false))
-  }, [salesOrder.id])
+  }, [salesOrder.id, salesOrder.status])
 
   const handlePrint = () => {
     if (!detail) return
@@ -3819,6 +3846,10 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
       onRefresh()
       onClose()
     } catch (err: any) {
+      if (status === 'CONFIRMED' && err?.response?.status === 400 && err?.response?.data?.code === 'INSUFFICIENT_STOCK') {
+        onConfirmShortfall?.(salesOrder)
+        return
+      }
       toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed'))
     } finally { setUpdating(false) }
   }
@@ -3915,6 +3946,29 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
                   )
                 })}
               </div>
+
+              {/* Linked Work Orders */}
+              {detail?.work_orders && detail.work_orders.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-[var(--fg-2)]">ใบสั่งผลิตที่เชื่อมกับใบขายนี้</p>
+                  <div className="border border-[var(--border)] rounded-xl overflow-hidden divide-y divide-[var(--border)]/50">
+                    {detail.work_orders.map((wo: any) => (
+                      <div key={wo.id} className="p-3 bg-[var(--surface-2)] flex items-center justify-between text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-mono font-semibold text-xs text-[var(--primary)]">{wo.wo_number}</p>
+                          <p className="text-[var(--fg-1)] text-xs mt-0.5 truncate">{wo.product_name}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          <span className="text-xs text-[var(--fg-3)]">× {wo.quantity}</span>
+                          <span className="text-xs px-2 py-0.5 rounded font-medium bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-2)]">
+                            {wo.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{fmt(detail?.subtotal)}</span></div>

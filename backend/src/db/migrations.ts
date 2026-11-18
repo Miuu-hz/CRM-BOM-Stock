@@ -2877,6 +2877,18 @@ export function runMigrations(db: any): void {
     `)
   } catch (e) { console.error('⚠️ line_login_tokens migration error:', e) }
 
+  // Migration: add sales_order_id to work_orders (Make-To-Order linking)
+  try {
+    const woCols = (db.prepare(`PRAGMA table_info(work_orders)`).all() as any[]).map((c: any) => c.name)
+    if (woCols.length > 0 && !woCols.includes('sales_order_id')) {
+      db.exec(`ALTER TABLE work_orders ADD COLUMN sales_order_id TEXT`)
+      console.log('✅ Migration: work_orders.sales_order_id added')
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_wo_sales_order ON work_orders(sales_order_id)`)
+  } catch (e) {
+    console.error('⚠️ work_orders.sales_order_id migration error:', e)
+  }
+
   runMonthCloseMigrations(db)
 }
 
