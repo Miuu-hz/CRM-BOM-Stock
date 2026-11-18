@@ -516,7 +516,8 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                           <th className="col-price">ราคา/หน่วย</th>
                           {columns.discount && <th className="col-discount">ส่วนลด</th>}
                           {columns.vat && data.vatTotal > 0 && <th className="col-vat">VAT</th>}
-                          <th className="col-total">มูลค่าก่อนภาษี</th>
+                          {/* เอกสารไม่มี VAT ห้ามมีถ้อยคำภาษี — ใบเสร็จธรรมดาไม่ใช่ใบกำกับภาษี */}
+                          <th className="col-total">{data.vatTotal > 0 ? 'มูลค่าก่อนภาษี' : 'จำนวนเงิน'}</th>
                           {columns.wht && <th className="col-wht">WHT</th>}
                         </tr>
                       </thead>
@@ -548,7 +549,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   <section className="bill-summary-section">
                     <div className="bill-summary-left">
                       <div className="summary-line">
-                        <span className="lbl">มูลค่ารายการที่ยังไม่รวมภาษีมูลค่าเพิ่ม 7%</span>
+                        <span className="lbl">{data.vatTotal > 0 ? 'มูลค่ารายการที่ยังไม่รวมภาษีมูลค่าเพิ่ม 7%' : 'รวมเป็นเงิน'}</span>
                         <span>{formatCurrency(data.subtotal)} บาท</span>
                       </div>
                       {data.discountTotal > 0 && (

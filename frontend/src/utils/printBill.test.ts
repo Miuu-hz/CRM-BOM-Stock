@@ -15,9 +15,10 @@ describe('ชนิดเอกสารของสลิป POS', () => {
     expect(BILL_CONFIGS.TAX_INVOICE_ABB.title.th).toContain('ใบกำกับภาษี')
   })
 
-  it('ไม่เก็บ VAT → ใบเสร็จรับเงินตามเดิม', () => {
-    expect(resolveBillType('pos', { tax_amount: 0 })).toBe('RECEIPT')
-    expect(resolveBillType('pos', {})).toBe('RECEIPT')
+  it('ไม่เก็บ VAT → ใบเสร็จรับเงิน (ไม่มีช่องเลขภาษีผู้ซื้อ)', () => {
+    expect(resolveBillType('pos', { tax_amount: 0 })).toBe('RECEIPT_NO_VAT')
+    expect(resolveBillType('pos', {})).toBe('RECEIPT_NO_VAT')
+    expect(BILL_CONFIGS.RECEIPT_NO_VAT.title.th).toBe('ใบเสร็จรับเงิน')
   })
 
   it('ออกใบกำกับเต็มรูปแทนแล้ว → สลิปเลิกเป็นใบกำกับภาษี (การขายครั้งเดียวมีใบกำกับได้ใบเดียว)', () => {
@@ -25,8 +26,59 @@ describe('ชนิดเอกสารของสลิป POS', () => {
   })
 
   it('เอกสารชนิดอื่นไม่ถูกแตะ', () => {
-    expect(resolveBillType('inv', { tax_amount: 100 })).toBe('INVOICE')
-    expect(resolveBillType('rc', { tax_amount: 100 })).toBe('RECEIPT')
+    expect(resolveBillType('so', { tax_amount: 100 })).toBe('SALE')
+    expect(resolveBillType('qt', { tax_amount: 0 })).toBe('QUOTATION')
+  })
+})
+
+/** กิจการจด VAT เลือก มี/ไม่มี VAT ได้รายใบ — ไม่มี VAT ห้ามมีคำว่าใบกำกับภาษี · มี VAT ห้ามมีใบกำกับ 2 ใบต่อการขาย */
+describe('ชื่อเอกสารขายตาม VAT ของใบ', () => {
+  const title = (t: Parameters<typeof resolveBillType>[0], d: any) => BILL_CONFIGS[resolveBillType(t, d)]
+  const noTaxWording = (c: { title: { th: string; en: string } }) => {
+    expect(c.title.th).not.toContain('ภาษี')
+    expect(c.title.en).not.toMatch(/TAX/i)
+  }
+
+  it('ขายเชื่อมี VAT: ใบแจ้งหนี้/ใบกำกับภาษี แล้วใบเสร็จรับเงินธรรมดา', () => {
+    expect(title('inv', { tax_amount: 70 }).title.th).toBe('ใบแจ้งหนี้ / ใบกำกับภาษี')
+    expect(title('rc', { invoice_tax_amount: 70 }).title.th).toBe('ใบเสร็จรับเงิน')
+    expect(title('rc', { invoice_tax_amount: 70 }).fields.showBuyerTaxId).toBe(true)
+    // ผู้เรียกเก่าที่ไม่ได้ส่งยอด VAT ต้นทาง → คงพฤติกรรมเดิม
+    expect(resolveBillType('rc', {})).toBe('RECEIPT')
+  })
+
+  it('ขายเชื่อไม่มี VAT: ใบแจ้งหนี้ + ใบเสร็จรับเงิน ไม่มีคำว่าใบกำกับภาษีและไม่มีเลขภาษีผู้ซื้อ', () => {
+    const inv = title('inv', { tax_amount: 0 })
+    expect(inv.title.th).toBe('ใบแจ้งหนี้')
+    noTaxWording(inv)
+    expect(inv.fields.showBuyerTaxId).toBe(false)
+    const rc = title('rc', { invoice_tax_amount: 0 })
+    expect(rc.title.th).toBe('ใบเสร็จรับเงิน')
+    noTaxWording(rc)
+    expect(rc.fields.showBuyerTaxId).toBe(false)
+  })
+
+  it('ใบเต็มรูปจากบิล POS (รับเงินแล้ว): มี VAT = ใบกำกับภาษี/ใบเสร็จรับเงินใบเดียว · ไม่มี VAT = ใบเสร็จรับเงิน', () => {
+    const vatInv = title('inv', { tax_amount: 7, pos_bill_id: 'b1' })
+    expect(vatInv.title.th).toBe('ใบกำกับภาษี / ใบเสร็จรับเงิน')
+    expect(vatInv.fields.showBuyerTaxId).toBe(true)
+    // สลิปเดิมของบิลเดียวกันต้องไม่เป็นใบกำกับภาษีอีก
+    expect(title('pos', { tax_amount: 7, _supersededBy: 'INV-1' }).title.th).not.toContain('ใบกำกับภาษี')
+    const noVat = title('inv', { tax_amount: 0, pos_bill_id: 'b1' })
+    expect(noVat.title.th).toBe('ใบเสร็จรับเงิน')
+    noTaxWording(noVat)
+  })
+
+  it('ใบพิมพ์ A4 ที่ไม่มี VAT ไม่มีถ้อยคำภาษีเลย (ยกเว้นเลขภาษีผู้ขาย)', () => {
+    const d = { invoice_number: 'INV-1', tax_amount: 0, total_amount: 100, subtotal: 100, customer_tax_id: '0105555555555',
+      items: [{ product_name: 'หมอน', quantity: 1, unit_price: 100, total_price: 100 }] }
+    const html = renderToStaticMarkup(createElement(UnifiedBillTemplate as any, {
+      config: BILL_CONFIGS[resolveBillType('inv', d)], data: toBillData('inv', d), size: 'A4', showPrintButton: false,
+    })).replace(/<style[\s\S]*?<\/style>/g, '')
+    expect(html).toContain('ใบแจ้งหนี้')
+    expect(html).not.toContain('ใบกำกับภาษี')
+    expect(html).not.toContain('ภาษีมูลค่าเพิ่ม')
+    expect(html).not.toContain('0105555555555')
   })
 })
 

@@ -10,6 +10,11 @@ export type BillType =
   | 'RECEIPT'
   // ใบกำกับภาษีอย่างย่อ (ม.86/6) — สลิปหน้าร้านที่เก็บ VAT ต้องใช้ชนิดนี้ ไม่ใช่ 'RECEIPT'
   | 'TAX_INVOICE_ABB'
+  // ขายที่ไม่เก็บ VAT ห้ามมีคำว่า "ใบกำกับภาษี" และช่องเฉพาะใบกำกับ (เลขภาษีผู้ซื้อ)
+  | 'INVOICE_NO_VAT'
+  | 'RECEIPT_NO_VAT'
+  // ใบกำกับเต็มรูปที่รับเงินแล้วตอนออก (ออกจากบิล POS) — ใบเดียวเป็นทั้งใบกำกับและใบเสร็จ
+  | 'TAX_INVOICE_RECEIPT'
   | 'CREDIT_NOTE'
   // ฝั่งซื้อ
   | 'PURCHASE_REQUEST'
@@ -57,8 +62,10 @@ const SALES_SIGNATURE_SLOTS = ['ผู้ออกเอกสาร (ผู้�
 const PURCHASE_SIGNATURE_SLOTS = ['ผู้ออกเอกสาร (ผู้ซื้อ)', 'ผู้อนุมัติ (ผู้ซื้อ)', 'ผู้ส่งเอกสาร (ผู้ขาย)', 'ตราประทับ (ผู้ขาย)']
 const WORK_ORDER_SIGNATURE_SLOTS = ['ผู้สั่งผลิต', 'หัวหน้าฝ่ายผลิต', 'ผู้จ่ายวัตถุดิบ', 'QC ผู้ตรวจสอบ']
 
+type VariantType = 'INVOICE_NO_VAT' | 'RECEIPT_NO_VAT' | 'TAX_INVOICE_RECEIPT'
+
 // Bill Configuration สำหรับแต่ละ type
-export const BILL_CONFIGS: Record<BillType, BillConfig> = {
+const BASE_CONFIGS: Record<Exclude<BillType, VariantType>, BillConfig> = {
   // ══════════ ฝั่งขาย ══════════
   QUOTATION: {
     type: 'QUOTATION',
@@ -387,6 +394,27 @@ export const BILL_CONFIGS: Record<BillType, BillConfig> = {
     },
     themeColor: '#F59E0B', // amber — production docs
     defaultSignatureSlots: WORK_ORDER_SIGNATURE_SLOTS,
+  },
+}
+
+const noBuyerTaxId = (c: BillConfig): BillConfig['fields'] => ({ ...c.fields, showBuyerTaxId: false })
+
+export const BILL_CONFIGS: Record<BillType, BillConfig> = {
+  ...BASE_CONFIGS,
+  INVOICE_NO_VAT: {
+    ...BASE_CONFIGS.INVOICE, type: 'INVOICE_NO_VAT',
+    title: { th: 'ใบแจ้งหนี้', en: 'INVOICE' },
+    fields: noBuyerTaxId(BASE_CONFIGS.INVOICE),
+  },
+  RECEIPT_NO_VAT: {
+    ...BASE_CONFIGS.RECEIPT, type: 'RECEIPT_NO_VAT',
+    fields: noBuyerTaxId(BASE_CONFIGS.RECEIPT),
+  },
+  TAX_INVOICE_RECEIPT: {
+    ...BASE_CONFIGS.INVOICE, type: 'TAX_INVOICE_RECEIPT',
+    title: { th: 'ใบกำกับภาษี / ใบเสร็จรับเงิน', en: 'TAX INVOICE / RECEIPT' },
+    fields: { ...BASE_CONFIGS.INVOICE.fields, showDueDate: false, showPaymentTerms: false },
+    labels: { ...BASE_CONFIGS.INVOICE.labels, docNumber: 'เลขที่', refNumber: 'อ้างอิงบิล' },
   },
 }
 
