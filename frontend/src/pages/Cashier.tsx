@@ -2248,6 +2248,8 @@ function InvoiceCustomerModal({ isOpen, onClose, bill, discountAmt, onBillUpdate
       printBill('inv', {
         ...rd,
         _supersededBy: undefined,
+        // ใบเต็มรูปจากบิล POS รับเงินแล้ว → พิมพ์เป็นใบกำกับภาษี/ใบเสร็จรับเงิน (ดู resolveBillType)
+        pos_bill_id: bill.id,
         invoice_number: bill.invoice.invoice_number,
         invoice_date: (bill as any).closed_at || (bill as any).created_at,
         so_number: bill.bill_number,

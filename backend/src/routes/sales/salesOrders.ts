@@ -3,6 +3,7 @@ import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
+import { isServiceItem, serviceSql } from '../../services/stockItem.service'
 import { deductStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, findNonSellableLine, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
 import { gateOrCreate, recordAutoAction, CreateRequestArgs } from '../../services/approvalGate.service'
 import { gateSalesCancel, pendingCancelBody, assertSalesOrderCancellable, cancelSalesOrderNow, SalesCancelError } from '../../services/salesCancel.service'
@@ -60,7 +61,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       SELECT soi.*,
         COALESCE(soi.product_name, si.name) as product_name,
         COALESCE(si.sku, si.name) as product_code,
-        si.quantity as stock_qty
+        CASE WHEN ${serviceSql('si.category')} THEN NULL ELSE si.quantity END as stock_qty  -- บริการไม่มีสต็อก → หน้ายืนยันไม่ขึ้น "ของหมด"
       FROM sales_order_items soi
       LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
       WHERE soi.sales_order_id = ? AND soi.tenant_id = ?
@@ -424,7 +425,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     if (status === 'CONFIRMED') {
       const soItems = db.prepare(`
         SELECT soi.*, si.quantity as stock_qty, si.unit as stock_unit, si.sealed_qty as stock_sealed,
-               si.base_unit as stock_base_unit, si.display_unit as stock_display_unit,
+               si.base_unit as stock_base_unit, si.display_unit as stock_display_unit, si.category as stock_category,
                COALESCE(soi.product_name, si.name) as item_name
         FROM sales_order_items soi
         LEFT JOIN stock_items si ON soi.stock_item_id = si.id AND si.tenant_id = soi.tenant_id
@@ -433,6 +434,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
       const shortItems = soItems.filter(it => {
         if (!it.stock_item_id) return false
+        if (isServiceItem({ category: it.stock_category })) return false   // ค่าขนส่ง/ค่าแพ็ค ไม่มีสต็อกให้เช็ค (deductStockForSO ก็ข้าม)
         let needQty = Number(it.quantity || 0)
         const soUnit = it.unit || ''
         // stock_items.quantity (it.stock_qty here) is in base_unit — the SELECT above
@@ -614,7 +616,9 @@ export default router
  * ถ้า SO มีบรรทัดผูกสต็อกแต่ยังไม่เคยตัด (ข้อมูลเก่า) ปล่อยไว้ให้คนกดรับของที่ใบส่งของ ซึ่งเป็นทางที่ตัดสต็อกให้
  */
 export function closeShippedDeliveryOrders(tenantId: string, so: { id: string; so_number: string }) {
-  const hasStockLine = !!db.prepare('SELECT 1 FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ? AND stock_item_id IS NOT NULL LIMIT 1')
+  // บรรทัดบริการไม่นับ — ไม่มีวันถูกตัดสต็อก SO ที่มีแต่ค่าขนส่ง/ค่าแพ็คจะค้างตลอด
+  const hasStockLine = !!db.prepare(`SELECT 1 FROM sales_order_items soi JOIN stock_items si ON si.id = soi.stock_item_id AND si.tenant_id = soi.tenant_id
+    WHERE soi.sales_order_id = ? AND soi.tenant_id = ? AND NOT ${serviceSql('si.category')} LIMIT 1`)
     .get(so.id, tenantId)
   if (hasStockLine && !soStockAlreadyDeducted(tenantId, so.so_number)) return 0
   const dos = db.prepare("SELECT id FROM delivery_orders WHERE sales_order_id = ? AND tenant_id = ? AND status = 'SHIPPED'")

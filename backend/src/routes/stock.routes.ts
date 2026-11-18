@@ -13,11 +13,11 @@ import { roundQty, isWholeQty } from '../utils/qty'
 import { ACC, ACC_META } from '../config/accountCodes'
 import { getOrCreateAccount } from '../services/accounting.service'
 import { formatDocumentNumber } from '../utils/id'
-import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGateAmount, StockMovementError } from '../services/stockMovement.service'
+import { applyStockMovement, applyManualUnpack, priceToBaseUnitCost, movementGateAmount, StockMovementError, SERVICE_NO_STOCK_MESSAGE } from '../services/stockMovement.service'
 import { gateOrCreate, recordAutoAction } from '../services/approvalGate.service'
 import { getCostBasis, getBuyLog, getSellLog } from '../services/stockCostBasis.service'
 import {
-  aliasConflictMessage, dropAlias, SELLABLE_CATEGORIES, aliasEnabled, listAliases, saveAlias, deleteAliasById, StockItemRefError,
+  aliasConflictMessage, dropAlias, SELLABLE_CATEGORIES, isServiceItem, aliasEnabled, listAliases, saveAlias, deleteAliasById, StockItemRefError,
 } from '../services/stockItem.service'
 import { getPackFactor, totalStockValue } from '../services/stockValue.service'
 
@@ -108,12 +108,13 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
     const availableOf = (item: any) => availableByItem.get(item.id) ?? item.quantity
 
+    // บริการ (ค่าขนส่ง/ค่าแพ็ค) ไม่มีสต็อก ไม่นับเป็นของใกล้หมด
     const lowStockCount = stockItems.filter(
-      (item: any) => availableOf(item) <= item.min_stock
+      (item: any) => !isServiceItem(item) && availableOf(item) <= item.min_stock
     ).length
 
     const criticalCount = stockItems.filter(
-      (item: any) => availableOf(item) <= item.min_stock * 0.3
+      (item: any) => !isServiceItem(item) && availableOf(item) <= item.min_stock * 0.3
     ).length
 
     // ของในสต็อกทุกชิ้นมีต้นทุนอยู่ในแถวของตัวเอง (unit_cost) อยู่แล้ว — ไม่ต้อง join
@@ -314,7 +315,9 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { sku, gs1Barcode, name, category, unit, baseUnit, saleUnit, displayUnit, quantity = 0, minStock = 0, maxStock = 100, location, isPosEnabled = false, unitCost, unitPrice, purchasePrice, purchaseUnit } = req.body
+    const { sku, gs1Barcode, name, category, unit, baseUnit, saleUnit, displayUnit, location, isPosEnabled = false, unitCost, unitPrice, purchasePrice, purchaseUnit } = req.body
+    // บริการไม่มีสต็อก — ยอดยกมา/จุดสั่งซื้อเป็น 0 เสมอ ต่อให้ client ส่งมา
+    const { quantity = 0, minStock = 0, maxStock = 100 } = isServiceItem({ category }) ? { quantity: 0, minStock: 0, maxStock: 0 } : req.body
 
     if (!sku || !name || !unit) {
       return res.status(400).json({ success: false, message: 'SKU, name and unit are required' })
@@ -431,6 +434,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (!currentItem) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }
+    // บริการไม่มีจุดสั่งซื้อ (min/max = 0) · เปลี่ยนเป็นบริการทั้งที่ยังมีของ → ของ/มูลค่านั้นค้างในคลังแบบแตะไม่ได้อีก
+    const asService = isServiceItem({ category: category ?? currentItem.category })
+    if (asService && !isServiceItem(currentItem) && (Number(currentItem.quantity) || Number(currentItem.sealed_qty))) {
+      return res.status(400).json({ success: false, message: `"${currentItem.name}" ยังมีสต็อก ${currentItem.quantity} ${currentItem.base_unit || currentItem.unit || ''} — ปรับสต็อกเป็น 0 ก่อนเปลี่ยนเป็นบริการ` })
+    }
 
     const now = new Date().toISOString()
 
@@ -516,7 +524,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         is_pos_enabled = COALESCE(?, is_pos_enabled),
         updated_at = ?
       WHERE id = ? AND tenant_id = ?
-    `).run(name, gs1Barcode, category, syncedUnit, syncedUnit, saleUnit ? normalizeUnit(saleUnit) : undefined, displayUnit ? normalizeUnit(displayUnit) : undefined, finalUnitCost, unitPrice !== undefined ? Number(unitPrice) : undefined, finalPurchasePrice, finalPurchaseUnit, minStock, maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
+    `).run(name, gs1Barcode, category, syncedUnit, syncedUnit, saleUnit ? normalizeUnit(saleUnit) : undefined, displayUnit ? normalizeUnit(displayUnit) : undefined, finalUnitCost, unitPrice !== undefined ? Number(unitPrice) : undefined, finalPurchasePrice, finalPurchaseUnit, asService ? 0 : minStock, asService ? 0 : maxStock, location, isPosEnabled !== undefined ? (isPosEnabled ? 1 : 0) : undefined, now, req.params.id, tenantId)
 
     // Record price change in movements
     if (finalUnitCost !== undefined && currentItem && Number(finalUnitCost) !== Number(currentItem.unit_cost)) {
@@ -656,11 +664,13 @@ export async function recordStockMovement(req: Request, res: Response) {
 
     // ประตูอนุมัติ: ถ้าหมวด "ปรับ/เปลี่ยนสต็อก" ถูกเปิดไว้สำหรับ role นี้ ให้เก็บคำขอไว้
     // แล้วยังไม่ขยับของ — จะขยับจริงตอนเจ้าของกดอนุมัติใน executeApprovedAction()
-    const item = db.prepare('SELECT name, quantity, unit, base_unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?')
+    const item = db.prepare('SELECT name, category, quantity, unit, base_unit, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?')
       .get(stockItemId, tenantId) as any
     if (!item) {
       return res.status(404).json({ success: false, message: 'Stock item not found' })
     }
+    // เช็คก่อนเข้าประตูอนุมัติ ไม่งั้นได้คำขออนุมัติที่อนุมัติแล้วก็ทำไม่ได้
+    if (isServiceItem(item)) return res.status(400).json({ success: false, message: SERVICE_NO_STOCK_MESSAGE(item.name) })
 
     // ข้อความในลิสต์แจ้งเตือน/ประวัติ ต้องอ่านจบในบรรทัดเดียว: ของอะไร จากเท่าไหร่เป็นเท่าไหร่ เพราะอะไร
     // (ชื่อคนทำไม่ต้องใส่ซ้ำ — หน้าเว็บโชว์ requester_name คู่กับข้อความอยู่แล้ว)

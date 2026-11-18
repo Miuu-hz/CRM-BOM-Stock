@@ -149,12 +149,20 @@ function renderPosBill(res: Response, billId: string, tenantId: string) {
   sendPage(res, 200, `ใบเสร็จ ${bill.bill_number}`, body)
 }
 
+// ชื่อเดียวกับใบพิมพ์ (frontend utils/printBill.ts resolveBillType) — ไม่มี VAT ห้ามมีคำว่าใบกำกับภาษี
+// ใบจากบิล POS รับเงินแล้วตอนออก จึงเป็นใบเดียวทั้งใบกำกับและใบเสร็จ
+export function invoiceTitle(inv: { tax_amount?: number | null; pos_bill_id?: string | null }): string {
+  const vat = Number(inv.tax_amount) > 0
+  if (inv.pos_bill_id) return vat ? 'ใบกำกับภาษี / ใบเสร็จรับเงิน' : 'ใบเสร็จรับเงิน'
+  return vat ? 'ใบแจ้งหนี้ / ใบกำกับภาษี' : 'ใบแจ้งหนี้'
+}
+
 // ── Sales invoice (scoped strictly by id + tenant_id from the token row) ──
 function renderInvoice(res: Response, invoiceId: string, tenantId: string) {
   const invoice = db.prepare(`
     SELECT i.invoice_number, i.invoice_date, i.due_date, i.subtotal, i.discount_amount,
            i.tax_rate, i.tax_amount, i.total_amount, i.paid_amount, i.balance_amount,
-           i.payment_status, c.name as customer_name
+           i.payment_status, i.pos_bill_id, c.name as customer_name
     FROM invoices i
     LEFT JOIN customers c ON i.customer_id = c.id
     WHERE i.id = ? AND i.tenant_id = ?
@@ -187,7 +195,7 @@ function renderInvoice(res: Response, invoiceId: string, tenantId: string) {
     <div class="shop">${esc(company?.name || '')}</div>
     ${company?.address ? `<div class="sub">${esc(company.address)}</div>` : ''}
     ${company?.tax_id ? `<div class="sub">เลขผู้เสียภาษี: ${esc(company.tax_id)}</div>` : ''}
-    <h1>ใบแจ้งหนี้ / ใบกำกับภาษี</h1>
+    <h1>${invoiceTitle(invoice)}</h1>
     <div class="docno">${esc(invoice.invoice_number)}</div>
     <div class="meta">
       ${invoice.customer_name ? `<div><label>ลูกค้า</label><span>${esc(invoice.customer_name)}</span></div>` : ''}

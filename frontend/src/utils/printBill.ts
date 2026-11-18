@@ -222,13 +222,26 @@ export function invalidateDocumentSettings() {
 const SIZE: Record<PrintFormat, 'A4' | 'A5' | 'THERMAL'> = { a4: 'A4', a5: 'A5', thermal: 'THERMAL' }
 
 /**
- * สลิปหน้าร้านที่เก็บ VAT จากลูกค้าคือ "ใบกำกับภาษีอย่างย่อ" ตาม ม.86/6 ไม่ใช่ "ใบเสร็จรับเงิน"
- * ถ้าไม่ได้เก็บ VAT ก็เป็นใบเสร็จรับเงินธรรมดาตามเดิม เอกสารชนิดอื่นไม่ถูกแตะ
+ * ชื่อเอกสารฝั่งขายตามการเก็บ VAT ของเอกสารใบนั้น (กิจการจด VAT เลือก มี/ไม่มี VAT ได้รายใบ)
+ * - ไม่เก็บ VAT → ไม่มีคำว่า "ใบกำกับภาษี" เลย: ใบแจ้งหนี้ / ใบเสร็จรับเงิน
+ * - เก็บ VAT → ใบกำกับภาษีได้ใบเดียวต่อการขาย:
+ *   ขายเชื่อ = ใบแจ้งหนี้/ใบกำกับภาษี แล้วใบเสร็จรับเงิน · สลิป POS = ใบกำกับภาษีอย่างย่อ (ม.86/6)
+ *   ใบเต็มรูปที่ออกจากบิล POS (รับเงินแล้ว) = ใบกำกับภาษี/ใบเสร็จรับเงิน และสลิปเดิมกลับเป็นใบเสร็จธรรมดา
  */
 export function resolveBillType(type: PrintDocType, data: any): BillType {
-  // ออกใบกำกับเต็มรูปแทนไปแล้ว — การขายครั้งเดียวมีใบกำกับภาษีได้ใบเดียว
-  // สลิปใบนี้กลับไปเป็นใบเสร็จรับเงินธรรมดา พิมพ์ซ้ำได้แต่ไม่ใช่ใบกำกับภาษีอีกต่อไป
-  if (type === 'pos' && !data?._supersededBy && n(data?.tax_amount) > 0) return 'TAX_INVOICE_ABB'
+  const vat = n(data?.tax_amount) > 0
+  if (type === 'pos') {
+    // ออกใบกำกับเต็มรูปแทนไปแล้ว — สลิปใบนี้กลับไปเป็นใบเสร็จรับเงินธรรมดา ไม่ใช่ใบกำกับภาษีอีกต่อไป
+    if (data?._supersededBy) return 'RECEIPT'
+    return vat ? 'TAX_INVOICE_ABB' : 'RECEIPT_NO_VAT'
+  }
+  if (type === 'inv') {
+    const paidOnIssue = !!data?.pos_bill_id
+    if (!vat) return paidOnIssue ? 'RECEIPT_NO_VAT' : 'INVOICE_NO_VAT'
+    return paidOnIssue ? 'TAX_INVOICE_RECEIPT' : 'INVOICE'
+  }
+  // ใบเสร็จรับชำระไม่มียอด VAT ของตัวเอง — ผู้เรียกส่ง invoice_tax_amount ของใบแจ้งหนี้ต้นทางมา (ไม่ส่ง = ถือว่ามี VAT ตามเดิม)
+  if (type === 'rc' && data?.invoice_tax_amount != null && n(data.invoice_tax_amount) <= 0) return 'RECEIPT_NO_VAT'
   return DOCS[type].bill
 }
 

@@ -19,6 +19,9 @@ export function isServiceItem(stockItem: { category?: string | null } | null | u
   return String(stockItem?.category ?? '').trim().toUpperCase() === SERVICE_CATEGORY
 }
 
+/** isServiceItem() ฉบับ SQL — col = คอลัมน์ category (เช่น 'si.category') ใช้ใน JOIN/CASE ให้กฎตรงกันทุกที่ */
+export const serviceSql = (col: string) => `UPPER(TRIM(COALESCE(${col}, ''))) = '${SERVICE_CATEGORY}'`
+
 // หมวดที่ขายออกได้ — วัตถุดิบ (raw) ขายไม่ได้ทุกช่องทาง (ใบขาย / เมนู POS / MCP)
 // เจ้าของยืนยัน 2026-10-04: ไม่มีร้านไหนตั้งใจขายวัตถุดิบ
 export const SELLABLE_CATEGORIES = ['FINISHED', 'WIP', SERVICE_CATEGORY]

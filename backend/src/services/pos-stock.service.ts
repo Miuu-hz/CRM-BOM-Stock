@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { convertQuantityBidirectional, autoUnpackIfNeeded } from './unitConversion.service'
 import { roundQty } from '../utils/qty'
+import { isServiceItem } from './stockItem.service'
 
 // Helper: Generate ID (24-char hex)
 const generateId = () => {
@@ -283,7 +284,7 @@ class POSStockService {
       const itemsStmt = db.prepare(`
         SELECT bi.*, pmc.id as menu_config_id, pmc.bom_id, pmc.product_id,
                pmc.sale_unit as menu_sale_unit,
-               si.base_unit as product_base_unit, si.unit as product_stock_unit
+               si.base_unit as product_base_unit, si.unit as product_stock_unit, si.category as product_category
         FROM pos_bill_items bi
         JOIN pos_menu_configs pmc ON bi.pos_menu_id = pmc.id
         LEFT JOIN stock_items si ON pmc.product_id = si.id AND pmc.tenant_id = si.tenant_id
@@ -322,7 +323,8 @@ class POSStockService {
           // ด้านล่างจะ fallback ไปเป็น 'pcs' เสมอ ทำให้แปลงหน่วยผิดเป้าหมายเงียบๆ เมื่อ
           // base_unit จริงไม่ใช่ pcs (เช่น ML สำหรับวิปครีม ING-WPC)
           const saleUnit = item.menu_sale_unit || null
-          if (ingredients.length === 0 && item.product_id) {
+          // หมวด SERVICE (ค่าบริการ/ค่าส่ง) ไม่มีของให้ตัด — ตรงกับ pos-accounting ที่ไม่ลง COGS ให้
+          if (ingredients.length === 0 && item.product_id && !isServiceItem({ category: item.product_category })) {
             ingredients = [{
               stock_item_id: item.product_id,
               quantity_used: 1,

@@ -30,7 +30,7 @@ db.prepare(`CREATE TABLE IF NOT EXISTS invoice_attachments (
 // ตัวจริงอยู่ที่ services/accounting.service — re-export ไว้เพราะ sales/index.ts
 // กับ sales/creditNotes.ts import ผ่าน './shared' อยู่เดิม
 import { getOrCreateAccount, postJournal, postingAccountId } from '../../services/accounting.service'
-import { isServiceItem, isSellableItem, normName, rememberAlias } from '../../services/stockItem.service'
+import { isServiceItem, isSellableItem, normName, rememberAlias, serviceSql } from '../../services/stockItem.service'
 export { getOrCreateAccount }
 
 // ── Sellable guard (ขายได้แค่ FINISHED/WIP/SERVICE) ─────────────────────────────
@@ -65,6 +65,18 @@ export const notSellableMessage = (name: string, category: string): string =>
 // account_balances ถูกถอดออกจากระบบ 2026-09-14 — ตรวจแล้วไม่มีโค้ดไหนอ่านตารางนี้เลย
 // (งบการเงิน/ผังบัญชีรวมยอดจาก journal_lines ตรง ๆ) การคอยเขียนให้มันจึงเป็นการเลี้ยงยอดคงเหลือ
 // ชุดที่ 2 ที่ไม่มีวันตรงกับ journal — ถ้าวันไหนต้องการยอดตามงวดจริง ให้คำนวณจาก journal_lines
+
+/**
+ * สัดส่วนยอดของใบแจ้งหนี้ที่เป็นรายการบริการ (หมวด SERVICE) 0..1 — ใช้แบ่งรายได้ไป 4201 รายได้ค่าบริการ
+ * ตามสัดส่วนยอดบรรทัด ส่วนลดหัวใบ/VAT จึงกระจายตามกันเองโดยไม่ต้องคิดใหม่
+ */
+export function invoiceServiceShare(tenantId: string, invoiceId: string): number {
+  const r = db.prepare(`SELECT SUM(ii.total_price) AS total,
+      SUM(CASE WHEN ${serviceSql('si.category')} THEN ii.total_price ELSE 0 END) AS svc
+    FROM invoice_items ii LEFT JOIN stock_items si ON si.id = ii.stock_item_id AND si.tenant_id = ii.tenant_id
+    WHERE ii.invoice_id = ? AND ii.tenant_id = ?`).get(invoiceId, tenantId) as any
+  return Number(r?.total) > 0 ? Math.min(1, Math.max(0, Number(r.svc) / Number(r.total))) : 0
+}
 
 export function createSalesJournal(
   tenantId: string, referenceType: string, referenceId: string,
@@ -107,8 +119,18 @@ export function createSalesJournal(
       let lineNum = 1
       db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`)
         .run(generateId(), tenantId, entryId, arId, lineNum++, description, totalAmount)
-      db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-        .run(generateId(), tenantId, entryId, revId, lineNum++, description, netRevenue)
+      // ค่าขนส่ง/ค่าแพ็ค (หมวด SERVICE) ลง 4201 รายได้ค่าบริการ ส่วนที่เหลือ 4101 รายได้ขายสินค้า
+      const serviceRevenue = Math.round(netRevenue * invoiceServiceShare(tenantId, referenceId) * 100) / 100
+      if (netRevenue - serviceRevenue !== 0 || serviceRevenue === 0) {
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+          .run(generateId(), tenantId, entryId, revId, lineNum++, description, netRevenue - serviceRevenue)
+      }
+      if (serviceRevenue !== 0) {
+        const svcMeta = ACC_META[ACC.REVENUE_SERVICE]!
+        const svcId = getOrCreateAccount(tenantId, ACC.REVENUE_SERVICE, svcMeta.name, svcMeta.type, svcMeta.category, svcMeta.normalBalance)
+        db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+          .run(generateId(), tenantId, entryId, svcId, lineNum++, `${description} (ค่าบริการ)`, serviceRevenue)
+      }
       if (taxAmount > 0) {
         db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
           .run(generateId(), tenantId, entryId, vatId, lineNum++, 'ภาษีขาย', taxAmount)

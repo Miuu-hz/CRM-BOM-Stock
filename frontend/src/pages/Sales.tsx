@@ -107,6 +107,7 @@ interface Invoice {
   invoice_date: string
   due_date: string
   total_amount: number
+  tax_amount?: number
   balance_amount: number
   status: string
   payment_status: string
@@ -4023,6 +4024,8 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
       // แต่เดิม copy มาแค่ชื่อกับรหัส เลขภาษีเลยหายไปทุกใบ
       customer_tax_id: invoice.customer_tax_id,
       customer_address: invoice.customer_address,
+      // ใบแจ้งหนี้ไม่มี VAT → ใบเสร็จไม่มีช่องเฉพาะใบกำกับภาษี (ดู resolveBillType)
+      invoice_tax_amount: detail?.tax_amount ?? invoice.tax_amount,
       invoice_number: invoice.invoice_number,
       so_number: invoice.so_number,
       _company: co.name || '-',
