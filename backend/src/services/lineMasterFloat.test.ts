@@ -7,6 +7,9 @@ import { flexTemplates } from './line-flex-templates'
 import { lineBotService, runMasterDailyAlerts } from './line-bot.service'
 
 /** LINE ของ Master "ลอย": ไม่ผูกบริษัท เห็นได้ทุกบริษัท และไม่ได้แจ้งเตือนของบริษัทถ้าไม่เปิดเอง */
+// masterLink เช็คกับรายชื่อ Master ใน .env → ให้ไฟล์นี้ใช้ Master ทดสอบคนเดียว
+const MASTER_EMAIL = 'm@float.test'
+process.env.MASTER_BB_USERNAME = MASTER_EMAIL
 const tenants: string[] = []
 const lines: string[] = []
 afterEach(() => {
@@ -41,9 +44,9 @@ function company(label: string) {
     return { tenantId, name }
 }
 
-function master(view: string, label = '') {
+function master(view: string, _label = '') {
     const uid = 'U' + generateId(); lines.push(uid)
-    db.prepare('INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id) VALUES (?, ?, ?)').run(uid, `master_m${label}${uid.slice(-6)}@float.test`, view)
+    db.prepare('INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id) VALUES (?, ?, ?)').run(uid, `master_${MASTER_EMAIL}`, view)
     return uid
 }
 
@@ -167,8 +170,36 @@ describe('LINE Master ลอย', () => {
         }
     })
 
-    it('9. Master ดูบริษัท A กดอนุมัติการ์ดคำขอลาของบริษัท B ได้ · ส่งรูปบิลเข้าบริษัทที่ดูอยู่', async () => {
+    it('9. Master ดูบริษัท A กดอนุมัติการ์ดคำขอลาของบริษัท B ได้ · ส่งรูปบิลเข้าบริษัทที่ดูอยู่', () => approveOtherCompany(() => {}))
+
+    it('10. อยู่บัญชีทดสอบ Testshop แล้วกดอนุมัติการ์ดของบริษัท B ได้ในฐานะ Master', () => approveOtherCompany(uid => {
+        member('Testshop', uid, 'USER')
+        db.prepare('UPDATE line_master_links SET as_member = 1 WHERE line_user_id = ?').run(uid)
+    }))
+
+    it('11. อยู่โหมด demo พนักงาน แล้วพิมพ์ master → กลับเป็น Master', async () => {
+        const r = rig(), A = company('A'), uid = master(A.tenantId)
+        db.prepare("UPDATE line_master_links SET demo_role = 'USER' WHERE line_user_id = ?").run(uid)
+        expect(await r.say(uid, 'master')).toContain('กลับเป็น Master')
+        expect(link(uid).demo_role).toBeNull()
+    })
+
+    it('12. Master ที่ถูกถอดออกจาก .env → LINE ไม่ได้สิทธิ์ Master', async () => {
+        const A = company('A'), uid = master(A.tenantId)
+        const old = process.env.MASTER_BB_USERNAME
+        process.env.MASTER_BB_USERNAME = 'someone-else@float.test'
+        try {
+            expect((lineBotService as any).masterLink(uid)).toBeUndefined()
+            process.env.MASTER_BB_USERNAME = String(link(uid).master_id).slice(7)
+            expect((lineBotService as any).masterLink(uid)).toBeTruthy()
+        } finally { process.env.MASTER_BB_USERNAME = old }
+    })
+})
+
+async function approveOtherCompany(prep: (uid: string) => void) {
+    {
         const r = rig(), A = company('A'), B = company('B'), uid = master(A.tenantId)
+        prep(uid)
         vi.spyOn(lineBotService, 'notifyApprovalDecision').mockResolvedValue(undefined as any)
         const t = B.tenantId, now = new Date().toISOString(), staff = generateId(), typeId = generateId(), empId = generateId(), leaveId = generateId(), id = generateId()
         db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'พนักงาน', 'USER', ?, 'active')`).run(staff, `${staff}@float.test`, t)
@@ -185,5 +216,5 @@ describe('LINE Master ลอย', () => {
         } finally {
             for (const tb of ['approval_logs', 'approval_requests', 'leave_requests', 'leave_types', 'employees']) db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t)
         }
-    })
-})
+    }
+}

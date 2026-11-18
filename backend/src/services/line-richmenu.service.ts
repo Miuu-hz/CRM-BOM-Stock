@@ -116,6 +116,8 @@ async function create(tenantId: string, token: string, ver: string): Promise<Ids
         FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
         ORDER BY COALESCE(lum.active_at, lum.linked_at) ASC -- คนผูกหลายร้าน: ร้านที่ใช้อยู่มาทีหลัง เมนูสุดท้ายจึงตรง
     `).all() as any[]
+    // Master ลอยตัวไม่มีแถวใน line_user_mappings — ต่อท้ายให้เมนู Master (หรือ role ที่ demo อยู่) ชนะ
+    users.push(...db.prepare(`SELECT line_user_id, master_id AS user_id, COALESCE(demo_role, 'MASTER') AS user_role FROM line_master_links WHERE as_member = 0`).all() as any[])
     for (const u of users) {
         const id = ids[menuKeyForRole(effectiveRole(u))]
         try { await api.linkRichMenuIdToUser(u.line_user_id, id); linkedMenu.set(u.line_user_id, id) }

@@ -120,6 +120,13 @@ export const linkThrottle = {
 const companyName = (tenantId: string) =>
     ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
+// บัญชี Master มาจาก .env (MASTER_BB_* / MASTER_KIDS_* แบบเดียวกับ auth.routes.ts)
+// shortcut: ไม่มี MASTER_*_USERNAME เลย (dev/test) → ไม่เช็ค · ถ้าเพิ่ม prefix ใน auth.routes.ts ต้องเพิ่มที่นี่ด้วย
+function isMasterId(id: string): boolean {
+    const envMasters = ['BB', 'KIDS'].map(p => process.env[`MASTER_${p}_USERNAME`]?.toLowerCase()).filter(Boolean)
+    return id.startsWith('master_') && (!envMasters.length || envMasters.includes(id.slice(7).toLowerCase()))
+}
+
 // แจ้งเตือนของบริษัทที่ Master (LINE ลอย) เปิดรับเองได้ — ปิดเป็นค่าเริ่มต้น
 // ป้ายปุ่มตอบด่วนของ LINE ยาวได้ไม่เกิน 20 ตัวอักษร (รวมเครื่องหมายหน้าชื่อ) → ชื่อชนิดต้องสั้น
 const MASTER_NOTIFY_KINDS: [string, string][] = [['shift', 'ปิดกะ'], ['approval', 'คำขออนุมัติ'], ['work_order', 'ใบสั่งผลิต'], ['purchase', 'ใบขอซื้อ'], ['daily', 'สรุปผู้บริหาร']]
@@ -289,7 +296,9 @@ class LineBotService {
 
     /** แถว line_master_links ของ LINE นี้ (Master ที่ผูกแล้ว) */
     private masterLink(lineUserId: string): any | undefined {
-        return getDb().prepare('SELECT * FROM line_master_links WHERE line_user_id = ?').get(lineUserId) as any
+        const m = getDb().prepare('SELECT * FROM line_master_links WHERE line_user_id = ?').get(lineUserId) as any
+        // Master ถูกถอดออกจาก .env → LINE หมดสิทธิ์ Master ด้วย (บัญชีเว็บล็อกอินไม่ได้แล้ว)
+        return m && isMasterId(String(m.master_id)) ? m : undefined
     }
 
     /** Master ที่ "ลอย" อยู่ (ไม่ได้ใช้บัญชีทดสอบ) */
@@ -1481,9 +1490,9 @@ class LineBotService {
             // ── กลับเป็น Master จากบัญชีทดสอบ — ก่อนด่านลงทะเบียนเพื่อให้ใช้ได้เสมอ ──
             if (src === 'user' && ['master', 'กลับเป็น master'].includes(lower)) {
                 const uid = event.source.userId, ml = this.masterLink(uid)
-                if (ml?.as_member) {
+                if (ml?.as_member || ml?.demo_role) {
                     const view = ml.view_tenant_id || ''
-                    getDb().prepare('UPDATE line_master_links SET as_member = 0 WHERE line_user_id = ?').run(uid)
+                    getDb().prepare('UPDATE line_master_links SET as_member = 0, demo_role = NULL WHERE line_user_id = ?').run(uid)
                     const back = this.linkedUser(view, uid)
                     if (back) await richMenus.syncUser(view, client.token, uid, back.menu)
                     await client.replyMessage(event.replyToken, { type: 'text', text: `กลับเป็น Master แล้ว · ตอนนี้ดู: ${companyName(view) || view}` })
@@ -1803,9 +1812,11 @@ class LineBotService {
             // ── อนุมัติ/ไม่อนุมัติคำขอ HR จากการ์ด (เฉพาะแชทส่วนตัว) — ด่านสิทธิ์ใช้ตัวเดียวกับหน้าเว็บ ──
             if ((action === 'approve_req' || action === 'reject_req') && id && event.source?.type === 'user') {
                 // Master ลอยตัว: การ์ดอาจมาจากบริษัทอื่นที่ไม่ได้ดูอยู่ (เปิดแจ้งเตือนไว้) — Master เข้าได้ทุกบริษัท จึงใช้บริษัทของคำขอเอง
+                // อยู่บัญชีทดสอบ (as_member) แต่การ์ดมาจากบริษัทอื่นที่เปิดแจ้งเตือนไว้ → อนุมัติในฐานะ Master เช่นกัน
                 const ml = this.masterLink(event.source.userId)
-                const floating = !!ml && !ml.as_member
-                const reqTenant: string = floating ? ((db.prepare('SELECT tenant_id FROM approval_requests WHERE id = ?').get(id) as any)?.tenant_id ?? tenantId) : tenantId
+                const ownerTenant: string | undefined = ml ? (db.prepare('SELECT tenant_id FROM approval_requests WHERE id = ?').get(id) as any)?.tenant_id : undefined
+                const floating = !!ml && (!ml.as_member || (!!ownerTenant && ownerTenant !== tenantId))
+                const reqTenant: string = floating ? (ownerTenant ?? tenantId) : tenantId
                 const me = floating ? { user_id: ml.master_id, realRole: 'MASTER' } : this.linkedUser(reqTenant, event.source.userId)
                 if (!me) return
                 const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, reqTenant) as any
