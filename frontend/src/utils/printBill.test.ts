@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { resolveBillType, toBillData } from './printBill'
+import { resolveBillType, toBillData, waitForLayout } from './printBill'
 import UnifiedBillTemplate from '../components/bill/UnifiedBillTemplate'
 import { BILL_CONFIGS } from '../components/bill/BillContext'
 
@@ -141,5 +141,29 @@ describe('ใบเสร็จมีรายการสินค้าจา�
     const d = toBillData('rc', { receipt_number: 'RC-2', amount: 1000, items, notes: 'ชำระบางส่วน' })
     expect(d.items).toHaveLength(1)
     expect(d.total).toBe(1000)
+  })
+})
+
+describe('waitForLayout รอจนหน้านิ่งก่อนพิมพ์', () => {
+  const fakeWin = (heights: number[]) => {
+    let i = 0
+    const body = { get scrollHeight() { return heights[Math.min(i++, heights.length - 1)] } }
+    return { closed: false, requestAnimationFrame: (cb: any) => setTimeout(cb, 0), document: { fonts: { ready: Promise.resolve() }, body } } as any
+  }
+  it('ความสูงยังเปลี่ยน = ยังไม่พิมพ์ · นิ่ง 3 รอบติดแล้วค่อยไปต่อ', async () => {
+    const heights = [0, 0, 500, 900, 1200, 1200, 1200, 1200]
+    const w = fakeWin(heights)
+    let reads = 0
+    Object.defineProperty(w.document.body, 'scrollHeight', { get: () => heights[Math.min(reads++, heights.length - 1)] })
+    await waitForLayout(w)
+    expect(reads).toBe(8) // 0,0,500,900 ไม่นับ · 1200 ครั้งแรกตั้งต้น · อีก 3 ครั้งเท่าเดิม
+  })
+  it('หน้าไม่นิ่งเลย = ไม่ค้าง ออกเมื่อครบเพดานเวลา', async () => {
+    let n = 0
+    const w = fakeWin([])
+    Object.defineProperty(w.document.body, 'scrollHeight', { get: () => ++n })
+    const t = Date.now()
+    await waitForLayout(w, 150)
+    expect(Date.now() - t).toBeLessThan(1000)
   })
 })
