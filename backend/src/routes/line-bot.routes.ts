@@ -159,7 +159,12 @@ router.get('/link-status', authenticate, (req: Request, res: Response) => {
         const mapping = db.prepare(
             'SELECT line_user_id, linked_at FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?'
         ).get(tenantId, userId) as any;
-        res.json({ success: true, data: { linked: !!mapping, linkedAt: mapping?.linked_at ?? null } });
+        // Master: LINE ลอย ไม่ผูกกับบริษัท → อยู่ใน line_master_links
+        const ml = userId.startsWith('master_')
+            ? db.prepare('SELECT linked_at FROM line_master_links WHERE master_id = ?').get(userId) as any
+            : undefined;
+        const found = mapping ?? ml;
+        res.json({ success: true, data: { linked: !!found, linkedAt: found?.linked_at ?? null } });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to get link status' });
     }
@@ -205,6 +210,7 @@ router.delete('/link', authenticate, (req: Request, res: Response) => {
         const { tenantId, userId } = req.user!;
         const db = getDb();
         db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?').run(tenantId, userId);
+        if (userId.startsWith('master_')) db.prepare('DELETE FROM line_master_links WHERE master_id = ?').run(userId);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to unlink' });
@@ -218,6 +224,7 @@ router.delete('/link/:userId', authenticate, requireMaster, (req: Request, res: 
         const { userId } = req.params;
         const db = getDb();
         db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ? AND user_id = ?').run(tenantId, userId);
+        if (userId.startsWith('master_')) db.prepare('DELETE FROM line_master_links WHERE master_id = ?').run(userId);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to unlink user' });

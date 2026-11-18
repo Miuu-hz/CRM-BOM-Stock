@@ -423,6 +423,12 @@ router.post('/register', registerIpLimiter, async (req, res) => {
       return tenantId
     })()
     console.log(`[signup] ${email} → ${result} (${trial ? `ทดลอง ${trial.plan} ${TRIAL_DAYS} วัน` : trialUsed ? 'free — เบอร์/อีเมลนี้เคยใช้สิทธิ์ทดลองแล้ว' : 'free'})`)
+    // แจ้ง Master ทาง LINE — require ตอนใช้ (line-bot.service import routes อื่นมาก กัน import วนกัน) · ไม่ await ไม่ให้ถ่วงการสมัคร
+    // แถวที่ insert ข้างบนเป็น approved เสมอ (สมัครเอง ไม่มีขั้นรออนุมัติแล้ว)
+    try {
+      const { lineBotService } = require('../services/line-bot.service')
+      lineBotService.notifyMasters(`🆕 บริษัทใหม่เปิดทดลองใช้: ${businessName} (${email})`).catch(() => {})
+    } catch (e) { console.error('[signup] notify master failed', e) }
     res.json({ success: true, data: {
       activated: true, plan: trial?.plan ?? 'free', trialDays: trial ? TRIAL_DAYS : 0,
       ...(selection && trialUsed ? { trialDenied: 'เบอร์โทรหรืออีเมลนี้เคยใช้สิทธิ์ทดลองฟรีแล้ว บริษัทใหม่จึงเริ่มที่แพ็ก Free — อัปเกรดได้ที่ ตั้งค่า → แพ็กเกจ' } : {}),

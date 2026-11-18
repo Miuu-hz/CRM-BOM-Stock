@@ -3,7 +3,7 @@ import db from '../db/sqlite'
 import { thaiDateStr } from '../utils/id'
 import { getSubscription } from './subscription.service'
 import { can } from './rbac.service'
-import { lineBotService } from './line-bot.service'
+import { lineBotService, runMasterDailyAlerts } from './line-bot.service'
 
 // เตือนเฉพาะวันที่เหลือ 60/30/7 วัน และวันถัดจากหมดอายุ (-1) พอดี
 // → เอกสาร 1 ใบถูกกล่าวถึงใน digest ได้อย่างมาก 4 ครั้งตลอดอายุ
@@ -120,6 +120,11 @@ export function startHrExpiryScheduler() {
       console.log(`[HrExpiry] digest sent — tenants ${r.tenants}, pushes ${r.pushes}`)
     } catch (err: any) {
       console.error('[HrExpiry] digest failed:', err.message)
+    }
+    try {
+      await runMasterDailyAlerts(thaiDateStr())
+    } catch (err: any) {
+      console.error('[HrExpiry] master alerts failed:', err.message)
     }
   }, { timezone: 'Asia/Bangkok' })
   console.log('[HrExpiry] ⏰ Scheduler started — runs at 09:00 Asia/Bangkok daily')

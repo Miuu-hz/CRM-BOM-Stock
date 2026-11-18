@@ -118,6 +118,9 @@ export const linkThrottle = {
 const companyName = (tenantId: string) =>
     ((getDb().prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any)?.name ?? '') as string
 
+// แจ้งเตือนของบริษัทที่ Master (LINE ลอย) เปิดรับเองได้ — ปิดเป็นค่าเริ่มต้น
+const MASTER_NOTIFY_KINDS: [string, string][] = [['shift', 'ปิดกะ'], ['approval', 'คำขออนุมัติ'], ['work_order', 'ใบสั่งผลิต'], ['purchase', 'ใบขอซื้อ']]
+
 export const companyLogoUrl = (tenantId: string) => {
     const row = getDb().prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
     if (!row?.logo_base64 || !row.logo_base64.trim()) return undefined
@@ -229,6 +232,8 @@ class LineBotService {
             pushMessage: (to: string, messages: any) =>
                 sent('push', to, messages, inner.pushMessage({ to, messages: wrap(messages) })),
             getProfile: (userId: string) => inner.getProfile(userId),
+            getMessageQuota: () => inner.getMessageQuota(),
+            getMessageQuotaConsumption: () => inner.getMessageQuotaConsumption(),
             getGroupMemberProfile: (groupId: string, userId: string) =>
                 inner.getGroupMemberProfile(groupId, userId),
             getRoomMemberProfile: (roomId: string, userId: string) =>
@@ -260,6 +265,9 @@ class LineBotService {
             const g = db.prepare('SELECT tenant_id FROM line_group_mappings WHERE group_id = ? AND is_active = 1 ORDER BY joined_at DESC LIMIT 1').get(groupId) as any
             return g?.tenant_id ?? ''
         }
+        // Master: LINE ลอย ไม่ผูกบริษัท — ไปที่บริษัทที่เลือกดูอยู่ (as_member = 1 คือใช้บัญชีทดสอบ ตามตาราง mapping ปกติ)
+        const ml = this.masterLink(event.source?.userId ?? '')
+        if (ml && !ml.as_member) return ml.view_tenant_id || ''
         // LINE เดียวผูกหลายร้านได้ — แชทส่วนตัวไปที่ร้านที่เลือกล่าสุด (คำสั่ง "เปลี่ยนบริษัท") ถ้าไม่เคยเลือกคือร้านที่ผูกล่าสุด
         // ข้ามร้านที่บัญชีถูกระงับ — ไม่งั้นคนที่ผูกหลายร้านจะค้างอยู่ที่ร้านที่ใช้ไม่ได้และสลับออกไม่ได้
         const m = db.prepare(`
@@ -274,6 +282,107 @@ class LineBotService {
     private setActiveTenant(lineUserId: string, tenantId: string) {
         getDb().prepare(`UPDATE line_user_mappings SET active_at = CASE WHEN tenant_id = ? THEN strftime('%Y-%m-%d %H:%M:%f', 'now') END WHERE line_user_id = ?`)
             .run(tenantId, lineUserId)
+    }
+
+    /** แถว line_master_links ของ LINE นี้ (Master ที่ผูกแล้ว) */
+    private masterLink(lineUserId: string): any | undefined {
+        return getDb().prepare('SELECT * FROM line_master_links WHERE line_user_id = ?').get(lineUserId) as any
+    }
+
+    /** Master ที่ "ลอย" อยู่ (ไม่ได้ใช้บัญชีทดสอบ) */
+    private floatingLink(lineUserId: string): any | undefined {
+        const m = this.masterLink(lineUserId)
+        return m && !m.as_member ? m : undefined
+    }
+
+    /** LINE ของ Master ที่เปิดรับแจ้งเตือนชนิดนี้ของบริษัทนี้ */
+    private masterSubscribers(tenantId: string, kind: string): string[] {
+        return (getDb().prepare(`
+            SELECT n.line_user_id FROM line_master_notify n JOIN line_master_links l ON l.line_user_id = n.line_user_id
+            WHERE n.tenant_id = ? AND n.kind = ?
+        `).all(tenantId, kind) as any[]).map(r => r.line_user_id as string)
+    }
+
+    /** ข้อความรายการแจ้งเตือนของบริษัทที่ Master ดูอยู่ + ปุ่มเปิด/ปิด */
+    private masterNotifyMessage(lineUserId: string, tenantId: string) {
+        const on = new Set((getDb().prepare('SELECT kind FROM line_master_notify WHERE line_user_id = ? AND tenant_id = ?').all(lineUserId, tenantId) as any[]).map(r => r.kind as string))
+        const mark = (k: string) => on.has(k) ? '✅' : '⬜'
+        return {
+            type: 'text',
+            text: `แจ้งเตือนของ ${companyName(tenantId) || tenantId}\n${MASTER_NOTIFY_KINDS.map(([k, n]) => `${mark(k)} ${n}`).join('\n')}\nกดปุ่มเพื่อเปิด/ปิด`,
+            quickReply: { items: MASTER_NOTIFY_KINDS.map(([k, n]) => ({
+                type: 'action', action: { type: 'postback', label: `${mark(k)} ${n}`, data: `action=master_notify&kind=${k}`, displayText: n },
+            })) },
+        }
+    }
+
+    /** ปุ่มเลือกบริษัท (quick reply สูงสุด 13 ปุ่ม, label สูงสุด 20 ตัวอักษร) */
+    private companyButtons(rows: { tenant_id: string; name: string }[]) {
+        return rows.map(r => {
+            const name = r.name || r.tenant_id
+            return { type: 'action', action: { type: 'postback', label: name.slice(0, 20), data: `action=switch_tenant&id=${encodeURIComponent(r.tenant_id)}`, displayText: name } }
+        })
+    }
+
+    /** ข้อความถึง Master ทุกคนที่ผูก LINE ไว้ — แจ้งเตือนระดับ Master เสมอ · ไม่ throw */
+    public async notifyMasters(text: string) {
+        try {
+            const client = this.getClient('')
+            if (!client) return
+            const rows = getDb().prepare('SELECT line_user_id FROM line_master_links').all() as { line_user_id: string }[]
+            for (const r of rows) {
+                try { await client.pushMessage(r.line_user_id, { type: 'text', text }) } catch (err) {
+                    console.error(`notifyMasters push failed → ${r.line_user_id}:`, err)
+                }
+            }
+        } catch (err) { console.error('notifyMasters failed:', err) }
+    }
+
+    /** push ให้ Master ที่เปิดรับชนิดนี้ของบริษัทนี้ (ข้ามคนที่มีแถวใน mapping ของบริษัท = ได้ตามตำแหน่งปกติแล้ว) */
+    private async pushToMasterSubscribers(tenantId: string, kind: string, message: any) {
+        const client = this.getClient(tenantId)
+        if (!client) return
+        const has = getDb().prepare('SELECT 1 FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?')
+        for (const id of this.masterSubscribers(tenantId, kind)) {
+            if (has.get(tenantId, id)) continue
+            try { await client.pushMessage(id, message) } catch (err) {
+                console.error(`pushToMasterSubscribers failed → ${id}:`, err)
+            }
+        }
+    }
+
+    /** แจ้ง Master ครั้งเดียวต่อ key (บันทึก key หลังส่งแล้วเท่านั้น) */
+    private async alertMastersOnce(key: string, text: string) {
+        const db = getDb()
+        if (db.prepare('SELECT 1 FROM line_master_alerts WHERE key = ?').get(key)) return
+        if (!db.prepare('SELECT 1 FROM line_master_links LIMIT 1').get()) return
+        await this.notifyMasters(text)
+        db.prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(key)
+    }
+
+    /** แจ้ง Master รายวัน: แพ็กเกจใกล้หมด/หมดแล้ว + โควตาข้อความ LINE ≥ 80% · เรียกจาก cron 09:00 */
+    public async runMasterDailyAlerts(today: string) {
+        const day = (d: string) => Date.parse(`${d.slice(0, 10)}T00:00:00Z`)
+        try {
+            const subs = getDb().prepare(`SELECT tenant_id, current_period_end FROM tenant_subscriptions WHERE status IN ('ACTIVE', 'TRIAL') AND current_period_end IS NOT NULL`).all() as any[]
+            for (const s of subs) {
+                const end = String(s.current_period_end).slice(0, 10)
+                const left = Math.round((day(end) - day(today)) / 86400000)
+                const name = companyName(s.tenant_id) || s.tenant_id
+                if (left >= 0 && left <= 7) await this.alertMastersOnce(`sub7:${s.tenant_id}:${s.current_period_end}`, `⏳ แพ็กเกจ ${name} จะหมด ${end}`)
+                else if (left < 0 && left >= -3) await this.alertMastersOnce(`subx:${s.tenant_id}:${s.current_period_end}`, `⛔ แพ็กเกจ ${name} หมดอายุแล้ว ${end}`)
+            }
+        } catch (err) { console.error('[MasterAlerts] subscription check failed:', err) }
+        try {
+            const client = this.getClient('')
+            if (client?.getMessageQuota) {
+                const quota = await client.getMessageQuota()
+                const used = (await client.getMessageQuotaConsumption()).totalUsage
+                if (quota?.type === 'limited' && quota.value > 0 && used >= quota.value * 0.8) {
+                    await this.alertMastersOnce(`quota80:${today.slice(0, 7)}`, `📨 โควตาข้อความ LINE ใช้ไป ${used}/${quota.value} (${Math.round(used / quota.value * 100)}%) เดือนนี้`)
+                }
+            }
+        } catch (err) { console.error('[MasterAlerts] LINE quota check failed:', err) }
     }
 
     /** ร้านทั้งหมดที่ LINE นี้ผูกไว้ */
@@ -355,7 +464,7 @@ class LineBotService {
         const targets = new Set<string>()
         if (pr.requesterLineUserId) targets.add(pr.requesterLineUserId)
         if (pr.sourceGroupId)       targets.add(pr.sourceGroupId)
-
+        this.masterSubscribers(tenantId, 'purchase').forEach(id => targets.add(id))
         for (const target of targets) {
             try { await client.pushMessage(target, card) } catch (err) {
                 console.error(`notifyPRStatus push failed → ${target}:`, err)
@@ -369,6 +478,7 @@ class LineBotService {
             this.pushToRole(tenantId, 'USER',    msg),
             this.pushToRole(tenantId, 'MANAGER', msg),
             this.pushToRole(tenantId, 'MASTER',  msg),
+            this.pushToMasterSubscribers(tenantId, 'work_order', msg),
             this.pushToAllGroups(tenantId, msg),
         ])
     }
@@ -377,6 +487,7 @@ class LineBotService {
         const msg = flexTemplates.statusChangedCard(wo)
         await Promise.all([
             this.pushToRole(tenantId, 'MASTER',  msg),
+            this.pushToMasterSubscribers(tenantId, 'work_order', msg),
             this.pushToRole(tenantId, 'MANAGER', msg),
             this.pushToAllGroups(tenantId, msg),
         ])
@@ -393,7 +504,6 @@ class LineBotService {
               AND (
                 u.role IN ('ADMIN', 'MASTER')
                 OR lum.role IN ('ADMIN', 'MASTER')
-                OR lum.user_id LIKE 'master_%'
               )
         `).all(tenantId) as { line_user_id: string }[]
     }
@@ -404,7 +514,7 @@ class LineBotService {
         const client = this.getClient(tenantId)
         if (!client || !summary) return
         const card = flexTemplates.shiftCloseCard({ ...summary, webUrl: process.env.APP_URL ?? 'https://erp.phopy.net' })
-        for (const { line_user_id } of this.adminLineUsers(tenantId)) {
+        for (const line_user_id of new Set([...this.adminLineUsers(tenantId).map(u => u.line_user_id), ...this.masterSubscribers(tenantId, 'shift')])) {
             try { await client.pushMessage(line_user_id, card) } catch (err) {
                 console.error(`notifyShiftClosed push failed → ${line_user_id}:`, err)
             }
@@ -441,6 +551,7 @@ class LineBotService {
             WHERE lum.tenant_id = ? AND (u.role = 'MANAGER' OR lum.role = 'MANAGER')
         `).all(tenantId) as { line_user_id: string }[]
         const targets = new Set<string>([...this.adminLineUsers(tenantId), ...managers].map(u => u.line_user_id))
+        this.masterSubscribers(tenantId, 'shift').forEach(id => targets.add(id))
         for (const lineUserId of targets) {
             try { await client.pushMessage(lineUserId, msg) } catch (err) {
                 console.error(`notifyShiftExpenses push failed → ${lineUserId}:`, err)
@@ -468,6 +579,7 @@ class LineBotService {
         const targets = new Set<string>()
         blanketUsers.forEach(u => targets.add(u.line_user_id))
         specificUsers.forEach(u => targets.add(u.line_user_id))
+        this.masterSubscribers(tenantId, 'approval').forEach(id => targets.add(id))
         // คำขอ HR: หัวหน้าแผนกอนุมัติลาลูกทีมได้โดยไม่ต้องเป็น ADMIN → แจ้งทุกคนที่อนุมัติรายการนี้ได้จริง (กติกาเดียวกับปุ่ม "รออนุมัติ")
         if (['leave', 'advance', 'shift_swap', 'offsite'].includes(req.module_type)) {
             const linked = db.prepare(`
@@ -577,6 +689,19 @@ class LineBotService {
         if (new Date(row.expires_at) < new Date()) {
             db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
             return { result: 'expired', tenantId }
+        }
+        // Master: LINE ลอย ไม่ผูกกับบริษัทใด — เก็บใน line_master_links (บริษัทในรหัสเป็นแค่บริษัทที่ดูอยู่ตอนแรก)
+        if (String(row.user_id).startsWith('master_')) {
+            db.transaction(() => {
+                db.prepare(`
+                    INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id, demo_role, as_member)
+                    VALUES (?, ?, ?, NULL, 0)
+                    ON CONFLICT(line_user_id) DO UPDATE SET master_id = excluded.master_id, view_tenant_id = excluded.view_tenant_id,
+                        demo_role = NULL, as_member = 0, linked_at = CURRENT_TIMESTAMP
+                `).run(lineUserId, row.user_id, tenantId)
+                db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
+            })()
+            return { result: 'ok', tenantId }
         }
         // LINE นี้เคยผูกกับบัญชีอื่นในร้านเดียวกัน → ย้ายมาบัญชีเจ้าของรหัส (รหัสพิสูจน์ว่าถือทั้งบัญชีเว็บและ LINE)
         // เดิมตอบ "เชื่อมแล้ว" แล้วตัน: ลบผูกจากบัญชีหนึ่งแล้วผูกใหม่ด้วยอีกบัญชีไม่ได้เลย
@@ -904,6 +1029,14 @@ class LineBotService {
     // ── ผู้ใช้ที่ผูกแล้ว + role ปัจจุบัน (เลื่อนตำแหน่งในเว็บ → mapping.role ตามทันในข้อความถัดไป) ──
     private linkedUser(tenantId: string, lineUserId: string) {
         const db = getDb()
+        // Master ลอย: ดูบริษัท view_tenant_id ได้เสมอโดยไม่ต้องมี mapping · demo_role ทำงานเหมือนเดิม
+        const ml = this.masterLink(lineUserId)
+        if (ml && !ml.as_member && tenantId === (ml.view_tenant_id || '')) {
+            const demo = ['ADMIN', 'MANAGER', 'USER', 'GUEST'].includes(ml.demo_role)
+            const role: string = demo ? ml.demo_role : 'MASTER'
+            const menu: MenuKey = demo && ml.demo_role === 'GUEST' ? 'guest' : menuKeyForRole(role)
+            return { user_id: ml.master_id as string, role, menu, realRole: 'MASTER', demo, name: 'Master', email: String(ml.master_id).slice(7), linked_at: ml.linked_at as string, user_status: null }
+        }
         const m = db.prepare(`
             SELECT lum.user_id, lum.role, lum.demo_role, lum.linked_at, u.role AS user_role, u.name, u.email, u.status AS user_status
             FROM line_user_mappings lum LEFT JOIN users u ON u.id = lum.user_id
@@ -972,7 +1105,11 @@ class LineBotService {
             company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), name: me.name ?? '', email: me.email ?? '',
             roleLabel: (ROLE_LABEL[me.role] ?? me.role) + (me.demo ? ' (โหมด demo)' : ''), menuLabel: MENUS[me.menu as MenuKey].label, linkedAt: me.linked_at,
         }) as any
-        if (me.realRole === 'MASTER') card.quickReply = { items: [{ type: 'action', action: { type: 'message', label: 'โหมด demo', text: 'demo' } }] }
+        if (me.realRole === 'MASTER') {
+            const items: any[] = [{ type: 'action', action: { type: 'message', label: 'โหมด demo', text: 'demo' } }]
+            if (String(me.user_id).startsWith('master_')) items.push({ type: 'action', action: { type: 'message', label: 'แจ้งเตือน', text: 'แจ้งเตือน' } })
+            card.quickReply = { items }
+        }
         await client.replyMessage(replyToken, card)
     }
 
@@ -1166,6 +1303,7 @@ class LineBotService {
             const db = getDb()
             // บล็อก OA กลาง = เลิกรับจากทุกร้าน
             getDb().prepare('DELETE FROM line_user_mappings WHERE line_user_id = ?').run(event.source.userId)
+            getDb().prepare('DELETE FROM line_master_links WHERE line_user_id = ?').run(event.source.userId)
             return
         }
 
@@ -1196,9 +1334,10 @@ class LineBotService {
             if (src !== 'user') return
 
             const lineUserId = event.source?.userId
-            const mapping = lineUserId && tenantId
-                ? getDb().prepare('SELECT user_id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?').get(tenantId, lineUserId) as { user_id: string } | undefined
-                : undefined
+            const ml = lineUserId ? this.masterLink(lineUserId) : undefined
+            const mapping = !lineUserId || !tenantId ? undefined
+                : ml && !ml.as_member ? (ml.view_tenant_id === tenantId ? { user_id: ml.master_id as string } : undefined) // Master ลอยตัว: บิลเข้าบริษัทที่ดูอยู่
+                : getDb().prepare('SELECT user_id FROM line_user_mappings WHERE tenant_id = ? AND line_user_id = ?').get(tenantId, lineUserId) as { user_id: string } | undefined
 
             if (!tenantId || !mapping) {
                 await this.handleHowToLinkCommand(event.replyToken, client)
@@ -1270,6 +1409,19 @@ class LineBotService {
             const text = event.message.text.trim()
             // คนชินพิมพ์ /demo /help แบบแอปแชทอื่น — ตัด / นำหน้าทิ้ง ไม่งั้นหลุดไป AI fallback
             const lower = text.toLowerCase().replace(/^\//, '')
+
+            // ── กลับเป็น Master จากบัญชีทดสอบ — ก่อนด่านลงทะเบียนเพื่อให้ใช้ได้เสมอ ──
+            if (src === 'user' && ['master', 'กลับเป็น master'].includes(lower)) {
+                const uid = event.source.userId, ml = this.masterLink(uid)
+                if (ml?.as_member) {
+                    const view = ml.view_tenant_id || ''
+                    getDb().prepare('UPDATE line_master_links SET as_member = 0 WHERE line_user_id = ?').run(uid)
+                    const back = this.linkedUser(view, uid)
+                    if (back) await richMenus.syncUser(view, client.token, uid, back.menu)
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `กลับเป็น Master แล้ว · ตอนนี้ดู: ${companyName(view) || view}` })
+                    return
+                }
+            }
 
             // ── Registration gate ─────────────────────────────────────────────
             // คนที่ยังไม่ผูกใช้ได้แค่ "ลิงก์ XXXXXX" + ปุ่มในเมนู guest (วิธีเชื่อมบัญชี / ช่วยเหลือ)
@@ -1376,6 +1528,30 @@ class LineBotService {
             }
 
             // ── เปลี่ยนบริษัท (LINE เดียวผูกหลายร้าน) — เฉพาะแชทส่วนตัว ร้านในกลุ่มมาจากการผูกกลุ่ม ──
+            if (me && src === 'user' && ['เปลี่ยนบริษัท', 'สลับบริษัท'].includes(text) && this.floatingLink(event.source.userId)) {
+                // Master เห็นทุกบริษัท (ไม่ต้องมี mapping) — เกิน 13 ปุ่มให้ค้นด้วย "บริษัท <ชื่อ>"
+                const now = companyName(tenantId) || tenantId
+                const all = getDb().prepare('SELECT tenant_id, name FROM company_settings WHERE tenant_id != ? ORDER BY tenant_id').all(tenantId) as any[]
+                const more = all.length > 13
+                await client.replyMessage(event.replyToken, {
+                    type: 'text', text: `ตอนนี้ดู: ${now}\nเลือกบริษัทที่จะเปลี่ยนไป${more ? '\nพิมพ์ บริษัท <ชื่อ> เพื่อค้นหา' : ''}`,
+                    quickReply: { items: this.companyButtons(more ? all.slice(0, 12) : all) },
+                })
+                return
+            }
+            if (me && src === 'user' && text.startsWith('บริษัท ') && this.floatingLink(event.source.userId)) {
+                const q = text.slice(6).trim()
+                const found = q ? getDb().prepare('SELECT tenant_id, name FROM company_settings WHERE name LIKE ? ORDER BY tenant_id LIMIT 13').all(`%${q}%`) as any[] : []
+                await client.replyMessage(event.replyToken, found.length
+                    ? { type: 'text', text: `พบ ${found.length} บริษัท · เลือกบริษัทที่จะดู`, quickReply: { items: this.companyButtons(found) } }
+                    : { type: 'text', text: `ไม่พบบริษัท "${q}"` })
+                return
+            }
+            // ── แจ้งเตือนของบริษัทที่ Master ดูอยู่ (ปิดเป็นค่าเริ่มต้น) ──
+            if (me && src === 'user' && text === 'แจ้งเตือน' && this.floatingLink(event.source.userId)) {
+                await client.replyMessage(event.replyToken, this.masterNotifyMessage(event.source.userId, tenantId))
+                return
+            }
             if (me && src === 'user' && ['เปลี่ยนบริษัท', 'สลับบริษัท'].includes(text)) {
                 const shops = this.linkedTenants(event.source.userId)
                 const now = companyName(tenantId) || tenantId
@@ -1405,6 +1581,18 @@ class LineBotService {
                         quickReply: { items: [btn(ROLE_LABEL.ADMIN, 'ADMIN'), btn(ROLE_LABEL.MANAGER, 'MANAGER'), btn(ROLE_LABEL.USER, 'USER'), btn(ROLE_LABEL.GUEST, 'GUEST'), btn('กลับเป็น Master', 'off')] },
                     })
                 }
+                return
+            }
+
+            // ── Master ลอยสลับเป็นบัญชีทดสอบของ Testshop (ต้องมี mapping ของ LINE นี้ใน Testshop อยู่แล้ว) ──
+            if (me && src === 'user' && lower === 'สลับทดสอบ' && this.floatingLink(event.source.userId)
+                && getDb().prepare(`SELECT 1 FROM line_user_mappings WHERE tenant_id = 'Testshop' AND line_user_id = ?`).get(event.source.userId)) {
+                const uid = event.source.userId
+                getDb().prepare('UPDATE line_master_links SET as_member = 1 WHERE line_user_id = ?').run(uid)
+                this.setActiveTenant(uid, 'Testshop')
+                const t = this.linkedUser('Testshop', uid)
+                if (t) await richMenus.syncUser('Testshop', client.token, uid, t.menu)
+                await client.replyMessage(event.replyToken, { type: 'text', text: 'ตอนนี้เป็นบัญชีทดสอบของร้านสาธิต · พิมพ์ สลับทดสอบ เพื่อสลับพนักงาน/ผู้จัดการ · พิมพ์ master เพื่อกลับเป็น Master' })
                 return
             }
 
@@ -1486,6 +1674,15 @@ class LineBotService {
 
             // เปลี่ยนบริษัท: id มาจากปุ่มซึ่งปลอมได้ → ต้องมี mapping ของ LINE นี้กับร้านนั้นจริง
             if (action === 'switch_tenant' && id && event.source?.type === 'user') {
+                // Master ลอย: สลับไปบริษัทใดก็ได้ที่มีจริง ไม่ต้องมี mapping
+                if (this.floatingLink(event.source.userId)) {
+                    if (!db.prepare('SELECT 1 FROM company_settings WHERE tenant_id = ?').get(id)) return
+                    db.prepare('UPDATE line_master_links SET view_tenant_id = ?, as_member = 0 WHERE line_user_id = ?').run(id, event.source.userId)
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้ดู: ${companyName(id) || id} (Master)` })
+                    const view = this.linkedUser(id, event.source.userId)
+                    if (view) await richMenus.syncUser(id, client.token, event.source.userId, view.menu)
+                    return
+                }
                 const to = this.linkedUser(id, event.source.userId)
                 if (!to) {
                     await client.replyMessage(event.replyToken, { type: 'text', text: '❌ LINE นี้ไม่ได้ผูกกับบริษัทนั้น' })
@@ -1494,6 +1691,17 @@ class LineBotService {
                 this.setActiveTenant(event.source.userId, id)
                 await client.replyMessage(event.replyToken, { type: 'text', text: `✅ ตอนนี้ใช้งาน: ${companyName(id) || id}\nคำสั่งและเมนูในแชทนี้เป็นของบริษัทนี้แล้ว` })
                 await richMenus.syncUser(id, client.token, event.source.userId, to.menu)
+                return
+            }
+
+            // เปิด/ปิดแจ้งเตือนของบริษัทที่ Master ดูอยู่ — เฉพาะ Master ลอย (เช็คจากตาราง ไม่ใช่จากปุ่ม)
+            if (action === 'master_notify' && event.source?.type === 'user') {
+                const lineUserId = event.source.userId, kind = params.get('kind') ?? ''
+                const fl = this.floatingLink(lineUserId)
+                if (!fl?.view_tenant_id || !MASTER_NOTIFY_KINDS.some(([k]) => k === kind)) return
+                const gone = db.prepare('DELETE FROM line_master_notify WHERE line_user_id = ? AND tenant_id = ? AND kind = ?').run(lineUserId, fl.view_tenant_id, kind)
+                if (!gone.changes) db.prepare('INSERT INTO line_master_notify (line_user_id, tenant_id, kind) VALUES (?, ?, ?)').run(lineUserId, fl.view_tenant_id, kind)
+                await client.replyMessage(event.replyToken, this.masterNotifyMessage(lineUserId, fl.view_tenant_id))
                 return
             }
 
@@ -1507,7 +1715,9 @@ class LineBotService {
                     return
                 }
                 if (!['ADMIN', 'MANAGER', 'USER', 'GUEST', 'off'].includes(role)) return
-                db.prepare('UPDATE line_user_mappings SET demo_role = ? WHERE tenant_id = ? AND line_user_id = ?').run(role === 'off' ? null : role, tenantId, lineUserId)
+                const demo = role === 'off' ? null : role
+                if (this.floatingLink(lineUserId)) db.prepare('UPDATE line_master_links SET demo_role = ? WHERE line_user_id = ?').run(demo, lineUserId)
+                else db.prepare('UPDATE line_user_mappings SET demo_role = ? WHERE tenant_id = ? AND line_user_id = ?').run(demo, tenantId, lineUserId)
                 const now = this.linkedUser(tenantId, lineUserId)
                 if (!now) return
                 await richMenus.syncUser(tenantId, client.token, lineUserId, now.menu)
@@ -1517,16 +1727,20 @@ class LineBotService {
 
             // ── อนุมัติ/ไม่อนุมัติคำขอ HR จากการ์ด (เฉพาะแชทส่วนตัว) — ด่านสิทธิ์ใช้ตัวเดียวกับหน้าเว็บ ──
             if ((action === 'approve_req' || action === 'reject_req') && id && event.source?.type === 'user') {
-                const me = this.linkedUser(tenantId, event.source.userId)
+                // Master ลอยตัว: การ์ดอาจมาจากบริษัทอื่นที่ไม่ได้ดูอยู่ (เปิดแจ้งเตือนไว้) — Master เข้าได้ทุกบริษัท จึงใช้บริษัทของคำขอเอง
+                const ml = this.masterLink(event.source.userId)
+                const floating = !!ml && !ml.as_member
+                const reqTenant: string = floating ? ((db.prepare('SELECT tenant_id FROM approval_requests WHERE id = ?').get(id) as any)?.tenant_id ?? tenantId) : tenantId
+                const me = floating ? { user_id: ml.master_id, realRole: 'MASTER' } : this.linkedUser(reqTenant, event.source.userId)
                 if (!me) return
-                const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+                const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, reqTenant) as any
                 // บัญชี master_<email> ไม่มีแถวใน users (ดู auth.routes.ts) → ประกอบข้อมูลเองเหมือนตอนล็อกอินเว็บ
                 const mid = String(me.user_id)
                 const u = (me.realRole === 'MASTER' && mid.startsWith('master_')
                     ? { id: mid, email: mid.slice(7), role: 'MASTER', departments: null, custom_permissions: null }
-                    : db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, tenantId)) as any
+                    : db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, reqTenant)) as any
                 // ด่านแพ็กเกจเดียวกับ /api/approval บนเว็บ: หมดอายุ → เฉพาะ ADMIN
-                const sub = getSubscription(tenantId)
+                const sub = getSubscription(reqTenant)
                 if (u && u.role !== 'ADMIN' && (sub.status === 'EXPIRED' || sub.status === 'CANCELLED')) {
                     await client.replyMessage(event.replyToken, { type: 'text', text: '❌ แพ็กเกจหมดอายุ กรุณาติดต่อผู้ดูแลบริษัทเพื่อต่ออายุ' })
                     return
@@ -1538,7 +1752,7 @@ class LineBotService {
                 const departments = u.departments ? JSON.parse(u.departments) : []
                 const req = {
                     params: { id }, body: { decision: action === 'approve_req' ? 'APPROVED' : 'REJECTED', comment: 'ทาง LINE' },
-                    user: { userId: u.id, email: u.email, role: u.role, department: departments[0], departments, tenantId,
+                    user: { userId: u.id, email: u.email, role: u.role, department: departments[0], departments, tenantId: reqTenant,
                         customPermissions: u.custom_permissions ? JSON.parse(u.custom_permissions) : undefined },
                 }
                 let out: any = {}
@@ -1602,3 +1816,8 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
 }
 
 export const lineBotService = new LineBotService()
+
+/** แจ้ง Master รายวัน (แพ็กเกจใกล้หมด/หมด + โควตา LINE) — เรียกจาก cron 09:00 */
+export async function runMasterDailyAlerts(today: string): Promise<void> {
+    await lineBotService.runMasterDailyAlerts(today)
+}

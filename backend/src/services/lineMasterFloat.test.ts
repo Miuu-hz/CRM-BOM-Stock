@@ -1,0 +1,189 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import db from '../db/sqlite'
+import { runMigrations } from '../db/migrations'
+import { generateId } from '../utils/id'
+import { richMenus } from './line-richmenu.service'
+import { flexTemplates } from './line-flex-templates'
+import { lineBotService, runMasterDailyAlerts } from './line-bot.service'
+
+/** LINE ของ Master "ลอย": ไม่ผูกบริษัท เห็นได้ทุกบริษัท และไม่ได้แจ้งเตือนของบริษัทถ้าไม่เปิดเอง */
+const tenants: string[] = []
+const lines: string[] = []
+afterEach(() => {
+    vi.restoreAllMocks()
+    for (const t of tenants.splice(0)) for (const tb of ['line_user_mappings', 'line_link_tokens', 'users', 'company_settings', 'line_master_notify', 'tenant_subscriptions'])
+        db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t)
+    for (const l of lines.splice(0)) for (const tb of ['line_master_links', 'line_master_notify', 'line_user_mappings'])
+        db.prepare(`DELETE FROM ${tb} WHERE line_user_id = ?`).run(l)
+    db.prepare(`DELETE FROM users WHERE tenant_id = 'Testshop' AND email LIKE '%@float.test'`).run()
+})
+
+function rig() {
+    const replies: any[] = []
+    const push = vi.fn(async (_to: string, _m: any) => {})
+    vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: async (_t: string, m: any) => { replies.push(m) }, pushMessage: push })
+    vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
+    const send = async (uid: string, ev: any) => {
+        const n = replies.length, event = { replyToken: 'rt', source: { type: 'user', userId: uid }, ...ev }
+        await lineBotService.handleEvent(lineBotService.resolveTenant(event), event)
+        return JSON.stringify(replies.slice(n))
+    }
+    const say = (uid: string, text: string) => send(uid, { type: 'message', message: { type: 'text', text } })
+    const press = (uid: string, data: string) => send(uid, { type: 'postback', postback: { data } })
+    return { replies, push, say, press }
+}
+
+function company(label: string) {
+    const tenantId = 'tenant_mf_' + generateId().slice(0, 8); tenants.push(tenantId)
+    const name = `ร้าน${label}-${tenantId.slice(-6)}`
+    try { db.prepare('INSERT INTO company_settings (id, tenant_id, name) VALUES (?, ?, ?)').run(generateId(), tenantId, name) }
+    catch { db.prepare('INSERT INTO company_settings (tenant_id, name) VALUES (?, ?)').run(tenantId, name) }
+    return { tenantId, name }
+}
+
+function master(view: string, label = '') {
+    const uid = 'U' + generateId(); lines.push(uid)
+    db.prepare('INSERT INTO line_master_links (line_user_id, master_id, view_tenant_id) VALUES (?, ?, ?)').run(uid, `master_m${label}${uid.slice(-6)}@float.test`, view)
+    return uid
+}
+
+/** แถว mapping ปกติ (ผูกกับ users จริง) */
+function member(tenantId: string, uid: string, role: string) {
+    const userId = generateId()
+    db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'ทดสอบ', ?, ?, 'active')`).run(userId, `${userId}@float.test`, role, tenantId)
+    db.prepare('INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, ?)').run(generateId(), tenantId, userId, uid, role)
+    return userId
+}
+
+const link = (uid: string) => db.prepare('SELECT * FROM line_master_links WHERE line_user_id = ?').get(uid) as any
+const mappings = (uid: string) => db.prepare('SELECT * FROM line_user_mappings WHERE line_user_id = ?').all(uid) as any[]
+
+describe('LINE Master ลอย', () => {
+    it('1. migration ย้ายแถว master_* จาก line_user_mappings ไป line_master_links (รันซ้ำได้)', () => {
+        const A = company('เอ'), uid = 'U' + generateId(); lines.push(uid)
+        const mid = `master_mig${uid.slice(-6)}@float.test`
+        db.prepare('INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role, demo_role) VALUES (?, ?, ?, ?, ?, ?)').run(generateId(), A.tenantId, mid, uid, 'MASTER', 'USER')
+        runMigrations(db)
+        runMigrations(db)
+        expect(mappings(uid)).toHaveLength(0)
+        expect(link(uid)).toMatchObject({ master_id: mid, view_tenant_id: A.tenantId, demo_role: 'USER', as_member: 0 })
+    })
+
+    it('2. ผูกด้วยรหัสของ master → line_master_links ไม่ใช่ line_user_mappings', async () => {
+        const { say } = rig(), A = company('เอ'), uid = 'U' + generateId(); lines.push(uid)
+        const mid = `master_lnk${uid.slice(-6)}@float.test`
+        await say(uid, lineBotService.generateLinkToken(A.tenantId, mid))
+        expect(link(uid)).toMatchObject({ master_id: mid, view_tenant_id: A.tenantId, as_member: 0, demo_role: null })
+        expect(mappings(uid)).toHaveLength(0)
+    })
+
+    it('3. อยู่บริษัท A และมีบัญชี USER ใน Testshop → ยังอยู่ A · demo ได้ 5 ปุ่ม', async () => {
+        const { say } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        member('Testshop', uid, 'USER')
+        expect(lineBotService.resolveTenant({ source: { type: 'user', userId: uid } })).toBe(A.tenantId)
+        expect(JSON.parse(await say(uid, 'demo'))[0].quickReply.items).toHaveLength(5)
+    })
+
+    it('4. switch_tenant ไปบริษัทใดก็ได้ที่มีจริง (ไม่มี mapping) · ไม่มีจริง = ไม่ทำอะไร', async () => {
+        const { say, press } = rig(), A = company('เอ'), B = company('บี'), uid = master(A.tenantId)
+        expect(await press(uid, `action=switch_tenant&id=${encodeURIComponent(B.tenantId)}`)).toContain(B.name)
+        expect(link(uid).view_tenant_id).toBe(B.tenantId)
+        const out = await say(uid, 'ยอดขายวันนี้')
+        expect(out).not.toContain('🔒'); expect(out).not.toContain('ยังไม่ได้เชื่อม'); expect(out).toContain(B.name)
+
+        await press(uid, 'action=switch_tenant&id=tenant_ไม่มีจริง')
+        expect(link(uid).view_tenant_id).toBe(B.tenantId)
+    })
+
+    it('5. คนที่ไม่ใช่ master มี mapping แค่ A → สลับไป B ไม่ได้', async () => {
+        const { press } = rig(), A = company('เอ'), B = company('บี'), uid = 'U' + generateId(); lines.push(uid)
+        member(A.tenantId, uid, 'ADMIN')
+        const out = await press(uid, `action=switch_tenant&id=${encodeURIComponent(B.tenantId)}`)
+        expect(out).toContain('❌')
+        expect(lineBotService.resolveTenant({ source: { type: 'user', userId: uid } })).toBe(A.tenantId)
+    })
+
+    it('6. แจ้งเตือนปิดกะ: ปิดเป็นค่าเริ่มต้น · เปิดเฉพาะบริษัทที่เลือก', async () => {
+        const { push, say, press } = rig(), A = company('เอ'), B = company('บี'), uid = master(A.tenantId)
+        vi.spyOn(flexTemplates as any, 'shiftCloseCard').mockReturnValue({ type: 'text', text: 'สรุปปิดกะ' })
+        const pushed = () => push.mock.calls.map((c: any[]) => c[0])
+
+        await lineBotService.notifyShiftClosed(A.tenantId, { shiftNumber: 'S1' })
+        expect(pushed()).not.toContain(uid)
+
+        const list = await say(uid, 'แจ้งเตือน')
+        expect(list).toContain('action=master_notify&kind=shift'); expect(list).toContain('⬜ ปิดกะ')
+        expect(await press(uid, 'action=master_notify&kind=shift')).toContain('✅ ปิดกะ')
+
+        await lineBotService.notifyShiftClosed(A.tenantId, { shiftNumber: 'S2' })
+        expect(pushed()).toContain(uid)
+        push.mockClear()
+        await lineBotService.notifyShiftClosed(B.tenantId, { shiftNumber: 'S3' })
+        expect(pushed()).not.toContain(uid)
+
+        // kind ที่ไม่มีในรายการ → ไม่เพิ่มแถว
+        await press(uid, 'action=master_notify&kind=hack')
+        expect(db.prepare('SELECT COUNT(*) AS n FROM line_master_notify WHERE line_user_id = ?').get(uid)).toEqual({ n: 1 })
+    })
+
+    it('7. สลับทดสอบ → บัญชีทดสอบ Testshop · master → กลับเป็น Master ดูบริษัทเดิม', async () => {
+        const { say } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        const testUser = member('Testshop', uid, 'USER')
+        const src = { source: { type: 'user', userId: uid } }
+
+        expect(await say(uid, 'สลับทดสอบ')).toContain('บัญชีทดสอบของร้านสาธิต')
+        expect(link(uid).as_member).toBe(1)
+        expect(lineBotService.resolveTenant(src)).toBe('Testshop')
+        expect((lineBotService as any).linkedUser('Testshop', uid)).toMatchObject({ user_id: testUser, realRole: 'USER' })
+
+        expect(await say(uid, 'master')).toContain('กลับเป็น Master แล้ว')
+        expect(link(uid).as_member).toBe(0)
+        expect(lineBotService.resolveTenant(src)).toBe(A.tenantId)
+    })
+
+    it('8. notifyMasters ส่งถึงทุกลิงก์ · แจ้งแพ็กเกจใกล้หมดครั้งเดียวต่อรอบ', async () => {
+        const { push } = rig(), A = company('เอ'), m1 = master(A.tenantId, '1'), m2 = master(A.tenantId, '2')
+        await lineBotService.notifyMasters('ทดสอบ')
+        const ids = push.mock.calls.map((c: any[]) => c[0])
+        expect(ids).toContain(m1); expect(ids).toContain(m2)
+
+        const before = new Set((db.prepare('SELECT key FROM line_master_alerts').all() as any[]).map(r => r.key))
+        try {
+            const today = new Date().toISOString().slice(0, 10)
+            const end = new Date(Date.now() + 3 * 86400000).toISOString()
+            db.prepare(`INSERT INTO tenant_subscriptions (id, tenant_id, plan_code, status, billing_cycle, current_period_start, current_period_end, packs, addons)
+                VALUES (?, ?, 'free', 'ACTIVE', NULL, ?, ?, '[]', '{}')`).run(generateId(), A.tenantId, new Date().toISOString(), end)
+            push.mockClear()
+            await runMasterDailyAlerts(today)
+            const texts = push.mock.calls.filter((c: any[]) => c[0] === m1).map((c: any[]) => (c[1] as any).text as string)
+            expect(texts.filter(t => t.includes('⏳') && t.includes(A.name))).toHaveLength(1)
+
+            push.mockClear()
+            await runMasterDailyAlerts(today)
+            expect(push).not.toHaveBeenCalled()
+        } finally {
+            for (const r of db.prepare('SELECT key FROM line_master_alerts').all() as any[])
+                if (!before.has(r.key)) db.prepare('DELETE FROM line_master_alerts WHERE key = ?').run(r.key)
+        }
+    })
+
+    it('9. Master ดูบริษัท A กดอนุมัติการ์ดคำขอลาของบริษัท B ได้ · ส่งรูปบิลเข้าบริษัทที่ดูอยู่', async () => {
+        const r = rig(), A = company('A'), B = company('B'), uid = master(A.tenantId)
+        vi.spyOn(lineBotService, 'notifyApprovalDecision').mockResolvedValue(undefined as any)
+        const t = B.tenantId, now = new Date().toISOString(), staff = generateId(), typeId = generateId(), empId = generateId(), leaveId = generateId(), id = generateId()
+        db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'พนักงาน', 'USER', ?, 'active')`).run(staff, `${staff}@float.test`, t)
+        db.prepare(`INSERT INTO leave_types (id, tenant_id, code, name, paid, days_per_year, is_active, created_at) VALUES (?, ?, 'SICK', 'ลาป่วย', 1, 30, 1, ?)`).run(typeId, t, now)
+        db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, employment_type, base_wage, start_date, status, user_id, created_at, updated_at)
+            VALUES (?, ?, ?, 'ส', 'ด', 'MONTHLY', 15000, '2026-01-01', 'ACTIVE', ?, ?, ?)`).run(empId, t, 'E' + empId.slice(0, 6), staff, now, now)
+        db.prepare(`INSERT INTO leave_requests (id, tenant_id, employee_id, leave_type_id, start_date, end_date, days, reason, status, approval_request_id, requested_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, '2026-11-03', '2026-11-03', 1, 'ป่วย', 'PENDING', ?, ?, ?, ?)`).run(leaveId, t, empId, typeId, id, staff, now, now)
+        db.prepare(`INSERT INTO approval_requests (id, tenant_id, request_number, module_type, reference_type, reference_id, requester_id, requester_name, requester_role, amount, description, status, created_at, updated_at)
+            VALUES (?, ?, ?, 'leave', 'leave_requests', ?, ?, 'x', 'USER', 0, 'ลาป่วย 1 วัน', 'PENDING', ?, ?)`).run(id, t, 'APR-' + id.slice(0, 8), leaveId, staff, now, now)
+        try {
+            expect(await r.press(uid, `action=approve_req&id=${id}`)).toContain('อนุมัติแล้ว')
+            expect((db.prepare('SELECT status FROM approval_requests WHERE id = ?').get(id) as any).status).toBe('EXECUTED')
+        } finally {
+            for (const tb of ['approval_logs', 'approval_requests', 'leave_requests', 'leave_types', 'employees']) db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t)
+        }
+    })
+})

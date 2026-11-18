@@ -3574,6 +3574,37 @@ export function runMonthCloseMigrations(db: any): void {
     `)
     try { db.exec('ALTER TABLE attendance_logs ADD COLUMN offsite_request_id TEXT') } catch { /* มีแล้ว */ }
   } catch (e) { console.error('⚠️ offsite_requests migration error:', e) }
+
+  // LINE ของ Master "ลอย" ไม่ผูกบริษัท: ตารางลิงก์ + แจ้งเตือนรายบริษัท + dedupe แจ้งเตือนรายวัน · ย้ายแถว master_* ออกจาก line_user_mappings (รันซ้ำได้)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS line_master_links (
+        line_user_id TEXT PRIMARY KEY,
+        master_id TEXT NOT NULL,
+        view_tenant_id TEXT,
+        demo_role TEXT,
+        as_member INTEGER NOT NULL DEFAULT 0,
+        linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS line_master_notify (
+        line_user_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        PRIMARY KEY (line_user_id, tenant_id, kind)
+      );
+      CREATE TABLE IF NOT EXISTS line_master_alerts (
+        key TEXT PRIMARY KEY,
+        sent_at TEXT NOT NULL
+      );
+    `)
+    db.transaction(() => {
+      // เรียงเก่า → ใหม่ แถวที่ใหม่สุดของแต่ละ LINE เขียนทับท้ายสุด
+      const rows = db.prepare(`SELECT line_user_id, user_id, tenant_id, demo_role, linked_at FROM line_user_mappings WHERE user_id LIKE 'master_%' ORDER BY COALESCE(active_at, linked_at), linked_at`).all() as any[]
+      const ins = db.prepare('INSERT OR REPLACE INTO line_master_links (line_user_id, master_id, view_tenant_id, demo_role, linked_at) VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))')
+      for (const r of rows) ins.run(r.line_user_id, r.user_id, r.tenant_id, r.demo_role ?? null, r.linked_at)
+      db.prepare(`DELETE FROM line_user_mappings WHERE user_id LIKE 'master_%'`).run()
+    })()
+  } catch (e) { console.error('⚠️ line_master_links migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
