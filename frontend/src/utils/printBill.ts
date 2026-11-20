@@ -120,6 +120,13 @@ function sellerOf(d: any): BillParty {
   }
 }
 
+// ข้อมูลที่นำเข้ามาใช้ "-" / "ไม่มี" แทนช่องว่าง และบางรายมี "ไม่มี " ติดหน้าชื่อ — พิมพ์เป็นช่องว่างแทน
+// ponytail: ล้างตอนพิมพ์อย่างเดียว ค่าใน customers/suppliers ยังเหมือนเดิม
+export const blankish = (v: unknown): string => {
+  const t = String(v ?? '').trim().replace(/^ไม่มี\s+/, '')
+  return /^(-+|ไม่มี|n\/?a|null|undefined)$/i.test(t) ? '' : t
+}
+
 function partyOf(d: any, side: DocSpec['party']): BillParty {
   // เอกสารที่ไม่มีคู่ค้า (ใบขอซื้อ/ใบสั่งผลิต) — ใช้แผนก/สินค้าที่ผลิตแทน ไม่ปล่อยว่าง
   if (side === 'none') return { name: String(d.department || d.product_name || d.wo_product_name || d.requester_name || '-') }
@@ -127,11 +134,11 @@ function partyOf(d: any, side: DocSpec['party']): BillParty {
   return {
     code: d[`${p}_code`] || undefined,
     // บิล POS ลูกค้าขาจรไม่ได้อยู่ใน CRM — แคชเชียร์ตั้งชื่อบิลเป็นเลขโต๊ะ/ชื่อเล่นไว้ที่ display_name
-    name: String(d[`${p}_name`] || d.display_name || '-'),
-    address: String(d[`${p}_address`] || ''),
-    taxId: String(d[`${p}_tax_id`] || ''),
-    tel: String(d[`${p}_phone`] || ''),
-    email: d[`${p}_email`] || undefined,
+    name: blankish(d[`${p}_name`]) || blankish(d.display_name),
+    address: blankish(d[`${p}_address`]),
+    taxId: blankish(d[`${p}_tax_id`]),
+    tel: blankish(d[`${p}_phone`]),
+    email: blankish(d[`${p}_email`]) || undefined,
     // ใบกำกับภาษีเต็มรูปต้องระบุ "สำนักงานใหญ่ / สาขาที่ ____" ของผู้ซื้อตามกฎหมาย
     branch: d[`${p}_tax_branch`] || undefined,
   }

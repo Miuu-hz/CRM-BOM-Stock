@@ -167,3 +167,18 @@ describe('waitForLayout รอจนหน้านิ่งก่อนพิ�
     expect(Date.now() - t).toBeLessThan(1000)
   })
 })
+
+// ข้อมูลนำเข้ามี "ไม่มี " ติดหน้าชื่อ และ "-" แทนช่องว่าง — บิลต้องเว้นว่าง ไม่พิมพ์คำพวกนี้ออกไป
+describe('ช่องลูกค้าว่าง', () => {
+  it('ตัด "ไม่มี" และ "-" ออกจากข้อมูลลูกค้า', () => {
+    const b = toBillData('qt', {
+      quotation_number: 'QT-1', customer_name: 'ไม่มี ศูนย์ฝึกอบรม ภาค6',
+      customer_phone: '-', customer_email: '-', customer_address: 'ไม่มี', items: [],
+    }).buyer
+    expect(b.name).toBe('ศูนย์ฝึกอบรม ภาค6')
+    expect(b.tel).toBe('')
+    expect(b.email).toBeUndefined()
+    expect(b.address).toBe('')
+    expect(toBillData('qt', { customer_name: 'ไม่มี', items: [] }).buyer.name).toBe('')
+  })
+})
