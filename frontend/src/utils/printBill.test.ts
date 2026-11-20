@@ -144,27 +144,13 @@ describe('ใบเสร็จมีรายการสินค้าจา�
   })
 })
 
-describe('waitForLayout รอจนหน้านิ่งก่อนพิมพ์', () => {
-  const fakeWin = (heights: number[]) => {
-    let i = 0
-    const body = { get scrollHeight() { return heights[Math.min(i++, heights.length - 1)] } }
-    return { closed: false, requestAnimationFrame: (cb: any) => setTimeout(cb, 0), document: { fonts: { ready: Promise.resolve() }, body } } as any
-  }
-  it('ความสูงยังเปลี่ยน = ยังไม่พิมพ์ · นิ่ง 3 รอบติดแล้วค่อยไปต่อ', async () => {
-    const heights = [0, 0, 500, 900, 1200, 1200, 1200, 1200]
-    const w = fakeWin(heights)
-    let reads = 0
-    Object.defineProperty(w.document.body, 'scrollHeight', { get: () => heights[Math.min(reads++, heights.length - 1)] })
-    await waitForLayout(w)
-    expect(reads).toBe(8) // 0,0,500,900 ไม่นับ · 1200 ครั้งแรกตั้งต้น · อีก 3 ครั้งเท่าเดิม
-  })
-  it('หน้าไม่นิ่งเลย = ไม่ค้าง ออกเมื่อครบเพดานเวลา', async () => {
-    let n = 0
-    const w = fakeWin([])
-    Object.defineProperty(w.document.body, 'scrollHeight', { get: () => ++n })
+describe('waitForLayout หน่วงคงที่ก่อนพิมพ์', () => {
+  it('รอ 0.8 วิ ไม่ขึ้นกับความสูงหน้า', async () => {
     const t = Date.now()
-    await waitForLayout(w, 150)
-    expect(Date.now() - t).toBeLessThan(1000)
+    await waitForLayout({} as Window)
+    const ms = Date.now() - t
+    expect(ms).toBeGreaterThanOrEqual(790)
+    expect(ms).toBeLessThan(1500)
   })
 })
 

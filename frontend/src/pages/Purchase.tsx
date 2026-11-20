@@ -2221,9 +2221,9 @@ const Purchase = () => {
     }
   }
 
-  const handleConfirmReceipt0 = async (id: string) => {
+  const handleConfirmReceipt0 = async (id: string, acceptCostJump = false) => {
     try {
-      const { data } = await api.put(`/purchase/goods-receipts/${id}/confirm`)
+      const { data } = await api.put(`/purchase/goods-receipts/${id}/confirm`, acceptCostJump ? { acceptCostJump } : undefined)
       if (data.success) {
         // รายการที่ไม่ได้ผูกกับสินค้าในคลัง (ของที่ไม่ต้องนับสต็อก เช่น ปากกา) จะไม่ถูกเพิ่มสต็อก
         // รับของได้ตามปกติ แต่ต้องเตือนให้เห็นชัด ไม่ใช่เงียบ ๆ แล้วให้ไปงงตอนนับของ
@@ -2237,7 +2237,14 @@ const Purchase = () => {
         fetchReceipts()
         fetchOrders()
       } else { toast.error(data.message || t('purchase.toast.receiptConfirmFailed')) }
-    } catch (error: any) { toast.error(error.response?.data?.message || t('purchase.toast.receiptConfirmFailed')) }
+    } catch (error: any) {
+      // ทุนเปลี่ยนเกิน 10 เท่า: ให้คนอ่านแล้วตัดสินเอง กดตกลง = ยืนยันซ้ำแบบรับทราบ
+      if (error.response?.data?.code === 'COST_JUMP' && !acceptCostJump) {
+        if (confirm(error.response.data.message)) return handleConfirmReceipt0(id, true)
+        return
+      }
+      toast.error(error.response?.data?.message || t('purchase.toast.receiptConfirmFailed'))
+    }
   }
 
   const handleDeleteReceipt0 = async (id: string) => {

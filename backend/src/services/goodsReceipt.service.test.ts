@@ -133,6 +133,23 @@ describe('goodsReceipt.service — createGoodsReceipt', () => {
 })
 
 describe('goodsReceipt.service — confirmGoodsReceipt', () => {
+  it('ทุนใหม่ต่างจากเดิมเกิน 10 เท่า = หยุดก่อนเข้าสต็อก, ยืนยันซ้ำแบบรับทราบแล้วผ่าน (2026-11-20 ขนมปัง 500 แพ็ค @0.088)', () => {
+    const { tenantId, userId, email } = createTestUser({ role: 'ADMIN' })
+    const { poId, poItemId, materialId, stockId } = seedPoWithMaterial(tenantId, { qty: 5 })
+    db.prepare('UPDATE purchase_order_items SET unit_price = 0.05 WHERE id = ?').run(poItemId) // ทุนเดิม 1 → 0.05 (ถูกลง 20 เท่า)
+    const gr = createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, materialId, orderedQty: 5, receivedQty: 5, acceptedQty: 5 }] }) as any
+
+    try { confirmGoodsReceipt(tenantId, userId, gr.id); throw new Error('should have thrown') } catch (e: any) { expect(e.code).toBe('COST_JUMP') }
+    const before = db.prepare('SELECT quantity, unit_cost FROM stock_items WHERE id = ?').get(stockId) as any
+    expect(before.quantity).toBe(0)
+    expect(before.unit_cost).toBe(1)
+
+    confirmGoodsReceipt(tenantId, userId, gr.id, { acceptCostJump: true })
+    const after = db.prepare('SELECT quantity, unit_cost FROM stock_items WHERE id = ?').get(stockId) as any
+    expect(after.quantity).toBeCloseTo(5, 6)
+    expect(after.unit_cost).toBeCloseTo(0.05, 6)
+  })
+
   it('ยืนยัน GR ที่ถูกยกเลิกแล้วซ้ำไม่ได้ (Bug #3 — เดิมเช็คแค่ === CONFIRMED)', () => {
     const { tenantId, userId, email } = createTestUser({ role: 'ADMIN' })
     const { poId, poItemId, materialId, stockId } = seedPoWithMaterial(tenantId, { qty: 5 })
@@ -173,7 +190,7 @@ describe('goodsReceipt.service — confirmGoodsReceipt', () => {
     const { poId, poItemId, materialId, stockId } = seedPoWithMaterial(tenantId, { poUnit: 'kg', stockUnit: 'g', qty: 2 })
     const gr = createGoodsReceipt(tenantId, email, { purchaseOrderId: poId, items: [{ poItemId, materialId, orderedQty: 2, receivedQty: 2, acceptedQty: 2 }] }) as any
 
-    confirmGoodsReceipt(tenantId, userId, gr.id)
+    confirmGoodsReceipt(tenantId, userId, gr.id, { acceptCostJump: true })
 
     const stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockId) as any
     expect(stock.quantity).toBeCloseTo(2000, 6) // 2 kg → 2000 g
@@ -190,7 +207,7 @@ describe('goodsReceipt.service — confirmGoodsReceipt', () => {
     const { poId, poItemId, materialId, stockId } = seedPoWithMaterial(user.tenantId, { poUnit: 'kg', stockUnit: 'g', qty: 3 })
     const gr = createGoodsReceipt(user.tenantId, user.email, { purchaseOrderId: poId, items: [{ poItemId, materialId, orderedQty: 3, receivedQty: 3, acceptedQty: 3 }] }) as any
 
-    confirmGoodsReceipt(user.tenantId, user.userId, gr.id)
+    confirmGoodsReceipt(user.tenantId, user.userId, gr.id, { acceptCostJump: true })
     expect((db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(stockId) as any).quantity).toBeCloseTo(3000, 6)
 
     const cancel = await request(app).put(`/api/purchase/goods-receipts/${gr.id}/status`)

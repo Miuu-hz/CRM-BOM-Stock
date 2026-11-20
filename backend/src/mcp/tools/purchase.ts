@@ -744,12 +744,13 @@ order_date = แก้วันที่สั่งซื้อ/วันที
 ตัวอย่าง: "ยืนยันรับสินค้า GR-2024-00001" → confirm_goods_receipt(gr_id="...")`,
     {
       gr_id: z.string().describe('ID หรือ GR number ของ goods receipt'),
+      accept_cost_jump: z.boolean().optional().describe('ส่ง true เฉพาะเมื่อผู้ใช้ยืนยันเองแล้วว่าทุนที่เปลี่ยนเกิน 10 เท่านั้นถูกต้อง ห้ามส่งเองโดยไม่ถาม'),
     },
     async (args) => {
-      const { gr_id } = args
+      const { gr_id, accept_cost_jump } = args
       if (!canReceivePurchase(perm)) return denied('ยืนยันรับสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง')
       try {
-        const receipt = confirmGoodsReceipt(tenantId, userId, gr_id) as any
+        const receipt = confirmGoodsReceipt(tenantId, userId, gr_id, { acceptCostJump: accept_cost_jump === true }) as any
         return ok({ success: true, grId: receipt.id, grNumber: receipt.gr_number, message: `ยืนยันรับสินค้า ${receipt.gr_number} สำเร็จ` })
       } catch (error: any) {
         return ok({ success: false, message: error.message || 'ยืนยันรับสินค้าไม่สำเร็จ' })

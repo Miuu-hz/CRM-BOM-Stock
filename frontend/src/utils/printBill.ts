@@ -351,23 +351,12 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
 }
 
 /**
- * รอฟอนต์โหลด + เบราว์เซอร์จัดหน้าเสร็จก่อนสั่งพิมพ์/วัดความสูง — พิมพ์เร็วไปได้หน้าเปล่า (A4 บนมือถือ)
- * หรือ @page สั้นมากจนเครื่อง 80mm ออกแค่เศษกระดาษ
- * "เสร็จ" = ความสูงหน้าเท่าเดิม 3 รอบติด (เบราว์เซอร์ไม่มี event บอกว่าวาดเสร็จ)
- * maxMs คือเพดานกันค้าง · รอบละ rAF หรือ 100ms อย่างไหนมาก่อน เพราะแท็บที่ไม่แสดงอยู่ rAF ไม่ทำงาน
+ * หน่วงก่อนสั่งพิมพ์/วัดความสูง ให้ฟอนต์+จัดหน้าเสร็จ — พิมพ์เร็วไปได้หน้าเปล่า (A4 บนมือถือ)
+ * ponytail: หน่วงคงที่ 0.8 วิ (user สั่ง 2026-11-20) — แบบวนรอความสูงนิ่ง (6feab6c) ทำให้บน PC ไม่ขึ้นหน้าพิมพ์
+ * ถ้าเครื่องช้ามากจนบิลยังวาดไม่เสร็จใน 0.8 วิ ค่อยเพิ่ม ms
  */
-export async function waitForLayout(w: Window, maxMs = 3000): Promise<void> {
-  try { await Promise.race([w.document.fonts.ready, new Promise(r => setTimeout(r, 2000))]) } catch { /* ไม่มี fonts API ก็ข้าม */ }
-  const deadline = Date.now() + maxMs
-  let last = -1
-  let stable = 0
-  while (stable < 3 && Date.now() < deadline) {
-    await new Promise(r => { w.requestAnimationFrame(() => r(undefined)); setTimeout(r, 100) })
-    if (w.closed) return
-    const h = w.document.body?.scrollHeight ?? 0
-    stable = h > 0 && h === last ? stable + 1 : 0
-    last = h
-  }
+export async function waitForLayout(_w: Window, ms = 800): Promise<void> {
+  await new Promise(r => setTimeout(r, ms))
 }
 
 /** รอทุก <img> โหลด/ถอดรหัสเสร็จ (สำเร็จหรือพังก็ได้) แต่ไม่เกิน timeoutMs กันค้าง */

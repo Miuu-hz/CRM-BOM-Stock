@@ -40,4 +40,24 @@ describe('GET /bom/:id lineCost', () => {
     expect(costs).toEqual([5, 6, 12])
     expect(res.body.data.totalCost).toBe(23)
   })
+
+  it('วัตถุดิบที่มี BOM กึ่งสำเร็จ (ไข่ต้ม) คิดต้นทุนจาก BOM นั้น ไม่ใช่ unit_cost 0', async () => {
+    const t = createTestUser({ role: 'ADMIN' })
+    const item = (cost: number) => {
+      const id = generateId()
+      db.prepare("INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status) VALUES (?, ?, ?, ?, 'RAW', 0, 'pcs', 'pcs', ?, 'MAIN', 'ACTIVE')").run(id, t.tenantId, id, id, cost)
+      return id
+    }
+    const egg = item(0)
+    const eggBom = generateId()
+    db.prepare("INSERT INTO boms (id, tenant_id, product_id, version, status, output_qty, output_unit, is_semi_finished) VALUES (?, ?, ?, '1', 'ACTIVE', 1, 'pcs', 1)").run(eggBom, t.tenantId, egg)
+    db.prepare("INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, quantity, unit) VALUES (?, ?, ?, 'MATERIAL', ?, 1, 'pcs')").run(generateId(), t.tenantId, eggBom, item(4))
+    const dish = generateId()
+    db.prepare("INSERT INTO boms (id, tenant_id, product_id, version, status, output_qty, output_unit) VALUES (?, ?, ?, '1', 'ACTIVE', 1, 'pcs')").run(dish, t.tenantId, item(0))
+    db.prepare("INSERT INTO bom_items (id, tenant_id, bom_id, item_type, material_id, quantity, unit) VALUES (?, ?, ?, 'MATERIAL', ?, 2, 'pcs')").run(generateId(), t.tenantId, dish, egg)
+
+    const res = await request(app).get(`/api/bom/${dish}`).set('Authorization', `Bearer ${t.token}`)
+    expect(res.body.data.items[0].lineCost).toBe(8)
+    expect(res.body.data.totalCost).toBe(8)
+  })
 })

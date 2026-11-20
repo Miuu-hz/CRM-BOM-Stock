@@ -50,7 +50,7 @@ function receive(tenantId: string, poId: string) {
     purchaseOrderId: poId,
     items: pending.map(p => ({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })),
   }) as any
-  return confirmGoodsReceipt(tenantId, 'u1', gr.id) as any
+  return confirmGoodsReceipt(tenantId, 'u1', gr.id, { acceptCostJump: true }) as any
 }
 
 const cancelGr = (token: string, grId: string) =>

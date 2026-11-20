@@ -37,7 +37,8 @@ export class GoodsReceiptError extends Error {
       | 'UNBOUND_ITEM'
       | 'NO_CONVERSION'
       | 'PERIOD_CLOSED'
-      | 'PO_ITEM_MISMATCH',
+      | 'PO_ITEM_MISMATCH'
+      | 'COST_JUMP',
     message: string
   ) {
     super(message)
@@ -219,7 +220,7 @@ function findGoodsReceipt(tenantId: string, grIdOrNumber: string): any {
  * (ไม่ใช่ข้อมูลเสีย) การ throw จะบล็อกการรับของที่ถูกต้องทั้งใบ ส่วนการสร้างอัตโนมัติมีขอบเขตชัดแล้ว
  * (ใช้ materials.unit เป็น base_unit ของแถวใหม่ + แปลงราคาต่อหน่วยฐานเหมือนกัน) จึงปลอดภัยกว่า
  */
-export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumber: string) {
+export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumber: string, opts: { acceptCostJump?: boolean } = {}) {
   const gr = findGoodsReceipt(tenantId, grIdOrNumber)
   if (!gr) throw new GoodsReceiptError('GR_NOT_FOUND', 'Goods receipt not found')
 
@@ -357,6 +358,15 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
         }
 
         let setUnitCost: number | null = null
+        // ทุนใหม่ต่างจากเดิมเกิน 10 เท่า = เกือบทุกครั้งคือจำนวน/หน่วยผิด (AI อ่าน "500 ก." เป็น 500 แพ็ค → ทุนขนมปัง ฿0.0022/แผ่น)
+        // หยุดก่อนแตะสต็อก ให้คนตรวจ ถ้าถูกจริงค่อยยืนยันซ้ำด้วย acceptCostJump
+        const guardCostJump = (newCost: number) => {
+          const prev = Number(stockItem?.unit_cost) || 0
+          if (opts.acceptCostJump || prev <= 0 || !(newCost > 0) || (newCost / prev <= 10 && prev / newCost <= 10)) return
+          const f = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 4 })
+          throw new GoodsReceiptError('COST_JUMP',
+            `ทุน "${stockItem.name}" จะเปลี่ยนจาก ฿${f(prev)} เป็น ฿${f(newCost)} ต่อ ${stockUnit} (ต่างกันเกิน 10 เท่า) — ตรวจจำนวน/หน่วย/ราคาในใบสั่งซื้อก่อน ถ้าถูกแล้วให้ยืนยันซ้ำ`)
+        }
         if (stockItem) {
           if (addToSealed) {
             // sealed path เก็บ qty เป็น display_unit (แพ็คที่ยังไม่แกะ) แต่ unit_cost ต้องเป็น
@@ -365,6 +375,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
             const sealedUnitCost = unitPrice
               ? priceToBaseUnitCost(costUnitPrice, sealedCostFactor, `sealed ${poUnit}→${stockUnit} (material ${item.material_id})`)
               : stockItem.unit_cost
+            if (unitPrice) guardCostJump(sealedUnitCost)
             setUnitCost = sealedUnitCost
             db.prepare('UPDATE stock_items SET sealed_qty = COALESCE(sealed_qty, 0) + ?, quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(sealedPacks, stockQty, sealedUnitCost, unitPrice || null, unitPrice ? (poUnit || null) : null, now, stockItem.id, tenantId)
@@ -372,6 +383,7 @@ export function confirmGoodsReceipt(tenantId: string, userId: string, grIdOrNumb
             const newUnitCost = unitPrice
               ? priceToBaseUnitCost(costUnitPrice, appliedFactor, `${poUnit || stockUnit}→${stockUnit} (material ${item.material_id})`)
               : stockItem.unit_cost
+            if (unitPrice) guardCostJump(newUnitCost)
             setUnitCost = newUnitCost
             db.prepare('UPDATE stock_items SET quantity = quantity + ?, unit_cost = ?, purchase_price = COALESCE(?, purchase_price), purchase_unit = COALESCE(?, purchase_unit), unit = COALESCE(base_unit, unit), updated_at = ? WHERE id = ? AND tenant_id = ?')
               .run(stockQty, newUnitCost, unitPrice || null, unitPrice ? (poUnit || stockUnit || null) : null, now, stockItem.id, tenantId)

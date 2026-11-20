@@ -71,18 +71,25 @@ function bomLineCosts(bomId: string, tenantId: string, visited: Set<string> = ne
   // output_qty ที่ไม่ถูกตั้ง หรือ <= 0 (ข้อมูลเก่า/ผิดพลาด) ถือว่าผลิตได้ 1 หน่วยเหมือนเดิม
   const outputQty = Number(bomRow?.output_qty) > 0 ? Number(bomRow.output_qty) : 1
 
+  // วัตถุดิบที่มี BOM ACTIVE แบบกึ่งสำเร็จ (เช่นไข่ต้ม) คิดต้นทุนจาก BOM นั้น — กติกาเดียวกับ
+  // ตัดสต็อก POS (getBomIngredientsRecursive) ที่แตกวัตถุดิบพวกนี้ ไม่ได้ตัดตัวมันเอง
   const items = db.prepare(`
     SELECT bi.*,
            COALESCE(m.unit_cost, 0) as unit_cost,
            m.name as material_name,
            m.unit as material_unit,
+           child_bom.id as cost_bom_id,
            child_bom.product_id as child_product_id,
            child_bom.output_unit as child_output_unit,
            child_p.base_unit as child_product_base_unit,
            child_p.unit as child_product_unit
     FROM bom_items bi
     LEFT JOIN stock_items m ON bi.material_id = m.id
-    LEFT JOIN boms child_bom ON bi.child_bom_id = child_bom.id
+    LEFT JOIN boms child_bom ON child_bom.id = COALESCE(bi.child_bom_id, CASE WHEN bi.item_type = 'MATERIAL' THEN (
+      SELECT cb.id FROM boms cb
+      WHERE cb.product_id = bi.material_id AND cb.tenant_id = bi.tenant_id
+        AND cb.status = 'ACTIVE' AND cb.is_semi_finished = 1
+      ORDER BY cb.created_at DESC LIMIT 1) END)
     LEFT JOIN stock_items child_p ON child_bom.product_id = child_p.id
     WHERE bi.bom_id = ? AND bi.tenant_id = ?
   `).all(bomId, tenantId) as any[]
@@ -91,10 +98,10 @@ function bomLineCosts(bomId: string, tenantId: string, visited: Set<string> = ne
   const getBomItemUnit = (item: any): string => item.unit || item.material_unit || ''
 
   for (const item of items) {
-    if (item.item_type === 'CHILD_BOM' && item.child_bom_id) {
+    if (item.cost_bom_id) {
       // childCostPerUnit = ต้นทุนต่อ 1 หน่วยผลผลิตของ BOM ลูก (child_bom.output_unit,
       // หรือ base_unit ของ product ลูกถ้าไม่ได้ตั้ง output_unit ไว้)
-      const childCostPerUnit = calculateBOMCost(item.child_bom_id, tenantId, visited)
+      const childCostPerUnit = calculateBOMCost(item.cost_bom_id, tenantId, visited)
       const childOutputUnit: string = item.child_output_unit || item.child_product_base_unit || item.child_product_unit || ''
       const recipeUnit: string = getBomItemUnit(item) // หน่วยที่สูตรนี้ระบุไว้สำหรับ child BOM แถวนี้ (bi.unit)
 
@@ -107,7 +114,7 @@ function bomLineCosts(bomId: string, tenantId: string, visited: Set<string> = ne
         if (result !== null) {
           qty = result.converted
         } else {
-          console.warn(`[qty] BOM cost: no conversion ${recipeUnit} → ${childOutputUnit} for child BOM ${item.child_bom_id}; cost uses the unconverted quantity and is unreliable`)
+          console.warn(`[qty] BOM cost: no conversion ${recipeUnit} → ${childOutputUnit} for child BOM ${item.cost_bom_id}; cost uses the unconverted quantity and is unreliable`)
         }
       }
 

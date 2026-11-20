@@ -63,7 +63,7 @@ function receiveWholePo(tenantId: string, userEmail: string, poId: string) {
     purchaseOrderId: poId,
     items: pending.map(p => ({ poItemId: p.id, materialId: p.material_id, orderedQty: p.quantity, receivedQty: p.pending_qty, acceptedQty: p.pending_qty })),
   }) as any
-  return confirmGoodsReceipt(tenantId, userEmail, created.id) as any
+  return confirmGoodsReceipt(tenantId, userEmail, created.id, { acceptCostJump: true }) as any
 }
 
 /** สรุป journal ปัจจุบัน (reference_type = PURCHASE_INVOICE) ของใบแจ้งหนี้ — ยอดต่อรหัสบัญชี + ผลรวม */

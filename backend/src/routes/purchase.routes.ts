@@ -841,7 +841,7 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
     if (!canConfirmGoodsReceipt(req.user!)) {
       return res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์ยืนยันรับสินค้า — ต้องเป็นฝ่ายจัดซื้อ/ฝ่ายคลัง หรือ ADMIN/MANAGER/MASTER/POWERUSER' })
     }
-    const receipt = confirmGoodsReceipt(tenantId, req.user!.userId, req.params.id) as any
+    const receipt = confirmGoodsReceipt(tenantId, req.user!.userId, req.params.id, { acceptCostJump: req.body?.acceptCostJump === true }) as any
     const skipped: string[] = receipt.skippedLines || []
     res.json({
       success: true,
@@ -853,8 +853,8 @@ router.put('/goods-receipts/:id/confirm', async (req: Request, res: Response) =>
     })
   } catch (error: any) {
     if (error instanceof GoodsReceiptError) {
-      const status = error.code === 'GR_NOT_FOUND' ? 404 : 400
-      return res.status(status).json({ success: false, message: error.message })
+      const status = error.code === 'GR_NOT_FOUND' ? 404 : error.code === 'COST_JUMP' ? 409 : 400
+      return res.status(status).json({ success: false, code: error.code, message: error.message })
     }
     console.error('Confirm goods receipt error:', error)
     res.status(500).json({ success: false, message: 'Failed to confirm goods receipt' })
