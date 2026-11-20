@@ -2640,7 +2640,7 @@ const Purchase = () => {
 
   // ใบแจ้งหนี้ของ PO ใบนี้ที่ยังค้างจ่าย — ใช้ตัดสินว่าจะโชว์ปุ่ม "จ่ายเงิน" ในแถวไหม
   const poUnpaidInvoice = (order: PurchaseOrder) =>
-    invoices.find(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED' && i.payment_status !== 'PAID')
+    invoices.find(i => invoiceCoversPO(i, order.id) && i.status !== 'CANCELLED' && i.payment_status !== 'PAID')
 
   // ── ขั้นต่อไป: กฎชุดเดียวใช้ทั้งมุมมองตารางและการ์ด ─────────────
   // เดิมกฎเดียวกันถูกเขียนซ้ำคนละที่แล้วไม่ตรงกัน จึงเกิดเคส PO-2026-00029
@@ -2705,7 +2705,7 @@ const Purchase = () => {
       }
     }
     // ไม่มีอะไรให้ทำต่อ = ปิดครบวงจรแล้ว บอกไปเลยว่าจบที่ใบไหน
-    const paid = invoices.find(i => i.purchase_order_id === order.id && i.status !== 'CANCELLED')
+    const paid = invoices.find(i => invoiceCoversPO(i, order.id) && i.status !== 'CANCELLED')
     if (paid) {
       return {
         kind: 'done', label: t('purchase.nextStep.cycleClosed'), docNumber: paid.pi_number,
@@ -3708,7 +3708,7 @@ const Purchase = () => {
                       )}
                     </>)
                   })()}
-                  {(() => { const invCount = invoices.filter(i => i.purchase_order_id === order.id).length; return invCount > 0 ? (
+                  {(() => { const invCount = invoices.filter(i => invoiceCoversPO(i, order.id)).length; return invCount > 0 ? (
                     <span className="text-xs text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">
                       {t('purchase.orders.card.invCount', { count: invCount })}
                     </span>

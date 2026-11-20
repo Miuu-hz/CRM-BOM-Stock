@@ -51,9 +51,21 @@ function mapItem(item: any): any {
  * เท่าเดิมทุกประการ เพราะหารด้วย 1 ไม่เปลี่ยนค่า.
  */
 function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> = new Set()): number {
-  // Prevent circular reference
-  if (visited.has(bomId)) return 0
-  visited.add(bomId)
+  const { lineCosts, outputQty } = bomLineCosts(bomId, tenantId, visited)
+  let totalCost = 0
+  for (const c of lineCosts.values()) totalCost += c
+  return totalCost / outputQty
+}
+
+/**
+ * ต้นทุนรายบรรทัดของ BOM (ต่อ 1 รอบผลิต ยังไม่หาร output_qty) — แหล่งเดียวของสูตรต้นทุน
+ * การ์ด BOM ใช้ค่านี้โชว์ราคาแต่ละแถว (รวม Child BOM) ให้ตรงกับยอดรวมเสมอ
+ */
+function bomLineCosts(bomId: string, tenantId: string, visited: Set<string> = new Set()): { lineCosts: Map<string, number>, outputQty: number } {
+  const lineCosts = new Map<string, number>()
+  // กันวนรายสาย (สำเนา Set) — เดิมใช้ Set ร่วม BOM ลูกตัวเดียวกัน 2 บรรทัด บรรทัดที่ 2 ได้ต้นทุน 0
+  if (visited.has(bomId)) return { lineCosts, outputQty: 1 }
+  visited = new Set(visited).add(bomId)
 
   const bomRow = db.prepare('SELECT output_qty, output_unit, product_id FROM boms WHERE id = ? AND tenant_id = ?').get(bomId, tenantId) as any
   // output_qty ที่ไม่ถูกตั้ง หรือ <= 0 (ข้อมูลเก่า/ผิดพลาด) ถือว่าผลิตได้ 1 หน่วยเหมือนเดิม
@@ -78,8 +90,6 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
   // Helper to resolve BOM item unit: use stored bi.unit if available, else fall back to material unit
   const getBomItemUnit = (item: any): string => item.unit || item.material_unit || ''
 
-  let totalCost = 0
-
   for (const item of items) {
     if (item.item_type === 'CHILD_BOM' && item.child_bom_id) {
       // childCostPerUnit = ต้นทุนต่อ 1 หน่วยผลผลิตของ BOM ลูก (child_bom.output_unit,
@@ -101,7 +111,7 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
         }
       }
 
-      totalCost += childCostPerUnit * qty
+      lineCosts.set(item.id, childCostPerUnit * qty)
     } else {
       // แปลงหน่วยก่อนคำนวณต้นทุน: ถ้า BOM ใช้หน่วยต่างจาก material base unit
       let qty = Number(item.quantity)
@@ -119,11 +129,11 @@ function calculateBOMCost(bomId: string, tenantId: string, visited: Set<string> 
         }
       }
 
-      totalCost += qty * Number(item.unit_cost || 0)
+      lineCosts.set(item.id, qty * Number(item.unit_cost || 0))
     }
   }
 
-  return totalCost / outputQty
+  return { lineCosts, outputQty }
 }
 
 /**
@@ -392,6 +402,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     `).all(req.params.id, tenantId) as any[]
 
     const totalCost = calculateBOMCost(bom.id, tenantId)
+    const { lineCosts } = bomLineCosts(bom.id, tenantId)
 
     // Get available child BOMs for dropdown
     const availableChildBOMs = getAvailableChildBOMs(req.params.id, tenantId)
@@ -400,7 +411,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: {
         ...bom,
-        items: items.map(mapItem),
+        items: items.map(i => ({ ...mapItem(i), lineCost: lineCosts.get(i.id) ?? 0 })),
         totalCost,
         availableChildBOMs,
       },

@@ -36,6 +36,7 @@ import { FilterBar, FilterSearch, FilterChips, FilterChip, ChipDivider, StatusCh
 
 // Types for Nested BOM
 interface BOMItem {
+  lineCost?: number // ต้นทุนแถวจาก backend (แปลงหน่วยแล้ว รวม Child BOM)
   id: string
   materialId?: string
   childBomId?: string
@@ -1151,8 +1152,8 @@ function BOMCard({
                     const isChildBOM = item.itemType === 'CHILD_BOM'
                     const name = isChildBOM ? item.childBomProductName : item.material?.name
                     const code = isChildBOM ? item.childBomProductCode : item.material?.code
-                    const unitCost = isChildBOM ? 0 : (item.material?.unitCost || 0)
-                    const itemTotal = isChildBOM ? 0 : unitCost * Number(item.quantity)
+                    // ใช้ต้นทุนจาก backend (สูตรเดียวกับยอดรวม) — คิดเองฝั่งหน้าจอไม่แปลงหน่วยและไม่รู้ต้นทุน BOM ลูก
+                    const itemTotal = item.lineCost ?? (isChildBOM ? 0 : (item.material?.unitCost || 0) * Number(item.quantity))
 
                     return (
                       <div key={item.id} className="flex items-center justify-between gap-3 py-2 px-3 hover:bg-[var(--surface-2)]">
@@ -1177,7 +1178,7 @@ function BOMCard({
                           <div className="text-xs text-[var(--fg-3)]">
                             {Number(item.quantity)} {unitLabel(item.unit || item.material?.unit)}
                           </div>
-                          {!isChildBOM && (
+                          {(!isChildBOM || item.lineCost !== undefined) && (
                             <div className="text-sm text-success font-semibold">
                               ฿{itemTotal.toLocaleString()}
                             </div>
