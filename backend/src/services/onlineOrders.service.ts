@@ -1,8 +1,11 @@
 import db from '../db/sqlite'
 import { upsertOrderPii, deleteOrderPii, type OrderPiiRow } from '../db/piiConnection'
-import { generateId } from '../utils/id'
+import { generateId, thaiDateStr } from '../utils/id'
 import { maskName, maskPhone, maskAddress } from '../utils/piiMask'
 import { roundQty } from '../utils/qty'
+import { ACC } from '../config/accountCodes'
+import { postJournal } from './accounting.service'
+import { closedPeriodLabel } from '../routes/journal.routes'
 import {
   normName,
   findPlatformAlias,
@@ -25,7 +28,7 @@ import {
 // - Generic ตาม platform (วันนี้รองรับ SHOPEE; ชื่อตาราง/ฟังก์ชันไม่ผูกกับ Shopee)
 // - เก็บเฉพาะค่ามาสก์ในฐานหลัก (PII ดิบอยู่ใน pii.db แยกไฟล์)
 // - ไม่ลงบัญชี ไม่ตัดสต็อกตอนรับออเดอร์ (บัญชีและสต็อกยังมาจากสายรอบเดือนเดิม)
-//   ยกเว้นข้อ 6: รับคืนข้ามเดือน (restockReturnEvents) → stock_movements IN เท่านั้น ไม่ลงบัญชี
+//   ยกเว้นข้อ 6: รับคืนข้ามเดือน (restockReturnEvents) → stock_movements IN + ลงบัญชีต้นทุนกลับ (Dr สินค้า / Cr COGS)
 // ============================================================
 
 export class OnlineOrderError extends Error {}
@@ -1279,6 +1282,7 @@ export interface ReturnEventRow {
   resolvedAt: string | null
   resolvedBy: string | null
   stockMovementId: string | null
+  journalEntryId: string | null
   monthConfirmed: boolean
   mapped: boolean
   stockItemId: string | null
@@ -1350,6 +1354,7 @@ export function listReturnEvents(tenantId: string, status?: string): ReturnEvent
       resolvedAt: e.resolved_at ?? null,
       resolvedBy: e.resolved_by ?? null,
       stockMovementId: e.stock_movement_id ?? null,
+      journalEntryId: e.journal_entry_id ?? null,
       monthConfirmed: confirmedMonths.has(`${e.platform}||${e.shop_key}||${e.order_month}`),
       mapped: !!alias,
       stockItemId: alias?.stockItemId ?? null,
@@ -1369,28 +1374,35 @@ export interface RestockResult {
     unitCost: number
     costAmount: number
     stockMovementId: string
+    journalEntryId: string | null
   }>
   skipped: Array<{ id: string; orderNo: string; reason: string }>
   errors: Array<{ id: string; orderNo?: string; reason: string }>
+  warnings: string[]
 }
 
 /**
- * รับคืนข้ามเดือนเข้าสต็อก (เฉพาะ event ที่ PENDING + รอบเดือน order_month ยืนยันการขายแล้ว + ผูก alias แล้ว)
- * - รอบเดือนยังไม่ยืนยัน → เปลี่ยนเป็น SKIPPED พร้อมเหตุผล "จะหักในรอบเดือนนั้นเอง" (ไม่สร้าง stock_movements)
- * - รอบเดือนยืนยันแล้ว + ผูก alias แล้ว → สร้าง stock_movements IN ด้วย qty_delta × factor, reference 'ONLINE_RETURN:<id>'
- *   ต้นทุนตาม stock_items.unit_cost แบบเดียวกับ confirmSale → เปลี่ยนเป็น RESTOCKED
- * - ทำใน transaction เดียว และห้ามลงบัญชี (ยอดเงินคืนอยู่ใน income ของ Shopee เดือนถัดไปแล้ว)
+ * รับคืนข้ามเดือนเข้าสต็อก + ลงบัญชีต้นทุนกลับ (เฉพาะ event ที่ PENDING + รอบเดือน order_month ยืนยันการขายก่อน detected_at + ผูก alias แล้ว)
+ * - รอบเดือนยังไม่ยืนยัน → เปลี่ยนเป็น SKIPPED เหตุผล "จะหักในรอบเดือนนั้นเอง"
+ * - รอบเดือนยืนยัน/ยืนยันซ้ำหลังพบการคืน → เปลี่ยนเป็น SKIPPED เหตุผล "รอบเดือนหักคืนนี้ไปแล้ว"
+ * - งวดบัญชีของวันนี้ (เวลาไทย) ปิดแล้ว → ไม่รับคืน event นั้นและแจ้ง error พร้อมชื่องวด
+ * - ต้นทุน > 0 → postJournal (Dr สินค้า 1106/1107, Cr COGS 5101, businessUnit='ONLINE') ใน transaction เดียวกันและเก็บ journal_entry_id
+ * - ต้นทุน 0 → รับคืนสต็อกแต่ไม่ลง JV และเพิ่มคำเตือนใน warnings
+ * - ไม่ลงฝั่งยอดเงิน (ยอดเงินคืนอยู่ใน income ของ Shopee เดือนถัดไปแล้ว — refund_to_buyer)
  */
 export function restockReturnEvents(tenantId: string, ids: string[], userId: string): RestockResult {
   if (!Array.isArray(ids) || ids.length === 0) {
-    return { restocked: [], skipped: [], errors: [] }
+    return { restocked: [], skipped: [], errors: [], warnings: [] }
   }
 
   return db.transaction((): RestockResult => {
     const now = new Date().toISOString()
+    const todayThai = thaiDateStr()
+    const closedLabel = closedPeriodLabel(tenantId, todayThai)
     const restocked: RestockResult['restocked'] = []
     const skipped: RestockResult['skipped'] = []
     const errors: RestockResult['errors'] = []
+    const warnings: string[] = []
 
     const getEvent = db.prepare(`SELECT * FROM online_return_events WHERE id = ? AND tenant_id = ?`)
     const getMonth = db.prepare(`
@@ -1406,8 +1418,12 @@ export function restockReturnEvents(tenantId: string, ids: string[], userId: str
       WHERE id = ? AND tenant_id = ? AND status = 'PENDING'
     `)
     const markRestocked = db.prepare(`
-      UPDATE online_return_events SET status = 'RESTOCKED', resolved_at = ?, resolved_by = ?, stock_movement_id = ?
+      UPDATE online_return_events
+      SET status = 'RESTOCKED', resolved_at = ?, resolved_by = ?, stock_movement_id = ?
       WHERE id = ? AND tenant_id = ? AND status = 'PENDING'
+    `)
+    const setJournalEntryId = db.prepare(`
+      UPDATE online_return_events SET journal_entry_id = ? WHERE id = ? AND tenant_id = ?
     `)
     const addStock = db.prepare(`
       UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?
@@ -1477,16 +1493,49 @@ export function restockReturnEvents(tenantId: string, ids: string[], userId: str
         continue
       }
 
+      // เช็คงวดบัญชีก่อนรับคืนสต็อกและลงบัญชี — ถ้างวดปิดแล้วไม่รับคืน event นี้
+      if (closedLabel) {
+        errors.push({
+          id: ev.id,
+          orderNo: ev.order_no,
+          reason: `งวด ${closedLabel} ปิดแล้ว รับคืนและลงบัญชีไม่ได้ (วันที่ ${todayThai})`,
+        })
+        continue
+      }
+
       const unitCost = Number(item.unit_cost) || 0
       const costAmount = r2(qtyIn * unitCost)
       const movementId = generateId()
       const reference = `ONLINE_RETURN:${ev.id}`
       const baseUnit = item.base_unit || item.unit
+      const inventoryAccount = ['FINISHED', 'WIP'].includes(String(item.category || '').toUpperCase())
+        ? ACC.INVENTORY
+        : ACC.RAW_MATERIAL
 
       const upd = markRestocked.run(now, userId, movementId, ev.id, tenantId)
       if (upd.changes !== 1) {
         skipped.push({ id: ev.id, orderNo: ev.order_no, reason: 'รายการนี้ถูกดำเนินการไปแล้ว' })
         continue
+      }
+
+      let journalEntryId: string | null = null
+      if (costAmount > 0) {
+        journalEntryId = postJournal({
+          tenantId,
+          date: todayThai,
+          referenceType: 'ONLINE_RETURN',
+          referenceId: ev.id,
+          description: `รับคืนข้ามเดือน ${ev.platform} ออเดอร์ ${ev.order_no} (รอบ ${ev.order_month}) — ${item.name}`,
+          createdBy: userId,
+          businessUnit: 'ONLINE',
+          lines: [
+            { code: inventoryAccount, description: `รับคืนสินค้าเข้าคลัง (${item.name})`, debit: costAmount },
+            { code: ACC.COGS_PRODUCT, description: `ลดต้นทุนสินค้าขายรับคืน (${item.name})`, credit: costAmount },
+          ],
+        })
+        setJournalEntryId.run(journalEntryId, ev.id, tenantId)
+      } else {
+        warnings.push(`${item.name} (ออเดอร์ ${ev.order_no}): ต้นทุนต่อหน่วยเป็น 0 — รับคืนสต็อกแล้วแต่ไม่ได้ลงบัญชีต้นทุน`)
       }
 
       addStock.run(qtyIn, now, item.id, tenantId)
@@ -1512,9 +1561,10 @@ export function restockReturnEvents(tenantId: string, ids: string[], userId: str
         unitCost,
         costAmount,
         stockMovementId: movementId,
+        journalEntryId,
       })
     }
 
-    return { restocked, skipped, errors }
+    return { restocked, skipped, errors, warnings }
   })()
 }

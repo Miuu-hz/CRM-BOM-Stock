@@ -7,6 +7,7 @@ import {
 } from '../services/platformSettlement.service'
 import { PlatformMonthError } from '../services/platformMonth.service'
 import { StockItemRefError } from '../services/stockItem.service'
+import { JournalError } from '../services/accounting.service'
 import {
   getMonthsList,
   getMappingRows,
@@ -35,7 +36,7 @@ router.use(authenticate)
 
 // รับ error ของเฟส 2 และออเดอร์ออนไลน์ให้แปลงเป็น 400 พร้อมข้อความไทย — error อื่นที่ไม่รู้จักค่อย 500
 function handlePhase2Error(res: Response, err: any, fallbackMessage: string) {
-  if (err instanceof PlatformMonthError || err instanceof StockItemRefError || err instanceof OnlineOrderError) {
+  if (err instanceof PlatformMonthError || err instanceof StockItemRefError || err instanceof OnlineOrderError || err instanceof JournalError) {
     return res.status(400).json({ success: false, message: err.message })
   }
   console.error(fallbackMessage, err)
@@ -153,7 +154,12 @@ router.post('/online-orders/returns/restock', requireRole('ADMIN', 'MASTER', 'MA
       return res.status(400).json({ success: false, message: 'ids ต้องเป็นรายการรหัส (string) อย่างน้อย 1 รายการ' })
     }
     const result = restockReturnEvents(tenantId, ids, req.user!.email)
-    res.json({ success: true, data: result })
+    const parts: string[] = []
+    if (result.restocked.length) parts.push(`รับคืนเข้าสต็อกแล้ว ${result.restocked.length} รายการ`)
+    if (result.skipped.length) parts.push(`ข้าม ${result.skipped.length} รายการ`)
+    if (result.errors.length) parts.push(`ไม่สำเร็จ ${result.errors.length} รายการ`)
+    if (result.warnings.length) parts.push(`คำเตือน ${result.warnings.length} รายการ`)
+    res.json({ success: true, data: result, message: parts.join(' · ') || 'ไม่มีรายการที่ดำเนินการ' })
   } catch (err) {
     handlePhase2Error(res, err, 'รับคืนเข้าสต็อกไม่สำเร็จ')
   }

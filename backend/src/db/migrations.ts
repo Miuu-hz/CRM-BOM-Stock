@@ -3703,6 +3703,15 @@ export function runMonthCloseMigrations(db: any): void {
     `)
     console.log('✅ Migration: online_orders / online_order_lines / online_import_batches / online_return_events ready')
   } catch (e) { console.error('⚠️ online_orders migration error:', e) }
+
+  // รับคืนข้ามเดือนลงบัญชีต้นทุนกลับ (docs/contracts/online-orders.md ข้อ 6 — 2026-11-23)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(online_return_events)`).all() as any[]
+    if (cols.length > 0 && !cols.some((c: any) => c.name === 'journal_entry_id')) {
+      db.exec(`ALTER TABLE online_return_events ADD COLUMN journal_entry_id TEXT`)
+      console.log('✅ Migration: online_return_events.journal_entry_id added')
+    }
+  } catch (e) { console.error('⚠️ online_return_events.journal_entry_id migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

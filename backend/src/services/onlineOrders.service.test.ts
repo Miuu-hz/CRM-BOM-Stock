@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import db from '../db/sqlite'
 import { piiDb, deleteTenantPii } from '../db/piiConnection'
-import { generateId } from '../utils/id'
+import { generateId, thaiDateStr } from '../utils/id'
+import { ACC } from '../config/accountCodes'
 import { submitFile } from './platformMonth.service'
 import { sourceRefOf } from './platformMonthSale.service'
 import {
@@ -31,6 +32,11 @@ afterEach(() => {
       db.prepare(`DELETE FROM platform_days WHERE month_id = ?`).run(id)
     }
     for (const tbl of [
+      'journal_lines',
+      'journal_entries',
+      'accounts',
+      'document_sequences',
+      'tax_periods',
       'online_order_lines',
       'online_orders',
       'online_import_batches',
@@ -217,7 +223,7 @@ describe('onlineOrders.service — ออเดอร์ออนไลน์ร
     expect(events.every((e) => e.status === 'PENDING')).toBe(true)
   })
 
-  it('restockReturnEvents: สร้าง stock_movements IN 1 แถวต่อ event ที่รอบยืนยันขายแล้ว และ SKIP รอบที่ยังไม่ยืนยัน (ไม่ลงบัญชี)', () => {
+  it('restockReturnEvents: สร้าง stock_movements IN 1 แถว + ลงบัญชีต้นทุนกลับ (ONLINE) ต่อ event ที่ยืนยันขายแล้ว และ SKIP รอบที่ยังไม่ยืนยัน', () => {
     const t = newTenant()
     const stockId = makeStockItem(t, { name: 'หมอนยางพารา', quantity: 10, unitCost: 120 })
 
@@ -267,6 +273,8 @@ describe('onlineOrders.service — ออเดอร์ออนไลน์ร
     expect(res.restocked[0].qtyIn).toBe(2) // qty_delta(1) × factor(2)
     expect(res.restocked[0].unitCost).toBe(120)
     expect(res.restocked[0].costAmount).toBe(240)
+    expect(res.restocked[0].journalEntryId).toBeTruthy()
+    expect(res.warnings).toHaveLength(0)
 
     expect(res.skipped).toHaveLength(1)
     expect(res.skipped[0].id).toBe(octEvent.id)
@@ -279,23 +287,52 @@ describe('onlineOrders.service — ออเดอร์ออนไลน์ร
     expect(movs[0].quantity).toBe(2)
     expect(movs[0].reference).toBe(`ONLINE_RETURN:${sepEvent.id}`)
 
-    // ตรวจสต็อกเพิ่มจาก 10 → 12 และไม่ลงบัญชี
+    // ตรวจสต็อกเพิ่มจาก 10 → 12 และลง JV ต้นทุนกลับ (ดุล + business_unit='ONLINE')
     const item = db.prepare(`SELECT quantity FROM stock_items WHERE id = ?`).get(stockId) as any
     expect(item.quantity).toBe(12)
-    expect((db.prepare(`SELECT COUNT(*) AS c FROM journal_entries WHERE tenant_id = ?`).get(t) as any).c).toBe(0)
 
-    // ตรวจสถานะ event
-    const sepAfter = db.prepare(`SELECT status, stock_movement_id FROM online_return_events WHERE id = ?`).get(sepEvent.id) as any
-    const octAfter = db.prepare(`SELECT status, stock_movement_id FROM online_return_events WHERE id = ?`).get(octEvent.id) as any
+    const jvs = db.prepare(`SELECT * FROM journal_entries WHERE tenant_id = ?`).all(t) as any[]
+    expect(jvs).toHaveLength(1)
+    expect(jvs[0]).toMatchObject({
+      id: res.restocked[0].journalEntryId,
+      date: thaiDateStr(),
+      reference_type: 'ONLINE_RETURN',
+      reference_id: sepEvent.id,
+      business_unit: 'ONLINE',
+      total_debit: 240,
+      total_credit: 240,
+      is_posted: 1,
+    })
+    expect(jvs[0].description).toContain('SHOPEE')
+    expect(jvs[0].description).toContain('ORD-SEP')
+    expect(jvs[0].description).toContain('2026-09')
+
+    const jLines = db.prepare(`
+      SELECT a.code, l.debit, l.credit
+      FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+      WHERE l.journal_entry_id = ?
+      ORDER BY l.line_number ASC
+    `).all(jvs[0].id) as any[]
+    expect(jLines).toEqual([
+      { code: ACC.INVENTORY, debit: 240, credit: 0 },
+      { code: ACC.COGS_PRODUCT, debit: 0, credit: 240 },
+    ])
+
+    // ตรวจสถานะ event + journal_entry_id
+    const sepAfter = db.prepare(`SELECT status, stock_movement_id, journal_entry_id FROM online_return_events WHERE id = ?`).get(sepEvent.id) as any
+    const octAfter = db.prepare(`SELECT status, stock_movement_id, journal_entry_id FROM online_return_events WHERE id = ?`).get(octEvent.id) as any
     expect(sepAfter.status).toBe('RESTOCKED')
     expect(sepAfter.stock_movement_id).toBe(movs[0].id)
+    expect(sepAfter.journal_entry_id).toBe(jvs[0].id)
     expect(octAfter.status).toBe('SKIPPED')
     expect(octAfter.stock_movement_id).toBeNull()
+    expect(octAfter.journal_entry_id).toBeNull()
 
-    // เรียกซ้ำต้องไม่สร้าง movement ซ้ำ
+    // เรียกซ้ำต้องไม่สร้าง movement หรือ JV ซ้ำ
     const again = restockReturnEvents(t, [sepEvent.id], 'tester')
     expect(again.restocked).toHaveLength(0)
     expect((db.prepare(`SELECT COUNT(*) AS c FROM stock_movements WHERE tenant_id = ?`).get(t) as any).c).toBe(1)
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM journal_entries WHERE tenant_id = ?`).get(t) as any).c).toBe(1)
   })
 
   it('getOnlineSummary คำนวณตัวเลข groupBy province / product / day ถูกต้อง (หัก returnsValue และไม่นับ CANCELLED/UNPAID)', () => {
@@ -626,5 +663,121 @@ describe('onlineOrders.service — ออเดอร์ออนไลน์ร
         confirmOnlineMapping(t, { sourceRef: 'SHOPEE:V999', stockItemId: stockId, factor: badFactor }, 'admin'),
       ).toThrow(OnlineOrderError)
     }
+  })
+
+  it('restockReturnEvents: เลือกบัญชีสต็อกตามหมวด FINISHED/WIP → ACC.INVENTORY (1106) และ RAW → ACC.RAW_MATERIAL (1107)', () => {
+    const t = newTenant()
+    const finId = makeStockItem(t, { name: 'หมอนสำเร็จรูป', category: 'FINISHED', quantity: 5, unitCost: 80.5 })
+    const rawId = makeStockItem(t, { name: 'ใยสังเคราะห์', category: 'RAW', quantity: 5, unitCost: 35.25 })
+
+    db.prepare(`
+      INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status, sale_confirmed_at, sale_confirmed_by)
+      VALUES (?, ?, 'SHOPEE', 'bebozch', '2026-09', 'SALE_CONFIRMED', '2026-10-01T00:00:00Z', 'tester')
+    `).run(generateId(), t)
+
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [
+        sampleRow({ orderNo: 'ORD-FIN', orderTime: '2026-09-20 10:00', productName: 'หมอนสำเร็จรูป', variantName: null, qty: 2, qtyReturned: 1 }),
+        sampleRow({ orderNo: 'ORD-RAW', orderTime: '2026-09-21 10:00', productName: 'ใยสังเคราะห์', variantName: null, qty: 3, qtyReturned: 2 }),
+      ],
+    })
+
+    const events = listReturnEvents(t, 'PENDING')
+    const finEv = events.find((e) => e.orderNo === 'ORD-FIN')!
+    const rawEv = events.find((e) => e.orderNo === 'ORD-RAW')!
+    confirmOnlineMapping(t, { sourceRef: finEv.sourceRef!, stockItemId: finId, factor: 1 }, 'tester')
+    confirmOnlineMapping(t, { sourceRef: rawEv.sourceRef!, stockItemId: rawId, factor: 1 }, 'tester')
+
+    const res = restockReturnEvents(t, [finEv.id, rawEv.id], 'tester')
+    expect(res.restocked).toHaveLength(2)
+
+    const linesOf = (jvId: string) =>
+      db.prepare(`
+        SELECT a.code, l.debit, l.credit
+        FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+        WHERE l.journal_entry_id = ?
+        ORDER BY l.line_number ASC
+      `).all(jvId) as any[]
+
+    const finRes = res.restocked.find((r) => r.id === finEv.id)!
+    const rawRes = res.restocked.find((r) => r.id === rawEv.id)!
+    expect(linesOf(finRes.journalEntryId!)).toEqual([
+      { code: ACC.INVENTORY, debit: 80.5, credit: 0 },
+      { code: ACC.COGS_PRODUCT, debit: 0, credit: 80.5 },
+    ])
+    expect(linesOf(rawRes.journalEntryId!)).toEqual([
+      { code: ACC.RAW_MATERIAL, debit: 70.5, credit: 0 },
+      { code: ACC.COGS_PRODUCT, debit: 0, credit: 70.5 },
+    ])
+  })
+
+  it('restockReturnEvents: งวดปิดแล้ว (closedPeriodLabel) → ไม่สร้าง stock_movements และไม่ลง JV พร้อมรายงาน error ชื่องวด', () => {
+    const t = newTenant()
+    const stockId = makeStockItem(t, { name: 'หมอนยางพารา', category: 'FINISHED', quantity: 10, unitCost: 100 })
+    db.prepare(`
+      INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status, sale_confirmed_at, sale_confirmed_by)
+      VALUES (?, ?, 'SHOPEE', 'bebozch', '2026-09', 'SALE_CONFIRMED', '2026-10-01T00:00:00Z', 'tester')
+    `).run(generateId(), t)
+
+    // ปิดงวดของวันนี้ (ตามเวลาไทย)
+    const [year, month] = thaiDateStr().split('-').map(Number)
+    db.prepare(`
+      INSERT INTO tax_periods (id, tenant_id, year, month, period_type, start_date, end_date, status)
+      VALUES (?, ?, ?, ?, 'MONTHLY', ?, ?, 'CLOSED')
+    `).run(generateId(), t, year, month, `${year}-01-01`, `${year}-01-31`)
+
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [sampleRow({ orderNo: 'ORD-CLOSED', orderTime: '2026-09-20 10:00', qty: 2, qtyReturned: 1 })],
+    })
+    const [ev] = listReturnEvents(t, 'PENDING')
+    confirmOnlineMapping(t, { sourceRef: ev.sourceRef!, stockItemId: stockId, factor: 1 }, 'tester')
+
+    const res = restockReturnEvents(t, [ev.id], 'tester')
+    expect(res.restocked).toHaveLength(0)
+    expect(res.errors).toHaveLength(1)
+    expect(res.errors[0].reason).toContain(`${month}/${year}`)
+
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM stock_movements WHERE tenant_id = ?`).get(t) as any).c).toBe(0)
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM journal_entries WHERE tenant_id = ?`).get(t) as any).c).toBe(0)
+    expect((db.prepare(`SELECT quantity FROM stock_items WHERE id = ?`).get(stockId) as any).quantity).toBe(10)
+    const evAfter = db.prepare(`SELECT status, stock_movement_id, journal_entry_id FROM online_return_events WHERE id = ?`).get(ev.id) as any
+    expect(evAfter).toEqual({ status: 'PENDING', stock_movement_id: null, journal_entry_id: null })
+  })
+
+  it('restockReturnEvents: unit_cost = 0 → รับคืนสต็อกปกติแต่ไม่ลง JV พร้อมเพิ่ม warning', () => {
+    const t = newTenant()
+    const stockId = makeStockItem(t, { name: 'หมอนยังไม่กรอกต้นทุน', category: 'FINISHED', quantity: 10, unitCost: 0 })
+    db.prepare(`
+      INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status, sale_confirmed_at, sale_confirmed_by)
+      VALUES (?, ?, 'SHOPEE', 'bebozch', '2026-09', 'SALE_CONFIRMED', '2026-10-01T00:00:00Z', 'tester')
+    `).run(generateId(), t)
+
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [sampleRow({ orderNo: 'ORD-ZERO-COST', orderTime: '2026-09-22 10:00', qty: 2, qtyReturned: 1 })],
+    })
+    const [ev] = listReturnEvents(t, 'PENDING')
+    confirmOnlineMapping(t, { sourceRef: ev.sourceRef!, stockItemId: stockId, factor: 1 }, 'tester')
+
+    const res = restockReturnEvents(t, [ev.id], 'tester')
+    expect(res.restocked).toHaveLength(1)
+    expect(res.restocked[0].journalEntryId).toBeNull()
+    expect(res.restocked[0].costAmount).toBe(0)
+    expect(res.warnings).toHaveLength(1)
+    expect(res.warnings[0]).toContain('หมอนยังไม่กรอกต้นทุน')
+
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM stock_movements WHERE tenant_id = ?`).get(t) as any).c).toBe(1)
+    expect((db.prepare(`SELECT quantity FROM stock_items WHERE id = ?`).get(stockId) as any).quantity).toBe(11)
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM journal_entries WHERE tenant_id = ?`).get(t) as any).c).toBe(0)
+
+    const evAfter = db.prepare(`SELECT status, stock_movement_id, journal_entry_id FROM online_return_events WHERE id = ?`).get(ev.id) as any
+    expect(evAfter.status).toBe('RESTOCKED')
+    expect(evAfter.stock_movement_id).toBeTruthy()
+    expect(evAfter.journal_entry_id).toBeNull()
   })
 })
