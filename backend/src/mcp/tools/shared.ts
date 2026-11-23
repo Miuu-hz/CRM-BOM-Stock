@@ -148,13 +148,14 @@ export function matchStockItem(tenantId: string, description: string, rawOnly = 
 
   const rawFilter = rawOnly ? `AND LOWER(category) IN ('raw','raw_material','material','wip')` : ''
   const trimmed = description.trim()
+  const escaped = trimmed.replace(/[\\%_]/g, '\\$&')
   const rows = db.prepare(`
     SELECT id, name, sku, unit, COALESCE(base_unit, unit) AS baseUnit, quantity
     FROM stock_items
-    WHERE tenant_id = ? AND status != 'INACTIVE' AND name LIKE ? ${rawFilter}
-    ORDER BY CASE WHEN LOWER(TRIM(name)) = ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END, length(name)
+    WHERE tenant_id = ? AND status != 'INACTIVE' AND name LIKE ? ESCAPE '\\' ${rawFilter}
+    ORDER BY CASE WHEN LOWER(TRIM(name)) = ? THEN 0 WHEN name LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, length(name)
     LIMIT 8
-  `).all(tenantId, `%${trimmed}%`, want, `${trimmed}%`) as StockCandidate[]
+  `).all(tenantId, `%${escaped}%`, want, `${escaped}%`) as StockCandidate[]
   // status: เดิมกรอง = 'ACTIVE' ของที่ของหมด (OUT/LOW) จึงผูกไม่ได้ทั้งที่ชื่อตรง — INACTIVE คือสถานะปิดใช้ตัวเดียว
 
   const exactRows = rows.filter(r => normName(r.name) === want)

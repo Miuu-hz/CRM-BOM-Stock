@@ -17,7 +17,8 @@ const id25 = () => randomUUID().replace(/-/g, '').slice(0, 25)
 export function sourceRefOf(platform: string, row: { product_id?: string | null; variant_id?: string | null }): string {
   const p = String(platform || '').toUpperCase()
   if (row.variant_id) return `${p}:${row.variant_id}`
-  return `${p}:P${row.product_id}`
+  if (row.product_id) return `${p}:P${row.product_id}`
+  throw new PlatformMonthError('ต้องระบุ variant_id หรือ product_id อย่างน้อยหนึ่งค่า')
 }
 
 function getMonthRow(tenantId: string, monthId: string): any {
@@ -73,16 +74,33 @@ export interface MappingRow {
 export function getMappingRows(tenantId: string, monthId: string): MappingRow[] {
   const month = getMonthRow(tenantId, monthId)
   const rows = neededRows(monthId)
+  if (rows.length === 0) return []
+
+  const aliasRows = db.prepare(`
+    SELECT a.source_ref, a.factor, s.id, s.sku, s.name, s.unit, s.base_unit, s.unit_cost, s.quantity
+    FROM stock_item_aliases a
+    JOIN stock_items s ON s.id = a.stock_item_id AND s.tenant_id = a.tenant_id AND s.status != 'INACTIVE'
+    WHERE a.tenant_id = ? AND a.source_ref IS NOT NULL
+  `).all(tenantId) as any[]
+  const aliasByRef = new Map<string, any>()
+  for (const a of aliasRows) aliasByRef.set(a.source_ref, a)
+
+  const proposalRows = db.prepare(`
+    SELECT p.source_ref, p.factor, s.id AS stock_item_id, s.sku, s.name
+    FROM platform_sku_proposals p
+    LEFT JOIN stock_items s ON s.id = p.stock_item_id AND s.tenant_id = p.tenant_id
+    WHERE p.tenant_id = ?
+  `).all(tenantId) as any[]
+  const proposalByRef = new Map<string, any>()
+  for (const p of proposalRows) proposalByRef.set(p.source_ref, p)
 
   return rows.map((r) => {
     const sourceRef = sourceRefOf(month.platform, r)
-    const alias = findPlatformAlias(tenantId, sourceRef)
-    const proposal = db.prepare(`SELECT * FROM platform_sku_proposals WHERE tenant_id = ? AND source_ref = ?`).get(tenantId, sourceRef) as any
+    const alias = aliasByRef.get(sourceRef)
+    const proposal = proposalByRef.get(sourceRef)
 
-    let stockItem: any = null
-    if (alias) stockItem = db.prepare(`SELECT id, sku, name, unit, base_unit, unit_cost, quantity FROM stock_items WHERE id = ? AND tenant_id = ?`).get(alias.stockItemId, tenantId)
-    let proposedItem: any = null
-    if (proposal) proposedItem = db.prepare(`SELECT id, sku, name FROM stock_items WHERE id = ? AND tenant_id = ?`).get(proposal.stock_item_id, tenantId)
+    const rawFactor = alias ? Number(alias.factor) : NaN
+    const factor = alias ? (Number.isFinite(rawFactor) && rawFactor > 0 ? rawFactor : 1) : null
 
     return {
       sourceRef,
@@ -92,18 +110,18 @@ export function getMappingRows(tenantId: string, monthId: string): MappingRow[] 
       productName: r.product_name,
       variantName: r.variant_name,
       qtyNet: Number(r.qty_net) || 0,
-      mapped: !!stockItem,
-      stockItemId: stockItem?.id ?? null,
-      sku: stockItem?.sku ?? null,
-      stockItemName: stockItem?.name ?? null,
-      unit: stockItem ? (stockItem.base_unit || stockItem.unit) : null,
-      unitCost: stockItem ? Number(stockItem.unit_cost) || 0 : null,
-      quantity: stockItem ? Number(stockItem.quantity) || 0 : null,
-      factor: alias?.factor ?? null,
-      proposed: !!proposal && !stockItem,
-      proposedStockItemId: proposedItem?.id ?? null,
-      proposedSku: proposedItem?.sku ?? null,
-      proposedStockItemName: proposedItem?.name ?? null,
+      mapped: !!alias,
+      stockItemId: alias?.id ?? null,
+      sku: alias?.sku ?? null,
+      stockItemName: alias?.name ?? null,
+      unit: alias ? (alias.base_unit || alias.unit) : null,
+      unitCost: alias ? Number(alias.unit_cost) || 0 : null,
+      quantity: alias ? Number(alias.quantity) || 0 : null,
+      factor,
+      proposed: !!proposal && !alias,
+      proposedStockItemId: proposal?.stock_item_id ?? null,
+      proposedSku: proposal?.sku ?? null,
+      proposedStockItemName: proposal?.name ?? null,
       proposedFactor: proposal ? Number(proposal.factor) : null,
     }
   })
@@ -194,15 +212,17 @@ export function confirmMapping(
 }
 
 export function acceptAllProposals(tenantId: string, monthId: string, userId: string): { accepted: number } {
-  const rows = getMappingRows(tenantId, monthId)
-  let accepted = 0
-  for (const r of rows) {
-    if (r.proposed && r.proposedStockItemId) {
-      confirmMapping(tenantId, { monthId, sourceRef: r.sourceRef, stockItemId: r.proposedStockItemId, factor: r.proposedFactor || 1 }, userId)
-      accepted++
+  return db.transaction(() => {
+    const rows = getMappingRows(tenantId, monthId)
+    let accepted = 0
+    for (const r of rows) {
+      if (r.proposed && r.proposedStockItemId) {
+        confirmMapping(tenantId, { monthId, sourceRef: r.sourceRef, stockItemId: r.proposedStockItemId, factor: r.proposedFactor || 1 }, userId)
+        accepted++
+      }
     }
-  }
-  return { accepted }
+    return { accepted }
+  })()
 }
 
 export function deleteMapping(tenantId: string, sourceRef: string): void {

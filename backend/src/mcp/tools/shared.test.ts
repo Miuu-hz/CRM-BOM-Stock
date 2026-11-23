@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import db from '../../db/sqlite'
 import { generateId } from '../../utils/id'
-import { REF_TYPE_DOCS, resolveDocRef } from './shared'
+import { REF_TYPE_DOCS, resolveDocRef, matchStockItem } from './shared'
 
 /**
  * กันบั๊ก REF_TYPE_DOCS ชี้คอลัมน์ผิด — เดิม PURCHASE_INVOICE.numCol = 'invoice_number'
@@ -46,5 +46,31 @@ describe('resolveDocRef / REF_TYPE_DOCS', () => {
     expect(resolveDocRef(tenantId, 'PURCHASE_INVOICE', piId)).toEqual({ id: piId, doc_num: piNumber, table: 'purchase_invoices' })
     // tenant อื่นต้องไม่เห็น
     expect(resolveDocRef('other-' + tenantId, 'PURCHASE_INVOICE', piNumber)).toBeNull()
+  })
+})
+
+describe('matchStockItem — escape wildcard % _ \\ ใน LIKE (B8)', () => {
+  it('ค้นหาที่มี %, _, \\ ไม่จับคู่แบบ wildcard', () => {
+    const t = 'tn_esc_' + generateId()
+    const mk = (name: string) => {
+      const id = generateId()
+      db.prepare(`INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
+        VALUES (?, ?, ?, ?, 'FINISHED', 10, 'pcs', 'pcs', 10, 'MAIN', 'ACTIVE')`).run(id, t, id, name)
+      return id
+    }
+    mk('น้ำผลไม้ 1000 มล.')
+    mk('axb')
+    mk('cxb')
+
+    expect(matchStockItem(t, '100%').candidates).toHaveLength(0)
+    expect(matchStockItem(t, 'a_b').candidates).toHaveLength(0)
+    expect(matchStockItem(t, 'c\\b').candidates).toHaveLength(0)
+
+    const exactPct = mk('น้ำผลไม้ 100%')
+    const exactUnder = mk('a_b')
+    const exactSlash = mk('c\\b')
+    expect(matchStockItem(t, '100%').candidates.map(c => c.id)).toEqual([exactPct])
+    expect(matchStockItem(t, 'a_b').exact?.id).toBe(exactUnder)
+    expect(matchStockItem(t, 'c\\b').exact?.id).toBe(exactSlash)
   })
 })

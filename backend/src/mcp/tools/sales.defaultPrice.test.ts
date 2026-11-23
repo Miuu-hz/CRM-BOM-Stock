@@ -68,7 +68,7 @@ describe('create_quotation เติมราคาเริ่มต้นจ�
     const stockId = seedStockItem(t, 'สินค้าแพ็ค', 'pcs', 29)
     addPackRule(t, stockId, 6)
     const { server, tools } = fakeServer()
-    registerSalesTools(server, t, 'user_x', 'ทดสอบ', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parseOk(await tools['create_quotation']({
       items: [{ description: 'สินค้าแพ็ค', quantity: 2, unit: 'pack' }],
@@ -84,7 +84,7 @@ describe('create_quotation เติมราคาเริ่มต้นจ�
     const t = setupTenant()
     seedStockItem(t, 'สินค้าไม่มีกฎ', 'pcs', 29)
     const { server, tools } = fakeServer()
-    registerSalesTools(server, t, 'user_x', 'ทดสอบ', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parseOk(await tools['create_quotation']({
       items: [{ description: 'สินค้าไม่มีกฎ', quantity: 1, unit: 'kg' }],
@@ -97,10 +97,23 @@ describe('create_quotation เติมราคาเริ่มต้นจ�
   it('บรรทัด free text (ไม่ผูกสินค้าใดเลย) ไม่ระบุ unitPrice → tool ตอบ error UNIT_PRICE_REQUIRED', async () => {
     const t = setupTenant()
     const { server, tools } = fakeServer()
-    registerSalesTools(server, t, 'user_x', 'ทดสอบ', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parseOk(await tools['create_quotation']({
       items: [{ description: 'ค่าแรงติดตั้ง (ไม่มีในสต็อก)', quantity: 1 }],
+    }))
+
+    expect(res.success).toBe(false)
+    expect(res.code).toBe('UNIT_PRICE_REQUIRED')
+  })
+
+  it('บรรทัด free text (ไม่ผูกสินค้าใดเลย) ส่ง unitPrice: 0 → tool ตอบ error UNIT_PRICE_REQUIRED (B5)', async () => {
+    const t = setupTenant()
+    const { server, tools } = fakeServer()
+    registerSalesTools(server, t)
+
+    const res = parseOk(await tools['create_quotation']({
+      items: [{ description: 'ค่าแรงติดตั้ง (ไม่มีในสต็อก)', quantity: 1, unitPrice: 0 }],
     }))
 
     expect(res.success).toBe(false)

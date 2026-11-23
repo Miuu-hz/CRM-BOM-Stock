@@ -5,9 +5,10 @@ import zlib from 'zlib'
 import { pipeline } from 'stream/promises'
 import { google } from 'googleapis'
 import { getDb } from '../db/sqlite'
+import { backupPiiTo } from '../db/piiConnection'
 
 // ── Paths ────────────────────────────────────────────────────────────────────
-const DB_PATH = path.join(__dirname, '../../dev.db')
+const DB_PATH = process.env.SQLITE_DB_PATH ?? path.join(__dirname, '../../dev.db')
 const BACKUP_DIR = path.join(__dirname, '../../backups')
 
 // ── Ensure backup directory exists ──────────────────────────────────────────
@@ -83,6 +84,20 @@ async function uploadToDrive(filePath: string, filename: string): Promise<{ id: 
   return { id: res.data.id!, webViewLink: res.data.webViewLink ?? '' }
 }
 
+async function gzipSnapshot(snapshotFn: (tmpPath: string) => Promise<unknown>, destPath: string) {
+  const tmpPath = `${destPath}.tmp`
+  try {
+    await snapshotFn(tmpPath)
+    await pipeline(
+      fs.createReadStream(tmpPath),
+      zlib.createGzip({ level: 6 }),
+      fs.createWriteStream(destPath)
+    )
+  } finally {
+    try { await fsp.unlink(tmpPath) } catch {}
+  }
+}
+
 // ── Core backup function ─────────────────────────────────────────────────────
 export async function runBackup(tenantId?: string): Promise<string> {
   const db = getDb()
@@ -96,15 +111,13 @@ export async function runBackup(tenantId?: string): Promise<string> {
   ).run(id, tenantId ?? null, filename)
 
   try {
-    // SQLite WAL checkpoint before copy to ensure consistency
-    db.pragma('wal_checkpoint(TRUNCATE)')
+    // Snapshot online ด้วย db.backup() แล้วค่อย gzip (ไม่ copy ไฟล์สด)
+    await gzipSnapshot((tmpPath) => db.backup(tmpPath), destPath)
 
-    // Gzip the database file
-    await pipeline(
-      fs.createReadStream(DB_PATH),
-      zlib.createGzip({ level: 6 }),
-      fs.createWriteStream(destPath)
-    )
+    // สำรอง pii.db แยกไฟล์ (เก็บเฉพาะในเครื่อง ห้ามอัปโหลด Google Drive)
+    const piiFilename = `phopy-pii-${timestamp}.db.gz`
+    const piiDestPath = path.join(BACKUP_DIR, piiFilename)
+    await gzipSnapshot((tmpPath) => backupPiiTo(tmpPath), piiDestPath)
 
     const { size } = await fsp.stat(destPath)
 
@@ -143,16 +156,19 @@ export async function runBackup(tenantId?: string): Promise<string> {
   }
 }
 
-// ── Delete old local files (keep newest 10) ─────────────────────────────────
-function pruneLocalBackups(keep = 10) {
-  const files = fs.readdirSync(BACKUP_DIR)
-    .filter(f => f.endsWith('.db.gz'))
-    .map(f => ({ name: f, mtime: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime)
+// ── Delete old local files (keep newest 3 per type) ─────────────────────────
+function pruneLocalBackups(keep = 3) {
+  const allFiles = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db.gz'))
+  for (const prefix of ['phopy-db-', 'phopy-pii-']) {
+    const files = allFiles
+      .filter(f => f.startsWith(prefix))
+      .map(f => ({ name: f, mtime: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime || b.name.localeCompare(a.name))
 
-  files.slice(keep).forEach(f => {
-    try { fs.unlinkSync(path.join(BACKUP_DIR, f.name)) } catch {}
-  })
+    files.slice(keep).forEach(f => {
+      try { fs.unlinkSync(path.join(BACKUP_DIR, f.name)) } catch {}
+    })
+  }
 }
 
 // ── Delete a backup (log + local file) ──────────────────────────────────────

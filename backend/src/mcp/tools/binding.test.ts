@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import db from '../../db/sqlite'
 import { registerSalesTools } from './sales'
+import { registerBindingTools } from './binding'
 
 /**
  * กติกาที่เทสต์นี้ล็อกไว้ (เจ้าของสั่ง 2026-09-14):
@@ -37,7 +38,7 @@ describe('AI กรอกให้ แต่ไม่เดาผูกสิน
   it('ชื่อตรงเป๊ะ → ผูกให้เลย', async () => {
     const { t, exact } = seedTenant()
     const { server, call } = fakeServer()
-    registerSalesTools(server, t, 'u1', 'tester', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parse(await call('create_quotation', {
       items: [{ description: 'ขนมจีน', quantity: 2, unitPrice: 50 }],
@@ -51,7 +52,7 @@ describe('AI กรอกให้ แต่ไม่เดาผูกสิน
   it('ชื่อไม่ตรงเป๊ะ → ไม่ผูก คืนตัวเลือกให้คนเลือก', async () => {
     const { t } = seedTenant()
     const { server, call } = fakeServer()
-    registerSalesTools(server, t, 'u1', 'tester', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parse(await call('create_quotation', {
       items: [{ description: 'ขนมจีนน้ำยา', quantity: 2, unitPrice: 50 }],
@@ -68,11 +69,45 @@ describe('AI กรอกให้ แต่ไม่เดาผูกสิน
     const { t, exact } = seedTenant()
     const before = (db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(exact) as any).quantity
     const { server, call } = fakeServer()
-    registerSalesTools(server, t, 'u1', 'tester', 'ADMIN')
+    registerSalesTools(server, t)
 
     await call('create_quotation', { items: [{ description: 'ขนมจีน', quantity: 2, unitPrice: 50, unit: 'g' }] })
 
     const after = (db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(exact) as any).quantity
     expect(after).toBe(before)
+  })
+})
+
+describe('bind_document_item — สถานะสินค้าที่ผูกได้ (B7)', () => {
+  it('ผูกด้วยมือได้กับสินค้าสถานะ OUT/LOW แต่ผูกกับ INACTIVE ไม่ได้', async () => {
+    const t = 'tn' + Math.random().toString(36).slice(2, 10)
+    const mkItem = (name: string, status: string) => {
+      const id = 'si' + Math.random().toString(36).slice(2, 12)
+      db.prepare(`INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
+        VALUES (?, ?, ?, ?, 'FINISHED', 0, 'pcs', 'pcs', 10, 'MAIN', ?)`).run(id, t, 'SKU-' + id.slice(2, 8), name, status)
+      return id
+    }
+    const outId = mkItem('สินค้าหมด', 'OUT')
+    const inactiveId = mkItem('สินค้าปิดใช้', 'INACTIVE')
+
+    const cusId = 'cu' + Math.random().toString(36).slice(2, 10)
+    db.prepare(`INSERT INTO customers (id, tenant_id, code, name, type, status) VALUES (?, ?, ?, 'ลูกค้า', 'RETAIL', 'ACTIVE')`)
+      .run(cusId, t, cusId)
+    const soId = 'so' + Math.random().toString(36).slice(2, 10)
+    const now = new Date().toISOString()
+    db.prepare(`INSERT INTO sales_orders (id, tenant_id, so_number, customer_id, status, subtotal, tax_rate, tax_amount, total_amount, created_at, updated_at)
+      VALUES (?, ?, 'SO-TEST-1', ?, 'DRAFT', 0, 0, 0, 0, ?, ?)`).run(soId, t, cusId, now, now)
+    db.prepare(`INSERT INTO sales_order_items (id, tenant_id, sales_order_id, stock_item_id, product_name, quantity, unit, unit_price, total_price)
+      VALUES (?, ?, ?, NULL, 'สินค้าหมด', 1, 'pcs', 10, 10)`).run('soi' + Math.random().toString(36).slice(2, 10), t, soId)
+
+    const { server, call } = fakeServer()
+    registerBindingTools(server, t)
+
+    const failRes = parse(await call('bind_document_item', { doc: 'SO-TEST-1', line: 1, stock_item_id: inactiveId }))
+    expect(failRes.success).toBe(false)
+
+    const okRes = parse(await call('bind_document_item', { doc: 'SO-TEST-1', line: 1, stock_item_id: outId }))
+    expect(okRes.success).toBe(true)
+    expect(okRes.boundTo.id).toBe(outId)
   })
 })
