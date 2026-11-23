@@ -2161,3 +2161,34 @@ mapping.role = สำเนาตอนผูก ไม่เคยอัปเ�
 - ปุ่ม HR (เช็คอิน/ลา/สลิป/กะ) ใส่แทนปุ่มในเมนู staff เมื่อช่วง 1–7 เสร็จ — แก้รูป + `MENUS` แล้ว deploy ระบบสร้างชุดใหม่เอง
 - ยังไม่ push origin
 - รัน validate ด้วยการ require `dist/` ทำให้ migration (idempotent) รันบน `dev.db` → เพิ่มคอลัมน์ `rich_menus` ก่อน restart
+
+---
+
+## 📅 Session Log — 23 พ.ย. 2026 (ออเดอร์ออนไลน์รายออเดอร์ + pii.db + แก้บั๊ก) — ✅ deploy แล้ว `1b7b7d6`
+
+สัญญากลาง: `docs/contracts/online-orders.md` · ผู้คุม Claude Code · เขียนโค้ดโดย agy (Gemini 4 Neon/Hydrogen) 3 worker แยก worktree
+
+### ที่มา
+Gemini เอาใบปะหน้า Shopee เข้า `create_quotation` → QT/SO/INV ราคา 0 ไม่มีที่อยู่ ไม่มีแท็ก และนับเป็นขายส่ง · ลบเอกสารผิด 4 ใบ + JV-2026-00317 (0 บาท) + APR-2026-00076 + ลูกค้า 2 รายที่สร้างจากชื่อผู้ซื้อ (สำรองไว้ `/scratch/online-cleanup-20261123.json`)
+
+### ของใหม่
+- ตาราง `online_orders` / `online_order_lines` / `online_import_batches` / `online_return_events` (ฐานหลักเก็บแค่ค่ามาสก์) + **`backend/pii.db` แยกไฟล์** (ชื่อ/เบอร์/ที่อยู่ดิบ, chmod 600, `SQLITE_PII_DB_PATH`)
+- มาสก์ฝั่ง backend (`utils/piiMask.ts`): ชื่อทีละคำ ตัด 3 code point ท้าย → `xxx` · เบอร์ 3 หลักท้าย · ที่อยู่ซ่อนแค่บ้านเลขที่
+- MCP `online_submit_orders` (ไฟล์ คำสั่งซื้อของฉัน > ส่งออก, ≤150 แถว/ครั้ง, ส่งซ้ำ = อัปเดต) · `online_orders_query` · `online_propose_mapping` · tool แพลตฟอร์มทั้งกลุ่มเช็ค feature `platform_settlement`
+- REST `/api/platform-settlement/online-orders/*` + แท็บ "ออเดอร์ออนไลน์" ในบัญชี > กระทบยอด > แพลตฟอร์ม
+- ผูกสินค้าใช้ alias แพลตฟอร์มเดิม (`:N<ชื่อ>` เมื่อหา variant ไม่เจอ, relink อัตโนมัติหลังส่งไฟล์ products)
+- รับคืนข้ามเดือน: event เมื่อ qty_returned เพิ่ม → ปุ่มรับคืน = stock IN + JV Dr สินค้า / Cr 5101 (ONLINE) เฉพาะรอบที่ยืนยันขายก่อนเห็นการคืน
+- Dashboard: จำนวนออเดอร์ออนไลน์จาก `online_orders` · ยอดเงินยังจาก ledger ONLINE · ยอดตามออเดอร์แยกป้าย "รวม VAT · ยังไม่ใช่ยอดบัญชี"
+- **รายออเดอร์ไม่ลงบัญชี/ไม่ตัดสต็อก** — สายรอบเดือนเดิมยังเป็นตัวลงบัญชี
+
+### บั๊กที่แก้
+backup ใช้ `db.backup()` + `SQLITE_DB_PATH` + เก็บ 3 ไฟล์/ประเภท + สำรอง pii.db (ไม่ขึ้น Drive) · `create_quotation` ปฏิเสธราคา 0 บรรทัดไม่ผูกสต็อก · `bind_document_item` ผูกสินค้า OUT/LOW ได้ · LIKE escape · `sourceRefOf` กัน `Pnull` · `acceptAllProposals` ใน transaction · `getMappingRows` ตัด N+1 · GET platform-settlement ต้อง ADMIN/MASTER/MANAGER · ลบ endpoint ฟอร์มกรอกยอดแพลตฟอร์มเก่า (`GET /`, `POST /confirm`, `POST /:id/payout`)
+
+### ตรวจแล้ว
+tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · Goldfish review (agy Sonnet) เจอ 1 blocker + 4 major แก้แล้ว, re-review LGTM · prod: migration ผ่าน, `/api/health` 200, pii.db 600, feature `platform_settlement` = true สำหรับ เอฟแอนด์บี เบดดิ้ง
+
+### ค้าง / ควรรู้
+- ยังไม่เห็นไฟล์ export Shopee จริง — แม็บคอลัมน์ในคำอธิบาย MCP อาจต้องปรับ · Lazada ยังไม่รองรับ (status mapping ต้องเพิ่ม)
+- backup อัตโนมัติรอบหน้าจะตัด `phopy-db-*` เหลือ 3 ไฟล์ · `backups/pre-*` ตอนนี้มี 4 ไฟล์ (ยังไม่ได้ลบตัวเก่าสุด)
+- rollback: `backups/pre-online-orders-2026-11-23.db.gz` + `/scratch/pre-online-dist/` + `git reset --hard de021d5` ใน /opt/crm
+- ยังไม่ push origin · ยังไม่ได้เปิดหน้าเว็บจริงบนมือถือ
