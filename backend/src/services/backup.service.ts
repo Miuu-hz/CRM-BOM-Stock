@@ -115,14 +115,17 @@ export async function runBackup(tenantId?: string): Promise<string> {
     await gzipSnapshot((tmpPath) => db.backup(tmpPath), destPath)
 
     // สำรอง pii.db แยกไฟล์ (เก็บเฉพาะในเครื่อง ห้ามอัปโหลด Google Drive)
-    // ถ้า snapshot pii.db พลาด ให้บันทึก error แล้วสำรองฐานหลักต่อไป
+    // ถ้า snapshot pii.db พลาด ให้บันทึก error ลง backup_logs แต่ยังให้ฐานหลักเป็น SUCCESS
     const piiFilename = `phopy-pii-${timestamp}.db.gz`
     const piiDestPath = path.join(BACKUP_DIR, piiFilename)
+    let piiError: string | null = null
     try {
       await gzipSnapshot((tmpPath) => backupPiiTo(tmpPath), piiDestPath)
     } catch (piiErr: any) {
       try { await fsp.unlink(piiDestPath) } catch {}
-      console.error('[Backup] pii.db snapshot failed:', piiErr?.message ?? piiErr)
+      const msg = piiErr?.message ?? String(piiErr)
+      piiError = `pii.db: ${msg}`
+      console.error('[Backup] pii.db snapshot failed:', msg)
     }
 
     const { size } = await fsp.stat(destPath)
@@ -143,13 +146,15 @@ export async function runBackup(tenantId?: string): Promise<string> {
       }
     }
 
+    const combinedError = [driveError, piiError].filter(Boolean).join('; ') || null
+
     db.prepare(`
       UPDATE backup_logs
       SET status = ?, file_size = ?, cloud_url = ?, cloud_file_id = ?, error = ?, completed_at = datetime('now')
       WHERE id = ?
-    `).run(driveError ? 'PARTIAL' : 'SUCCESS', size, cloudUrl, cloudFileId, driveError, id)
+    `).run(driveError ? 'PARTIAL' : 'SUCCESS', size, cloudUrl, cloudFileId, combinedError, id)
 
-    // Keep only the last 10 local backups
+    // Keep only the last 3 local backups per type
     pruneLocalBackups()
 
     console.log(`[Backup] ✅ ${filename} (${(size / 1024).toFixed(1)} KB)${cloudUrl ? ' → Drive' : ''}`)

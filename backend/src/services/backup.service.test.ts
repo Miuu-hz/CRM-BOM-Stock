@@ -111,6 +111,6 @@ describe('backup.service (B1-B4)', () => {
     expect(log.status).toBe('SUCCESS')
     expect(log.filename).toBe(dbGz)
     expect(log.file_size).toBeGreaterThan(0)
-    expect(log.error).toBeNull()
+    expect(log.error).toBe('pii.db: pii snapshot disk full')
   })
 })
