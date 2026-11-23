@@ -3,16 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import zlib from 'zlib'
 import db from '../db/sqlite'
+import { piiDb, piiDbPath } from '../db/piiConnection'
 import { generateId } from '../utils/id'
-
-const mockBackupPiiTo = vi.fn(async (destPath: string) => {
-  fs.writeFileSync(destPath, 'SQLite format 3\0mock-pii-db')
-})
-
-vi.mock('../db/piiConnection', () => ({
-  backupPiiTo: (destPath: string) => mockBackupPiiTo(destPath),
-}))
-
 import { initBackupTable, runBackup } from './backup.service'
 
 const BACKUP_DIR = path.join(__dirname, '../../backups')
@@ -22,10 +14,10 @@ let preExistingFiles: Set<string> = new Set()
 beforeEach(() => {
   initBackupTable()
   preExistingFiles = new Set(fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR) : [])
-  mockBackupPiiTo.mockClear()
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const id of createdIds.splice(0)) {
     db.prepare('DELETE FROM backup_logs WHERE id = ?').run(id)
   }
@@ -40,11 +32,14 @@ afterEach(() => {
 
 describe('backup.service (B1-B4)', () => {
   it('B2+B4: runBackup ใช้ db.backup() สำรองฐานหลักเป็น phopy-db-*.db.gz และสำรอง PII เป็น phopy-pii-*.db.gz', async () => {
+    expect(path.basename(piiDbPath)).toContain('test')
+    const piiSpy = vi.spyOn(piiDb, 'backup')
+
     const t = 'test_bk_' + generateId()
     const id = await runBackup(t)
     createdIds.push(id)
 
-    expect(mockBackupPiiTo).toHaveBeenCalledTimes(1)
+    expect(piiSpy).toHaveBeenCalledTimes(1)
 
     const newFiles = fs.readdirSync(BACKUP_DIR).filter(f => !preExistingFiles.has(f))
     const dbGz = newFiles.find(f => f.startsWith('phopy-db-') && f.endsWith('.db.gz'))
@@ -59,7 +54,7 @@ describe('backup.service (B1-B4)', () => {
     expect(mainRaw.subarray(0, 15).toString('ascii')).toBe('SQLite format 3')
 
     const piiRaw = zlib.gunzipSync(fs.readFileSync(path.join(BACKUP_DIR, piiGz!)))
-    expect(piiRaw.toString('ascii')).toContain('mock-pii-db')
+    expect(piiRaw.subarray(0, 15).toString('ascii')).toBe('SQLite format 3')
 
     const log = db.prepare('SELECT status, filename FROM backup_logs WHERE id = ?').get(id) as any
     expect(log.status).toBe('SUCCESS')
@@ -90,5 +85,32 @@ describe('backup.service (B1-B4)', () => {
     expect(piiFiles.length).toBeLessThanOrEqual(3)
     expect(dbFiles.some(f => f.includes('2020-01-01'))).toBe(false)
     expect(piiFiles.some(f => f.includes('2020-01-01'))).toBe(false)
+  })
+
+  it('ถ้า pii.db snapshot ล้มเหลว ต้อง log error และยังบันทึก backup หลักเป็น SUCCESS', async () => {
+    const piiSpy = vi.spyOn(piiDb, 'backup').mockRejectedValueOnce(new Error('pii snapshot disk full'))
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const id = await runBackup('test_bk_pii_fail_' + generateId())
+    createdIds.push(id)
+
+    expect(piiSpy).toHaveBeenCalledTimes(1)
+    expect(errSpy).toHaveBeenCalledWith('[Backup] pii.db snapshot failed:', 'pii snapshot disk full')
+
+    const newFiles = fs.readdirSync(BACKUP_DIR).filter(f => !preExistingFiles.has(f))
+    const dbGz = newFiles.find(f => f.startsWith('phopy-db-') && f.endsWith('.db.gz'))
+    const piiGz = newFiles.find(f => f.startsWith('phopy-pii-') && f.endsWith('.db.gz'))
+    expect(dbGz).toBeDefined()
+    expect(piiGz).toBeUndefined()
+    expect(newFiles.some(f => f.endsWith('.tmp'))).toBe(false)
+
+    const mainRaw = zlib.gunzipSync(fs.readFileSync(path.join(BACKUP_DIR, dbGz!)))
+    expect(mainRaw.subarray(0, 15).toString('ascii')).toBe('SQLite format 3')
+
+    const log = db.prepare('SELECT status, filename, file_size, error FROM backup_logs WHERE id = ?').get(id) as any
+    expect(log.status).toBe('SUCCESS')
+    expect(log.filename).toBe(dbGz)
+    expect(log.file_size).toBeGreaterThan(0)
+    expect(log.error).toBeNull()
   })
 })

@@ -91,7 +91,8 @@ describe('bind_document_item — สถานะสินค้าที่ผ�
     const inactiveId = mkItem('สินค้าปิดใช้', 'INACTIVE')
 
     const cusId = 'cu' + Math.random().toString(36).slice(2, 10)
-    db.prepare(`INSERT INTO customers (id, tenant_id, code, name, type, status) VALUES (?, ?, ?, 'ลูกค้า', 'RETAIL', 'ACTIVE')`)
+    db.prepare(`INSERT INTO customers (id, tenant_id, code, name, type, contact_name, email, phone, city, status)
+      VALUES (?, ?, ?, 'ลูกค้า', 'RETAIL', 'x', 'x@example.com', '0800000000', 'BKK', 'ACTIVE')`)
       .run(cusId, t, cusId)
     const soId = 'so' + Math.random().toString(36).slice(2, 10)
     const now = new Date().toISOString()

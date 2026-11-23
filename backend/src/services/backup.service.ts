@@ -115,9 +115,15 @@ export async function runBackup(tenantId?: string): Promise<string> {
     await gzipSnapshot((tmpPath) => db.backup(tmpPath), destPath)
 
     // สำรอง pii.db แยกไฟล์ (เก็บเฉพาะในเครื่อง ห้ามอัปโหลด Google Drive)
+    // ถ้า snapshot pii.db พลาด ให้บันทึก error แล้วสำรองฐานหลักต่อไป
     const piiFilename = `phopy-pii-${timestamp}.db.gz`
     const piiDestPath = path.join(BACKUP_DIR, piiFilename)
-    await gzipSnapshot((tmpPath) => backupPiiTo(tmpPath), piiDestPath)
+    try {
+      await gzipSnapshot((tmpPath) => backupPiiTo(tmpPath), piiDestPath)
+    } catch (piiErr: any) {
+      try { await fsp.unlink(piiDestPath) } catch {}
+      console.error('[Backup] pii.db snapshot failed:', piiErr?.message ?? piiErr)
+    }
 
     const { size } = await fsp.stat(destPath)
 
