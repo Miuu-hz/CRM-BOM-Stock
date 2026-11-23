@@ -17,6 +17,7 @@ import { BILL_CONFIGS } from '../components/bill/BillContext'
 import type { BillType, BillData, BillItem, BillParty } from '../components/bill/BillContext'
 import api from '../services/api'
 import { getCachedCompanySettings } from '../services/companySettings.service'
+import { paginateBill } from './billPaginate'
 
 export type PrintDocType =
   | 'qt' | 'so' | 'inv' | 'rc' | 'cn'
@@ -347,6 +348,11 @@ export async function printBill(type: PrintDocType, data: any, format: PrintForm
   await waitForLayout(w)
   if (w.closed) return
   if (format === 'thermal') fitThermalPage(w.document)
+  else {
+    // A4/A5: แบ่งหน้าเองให้ทุกแผ่นมีหัวกระดาษ + ลายเซ็นไม่หล่นไปอยู่หน้าเปล่า — วัดหลังฟอนต์มาครบเท่านั้น
+    await w.document.fonts?.ready
+    try { paginateBill(w.document) } catch (e) { console.error('paginateBill failed — พิมพ์แบบเดิม', e) }
+  }
   w.print()
 }
 

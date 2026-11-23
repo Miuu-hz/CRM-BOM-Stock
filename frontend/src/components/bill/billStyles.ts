@@ -399,12 +399,13 @@ export const BILL_CSS = `
 /* ═══════════════════════════════════
    RESPONSIVE (screen preview < 768px)
 ═══════════════════════════════════ */
+/* :not(.is-paged) = หน้าต่างพิมพ์ที่แบ่งหน้าแล้ว (utils/billPaginate.ts) ต้องคงเลย์เอาต์กระดาษ ไม่งั้นวัดความสูงบนมือถือผิด */
 @media screen and (max-width: 768px) {
-  .unified-bill-container { padding: 12px; }
-  .bill-a4, .bill-a5 { width: 100%; padding: 16px; }
-  .bill-header { flex-direction: column; gap: 14px; }
-  .bill-head-grid, .bill-summary-section, .bill-pay-section { grid-template-columns: 1fr; }
-  .bill-signatures { grid-template-columns: repeat(2, 1fr) !important; }
+  .unified-bill-container:not(.is-paged) { padding: 12px; }
+  .unified-bill-container:not(.is-paged) .bill-a4, .unified-bill-container:not(.is-paged) .bill-a5 { width: 100%; padding: 16px; }
+  .unified-bill-container:not(.is-paged) .bill-header { flex-direction: column; gap: 14px; }
+  .unified-bill-container:not(.is-paged) .bill-head-grid, .unified-bill-container:not(.is-paged) .bill-summary-section, .unified-bill-container:not(.is-paged) .bill-pay-section { grid-template-columns: 1fr; }
+  .unified-bill-container:not(.is-paged) .bill-signatures { grid-template-columns: repeat(2, 1fr) !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -640,4 +641,55 @@ export const BILL_CSS = `
   .bill-a5      { page: a5page; width: 100%; max-width: 148mm; padding: 10mm; }
   .bill-thermal { page: thermal80; box-shadow: none !important; }
 }
+
+/* ── แบ่งหน้าเอง (utils/billPaginate.ts): 1 .bill-page = 1 แผ่นกระดาษ หัวกระดาษเต็มทุกแผ่น ── */
+.bill-pages { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.bill-page { display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; margin: 0 auto; }
+.bill-page-body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.bill-page-body > .bill-items-section, .bill-page-body > .wo-materials-section { margin-bottom: 10px; }
+.bill-closing { flex: 1 0 auto; display: flex; flex-direction: column; }
+.bill-closing > .bill-footer { margin-top: auto; padding-top: 12px; }   /* ลายเซ็นชิดท้ายหน้าสุดท้ายเสมอ */
+.bill-page-badge { margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--theme-color, #3949E5); min-height: 1em; }
+.bill-page-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: 6px; }
+.bill-page-foot .bill-footer-info { margin: 0; padding-top: 4px; }
+.bill-page-no { font-size: 11px; font-weight: 700; color: #1f2430; white-space: nowrap; }
+.bill-items-table tr.bill-carry-row td, .wo-materials-table tr.bill-carry-row td {
+  background: color-mix(in oklab, var(--theme-color, #3949E5) 10%, white) !important;
+  font-weight: 700; color: #1f2430; border-bottom: 1.5px solid #1f2430;
+}
+.bill-items-table tr.bill-carry-row td:first-child { text-align: right; }
+@page a4paged { size: A4 portrait; margin: 0; }
+@page a5paged { size: A5 portrait; margin: 0; }
+@media print {
+  .unified-bill-container.is-paged { padding: 0; }
+  .bill-pages { gap: 0; display: block; }
+  .bill-page { box-shadow: none !important; break-after: page; page-break-after: always; }
+  .bill-page:last-child { break-after: auto; page-break-after: auto; }
+  .bill-page.bill-a4 { page: a4paged; }
+  .bill-page.bill-a5 { page: a5paged; }
+}
+
+/* ── คอนทราสต์สำหรับพิมพ์ขาวดำ (เจ้าของร้านขอ 2026-11-23) ─────────────────
+   เดิม: เส้นแถว #f3f3f3 พิมพ์แล้วหาย · หัวตารางพื้นสีตัวอักษรขาว แต่ไม่ได้บังคับพิมพ์สีพื้น
+   เบราว์เซอร์จึงทิ้งพื้น เหลือตัวอักษรขาวจาง ๆ — หัวตารางอ่านไม่ออก
+   ตอนนี้: บังคับพิมพ์สีทั้งใบ + หัวตารางพื้นอ่อนตัวเข้ม มีเส้นบน/ล่างสีหลัก (ต่อให้ปิดพิมพ์พื้นหลังก็ยังอ่านได้)
+   เส้นแถวเทากลาง · ตัวหนังสือรองเข้มขึ้น · ช่องเซ็นเส้นทึบ ── */
+.unified-bill-paper, .unified-bill-paper * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.bill-items-table thead tr { background: color-mix(in oklab, var(--theme-color, #3949E5) 13%, white) !important; }
+.bill-items-table th {
+  color: #1f2430; font-weight: 700;
+  border-top: 1.5px solid var(--theme-color, #3949E5); border-bottom: 1.5px solid var(--theme-color, #3949E5);
+}
+.bill-items-table thead tr th:first-child, .bill-items-table thead tr th:last-child { border-radius: 0; }
+.bill-items-table td { border-bottom: 1px solid #aeb4c0; }
+.bill-items-table tbody tr:nth-child(even) td { background: #f0f2f6; }
+.bill-items-table tbody tr:last-child td { border-bottom: 1.5px solid #1f2430; }
+.wo-materials-table td { border-bottom-color: #aeb4c0 !important; }
+.bill-party-col .k, .bill-meta-col .k, .pay-row .k, .summary-line .lbl, .summary-row .small,
+.signature-label, .pay-qr-cap, .bill-title-en, .bill-draft-label, .item-desc { color: #474e5d; }
+.bill-meta-col, .bill-pay-section, .bill-summary-box, .bill-notes, .bill-notes-block { border-color: #9ea5b3 !important; }
+.bill-meta-col hr { border-top-color: #9ea5b3; }
+.signature-line { border-bottom: 1px solid #474e5d; }
+.signature-date { color: #5b6272; }
+.bill-footer-info { color: #5b6272; border-top-color: #aeb4c0; }
 `
