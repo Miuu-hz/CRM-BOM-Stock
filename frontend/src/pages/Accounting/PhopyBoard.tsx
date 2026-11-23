@@ -472,7 +472,7 @@ export default function PhopyBoard() {
                           {data.businessUnits.filter(bu =>
                             bu.breakdown.length > 0 ||
                             bu.unit === 'RETAIL' ||
-                            (bu.unit === 'ONLINE' && ((data.onlineSummary?.orders ?? 0) > 0 || (data.onlineSummary?.unpostedRevenue ?? 0) > 0))
+                            (bu.unit === 'ONLINE' && ((data.onlineSummary?.orders ?? 0) > 0 || (data.onlineSummary?.unpostedOrderSales ?? 0) > 0))
                           ).map(bu => {
                             const onlineInfo = bu.unit === 'ONLINE' ? data.onlineSummary : undefined
                             return (
@@ -499,9 +499,9 @@ export default function PhopyBoard() {
                                 </td>
                                 <td className="py-2 text-right text-[var(--fg-1)]">
                                   <div>฿{fmt(bu.revenue)}</div>
-                                  {onlineInfo && onlineInfo.unpostedRevenue > 0 && (
+                                  {onlineInfo && onlineInfo.unpostedOrderSales > 0 && (
                                     <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--warning)]/15 text-[color:var(--warning,#f59e0b)] text-[11px] font-medium">
-                                      +฿{fmt(onlineInfo.unpostedRevenue)} ยังไม่ลงบัญชี
+                                      +฿{fmt(onlineInfo.unpostedOrderSales)} ยอดตามออเดอร์ (รวม VAT · ยังไม่ลงบัญชี)
                                     </div>
                                   )}
                                 </td>

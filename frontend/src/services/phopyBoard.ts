@@ -50,7 +50,7 @@ export interface PhopyBoardData {
     unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE' | 'OTHER'; revenue: number; cogs: number; expense: number; adjust: number; netProfit: number
     breakdown: Array<{ referenceType: string; label: string; revenue: number; cogs: number; expense: number; adjust: number }>
   }>
-  onlineSummary?: { orders: number; ledgerRevenue: number; unpostedRevenue: number; unpostedOrders: number }
+  onlineSummary?: { orders: number; ledgerRevenue: number; unpostedOrderSales: number; unpostedOrders: number }
   revenueChart: Array<{ month: string; revenue: number; cost: number; grossProfit: number }>
   plTable: Array<{ month: string; revenue: number; cogs: number; grossProfit: number; labour: number; otherOpex: number; netProfit: number; margin: number }>
   arAging: AgingBuckets
@@ -73,13 +73,13 @@ export interface PhopyBoardData {
 
 export interface PhopyBoardExtendedData {
   channel: {
-    byPlatform: Array<{ platform: string; revenue: number; orders: number }>
+    byPlatform: Array<{ platform: string; orderSales: number; orders: number }>
     onlineTotal: number; onlineOrders: number
-    onlineUnpostedRevenue?: number; onlineUnpostedOrders?: number
+    onlineUnpostedOrderSales?: number; onlineUnpostedOrders?: number
     offlineRevenue: number; offlineOrders: number
     orderTrend: Array<{ month: string; online: number; offline: number; wholesale: number; retail: number }>
     retailRevenue: number; retailBills: number
-    channels: Array<{ unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE'; label: string; revenue: number; orders: number; unpostedRevenue?: number }>
+    channels: Array<{ unit: 'RETAIL' | 'WHOLESALE' | 'ONLINE'; label: string; revenue: number; orders: number; unpostedOrderSales?: number }>
   }
   adsROI: {
     totals: {
