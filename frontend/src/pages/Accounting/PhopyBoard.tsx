@@ -469,7 +469,13 @@ export default function PhopyBoard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {data.businessUnits.filter(bu => bu.breakdown.length > 0 || bu.unit === 'RETAIL').map(bu => (
+                          {data.businessUnits.filter(bu =>
+                            bu.breakdown.length > 0 ||
+                            bu.unit === 'RETAIL' ||
+                            (bu.unit === 'ONLINE' && ((data.onlineSummary?.orders ?? 0) > 0 || (data.onlineSummary?.unpostedRevenue ?? 0) > 0))
+                          ).map(bu => {
+                            const onlineInfo = bu.unit === 'ONLINE' ? data.onlineSummary : undefined
+                            return (
                             <Fragment key={bu.unit}>
                               <tr className="border-b border-[var(--border)] last:border-0">
                                 <td className="py-2 font-medium text-[var(--fg-1)]">
@@ -485,8 +491,20 @@ export default function PhopyBoard() {
                                     )}
                                     {BU_LABELS[bu.unit] || bu.unit}
                                   </button>
+                                  {onlineInfo && onlineInfo.orders > 0 && (
+                                    <span className="ml-2 text-xs font-normal text-[var(--fg-3)]">
+                                      ({fmt(onlineInfo.orders)} ออเดอร์)
+                                    </span>
+                                  )}
                                 </td>
-                                <td className="py-2 text-right text-[var(--fg-1)]">฿{fmt(bu.revenue)}</td>
+                                <td className="py-2 text-right text-[var(--fg-1)]">
+                                  <div>฿{fmt(bu.revenue)}</div>
+                                  {onlineInfo && onlineInfo.unpostedRevenue > 0 && (
+                                    <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--warning)]/15 text-[color:var(--warning,#f59e0b)] text-[11px] font-medium">
+                                      +฿{fmt(onlineInfo.unpostedRevenue)} ยังไม่ลงบัญชี
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="py-2 text-right text-[color:var(--danger)]">฿{fmt(bu.cogs)}</td>
                                 <td className="py-2 text-right text-[var(--fg-3)]">฿{fmt(bu.expense)}</td>
                                 <td className={`py-2 text-right ${bu.adjust < 0 ? 'text-[color:var(--success,#22c55e)]' : 'text-[var(--fg-3)]'}`}>
@@ -507,7 +525,8 @@ export default function PhopyBoard() {
                                 </tr>
                               ))}
                             </Fragment>
-                          ))}
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>

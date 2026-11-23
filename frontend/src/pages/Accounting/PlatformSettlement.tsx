@@ -3,6 +3,7 @@ import { Settings2, CheckCircle2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import PlatformMonthSale from './PlatformMonthSale'
+import OnlineOrders from './OnlineOrders'
 
 // ==================== Types (ตรงกับ backend /api/platform-settlement) ====================
 
@@ -27,8 +28,11 @@ type PlatformKey = (typeof PLATFORMS)[number]['key']
 // ==================== Main Component ====================
 // ข้อมูลเข้าทาง MCP เป็น "รอบเดือน" อย่างเดียวแล้ว — เลิกฟอร์มกรอกยอด/GP เอง (ตาราง platform_settlements ว่างทุก tenant)
 
+type SubTab = 'monthly' | 'orders'
+
 export default function PlatformSettlement() {
   const [platform, setPlatform] = useState<PlatformKey>('SHOPEE')
+  const [subTab, setSubTab] = useState<SubTab>('monthly')
   const [showSettings, setShowSettings] = useState(false)
   const [feeMappings, setFeeMappings] = useState<FeeMappingRow[]>([])
 
@@ -44,7 +48,7 @@ export default function PlatformSettlement() {
   useEffect(() => { loadFeeMappings() }, [])
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className={`space-y-6 mx-auto ${subTab === 'orders' ? 'max-w-5xl' : 'max-w-3xl'}`}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[var(--fg-1)]">บัญชีขายผ่านแพลตฟอร์ม</h1>
@@ -75,7 +79,41 @@ export default function PlatformSettlement() {
         ))}
       </div>
 
-      <PlatformMonthSale key={platform} platform={platform} />
+      {/* แท็บย่อย: รอบเดือน (ลงบัญชี) / ออเดอร์ออนไลน์ */}
+      <div className="flex items-center gap-1 border-b border-[var(--border)]" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === 'monthly'}
+          onClick={() => setSubTab('monthly')}
+          className={`px-4 py-2 -mb-px text-sm font-semibold border-b-2 transition-colors ${
+            subTab === 'monthly'
+              ? 'border-[var(--primary)] text-[var(--primary)]'
+              : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+          }`}
+        >
+          รอบเดือน (ลงบัญชี)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === 'orders'}
+          onClick={() => setSubTab('orders')}
+          className={`px-4 py-2 -mb-px text-sm font-semibold border-b-2 transition-colors ${
+            subTab === 'orders'
+              ? 'border-[var(--primary)] text-[var(--primary)]'
+              : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-1)]'
+          }`}
+        >
+          ออเดอร์ออนไลน์
+        </button>
+      </div>
+
+      {subTab === 'monthly' ? (
+        <PlatformMonthSale key={platform} platform={platform} />
+      ) : (
+        <OnlineOrders key={platform} platform={platform} />
+      )}
 
       {showSettings && (
         <FeeMappingSettings

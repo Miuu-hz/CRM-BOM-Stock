@@ -62,12 +62,30 @@ export function ChannelPerformance({ data }: { data: ExtendedData }) {
             </PieChart>
           </ResponsiveContainer>
           <div className="space-y-2 mt-1">
-            {channel.channels.map((c, i) => (
-              <div key={c.unit} className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />{c.label}</span>
-                <span className="font-bold text-[var(--fg-1)]">฿{fmt(c.revenue)} ({fmtPct(splitData[i]?.value || 0)})</span>
-              </div>
-            ))}
+            {channel.channels.map((c, i) => {
+              const unposted = c.unit === 'ONLINE' ? (c.unpostedRevenue ?? channel.onlineUnpostedRevenue ?? 0) : 0
+              return (
+                <div key={c.unit} className="space-y-0.5">
+                  <div className="flex items-center justify-between text-sm gap-2">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                      <span>{c.label}</span>
+                      {c.unit === 'ONLINE' && (
+                        <span className="text-xs text-[var(--fg-3)]">({fmt(c.orders)} ออเดอร์)</span>
+                      )}
+                    </span>
+                    <span className="font-bold text-[var(--fg-1)] shrink-0">฿{fmt(c.revenue)} ({fmtPct(splitData[i]?.value || 0)})</span>
+                  </div>
+                  {unposted > 0 && (
+                    <div className="flex justify-end">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[var(--warning)]/15 text-[color:var(--warning,#f59e0b)] text-[11px] font-medium">
+                        +฿{fmt(unposted)} ยังไม่ลงบัญชี
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </motion.div>
 

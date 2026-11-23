@@ -53,6 +53,46 @@ function monthsInPeriod(start: string, end: string): Array<{ start: string; end:
 
 function agingTotal(a: AgingResult['buckets']) { return a.current + a.days30 + a.days60 + a.days90 + a.over90 }
 
+const ONLINE_COUNT_STATUSES = "('ACTIVE', 'COMPLETED', 'RETURNED')"
+
+function hasOnlineOrdersTable(): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'online_orders'").get()
+}
+
+/** จำนวนออเดอร์ออนไลน์ (ACTIVE/COMPLETED/RETURNED) และยอดขายสุทธิจากรายออเดอร์ของเดือนที่ยังไม่ POSTED */
+function onlineOrdersBoardMetrics(tenantId: string, startDate: string, endDate: string): {
+  orders: number
+  unpostedRevenue: number
+  unpostedOrders: number
+} {
+  if (!hasOnlineOrdersTable()) return { orders: 0, unpostedRevenue: 0, unpostedOrders: 0 }
+  const countRow = db.prepare(`
+    SELECT COUNT(*) as orders
+    FROM online_orders
+    WHERE tenant_id = ? AND order_date BETWEEN ? AND ? AND status_group IN ${ONLINE_COUNT_STATUSES}
+  `).get(tenantId, startDate, endDate) as { orders: number }
+
+  const unpostedRow = db.prepare(`
+    SELECT
+      COUNT(DISTINCT o.id) as orders,
+      COALESCE(SUM(CASE WHEN l.qty > 0 THEN l.net_price * (l.qty - l.qty_returned) / l.qty ELSE l.net_price END), 0) as net_sales
+    FROM online_orders o
+    LEFT JOIN online_order_lines l ON l.order_id = o.id AND l.tenant_id = o.tenant_id
+    WHERE o.tenant_id = ? AND o.order_date BETWEEN ? AND ? AND o.status_group IN ${ONLINE_COUNT_STATUSES}
+      AND NOT EXISTS (
+        SELECT 1 FROM platform_months pm
+        WHERE pm.tenant_id = o.tenant_id AND pm.platform = o.platform AND pm.shop_key = o.shop_key
+          AND pm.month = o.month AND pm.status = 'POSTED'
+      )
+  `).get(tenantId, startDate, endDate) as { orders: number; net_sales: number }
+
+  return {
+    orders: Number(countRow.orders) || 0,
+    unpostedRevenue: r2(unpostedRow.net_sales),
+    unpostedOrders: Number(unpostedRow.orders) || 0,
+  }
+}
+
 router.get('/summary', (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
@@ -80,6 +120,8 @@ router.get('/summary', (req: Request, res: Response) => {
     const netProfit = revenue - cost - opex
 
     const businessUnits = businessUnitPL(tenantId, startDate, endDate)
+    const onlineMetrics = onlineOrdersBoardMetrics(tenantId, startDate, endDate)
+    const onlineLedgerRevenue = businessUnits.find(b => b.unit === 'ONLINE')?.revenue ?? 0
 
     // ── 12-month revenue chart ────────────────────────────────────────────────
     const revenueChart = last12Months().map(mr => {
@@ -290,6 +332,12 @@ router.get('/summary', (req: Request, res: Response) => {
         period: { start: startDate, end: endDate },
         kpis: { revenue, cost, grossProfit, netProfit, grossMarginPct, prevRevenue, prevGrossProfit, opex, labour: labour.total },
         businessUnits,
+        onlineSummary: {
+          orders: onlineMetrics.orders,
+          ledgerRevenue: onlineLedgerRevenue,
+          unpostedRevenue: onlineMetrics.unpostedRevenue,
+          unpostedOrders: onlineMetrics.unpostedOrders,
+        },
         revenueChart,
         plTable,
         arAging: ar.buckets,
@@ -322,15 +370,27 @@ router.get('/extended', (req: Request, res: Response) => {
     const months = last12Months()
 
     // ── Zone 1: Channel Performance ─────────────────────────────────────────
-    const channelByPlatform = db.prepare(`
-      SELECT s.platform, COALESCE(SUM(mm.sales), 0) as revenue, COALESCE(SUM(mm.orders), 0) as orders
-      FROM marketing_metrics mm JOIN shops s ON mm.shop_id = s.id
-      WHERE mm.tenant_id = ? AND date(mm.date) BETWEEN ? AND ?
-      GROUP BY s.platform ORDER BY revenue DESC
-    `).all(tenantId, startDate, endDate) as Array<{ platform: string; revenue: number; orders: number }>
+    // จำนวนออเดอร์ออนไลน์มาจาก online_orders (ACTIVE/COMPLETED/RETURNED)
+    // ยอดเงินออนไลน์มาจาก ledger ONLINE เดิม + unpostedRevenue สำหรับเดือนที่ยังไม่ POSTED
+    const hasOnline = hasOnlineOrdersTable()
+    const channelByPlatform = hasOnline
+      ? (db.prepare(`
+          SELECT
+            o.platform,
+            COALESCE(SUM(CASE WHEN l.qty > 0 THEN l.net_price * (l.qty - l.qty_returned) / l.qty ELSE l.net_price END), 0) as revenue,
+            COUNT(DISTINCT o.id) as orders
+          FROM online_orders o
+          LEFT JOIN online_order_lines l ON l.order_id = o.id AND l.tenant_id = o.tenant_id
+          WHERE o.tenant_id = ? AND o.order_date BETWEEN ? AND ? AND o.status_group IN ${ONLINE_COUNT_STATUSES}
+          GROUP BY o.platform ORDER BY revenue DESC
+        `).all(tenantId, startDate, endDate) as Array<{ platform: string; revenue: number; orders: number }>)
+        .map(r => ({ platform: r.platform, revenue: r2(r.revenue), orders: Number(r.orders) }))
+      : []
 
-    const onlineTotal = channelByPlatform.reduce((s, r) => s + Number(r.revenue), 0)
-    const onlineOrders = channelByPlatform.reduce((s, r) => s + Number(r.orders), 0)
+    const onlineMetrics = onlineOrdersBoardMetrics(tenantId, startDate, endDate)
+    const onlineLedgerRevenue = businessUnitPL(tenantId, startDate, endDate).find(b => b.unit === 'ONLINE')?.revenue ?? 0
+    const onlineTotal = onlineLedgerRevenue
+    const onlineOrders = onlineMetrics.orders
 
     // ขายส่ง = ใบสั่งขาย sales_orders (ตาราง orders เดิมไม่มีระบบไหนเขียนแล้ว)
     const wholesaleSql = "SELECT COALESCE(SUM(total_amount), 0) as revenue, COUNT(*) as orders FROM sales_orders WHERE tenant_id = ? AND status NOT IN ('CANCELLED', 'DRAFT') AND date(order_date) BETWEEN ? AND ?"
@@ -339,7 +399,9 @@ router.get('/extended', (req: Request, res: Response) => {
     const retailRow = db.prepare(retailSql).get(tenantId, startDate, endDate) as { revenue: number; bills: number }
 
     const orderTrend = months.map(mr => {
-      const onR = db.prepare("SELECT COALESCE(SUM(orders), 0) as orders FROM marketing_metrics WHERE tenant_id = ? AND date(date) BETWEEN ? AND ?").get(tenantId, mr.start, mr.end) as { orders: number }
+      const onR = hasOnline
+        ? (db.prepare(`SELECT COUNT(*) as orders FROM online_orders WHERE tenant_id = ? AND order_date BETWEEN ? AND ? AND status_group IN ${ONLINE_COUNT_STATUSES}`).get(tenantId, mr.start, mr.end) as { orders: number })
+        : { orders: 0 }
       const wsR = db.prepare(wholesaleSql).get(tenantId, mr.start, mr.end) as { orders: number }
       const rtR = db.prepare(retailSql).get(tenantId, mr.start, mr.end) as { bills: number }
       // offline = ขายส่ง + บิลหน้าร้าน (คงชื่อเดิมไว้ให้หน้าจอเก่า)
@@ -547,13 +609,15 @@ router.get('/extended', (req: Request, res: Response) => {
       data: {
         channel: {
           byPlatform: channelByPlatform, onlineTotal, onlineOrders,
+          onlineUnpostedRevenue: onlineMetrics.unpostedRevenue,
+          onlineUnpostedOrders: onlineMetrics.unpostedOrders,
           offlineRevenue: Number(offlineRow.revenue), offlineOrders: Number(offlineRow.orders),
           orderTrend,
           retailRevenue: Number(retailRow.revenue), retailBills: Number(retailRow.bills),
           channels: [
             { unit: 'RETAIL', label: 'หน้าร้าน', revenue: Number(retailRow.revenue), orders: Number(retailRow.bills) },
             { unit: 'WHOLESALE', label: 'ขายส่ง', revenue: Number(offlineRow.revenue), orders: Number(offlineRow.orders) },
-            { unit: 'ONLINE', label: 'ออนไลน์', revenue: onlineTotal, orders: onlineOrders }
+            { unit: 'ONLINE', label: 'ออนไลน์', revenue: onlineTotal, orders: onlineOrders, unpostedRevenue: onlineMetrics.unpostedRevenue }
           ]
         },
         adsROI: {
