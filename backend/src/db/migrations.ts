@@ -3617,6 +3617,92 @@ export function runMonthCloseMigrations(db: any): void {
       db.prepare(`DELETE FROM line_user_mappings WHERE user_id LIKE 'master_%'`).run()
     })()
   } catch (e) { console.error('⚠️ line_master_links migration error:', e) }
+
+  // ==================== ออเดอร์ออนไลน์รายออเดอร์ (docs/contracts/online-orders.md) ====================
+  // เก็บเฉพาะค่ามาสก์ในฐานหลัก (PII ดิบอยู่ใน pii.db แยกไฟล์) · ไม่ลงบัญชี ไม่ตัดสต็อก ยกเว้นรับคืนข้ามเดือน
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS online_orders (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        shop_key TEXT NOT NULL,
+        order_no TEXT NOT NULL,
+        order_time TEXT,
+        order_date TEXT NOT NULL,
+        month TEXT NOT NULL,
+        status_raw TEXT,
+        status_group TEXT NOT NULL,
+        province TEXT,
+        district TEXT,
+        postal_code TEXT,
+        payment_method TEXT,
+        shipping_option TEXT,
+        tracking_no TEXT,
+        buyer_name_masked TEXT,
+        buyer_phone_masked TEXT,
+        address_masked TEXT,
+        first_seen_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_batch_id TEXT,
+        UNIQUE(tenant_id, platform, shop_key, order_no)
+      );
+      CREATE INDEX IF NOT EXISTS idx_online_orders_date ON online_orders(tenant_id, order_date);
+      CREATE INDEX IF NOT EXISTS idx_online_orders_geo ON online_orders(tenant_id, province, district);
+      CREATE INDEX IF NOT EXISTS idx_online_orders_status ON online_orders(tenant_id, status_group);
+
+      CREATE TABLE IF NOT EXISTS online_order_lines (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        order_id TEXT NOT NULL REFERENCES online_orders(id) ON DELETE CASCADE,
+        line_no INTEGER NOT NULL,
+        product_name TEXT NOT NULL,
+        variant_name TEXT,
+        qty REAL NOT NULL,
+        qty_returned REAL NOT NULL DEFAULT 0,
+        list_price REAL,
+        net_price REAL NOT NULL,
+        source_ref TEXT,
+        UNIQUE(order_id, line_no)
+      );
+      CREATE INDEX IF NOT EXISTS idx_online_order_lines_prod ON online_order_lines(tenant_id, product_name, variant_name);
+      CREATE INDEX IF NOT EXISTS idx_online_order_lines_ref ON online_order_lines(tenant_id, source_ref);
+
+      CREATE TABLE IF NOT EXISTS online_import_batches (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        shop_key TEXT NOT NULL,
+        rows_received INTEGER NOT NULL DEFAULT 0,
+        orders_inserted INTEGER NOT NULL DEFAULT 0,
+        orders_updated INTEGER NOT NULL DEFAULT 0,
+        lines_unlinked INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_online_import_batches_tenant ON online_import_batches(tenant_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS online_return_events (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        shop_key TEXT NOT NULL,
+        order_no TEXT NOT NULL,
+        order_month TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        variant_name TEXT,
+        source_ref TEXT,
+        qty_delta REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        detected_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolved_by TEXT,
+        stock_movement_id TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_online_return_events_status ON online_return_events(tenant_id, status);
+    `)
+    console.log('✅ Migration: online_orders / online_order_lines / online_import_batches / online_return_events ready')
+  } catch (e) { console.error('⚠️ online_orders migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

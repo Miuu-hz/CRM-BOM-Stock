@@ -367,13 +367,6 @@ export function postPlatformSettlement(input: PostSettlementInput): PostSettleme
   })()
 }
 
-export function listSettlements(tenantId: string, platform?: string) {
-  if (platform) {
-    return db.prepare(`SELECT * FROM platform_settlements WHERE tenant_id = ? AND platform = ? ORDER BY period_end DESC`).all(tenantId, platform)
-  }
-  return db.prepare(`SELECT * FROM platform_settlements WHERE tenant_id = ? ORDER BY period_end DESC`).all(tenantId)
-}
-
 // ============================================================
 // รับเงินโอนของรอบที่ลงไว้ก่อนแล้ว — ขั้น 3 ที่มาทีหลัง
 // ------------------------------------------------------------

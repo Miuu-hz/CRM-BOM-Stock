@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import { authenticate, requireMaster } from '../middleware/auth.middleware'
 import { getDb } from '../db/sqlite'
+import { deleteTenantPii } from '../db/piiConnection'
 import { getSubscription, PACK_FEATURES, ADDON_FEATURES, EXTRA_USERS } from '../services/subscription.service'
 import { lookupKey, priceDefinitions } from '../services/billing.catalog'
 import { changeSubscription, extendSubscription, previewChange, stopBilling } from '../services/billing.service'
@@ -249,7 +250,8 @@ router.delete('/tenant/:tenantId/purge', authenticate, requireMaster, async (req
   const deleted = db.transaction(() =>
     owned.reduce((n, t) => n + db.prepare(`DELETE FROM "${t}" WHERE tenant_id = ?`).run(tenantId).changes, 0)
   )()
-  res.json({ success: true, data: { tenantId, deleted } })
+  const piiDeleted = deleteTenantPii(tenantId)
+  res.json({ success: true, data: { tenantId, deleted, piiDeleted } })
 })
 
 // ==================== SUBSCRIPTIONS ====================

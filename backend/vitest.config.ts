@@ -9,6 +9,10 @@ const testDbPath = path.resolve(process.env.SQLITE_DB_PATH || path.resolve(__dir
 if (testDbPath === path.resolve(__dirname, 'dev.db')) {
   throw new Error('SQLITE_DB_PATH ชี้ไปที่ dev.db (ฐานข้อมูลจริง) — ห้ามรันเทสต์ใส่')
 }
+const testPiiDbPath = path.resolve(process.env.SQLITE_PII_DB_PATH || path.resolve(__dirname, 'test-pii.db'))
+if (testPiiDbPath === path.resolve(__dirname, 'pii.db') || (testPiiDbPath.endsWith('pii.db') && !path.basename(testPiiDbPath).includes('test'))) {
+  throw new Error('SQLITE_PII_DB_PATH ชี้ไปที่ pii.db (ฐานข้อมูล PII จริง) — ห้ามรันเทสต์ใส่')
+}
 
 export default defineConfig({
   test: {
@@ -24,6 +28,7 @@ export default defineConfig({
     // แต่ห้ามชี้ dev.db เด็ดขาด ไม่งั้นย้อนกลับไปเขียนใส่ production อย่างที่ว่าไว้ข้างบน
     env: {
       SQLITE_DB_PATH: testDbPath,
+      SQLITE_PII_DB_PATH: testPiiDbPath,
       JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret-for-vitest',
     },
     setupFiles: [path.resolve(__dirname, 'vitest.setup.ts')],

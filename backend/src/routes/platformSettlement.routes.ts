@@ -4,7 +4,6 @@ import {
   getFeeMappings,
   updateFeeMappings,
   postPlatformSettlement,
-  listSettlements,
   SettlementError,
   recordSettlementPayout,
 } from '../services/platformSettlement.service'
@@ -20,13 +19,25 @@ import {
   cancelSale,
 } from '../services/platformMonthSale.service'
 import { previewPosting, postMonth, unpostMonth } from '../services/platformMonthPosting.service'
+import {
+  getOnlineSummary,
+  listOnlineOrders,
+  getUnlinkedLines,
+  confirmOnlineMapping,
+  acceptAllOnlineProposals,
+  listReturnEvents,
+  restockReturnEvents,
+  getUnattributedReturns,
+  OnlineOrderError,
+  type OnlineSummaryGroupBy,
+} from '../services/onlineOrders.service'
 
 const router = Router()
 router.use(authenticate)
 
-// รับ error ของเฟส 2 ให้แปลงเป็น 400 พร้อมข้อความไทย — error อื่นที่ไม่รู้จักค่อย 500
+// รับ error ของเฟส 2 และออเดอร์ออนไลน์ให้แปลงเป็น 400 พร้อมข้อความไทย — error อื่นที่ไม่รู้จักค่อย 500
 function handlePhase2Error(res: Response, err: any, fallbackMessage: string) {
-  if (err instanceof PlatformMonthError || err instanceof StockItemRefError) {
+  if (err instanceof PlatformMonthError || err instanceof StockItemRefError || err instanceof OnlineOrderError) {
     return res.status(400).json({ success: false, message: err.message })
   }
   console.error(fallbackMessage, err)
@@ -42,10 +53,128 @@ function handlePostingError(res: Response, err: any, fallbackMessage: string) {
   res.status(500).json({ success: false, message: fallbackMessage })
 }
 
+// ==================== ออเดอร์ออนไลน์รายออเดอร์ (ค่ามาสก์เท่านั้น) ====================
+
+// GET /api/platform-settlement/online-orders/summary?from&to&groupBy&platform&shopKey
+router.get('/online-orders/summary', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from, to, groupBy, platform, shopKey } = req.query as Record<string, string | undefined>
+    const rows = getOnlineSummary(tenantId, {
+      from,
+      to,
+      platform,
+      shopKey,
+      groupBy: (groupBy || 'province') as OnlineSummaryGroupBy,
+    })
+    res.json({ success: true, data: rows })
+  } catch (err) {
+    handlePhase2Error(res, err, 'โหลดสรุปออเดอร์ออนไลน์ไม่สำเร็จ')
+  }
+})
+
+// GET /api/platform-settlement/online-orders/list?from&to&status&q&page (ค่ามาสก์เท่านั้น)
+router.get('/online-orders/list', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from, to, platform, shopKey, status, q, page, limit } = req.query as Record<string, string | undefined>
+    const data = listOnlineOrders(tenantId, {
+      from,
+      to,
+      platform,
+      shopKey,
+      status,
+      q,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    })
+    res.json({ success: true, data })
+  } catch (err) {
+    handlePhase2Error(res, err, 'โหลดรายการออเดอร์ออนไลน์ไม่สำเร็จ')
+  }
+})
+
+// GET /api/platform-settlement/online-orders/unlinked
+router.get('/online-orders/unlinked', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { from, to, platform, shopKey } = req.query as Record<string, string | undefined>
+    res.json({ success: true, data: getUnlinkedLines(tenantId, { from, to, platform, shopKey }) })
+  } catch (err) {
+    handlePhase2Error(res, err, 'โหลดรายการที่ยังไม่ผูกสินค้าไม่สำเร็จ')
+  }
+})
+
+// POST /api/platform-settlement/online-orders/mapping/confirm  body: { sourceRef, stockItemId, factor }
+router.post('/online-orders/mapping/confirm', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { sourceRef, stockItemId, factor } = req.body
+    if (!sourceRef || !stockItemId) {
+      return res.status(400).json({ success: false, message: 'ต้องระบุ sourceRef และ stockItemId' })
+    }
+    confirmOnlineMapping(tenantId, { sourceRef, stockItemId, factor: Number(factor) || 1 }, req.user!.email)
+    res.json({ success: true, data: getUnlinkedLines(tenantId) })
+  } catch (err) {
+    handlePhase2Error(res, err, 'ยืนยันคู่จับคู่สินค้าไม่สำเร็จ')
+  }
+})
+
+// POST /api/platform-settlement/online-orders/mapping/accept-all
+router.post('/online-orders/mapping/accept-all', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const result = acceptAllOnlineProposals(tenantId, req.user!.email)
+    res.json({ success: true, data: { ...result, rows: getUnlinkedLines(tenantId) } })
+  } catch (err) {
+    handlePhase2Error(res, err, 'ยืนยันข้อเสนอทั้งหมดไม่สำเร็จ')
+  }
+})
+
+// GET /api/platform-settlement/online-orders/returns?status
+router.get('/online-orders/returns', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { status } = req.query as { status?: string }
+    res.json({ success: true, data: listReturnEvents(tenantId, status) })
+  } catch (err) {
+    handlePhase2Error(res, err, 'โหลดรายการรับคืนข้ามเดือนไม่สำเร็จ')
+  }
+})
+
+// POST /api/platform-settlement/online-orders/returns/restock  body: { ids: string[] }
+router.post('/online-orders/returns/restock', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { ids } = req.body
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'ต้องระบุรายการที่ต้องการรับคืนเข้าสต็อก (ids)' })
+    }
+    const result = restockReturnEvents(tenantId, ids, req.user!.email)
+    res.json({ success: true, data: result })
+  } catch (err) {
+    handlePhase2Error(res, err, 'รับคืนเข้าสต็อกไม่สำเร็จ')
+  }
+})
+
+// GET /api/platform-settlement/online-orders/unattributed-returns?platform&shopKey&month
+router.get('/online-orders/unattributed-returns', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const { platform, shopKey, month } = req.query as { platform?: string; shopKey?: string; month?: string }
+    if (!platform || !shopKey || !month) {
+      return res.status(400).json({ success: false, message: 'ต้องระบุ platform, shopKey และ month' })
+    }
+    res.json({ success: true, data: getUnattributedReturns(tenantId, platform, shopKey, month) })
+  } catch (err) {
+    handlePhase2Error(res, err, 'โหลดรายการคืนที่ไม่ระบุออเดอร์ไม่สำเร็จ')
+  }
+})
+
 // ==================== เฟส 2: จับคู่ SKU + ยืนยันการขาย ====================
 
 // GET /api/platform-settlement/months — รายการรอบเดือนทั้งหมด (filter ?platform=)
-router.get('/months', (req: Request, res: Response) => {
+router.get('/months', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     const { platform } = req.query as { platform?: string }
@@ -56,7 +185,7 @@ router.get('/months', (req: Request, res: Response) => {
 })
 
 // GET /api/platform-settlement/months/:id/mapping — แถวที่ต้องจับคู่ SKU ของรอบนี้
-router.get('/months/:id/mapping', (req: Request, res: Response) => {
+router.get('/months/:id/mapping', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     res.json({ success: true, data: getMappingRows(tenantId, req.params.id) })
@@ -124,7 +253,7 @@ router.post('/months/:id/cancel-sale', requireRole('ADMIN', 'MASTER', 'MANAGER')
 // ==================== เฟส 3: ลงบัญชีรอบเดือน (ขาย/ต้นทุน/ค่าธรรมเนียม/ปรับปรุง/ถอนเงิน ผ่าน 1181) ====================
 
 // GET /api/platform-settlement/months/:id/posting-preview — ดู JV ที่จะลง ก่อนกดลงจริง
-router.get('/months/:id/posting-preview', (req: Request, res: Response) => {
+router.get('/months/:id/posting-preview', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     res.json({ success: true, data: previewPosting(tenantId, req.params.id) })
@@ -158,7 +287,7 @@ router.post('/months/:id/unpost', requireRole('ADMIN', 'MASTER', 'MANAGER'), (re
 // ==================== เฟส 1 (เดิม): ผูกค่าธรรมเนียม + ลงบัญชีรอบโอน ====================
 
 // GET /api/platform-settlement/fee-mappings
-router.get('/fee-mappings', (req: Request, res: Response) => {
+router.get('/fee-mappings', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
     res.json({ success: true, data: getFeeMappings(tenantId) })
@@ -180,18 +309,6 @@ router.put('/fee-mappings', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Req
   } catch (err) {
     console.error('Update fee mappings error:', err)
     res.status(500).json({ success: false, message: 'บันทึกการผูกค่าธรรมเนียมไม่สำเร็จ' })
-  }
-})
-
-// GET /api/platform-settlement  — ประวัติรอบ settlement ที่เคยยืนยันแล้ว
-router.get('/', (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { platform } = req.query as { platform?: string }
-    res.json({ success: true, data: listSettlements(tenantId, platform) })
-  } catch (err) {
-    console.error('List settlements error:', err)
-    res.status(500).json({ success: false, message: 'โหลดประวัติรอบ settlement ไม่สำเร็จ' })
   }
 })
 

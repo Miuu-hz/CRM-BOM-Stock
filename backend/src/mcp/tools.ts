@@ -20,12 +20,14 @@ import { registerFinanceTools } from './tools/finance'
 import { registerCrmTools } from './tools/crm'
 import { registerMarketingTools } from './tools/marketing'
 import { registerPlatformMonthTools } from './tools/platformMonth'
+import { registerOnlineOrderTools } from './tools/onlineOrders'
 import { registerBindingTools } from './tools/binding'
 import { registerPurchaseBillingTools } from './tools/purchaseBilling'
 import { registerSalesBillingTools } from './tools/salesBilling'
 import { registerMonthCloseTools } from './tools/monthClose'
 import { registerHrTools } from './tools/hr'
 import { loadPermUser, isBasicUser } from '../services/rbac.service'
+import { hasFeature } from '../services/subscription.service'
 import { isCashierOnly } from '../middleware/cashierScope'
 
 // โหมดอ่านอย่างเดียว (audit) — ผู้ใช้ mcp_scope='readonly' เห็นแค่ tool ใน allowlist นี้
@@ -36,7 +38,7 @@ export const READ_ONLY_TOOLS = new Set([
   'get_ar_aging', 'get_ap_aging', 'get_financial_summary', 'get_trial_balance', 'get_ledger',
   'get_stock_movements', 'explode_bom',
   'get_purchase_requests', 'get_suppliers', 'get_sales_orders',
-  'list_marketing_shops', 'get_customer_insights', 'get_quotations', 'platform_month_status',
+  'list_marketing_shops', 'get_customer_insights', 'get_quotations', 'platform_month_status', 'online_orders_query',
   'check_unit_issues', 'get_lead_source_performance',
   'get_close_checklist', 'get_close_pack',
   'hr_attendance_summary',
@@ -88,7 +90,11 @@ export function registerTools(server: IMcpServer, tenantId: string, userId = 'mc
   if (!basic) registerFinanceTools(target, tenantId, callerRole)
   registerCrmTools(target, tenantId)
   registerMarketingTools(target, tenantId)
-  if (!basic) registerPlatformMonthTools(target, tenantId, userId)
+  const hasPlatformFeature = callerRole === 'MASTER' || hasFeature(tenantId, 'platform_settlement')
+  if (!basic && hasPlatformFeature) {
+    registerPlatformMonthTools(target, tenantId, userId)
+    registerOnlineOrderTools(target, tenantId, userId)
+  }
   if (!basic) registerMonthCloseTools(target, tenantId, userId, callerName, callerRole)
   registerBindingTools(target, tenantId)
   registerPurchaseBillingTools(target, tenantId, userId, callerName, callerRole)

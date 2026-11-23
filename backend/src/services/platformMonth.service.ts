@@ -1,6 +1,7 @@
 import db from '../db/sqlite'
 import { generateId } from '../utils/id'
 import { normName } from './stockItem.service'
+import { relinkOnlineLines } from './onlineOrders.service'
 
 // ============================================================
 // รอบเดือนช่องทางขายแพลตฟอร์ม (Shopee ตอนนี้ — Lazada ตามมาทีหลัง) — เฟส 1
@@ -386,7 +387,15 @@ function assertOrdersInternal(d: OrdersPayload): void {
 // ── จับคู่ชื่อ orders ↔ products ของรอบเดียวกัน — ไม่มี product_id/variant_id ในไฟล์ orders ─────────────
 // variant_name ว่าง/'-' = จับคู่กับแถว parent ของสินค้าที่ไม่มีตัวเลือกเลย ไม่ใช่ parent ของสินค้าที่มีตัวเลือก
 // (สินค้ามีตัวเลือก ยอดต้องอยู่ที่แถว variant เท่านั้น — เหมือน assertProductsInternal ที่แยก parent/variant)
-function matchOrdersToProducts(orderRows: OrderRow[], productRows: any[]): { matchOf: Map<number, any>; unmatchedNames: string[]; ambiguousNames: string[] } {
+// แยกเป็น helper กลางให้ onlineOrders.service.ts ใช้กติกาเดียวกันโดยไม่ copy
+export interface ProductNameIndex {
+  variantMap: Map<string, any>
+  parentNoVariantMap: Map<string, any>
+  ambiguousKeys: Set<string>
+  ambiguousNames: string[]
+}
+
+export function buildProductNameIndex(productRows: any[]): ProductNameIndex {
   const groups = new Map<string, { parent?: any; variants: any[] }>()
   for (const pr of productRows) {
     if (!pr.product_id) continue
@@ -406,31 +415,56 @@ function matchOrdersToProducts(orderRows: OrderRow[], productRows: any[]): { mat
     if (g.variants.length > 0) {
       for (const v of g.variants) {
         const key = normName(v.product_name || productName) + '||' + normName(v.variant_name || '')
+        const ambKey = `V:${key}`
         if (variantMap.has(key)) {
-          if (!ambiguousKeys.has(key)) { ambiguousKeys.add(key); ambiguousNames.push([v.product_name || productName, v.variant_name].filter(Boolean).join(' · ')) }
+          if (!ambiguousKeys.has(ambKey)) {
+            ambiguousKeys.add(ambKey)
+            ambiguousNames.push([v.product_name || productName, v.variant_name].filter(Boolean).join(' · '))
+          }
         } else {
           variantMap.set(key, v)
         }
       }
     } else if (g.parent) {
       const key = normName(productName)
+      const ambKey = `P:${key}`
       if (parentNoVariantMap.has(key)) {
-        if (!ambiguousKeys.has(key)) { ambiguousKeys.add(key); ambiguousNames.push(productName) }
+        if (!ambiguousKeys.has(ambKey)) {
+          ambiguousKeys.add(ambKey)
+          ambiguousNames.push(productName)
+        }
       } else {
         parentNoVariantMap.set(key, g.parent)
       }
     }
   }
+  return { variantMap, parentNoVariantMap, ambiguousKeys, ambiguousNames }
+}
+
+export function lookupProductByName(
+  index: ProductNameIndex,
+  productName: string,
+  variantName?: string | null,
+): { match: any | null; ambiguous: boolean } {
+  const vn = normName(variantName || '')
+  const isNoVariant = vn === '' || vn === '-'
+  const key = isNoVariant ? normName(productName) : normName(productName) + '||' + vn
+  const ambKey = isNoVariant ? `P:${key}` : `V:${key}`
+  if (index.ambiguousKeys.has(ambKey)) return { match: null, ambiguous: true }
+  const match = isNoVariant ? index.parentNoVariantMap.get(key) : index.variantMap.get(key)
+  return { match: match ?? null, ambiguous: false }
+}
+
+function matchOrdersToProducts(orderRows: OrderRow[], productRows: any[]): { matchOf: Map<number, any>; unmatchedNames: string[]; ambiguousNames: string[] } {
+  const index = buildProductNameIndex(productRows)
   const matchOf = new Map<number, any>()
   const unmatchedNames: string[] = []
   orderRows.forEach((o, idx) => {
-    const vn = normName(o.variant_name || '')
-    const isNoVariant = vn === '' || vn === '-'
-    const match = isNoVariant ? parentNoVariantMap.get(normName(o.product_name)) : variantMap.get(normName(o.product_name) + '||' + vn)
+    const { match } = lookupProductByName(index, o.product_name, o.variant_name)
     if (match) matchOf.set(idx, match)
     else unmatchedNames.push([o.product_name, o.variant_name].filter(Boolean).join(' · '))
   })
-  return { matchOf, unmatchedNames, ambiguousNames }
+  return { matchOf, unmatchedNames, ambiguousNames: index.ambiguousNames }
 }
 
 // คำนวณ qty_net/sales_net ต่อแถวของ platform_month_products จากไฟล์ orders ที่จับคู่ได้ — รันทุกครั้งที่
@@ -558,7 +592,7 @@ export function submitFile(tenantId: string, input: SubmitFileInput): SubmitFile
   const shopKey = normShopKey(input.shopKey)
   if (!/^\d{4}-\d{2}$/.test(month)) throw new PlatformMonthError('รูปแบบ month ต้องเป็น YYYY-MM')
 
-  return db.transaction(() => {
+  const result = db.transaction(() => {
     const row = getOrCreateMonth(tenantId, platform, shopKey, month)
 
     if (row.status !== 'COLLECTING') {
@@ -671,6 +705,16 @@ export function submitFile(tenantId: string, input: SubmitFileInput): SubmitFile
 
     return { monthId: row.id, fileType, status: fresh.status, checks }
   })()
+
+  if (fileType === 'products') {
+    try {
+      relinkOnlineLines(tenantId, platform, shopKey)
+    } catch (err) {
+      console.error('⚠️ relinkOnlineLines error:', err)
+    }
+  }
+
+  return result
 }
 
 export interface MonthStatus {
