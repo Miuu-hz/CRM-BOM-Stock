@@ -4908,7 +4908,6 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
     { key: 'FULFILLED', label: t('sales.backorderStatus.fulfilled') },
   ]
 
-  const grandTotal = Number(detail?.total_amount ?? detail?.grand_total ?? itemRows.reduce((sum, r) => sum + r.amount, 0))
 
   const footer = (
     <div className="flex items-center justify-between w-full">
@@ -4955,18 +4954,8 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
       </DocSection>
 
       <DocSection title={t('sales.backorderDetail.itemsTitle')}>
-        <ItemsTable rows={itemRows} labels={itemLabels} />
+        <ItemsTable qtyOnly rows={itemRows} labels={itemLabels} />
       </DocSection>
-
-      {itemRows.length > 0 && (
-        <TotalsBox
-          rows={detail?.tax_amount ? [
-            { label: t('sales.common.subtotal'), value: Number(detail?.subtotal ?? (grandTotal - Number(detail.tax_amount))) },
-            { label: t('sales.common.tax'), value: Number(detail.tax_amount) },
-          ] : []}
-          grand={{ label: t('sales.common.grandTotal'), value: grandTotal }}
-        />
-      )}
 
       {detail?.notes && (
         <DocSection title={t('sales.common.notes')}>
