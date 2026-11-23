@@ -1241,22 +1241,22 @@ const Sales = () => {
       pages.push(totalPages)
     }
     return (
-      <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/40">
-        <p className="text-xs text-[var(--fg-4)]">
+      <div className="col-span-full flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 px-4 pb-3 sm:px-0 sm:pb-0 border-t border-[var(--border)]/40">
+        <p className="text-xs text-[var(--fg-4)] text-center sm:text-left">
           {t('sales.pagination.showing', { start: Math.min((currentPage - 1) * pageSize + 1, total), end: Math.min(currentPage * pageSize, total), total })}
         </p>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1">
           <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-            className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">‹</button>
+            className="px-1.5 sm:px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">‹</button>
           {pages.map((p, i) => p === '...'
-            ? <span key={`e${i}`} className="px-2 py-1 text-xs text-[var(--fg-4)]">…</span>
+            ? <span key={`e${i}`} className="px-1 sm:px-2 py-1 text-xs text-[var(--fg-4)]">…</span>
             : <button key={p} onClick={() => setCurrentPage(p as number)}
-                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-phopy-indigo text-white font-bold' : 'text-[var(--fg-3)] bg-[var(--bg)] hover:text-[var(--fg-1)]'}`}>
+                className={`px-1.5 sm:px-2.5 py-1 text-xs rounded-lg transition-colors ${currentPage === p ? 'bg-phopy-indigo text-white font-bold' : 'text-[var(--fg-3)] bg-[var(--bg)] hover:text-[var(--fg-1)]'}`}>
                 {p}
               </button>
           )}
           <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
-            className="px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">›</button>
+            className="px-1.5 sm:px-2 py-1 text-xs text-[var(--fg-3)] bg-[var(--bg)] rounded-lg disabled:opacity-30 hover:text-[var(--fg-1)] transition-colors">›</button>
         </div>
       </div>
     )
@@ -1397,25 +1397,25 @@ const Sales = () => {
     <FilterBar>
       <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder={placeholder} />
       {rows && (
-        // ชิปสถานะกันไว้อย่างน้อย 320px — ไม่งั้นโดนช่องวันที่/ปุ่มขวาบีบจนเหลือแค่ "ทั้ง" ให้ฝั่งขวาตกบรรทัดแทน
-        <div className="flex-1 min-w-[320px] flex"><FilterChips>
+        // ชิปสถานะกันไว้อย่างน้อย 320px จาก sm ขึ้นไป — ต่ำกว่า sm ปล่อยเต็มความกว้าง เลื่อนแนวนอน
+        <div className="w-full min-w-0 sm:w-auto sm:min-w-[320px] sm:flex-1 flex"><FilterChips>
           <StatusChips rows={rows} value={filterStatus} onChange={setFilterStatus} order={STATUS_ORDER} always={TAB_STATUSES[activeTab]}
             allLabel={t('sales.common.all')} labelOf={st => t((STATUS_CONFIG[st]?.labelKey ?? st) as any)} />
         </FilterChips></div>
       )}
-      <div className="flex flex-wrap items-center gap-2 ml-auto">
-        <div className="flex items-center gap-1.5 text-sm">
+      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
+        <div className="flex items-center gap-1.5 text-sm w-full sm:w-auto min-w-0">
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} aria-label="ตั้งแต่วันที่"
-            className="h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] px-2.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]" />
-          <span className="text-[var(--fg-4)] text-xs">{t('sales.common.to')}</span>
+            className="min-w-0 w-full flex-1 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] px-2 text-xs sm:text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]" />
+          <span className="text-[var(--fg-4)] text-xs shrink-0">{t('sales.common.to')}</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} aria-label="ถึงวันที่"
-            className="h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] px-2.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]" />
+            className="min-w-0 w-full flex-1 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] px-2 text-xs sm:text-sm text-[var(--fg-1)] focus:outline-none focus:border-[var(--primary)]" />
           {(dateFrom || dateTo) && (
             <button onClick={() => { setDateFrom(''); setDateTo('') }}
-              className="text-[var(--fg-4)] hover:text-danger text-xs px-1.5 py-1 rounded">{t('sales.common.clear')}</button>
+              className="text-[var(--fg-4)] hover:text-danger text-xs px-1.5 py-1 rounded shrink-0">{t('sales.common.clear')}</button>
           )}
         </div>
-        <div className="flex items-center gap-0.5 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1">
+        <div className="flex items-center gap-0.5 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1 shrink-0">
           {([25, 50, 100] as const).map(n => (
             <button key={n} onClick={() => { setPageSize(n); setCurrentPage(1) }}
               className={`h-full px-2.5 rounded-md text-xs font-medium transition-colors ${pageSize === n ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
@@ -1423,7 +1423,7 @@ const Sales = () => {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-0.5 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1">
+        <div className="flex items-center gap-0.5 h-9 bg-[var(--bg)] border border-[var(--border)] rounded-[10px] p-1 shrink-0">
           <button onClick={() => setViewMode('list')} title={t('sales.view.list')} aria-pressed={viewMode === 'list'}
             className={`h-full px-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[var(--primary)] text-white' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)]'}`}>
             <LayoutList className="w-3.5 h-3.5" />
@@ -1445,7 +1445,7 @@ const Sales = () => {
   // 12 ช่อง: เลขที่ 2 · ลูกค้า 3 · วันที่ 1 · ไปถึงไหน 2 · ยอด 1 · ขั้นต่อไป 2 · เมนู 1
   const docList = (head: React.ReactNode[], body: React.ReactNode, total: number) => (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
-      <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
+      <div className="hidden xl:grid grid-cols-12 gap-2 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
         <span className="col-span-2">{head[0]}</span><span className="col-span-3">{head[1]}</span>
         <span className="col-span-1">{head[2]}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
         <span className="col-span-1 text-right">{head[3]}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1" />
@@ -1457,29 +1457,52 @@ const Sales = () => {
   const docRow = (key: string, i: number, open: () => void, c: { number: React.ReactNode; party: React.ReactNode; date?: React.ReactNode; progress: React.ReactNode; total?: React.ReactNode; next?: React.ReactNode; menu: React.ReactNode }) => (
     <div key={key} role="button" tabIndex={0} onClick={open}
       onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open() } }}
-      className={`group grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
-      <div className="col-span-2 min-w-0">{c.number}</div>
-      <div className="col-span-3 min-w-0">{c.party}</div>
-      <div className="col-span-1 text-[var(--fg-3)] text-xs">{c.date}</div>
-      <div className="col-span-2 min-w-0">{c.progress}</div>
-      <div className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs tabular-nums">{c.total}</div>
-      <div className="col-span-2" onClick={e => e.stopPropagation()}>{c.next}</div>
-      <div className="col-span-1" onClick={e => e.stopPropagation()}>{c.menu}</div>
+      className={`group px-4 py-3 text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+      {/* จอต่ำกว่า xl (< 1280px): แสดง 2–3 บรรทัดซ้อน */}
+      <div className="xl:hidden flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">{c.number}</div>
+          {c.total && <div className="text-right text-[var(--fg-1)] font-medium text-xs tabular-nums shrink-0">{c.total}</div>}
+        </div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">{c.party}</div>
+          {c.date && <div className="text-[var(--fg-3)] text-xs shrink-0">{c.date}</div>}
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="min-w-0 flex-1">{c.progress}</div>
+          <div className="flex items-center gap-1 shrink-0 max-w-[70%]">
+            {c.next && <div className="w-full max-w-[220px] min-w-0" onClick={e => e.stopPropagation()}>{c.next}</div>}
+            <div className="shrink-0" onClick={e => e.stopPropagation()}>{c.menu}</div>
+          </div>
+        </div>
+      </div>
+      {/* จอ xl ขึ้นไป (>= 1280px): แสดง 12 คอลัมน์เดิมทุกประการ */}
+      <div className="hidden xl:grid grid-cols-12 gap-2 items-center">
+        <div className="col-span-2 min-w-0">{c.number}</div>
+        <div className="col-span-3 min-w-0">{c.party}</div>
+        <div className="col-span-1 text-[var(--fg-3)] text-xs">{c.date}</div>
+        <div className="col-span-2 min-w-0">{c.progress}</div>
+        <div className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs tabular-nums">{c.total}</div>
+        <div className="col-span-2" onClick={e => e.stopPropagation()}>{c.next}</div>
+        <div className="col-span-1" onClick={e => e.stopPropagation()}>{c.menu}</div>
+      </div>
     </div>
   )
   const docNo = (num: string, chips: React.ReactNode = null) => (
-    <>
-      <p className="font-mono text-xs text-[var(--primary)] group-hover:underline truncate">{num}</p>
-      {chips && <div className="flex items-center gap-1 mt-1 flex-wrap">{chips}</div>}
-    </>
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 flex-wrap xl:block">
+        <span className="font-mono text-xs text-[var(--primary)] group-hover:underline truncate">{num}</span>
+        {chips && <div className="flex items-center gap-1 xl:mt-1 flex-wrap">{chips}</div>}
+      </div>
+    </div>
   )
   const refChip = (text: string, tone = 'text-[var(--fg-4)] bg-gray-500/10') =>
-    <span key={text} className={`text-[10px] px-1.5 py-0.5 rounded leading-none ${tone}`}>{text}</span>
+    <span key={text} className={`text-[10px] px-1.5 py-0.5 rounded leading-none shrink-0 ${tone}`}>{text}</span>
   const partyCell = (name: string, sub?: string) => (
-    <>
+    <div className="min-w-0">
       <p className="text-[var(--fg-1)] font-medium truncate">{name}</p>
       <p className="text-[11px] text-[var(--fg-4)] truncate">{sub || '-'}</p>
-    </>
+    </div>
   )
   const statusText = (s: string) => t((STATUS_CONFIG[s]?.labelKey ?? s) as any)
   const deadView = (stages: string[], s: string): StageView | null =>
@@ -1549,7 +1572,9 @@ const Sales = () => {
               return (
                 <motion.div key={q.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-phopy-indigo/50 transition-colors">
+                  role="button" tabIndex={0} onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
+                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(q, t('sales.docType.quotation')) } }}
+                  className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-phopy-indigo/50 transition-colors cursor-pointer">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-[var(--primary)]">{q.quotation_number}</p>
@@ -1564,31 +1589,31 @@ const Sales = () => {
                     <span>{t('sales.common.itemCount', { count: q.item_count })}</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(q.total_amount)}</span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50" onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); handleViewDetail(q, t('sales.docType.quotation')) }}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       {t('sales.viewDetails')}
                     </button>
                     {['DRAFT', 'SENT'].includes(q.status) && (
-                      <button onClick={() => handleEditQT(q)}
+                      <button onClick={e => { e.stopPropagation(); handleEditQT(q) }}
                         className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
                     {q.status === 'DRAFT' && (
-                      <button onClick={() => handleDeleteQuotation(q.id)}
+                      <button onClick={e => { e.stopPropagation(); handleDeleteQuotation(q.id) }}
                         className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg" title={t('sales.common.delete')}>
                         <Trash2 className="w-3 h-3" />
                       </button>
                     )}
                     {next && (
-                      <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
+                      <button onClick={e => { e.stopPropagation(); handleUpdateQTStatus(q.id, next.status) }}
                         className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
                         <CheckCircle className="w-3 h-3" /> {next.label}
                       </button>
                     )}
                     {q.status === 'ACCEPTED' && !convertedQtNumbers.has(q.quotation_number) && (
-                      <button onClick={() => handleConvertQtToSO(q)}
+                      <button onClick={e => { e.stopPropagation(); handleConvertQtToSO(q) }}
                         className="flex-1 py-1.5 text-xs font-medium text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] flex items-center justify-center gap-1">
                         <ArrowRight className="w-3 h-3" /> {t('sales.actions.convertToSO')}
                       </button>
@@ -1701,10 +1726,12 @@ const Sales = () => {
               return (
                 <motion.div key={order.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-purple-500/40 transition-colors">
+                  role="button" tabIndex={0} onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
+                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(order, t('sales.docType.salesOrder')) } }}
+                  className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-purple-500/40 transition-colors cursor-pointer">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))} className="font-mono text-sm font-semibold text-purple-400 hover:underline" title={t('sales.viewDetails')}>{order.so_number}</button>
+                      <button onClick={e => { e.stopPropagation(); handleViewDetail(order, t('sales.docType.salesOrder')) }} className="font-mono text-sm font-semibold text-purple-400 hover:underline" title={t('sales.viewDetails')}>{order.so_number}</button>
                       <div className="flex items-center gap-1 mt-1 flex-wrap">
                         {order.quotation_number && (
                           <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
@@ -1744,37 +1771,37 @@ const Sales = () => {
                     <span>{t('sales.common.itemCount', { count: order.item_count })}</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50" onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); handleViewDetail(order, t('sales.docType.salesOrder')) }}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       {t('sales.viewDetails')}
                     </button>
                     {order.status === 'DRAFT' && (
-                      <button onClick={() => handleEditSO(order)}
+                      <button onClick={e => { e.stopPropagation(); handleEditSO(order) }}
                         className="px-3 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
                     {order.status === 'DRAFT' && (
-                      <button onClick={() => handleDeleteSO(order.id)}
+                      <button onClick={e => { e.stopPropagation(); handleDeleteSO(order.id) }}
                         className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.delete')}>
                         <Trash2 className="w-3 h-3" />
                       </button>
                     )}
                     {next && (
-                      <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
+                      <button onClick={e => { e.stopPropagation(); handleUpdateSOStatus(order.id, next.status) }}
                         className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
                         <CheckCircle className="w-3 h-3" /> {next.label}
                       </button>
                     )}
                     {['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
-                      <button onClick={() => handleCreateInvoiceFromSO(order)}
+                      <button onClick={e => { e.stopPropagation(); handleCreateInvoiceFromSO(order) }}
                         className="flex-1 py-1.5 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] flex items-center justify-center gap-1">
                         <Receipt className="w-3 h-3" /> {t('sales.actions.createInvoiceShort')}
                       </button>
                     )}
                     {!hasDO && ['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
-                      <button onClick={() => handleIssueDeliveryOrder(order.id)}
+                      <button onClick={e => { e.stopPropagation(); handleIssueDeliveryOrder(order.id) }}
                         className="px-3 py-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] flex items-center gap-1" title={t('sales.actions.issueDeliveryOrder')}>
                         <Package className="w-3 h-3" />
                       </button>
@@ -1843,7 +1870,9 @@ const Sales = () => {
               return (
                 <motion.div key={inv.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className={`bg-[var(--surface)] border rounded-xl p-4 hover:brightness-105 transition-all ${isOverdue ? 'border-danger/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
+                  role="button" tabIndex={0} onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
+                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(inv, t('sales.docType.invoice')) } }}
+                  className={`bg-[var(--surface)] border rounded-xl p-4 hover:brightness-105 transition-all cursor-pointer ${isOverdue ? 'border-danger/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-warning">{inv.invoice_number}</p>
@@ -1875,13 +1904,13 @@ const Sales = () => {
                       </span>
                     </span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50" onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); handleViewDetail(inv, t('sales.docType.invoice')) }}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       {t('sales.viewDetails')}
                     </button>
                     {isUnpaid && (
-                      <button onClick={() => handleRecordPayment(inv)}
+                      <button onClick={e => { e.stopPropagation(); handleRecordPayment(inv) }}
                         className="flex-1 py-1.5 text-xs font-medium text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] transition-colors flex items-center justify-center gap-1">
                         <DollarSign className="w-3 h-3" /> {t('sales.actions.collectPayment')}
                       </button>
@@ -1936,7 +1965,9 @@ const Sales = () => {
             {items.map((cn, i) => (
               <motion.div key={cn.id}
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-danger/40 transition-colors">
+                role="button" tabIndex={0} onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
+                onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(cn, t('sales.docType.creditNote')) } }}
+                className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-danger/40 transition-colors cursor-pointer">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <p className="font-mono text-sm font-semibold text-danger">{cn.cn_number}</p>
@@ -1951,13 +1982,13 @@ const Sales = () => {
                   <span className="text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</span>
                   <span className="col-span-2 text-[var(--fg-3)]">{t('sales.common.reason')} {cn.reason}</span>
                 </div>
-                <div className="pt-3 border-t border-[var(--border)]/50 flex gap-2">
-                  <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
+                <div className="pt-3 border-t border-[var(--border)]/50 flex gap-2" onClick={e => e.stopPropagation()}>
+                  <button onClick={e => { e.stopPropagation(); handleViewDetail(cn, t('sales.docType.creditNote')) }}
                     className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     {t('sales.viewDetails')}
                   </button>
                   {cn.status === 'DRAFT' && (
-                    <button onClick={() => handleDeleteCreditNote(cn.id)} title={t('sales.common.delete')}
+                    <button onClick={e => { e.stopPropagation(); handleDeleteCreditNote(cn.id) }} title={t('sales.common.delete')}
                       className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg transition-colors">
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -2009,7 +2040,9 @@ const Sales = () => {
             {items.map((bo, i) => (
               <motion.div key={bo.id}
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-orange-500/40 transition-colors">
+                role="button" tabIndex={0} onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
+                onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(bo, t('sales.docType.backorder')) } }}
+                className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-orange-500/40 transition-colors cursor-pointer">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <p className="font-mono text-sm font-semibold text-warning">{bo.bo_number}</p>
@@ -2022,8 +2055,8 @@ const Sales = () => {
                 {bo.original_do && (
                   <p className="text-xs text-[var(--fg-3)] mb-3">{t('sales.common.originalDO')} <span className="text-[var(--fg-2)]">{bo.original_do}</span></p>
                 )}
-                <div className="pt-3 border-t border-[var(--border)]/50">
-                  <button onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
+                <div className="pt-3 border-t border-[var(--border)]/50" onClick={e => e.stopPropagation()}>
+                  <button onClick={e => { e.stopPropagation(); handleViewDetail(bo, t('sales.docType.backorder')) }}
                     className="w-full py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                     {t('sales.viewDetails')}
                   </button>
@@ -2087,7 +2120,9 @@ const Sales = () => {
               return (
                 <motion.div key={do_.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-blue-500/40 transition-colors">
+                  role="button" tabIndex={0} onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
+                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(do_, t('sales.docType.deliveryOrder')) } }}
+                  className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 hover:border-blue-500/40 transition-colors cursor-pointer">
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-blue-400">{do_.do_number}</p>
@@ -2101,19 +2136,19 @@ const Sales = () => {
                     <span>{t('sales.common.deliveryDate')} <span className="text-[var(--fg-2)]">{formatDate(do_.delivery_date)}</span></span>
                     <span className="text-right">{do_.driver_name || '-'}</span>
                   </div>
-                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50">
-                    <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
+                  <div className="flex gap-2 pt-3 border-t border-[var(--border)]/50" onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); handleViewDetail(do_, t('sales.docType.deliveryOrder')) }}
                       className="flex-1 py-1.5 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)] transition-colors">
                       {t('sales.viewDetails')}
                     </button>
                     {next && (
-                      <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
+                      <button onClick={e => { e.stopPropagation(); handleUpdateDOStatus(do_.id, next.status) }}
                         className={`flex-1 py-1.5 text-xs rounded-lg flex items-center justify-center gap-1 ${next.color}`}>
                         <CheckCircle className="w-3 h-3" /> {next.label}
                       </button>
                     )}
                     {do_.status === 'DRAFT' && (
-                      <button onClick={() => handleDeleteDO(do_.id)}
+                      <button onClick={e => { e.stopPropagation(); handleDeleteDO(do_.id) }}
                         className="px-3 py-1.5 text-xs text-danger bg-[var(--danger-soft)] rounded-lg" title={t('sales.common.delete')}>
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -3320,13 +3355,13 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
         )}
         {!loading && (
           <>
-            <button type="button" onClick={() => handlePrint('a4')} className={btnSecondary}>
+            <button type="button" onClick={() => handlePrint('a4')} className={btnSecondary} title={t('sales.actions.printA4')} aria-label={t('sales.actions.printA4')}>
               <Printer className="w-4 h-4" />
-              <span>{t('sales.actions.printA4')}</span>
+              <span className="hidden sm:inline">{t('sales.actions.printA4')}</span><span className="sm:hidden">A4</span>
             </button>
-            <button type="button" onClick={() => handlePrint('thermal')} className={btnSecondary}>
+            <button type="button" onClick={() => handlePrint('thermal')} className={btnSecondary} title={t('sales.actions.printThermal')} aria-label={t('sales.actions.printThermal')}>
               <Printer className="w-4 h-4" />
-              <span>{t('sales.actions.printThermal')}</span>
+              <span className="hidden sm:inline">{t('sales.actions.printThermal')}</span><span className="sm:hidden">80mm</span>
             </button>
           </>
         )}
@@ -3815,7 +3850,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
             className={btnSecondary}
           >
             <Printer className="w-4 h-4" />
-            <span>{t('sales.actions.printA4')}</span>
+            <span className="hidden sm:inline">{t('sales.actions.printA4')}</span><span className="sm:hidden">A4</span>
           </button>
         )}
         <button
@@ -3825,7 +3860,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
           className={btnSecondary}
         >
           <FileText className="w-4 h-4" />
-          <span>{t('sales.detail.docTrail', { defaultValue: 'สายเอกสาร' })}</span>
+          <span className="hidden sm:inline">{t('sales.detail.docTrail')}</span>
         </button>
         {salesOrder.status === 'PENDING_APPROVAL' && (
           <span className="flex items-center gap-1.5 text-xs text-amber-500 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 font-medium">
@@ -4168,13 +4203,13 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => handlePrintInv('a4')} disabled={!detail} title={t('sales.actions.printInvoiceA4')} className={btnSecondary}>
-                <Printer className="w-4 h-4" /> {t('sales.actions.printA4')}
+                <Printer className="w-4 h-4" /> <span className="hidden sm:inline">{t('sales.actions.printA4')}</span><span className="sm:hidden">A4</span>
               </button>
               <button onClick={() => handlePrintInv('thermal')} disabled={!detail} title={t('sales.actions.printThermal')} className={btnSecondary}>
-                <Printer className="w-4 h-4" /> {t('sales.actions.printThermal')}
+                <Printer className="w-4 h-4" /> <span className="hidden sm:inline">{t('sales.actions.printThermal')}</span><span className="sm:hidden">80mm</span>
               </button>
-              <button onClick={() => setSourceDocModal({ kind: 'INVOICE', refId: invoice.id, title: invoice.invoice_number })} className={btnSecondary}>
-                <FileText className="w-4 h-4" /> {t('sales.detail.docTrail')}
+              <button onClick={() => setSourceDocModal({ kind: 'INVOICE', refId: invoice.id, title: invoice.invoice_number })} className={btnSecondary} title={t('sales.detail.docTrail')} aria-label={t('sales.detail.docTrail')}>
+                <FileText className="w-4 h-4" /> <span className="hidden sm:inline">{t('sales.detail.docTrail')}</span>
               </button>
               {isUnpaid ? (
                 !showPayment && (
@@ -4704,7 +4739,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
                 title={t('sales.detail.docTrail')}
               >
                 <FileText className="w-4 h-4" />
-                <span>{t('sales.detail.docTrail')}</span>
+                <span className="hidden sm:inline">{t('sales.detail.docTrail')}</span>
               </button>
               <button
                 type="button"
@@ -4713,7 +4748,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
                 title={t('sales.actions.printCreditNoteA4')}
               >
                 <Printer className="w-4 h-4" />
-                <span>{t('sales.actions.printCreditNoteA4')}</span>
+                <span className="hidden sm:inline">{t('sales.actions.printCreditNoteA4')}</span>
               </button>
               {creditNote.status === 'DRAFT' && (
                 <button
@@ -5047,9 +5082,9 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
         {deliveryOrder.status !== 'SHIPPED' && (
           <LockedNote text={t('sales.detail.lockedNote')} />
         )}
-        <button type="button" onClick={handlePrint} className={btnSecondary}>
+        <button type="button" onClick={handlePrint} className={btnSecondary} title={t('sales.actions.printDeliveryA4')} aria-label={t('sales.actions.printDeliveryA4')}>
           <Printer className="w-4 h-4" />
-          {t('sales.actions.printDeliveryA4')}
+          <span className="hidden sm:inline">{t('sales.actions.printDeliveryA4')}</span>
         </button>
         {deliveryOrder.status === 'SHIPPED' && (
           <button type="button" onClick={handleDeliver} disabled={saving} className={btnPrimary}>
