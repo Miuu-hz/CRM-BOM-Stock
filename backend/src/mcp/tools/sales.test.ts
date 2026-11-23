@@ -55,7 +55,7 @@ afterEach(() => {
 describe('ขอบเขตของ MCP ฝั่งขาย — ออกได้แค่ใบเสนอราคา', () => {
   it('ไม่มี tool ที่สร้างใบสั่งขาย/ใบแจ้งหนี้/รับชำระเงินให้ AI เรียกอีกแล้ว', () => {
     const { server, tools } = fakeServer()
-    registerSalesTools(server, 'tenant_x', 'user_x', 'ทดสอบ', 'ADMIN')
+    registerSalesTools(server, 'tenant_x')
     registerSalesBillingTools(server, 'tenant_x', 'user_x', 'ทดสอบ', 'ADMIN')
     for (const banned of ['create_sales_order', 'update_sales_order', 'update_sales_order_status',
                           'create_sales_invoice', 'record_customer_payment']) {
@@ -68,7 +68,7 @@ describe('ขอบเขตของ MCP ฝั่งขาย — ออกไ
   it('สร้างใบเสนอราคาได้ พร้อมสร้างลูกค้าใหม่ให้ถ้ายังไม่มี', async () => {
     const t = setupTenant()
     const { server, tools } = fakeServer()
-    registerSalesTools(server, t, 'user_x', 'ทดสอบ', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parseOk(await tools['create_quotation']({
       items: [{ description: 'หมอนหนุน', quantity: 50, unitPrice: 250, unit: 'ใบ' }],
@@ -93,7 +93,7 @@ describe('ขอบเขตของ MCP ฝั่งขาย — ออกไ
     const t = setupTenant()
     db.prepare('UPDATE company_settings SET vat_inclusive = 1 WHERE tenant_id = ?').run(t)
     const { server, tools } = fakeServer()
-    registerSalesTools(server, t, 'user_x', 'ทดสอบ', 'ADMIN')
+    registerSalesTools(server, t)
 
     const res = parseOk(await tools['create_quotation']({
       items: [{ description: 'ของทดสอบ', quantity: 1, unitPrice: 107, unit: 'ชิ้น' }],

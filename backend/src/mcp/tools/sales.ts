@@ -28,7 +28,7 @@ const itemSchema = z.object({
   description: z.string().describe('ชื่อสินค้า/เมนู'),
   quantity: z.number().positive(),
   unit: z.string().optional().describe('หน่วย เช่น pcs, kg, box — ถ้าไม่ระบุใช้หน่วยของ stock item ที่ match ได้'),
-  unitPrice: z.number().min(0).optional().describe('ราคาขายต่อหน่วย (บาท) — ถ้าไม่ระบุและบรรทัดนี้ผูกกับสินค้าในสต็อกได้ จะคิดให้จาก stock_items.unit_price (ต่อหน่วยฐาน) คูณตัวแปลงหน่วย; บรรทัดที่ไม่ผูกสินค้า (free text) ต้องระบุเอง'),
+  unitPrice: z.number().min(0).optional().describe('ราคาขายต่อหน่วย (บาท) — ถ้าไม่ระบุและบรรทัดนี้ผูกกับสินค้าในสต็อกได้ จะคิดให้จาก stock_items.unit_price (ต่อหน่วยฐาน) คูณตัวแปลงหน่วย; บรรทัดที่ไม่ผูกสินค้า (free text) ต้องระบุเองและต้อง > 0'),
   discountPercent: z.number().min(0).max(100).optional().describe('ส่วนลด % ต่อรายการ'),
 })
 
@@ -67,7 +67,7 @@ function resolveCustomer(tenantId: string, hintRaw?: string) {
   return { customer: { id: cusId, name: hint }, created: true }
 }
 
-export function registerSalesTools(server: IMcpServer, tenantId: string, userId: string, callerName: string, callerRole: string): void {
+export function registerSalesTools(server: IMcpServer, tenantId: string): void {
   // ── create_quotation ────────────────────────────────────────────────────────
   // สาย MCP ออกได้แค่ "ใบเสนอราคา" เท่านั้นตามที่เจ้าของระบบกำหนด
   // ใบสั่งขาย/ใบแจ้งหนี้/รับชำระ ต้องทำในระบบเอง เพราะเป็นขั้นที่ตัดสต็อกและลงบัญชีจริง
@@ -77,6 +77,7 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
 ใช้เมื่อผู้ใช้ต้องการเสนอราคา ตีราคา หรือทำใบเสนอราคาให้ลูกค้า
 ⚠️ นี่คือเอกสารขายชนิดเดียวที่สร้างผ่าน AI ได้ — ใบสั่งขาย ใบแจ้งหนี้ และการรับชำระเงิน
 ต้องทำในระบบเอง (ขั้นตอนเหล่านั้นตัดสต็อกและลงบัญชีจริง)
+⚠️ ห้ามใช้กับออเดอร์ marketplace (Shopee/Lazada) — ให้ใช้ online_submit_orders แทน
 ตัวอย่าง: "เสนอราคาหมอน 50 ใบ ใบละ 250 ให้บริษัทเอบีซี" → create_quotation(items=[...], customer_hint="เอบีซี")`,
     {
       items: z.array(itemSchema).min(1).describe('รายการสินค้าที่เสนอราคา'),
@@ -116,8 +117,14 @@ export function registerSalesTools(server: IMcpServer, tenantId: string, userId:
       const pricedItems: PricedItem[] = []
       for (let idx = 0; idx < items.length; idx++) {
         const item = items[idx]
-        if (item.unitPrice != null) { pricedItems.push({ ...item, unitPrice: item.unitPrice }); continue }
         const stockItemId = matches[idx].exact?.id ?? null
+        if (item.unitPrice != null) {
+          if (!stockItemId && item.unitPrice <= 0) {
+            return ok({ success: false, code: 'UNIT_PRICE_REQUIRED', message: `"${item.description}" ไม่ได้ผูกกับสินค้าในสต็อก ต้องระบุ unitPrice มากกว่า 0` })
+          }
+          pricedItems.push({ ...item, unitPrice: item.unitPrice })
+          continue
+        }
         if (!stockItemId) {
           return ok({ success: false, code: 'UNIT_PRICE_REQUIRED', message: `"${item.description}" ไม่ได้ผูกกับสินค้าในสต็อก ต้องระบุ unitPrice เอง` })
         }

@@ -115,7 +115,7 @@ export function registerBindingTools(server: IMcpServer, tenantId: string): void
       const target = items[line - 1]
 
       const stockItem = db.prepare(
-        "SELECT id, name, COALESCE(base_unit, unit) as unit, quantity FROM stock_items WHERE id = ? AND tenant_id = ? AND status = 'ACTIVE'"
+        "SELECT id, name, COALESCE(base_unit, unit) as unit, quantity FROM stock_items WHERE id = ? AND tenant_id = ? AND status != 'INACTIVE'"
       ).get(stock_item_id, tenantId) as any
       if (!stockItem) return ok({ success: false, message: `ไม่พบสินค้าในสต็อก: ${stock_item_id}` })
 
