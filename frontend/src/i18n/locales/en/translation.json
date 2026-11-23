@@ -1914,6 +1914,27 @@
         "shipped": "Shipped",
         "delivered": "Delivered"
       }
+    },
+    "detail": {
+      "title": "{{doc}} details",
+      "no": "#",
+      "item": "Item",
+      "customerInfo": "Customer",
+      "docInfo": "Document",
+      "taxId": "Tax ID",
+      "address": "Address",
+      "phone": "Phone",
+      "reference": "Reference",
+      "vatMode": "VAT mode",
+      "paymentTerms": "Payment terms",
+      "contact": "Contact",
+      "driver": "Driver",
+      "createdBy": "Prepared by",
+      "noItems": "No items",
+      "afterDiscount": "After discount",
+      "lockedNote": "Confirmed — cannot be edited",
+      "paidAmount": "Paid",
+      "status": "Status"
     }
   },
   "crm": {
