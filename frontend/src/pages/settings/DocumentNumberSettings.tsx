@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import { Hash, Save, RefreshCw, Info } from 'lucide-react'
 import api from '../../services/api'
 import toast from 'react-hot-toast'
@@ -13,23 +13,33 @@ interface DocFormat {
   reset_period: string
 }
 
-const DOC_TYPES: { value: string; label: string; defaultPrefix: string }[] = [
-  { value: 'PURCHASE_REQUEST', label: 'ใบขอซื้อ (PR)',        defaultPrefix: 'PR' },
-  { value: 'PO',               label: 'ใบสั่งซื้อ (PO)',       defaultPrefix: 'PO' },
-  { value: 'GOODS_RECEIPT',    label: 'ใบรับของ (GR)',        defaultPrefix: 'GR' },
-  { value: 'PURCHASE_INVOICE', label: 'ใบแจ้งหนี้ซื้อ (PI)',   defaultPrefix: 'PI' },
-  { value: 'SUPPLIER_PAYMENT', label: 'ใบจ่ายเงิน (PAY)',     defaultPrefix: 'PAY' },
-  { value: 'QUOTATION',        label: 'ใบเสนอราคา (QT)',      defaultPrefix: 'QT' },
-  { value: 'SALES_ORDER',      label: 'ออเดอร์ขาย (SO)',      defaultPrefix: 'SO' },
-  { value: 'DELIVERY_ORDER',   label: 'ใบส่งของ (DO)',        defaultPrefix: 'DO' },
-  { value: 'INVOICE',          label: 'ใบแจ้งหนี้ขาย (INV)',   defaultPrefix: 'INV' },
-  { value: 'RECEIPT',          label: 'ใบเสร็จ (RC)',          defaultPrefix: 'RC' },
-  { value: 'CREDIT_NOTE',      label: 'ใบลดหนี้ (CN)',        defaultPrefix: 'CN' },
-  { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS' },
-  { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT' },
-  { value: 'WORK_ORDER',       label: 'ใบสั่งผลิต (WO)',      defaultPrefix: 'WO' },
-  { value: 'JOURNAL',          label: 'สมุดรายวัน (JV)',      defaultPrefix: 'JV' },
-  { value: 'STOCK_ADJUSTMENT', label: 'ใบปรับสต็อก (ADJ)',    defaultPrefix: 'ADJ' },
+// ทุก docType ที่ backend ส่งเข้า formatDocumentNumber ต้องอยู่ที่นี่ ไม่งั้นตั้งค่าไม่ได้ (เคยขาด 8 ชนิด)
+// group = หัวข้อแบ่งตาราง · defaultPrefix = prefix ที่โค้ดใช้ตอนยังไม่เปิดรูปแบบ (ตัวอักษร/ตัวเลขเท่านั้น)
+const DOC_TYPES: { value: string; label: string; defaultPrefix: string; group: string }[] = [
+  { value: 'PURCHASE_REQUEST', label: 'ใบขอซื้อ (PR)',        defaultPrefix: 'PR',  group: 'จัดซื้อ' },
+  { value: 'PO',               label: 'ใบสั่งซื้อ (PO)',       defaultPrefix: 'PO',  group: 'จัดซื้อ' },
+  { value: 'GOODS_RECEIPT',    label: 'ใบรับของ (GR)',        defaultPrefix: 'GR',  group: 'จัดซื้อ' },
+  { value: 'PURCHASE_INVOICE', label: 'ใบแจ้งหนี้ซื้อ (PI)',   defaultPrefix: 'PI',  group: 'จัดซื้อ' },
+  { value: 'SUPPLIER_PAYMENT', label: 'ใบจ่ายเงิน (PAY)',     defaultPrefix: 'PAY', group: 'จัดซื้อ' },
+  { value: 'PURCHASE_RETURN',  label: 'ใบคืนสินค้า (PRT)',    defaultPrefix: 'PRT', group: 'จัดซื้อ' },
+  { value: 'QUOTATION',        label: 'ใบเสนอราคา (QT)',      defaultPrefix: 'QT',  group: 'ขาย' },
+  { value: 'SALES_ORDER',      label: 'ออเดอร์ขาย (SO)',      defaultPrefix: 'SO',  group: 'ขาย' },
+  { value: 'DELIVERY_ORDER',   label: 'ใบส่งของ (DO)',        defaultPrefix: 'DO',  group: 'ขาย' },
+  { value: 'BACKORDER',        label: 'ใบค้างส่ง (BO)',       defaultPrefix: 'BO',  group: 'ขาย' },
+  { value: 'INVOICE',          label: 'ใบแจ้งหนี้ขาย (INV)',   defaultPrefix: 'INV', group: 'ขาย' },
+  { value: 'RECEIPT',          label: 'ใบเสร็จ (RC)',          defaultPrefix: 'RC',  group: 'ขาย' },
+  { value: 'CREDIT_NOTE',      label: 'ใบลดหนี้ (CN)',        defaultPrefix: 'CN',  group: 'ขาย' },
+  { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS', group: 'POS' },
+  { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT', group: 'POS' },
+  { value: 'POS_DAILY_SALES',  label: 'สรุปยอดขาย POS รายวัน', defaultPrefix: 'POSSUM', group: 'POS' },
+  { value: 'WORK_ORDER',       label: 'ใบสั่งผลิต (WO)',      defaultPrefix: 'WO',  group: 'ผลิต / คลัง' },
+  { value: 'SUBCONTRACT',      label: 'ใบจ้างผลิต (SC)',      defaultPrefix: 'SC',  group: 'ผลิต / คลัง' },
+  { value: 'SUBCON_ISSUE',     label: 'ใบเบิกวัตถุดิบให้ผู้รับจ้าง (SMI)', defaultPrefix: 'SMI', group: 'ผลิต / คลัง' },
+  { value: 'SUBCON_RECEIPT',   label: 'ใบรับงานจากผู้รับจ้าง (SRC)', defaultPrefix: 'SRC', group: 'ผลิต / คลัง' },
+  { value: 'STOCK_ADJUSTMENT', label: 'ใบปรับสต็อก (ADJ)',    defaultPrefix: 'ADJ', group: 'ผลิต / คลัง' },
+  { value: 'JOURNAL',          label: 'สมุดรายวัน (JV)',      defaultPrefix: 'JV',  group: 'บัญชี' },
+  { value: 'WHT_CERT',         label: 'หนังสือรับรองหัก ณ ที่จ่าย (WHT)', defaultPrefix: 'WHT', group: 'บัญชี' },
+  { value: 'APPROVAL_REQUEST', label: 'คำขออนุมัติ (APR)',     defaultPrefix: 'APR', group: 'บัญชี' },
 ]
 
 // เลือกได้ละเอียดแค่ที่วันที่ในเลขแยกได้ — backend ถอยเป็นช่วงใหญ่ขึ้นเองด้วย (utils/docSeq.ts seqBucket)
@@ -200,11 +210,18 @@ export default function DocumentNumberSettings() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
-            {DOC_TYPES.map(dt => {
+            {DOC_TYPES.map((dt, i) => {
               const f = formats[dt.value]
               if (!f) return null
+              const groupHead = i === 0 || DOC_TYPES[i - 1].group !== dt.group
               return (
-                <tr key={dt.value} className={`hover:bg-[var(--surface-2)]/20 ${!f.enabled ? 'opacity-50' : ''}`}>
+                <Fragment key={dt.value}>
+                {groupHead && (
+                  <tr className="bg-[var(--surface-2)]/50">
+                    <td colSpan={8} className="px-4 py-2 text-xs font-semibold text-[var(--fg-3)]">{dt.group}</td>
+                  </tr>
+                )}
+                <tr className={`hover:bg-[var(--surface-2)]/20 ${!f.enabled ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-2.5 font-medium text-[var(--fg-1)]">{dt.label}</td>
                   <td className="px-2 py-2.5 text-center">
                     <button
@@ -274,6 +291,7 @@ export default function DocumentNumberSettings() {
                     </span>
                   </td>
                 </tr>
+                </Fragment>
               )
             })}
           </tbody>
