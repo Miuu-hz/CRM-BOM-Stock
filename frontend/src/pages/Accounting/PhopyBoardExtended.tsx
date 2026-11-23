@@ -47,7 +47,7 @@ export function ChannelPerformance({ data }: { data: ExtendedData }) {
       <div className="flex items-center gap-2 mb-4">
         <ShoppingBag className="w-5 h-5 text-[var(--primary)]" />
         <h2 className="text-lg font-bold text-[var(--fg-1)]">Channel Performance</h2>
-        <span className="text-xs text-[var(--fg-3)] ml-1">หน้าร้าน / ขายส่ง / ออนไลน์ · Revenue per Platform · Order Trend</span>
+        <span className="text-xs text-[var(--fg-3)] ml-1">หน้าร้าน / ขายส่ง / ออนไลน์ · ยอดตามออเดอร์ต่อ Platform · Order Trend</span>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Online vs Offline Donut */}
@@ -63,7 +63,7 @@ export function ChannelPerformance({ data }: { data: ExtendedData }) {
           </ResponsiveContainer>
           <div className="space-y-2 mt-1">
             {channel.channels.map((c, i) => {
-              const unposted = c.unit === 'ONLINE' ? (c.unpostedRevenue ?? channel.onlineUnpostedRevenue ?? 0) : 0
+              const unposted = c.unit === 'ONLINE' ? (c.unpostedOrderSales ?? channel.onlineUnpostedOrderSales ?? 0) : 0
               return (
                 <div key={c.unit} className="space-y-0.5">
                   <div className="flex items-center justify-between text-sm gap-2">
@@ -79,7 +79,7 @@ export function ChannelPerformance({ data }: { data: ExtendedData }) {
                   {unposted > 0 && (
                     <div className="flex justify-end">
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[var(--warning)]/15 text-[color:var(--warning,#f59e0b)] text-[11px] font-medium">
-                        +฿{fmt(unposted)} ยังไม่ลงบัญชี
+                        +฿{fmt(unposted)} ยอดตามออเดอร์ (รวม VAT · ยังไม่ลงบัญชี)
                       </span>
                     </div>
                   )}
@@ -89,9 +89,10 @@ export function ChannelPerformance({ data }: { data: ExtendedData }) {
           </div>
         </motion.div>
 
-        {/* Revenue per Platform */}
+        {/* Order Sales per Platform */}
         <motion.div {...fade(0.05)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
-          <p className="text-sm font-semibold text-[var(--fg-2)] mb-3">รายได้ต่อ Platform</p>
+          <p className="text-sm font-semibold text-[var(--fg-2)] mb-0.5">ยอดตามออเดอร์ต่อ Platform</p>
+          <p className="text-[11px] text-[var(--fg-4)] mb-3">ยอดตามออเดอร์ (รวม VAT · ยังไม่ใช่ยอดบัญชี)</p>
           {channel.byPlatform.length === 0 ? (
             <p className="text-xs text-[var(--fg-4)] text-center py-8">ไม่มีข้อมูล Online</p>
           ) : (
@@ -99,8 +100,8 @@ export function ChannelPerformance({ data }: { data: ExtendedData }) {
               <BarChart data={channel.byPlatform} layout="vertical" margin={{ left: 8 }}>
                 <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--fg-3)' }} tickFormatter={v => '฿' + fmt(v)} />
                 <YAxis type="category" dataKey="platform" tick={{ fontSize: 11, fill: 'var(--fg-2)' }} width={60} />
-                <Tooltip formatter={(v: number) => '฿' + fmt(v)} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                <Bar dataKey="revenue" fill={COLORS[0]} radius={[0, 4, 4, 0]} />
+                <Tooltip formatter={(v: number) => ['฿' + fmt(v), 'ยอดตามออเดอร์ (รวม VAT · ยังไม่ใช่ยอดบัญชี)']} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                <Bar dataKey="orderSales" name="ยอดตามออเดอร์ (รวม VAT · ยังไม่ใช่ยอดบัญชี)" fill={COLORS[0]} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

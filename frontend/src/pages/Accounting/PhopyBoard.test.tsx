@@ -235,4 +235,64 @@ describe('PhopyBoard', () => {
     await screen.findByText(/ยังไม่ได้ตั้งงบประมาณ — ตั้งได้ที่ บัญชี > รายงาน > งบประมาณเทียบจริง/)
     expect(screen.getByText(/ตั้งงบประมาณปี/)).toBeTruthy()
   })
+
+  it('chapter 3 displays ONLINE ledger revenue with unpostedOrderSales VAT label', async () => {
+    const summaryWithOnline = {
+      ...mockSummary,
+      businessUnits: [
+        { unit: 'ONLINE', revenue: 650, cogs: 0, expense: 0, adjust: 0, netProfit: 650, breakdown: [] },
+      ],
+      onlineSummary: { orders: 2, ledgerRevenue: 650, unpostedOrderSales: 200, unpostedOrders: 1 },
+    }
+    mockGet.mockImplementation((url: string) => {
+      if (url.includes('/phopy-board/summary')) return Promise.resolve({ data: { success: true, data: summaryWithOnline } })
+      if (url.includes('/phopy-board/extended')) return Promise.resolve({ data: { success: true, data: mockExtended } })
+      if (url.includes('/phopy-board/cfo-summary')) return Promise.resolve({ data: { success: true, data: mockCfoSummary } })
+      return Promise.resolve({ data: { success: true, data: null } })
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/accounting/phopy-board?chapter=3']}>
+        <PhopyBoard />
+      </MemoryRouter>
+    )
+
+    await screen.findByText('+฿200 ยอดตามออเดอร์ (รวม VAT · ยังไม่ลงบัญชี)')
+    expect(screen.getByText('(2 ออเดอร์)')).toBeTruthy()
+  })
+
+  it('chapter 5 labels byPlatform orderSales and unpostedOrderSales as VAT-inclusive non-ledger figures', async () => {
+    const extendedWithOnline = {
+      ...mockExtended,
+      channel: {
+        ...mockExtended.channel,
+        byPlatform: [{ platform: 'shopee', orderSales: 500, orders: 1 }],
+        onlineTotal: 650,
+        onlineOrders: 2,
+        onlineUnpostedOrderSales: 200,
+        onlineUnpostedOrders: 1,
+        channels: [
+          { unit: 'ONLINE', label: 'ออนไลน์', revenue: 650, orders: 2, unpostedOrderSales: 200 },
+        ],
+      },
+    }
+    mockGet.mockImplementation((url: string) => {
+      if (url.includes('/phopy-board/summary')) return Promise.resolve({ data: { success: true, data: mockSummary } })
+      if (url.includes('/phopy-board/extended')) return Promise.resolve({ data: { success: true, data: extendedWithOnline } })
+      if (url.includes('/phopy-board/cfo-summary')) return Promise.resolve({ data: { success: true, data: mockCfoSummary } })
+      if (url.startsWith('/dashboard/top-customers')) return Promise.resolve({ data: { success: true, data: [] } })
+      return Promise.resolve({ data: { success: true, data: null } })
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/accounting/phopy-board?chapter=5']}>
+        <PhopyBoard />
+      </MemoryRouter>
+    )
+
+    await screen.findByText('ยอดตามออเดอร์ (รวม VAT · ยังไม่ใช่ยอดบัญชี)')
+    expect(screen.queryByText('รายได้ต่อ Platform')).toBeNull()
+    expect(screen.getByText('+฿200 ยอดตามออเดอร์ (รวม VAT · ยังไม่ลงบัญชี)')).toBeTruthy()
+    expect(screen.getByText('฿650 (100.0%)')).toBeTruthy()
+  })
 })

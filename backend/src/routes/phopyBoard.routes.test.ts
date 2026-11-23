@@ -80,3 +80,63 @@ describe('GET /phopy-board/summary + /extended', () => {
     expect(budgetDecision.text).not.toContain('2027')
   })
 })
+
+describe('GET /phopy-board/summary + /extended (online orders contract 7)', () => {
+  const user = createTestUser({ role: 'MASTER' })
+  const t = user.tenantId
+  seedChartOfAccounts(t)
+  const acc = (code: string) => (db.prepare('SELECT id FROM accounts WHERE tenant_id = ? AND code = ?').get(t, code) as { id: string }).id
+
+  // ONLINE ledger revenue = 650 (distinct from sum of net_price = 700 to verify ledger-only revenue)
+  const jeId = generateId()
+  db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, description, is_posted, business_unit)
+    VALUES (?, ?, ?, '2026-10-31', 'PLATFORM_MONTH', 'online settlement', 1, 'ONLINE')`).run(jeId, t, 'JV-ON-' + jeId.slice(0, 6))
+  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, debit, credit)
+    VALUES (?, ?, ?, ?, 1, 650, 0)`).run(generateId(), t, jeId, acc('1104'))
+  db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, debit, credit)
+    VALUES (?, ?, ?, ?, 2, 0, 650)`).run(generateId(), t, jeId, acc('4101'))
+
+  // Shopee posted, Lazada unposted (COLLECTING)
+  db.prepare(`INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status) VALUES (?, ?, 'shopee', 's1', '2026-10', 'POSTED')`).run(generateId(), t)
+  db.prepare(`INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status) VALUES (?, ?, 'lazada', 's2', '2026-10', 'COLLECTING')`).run(generateId(), t)
+
+  const insertOrder = (platform: string, shopKey: string, orderNo: string, date: string, status: string, qty: number, qtyRet: number, netPrice: number) => {
+    const oid = generateId()
+    db.prepare(`INSERT INTO online_orders (id, tenant_id, platform, shop_key, order_no, order_date, month, status_group, first_seen_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, '2026-10', ?, '2026-10-10T00:00:00Z', '2026-10-10T00:00:00Z')`).run(oid, t, platform, shopKey, orderNo, date, status)
+    db.prepare(`INSERT INTO online_order_lines (id, tenant_id, order_id, line_no, product_name, qty, qty_returned, net_price)
+      VALUES (?, ?, ?, 1, 'Item', ?, ?, ?)`).run(generateId(), t, oid, qty, qtyRet, netPrice)
+  }
+  insertOrder('shopee', 's1', 'ORD-1', '2026-10-10', 'COMPLETED', 2, 0, 500)
+  insertOrder('lazada', 's2', 'ORD-2', '2026-10-12', 'ACTIVE', 2, 1, 400) // net after return = 200 (unposted)
+  insertOrder('lazada', 's2', 'ORD-3', '2026-10-15', 'CANCELLED', 1, 0, 999) // excluded
+
+  const q = '?startDate=2026-10-01&endDate=2026-10-31'
+
+  it('summary + extended แยกยอดบัญชี ONLINE กับ orderSales/unpostedOrderSales ชัดเจน', async () => {
+    const sumRes = await request(app).get('/api/phopy-board/summary' + q).set('Authorization', 'Bearer ' + user.token)
+    expect(sumRes.status).toBe(200)
+    const os = sumRes.body.data.onlineSummary
+    expect(os).toEqual({ orders: 2, ledgerRevenue: 650, unpostedOrderSales: 200, unpostedOrders: 1 })
+    expect(os).not.toHaveProperty('unpostedRevenue')
+
+    const extRes = await request(app).get('/api/phopy-board/extended' + q).set('Authorization', 'Bearer ' + user.token)
+    expect(extRes.status).toBe(200)
+    const ch = extRes.body.data.channel
+    expect(ch.onlineTotal).toBe(650)
+    expect(ch.onlineOrders).toBe(2)
+    expect(ch.onlineUnpostedOrderSales).toBe(200)
+    expect(ch.onlineUnpostedOrders).toBe(1)
+    expect(ch).not.toHaveProperty('onlineUnpostedRevenue')
+
+    expect(ch.byPlatform).toEqual([
+      { platform: 'shopee', orderSales: 500, orders: 1 },
+      { platform: 'lazada', orderSales: 200, orders: 1 },
+    ])
+    expect(ch.byPlatform.every((p: any) => !('revenue' in p))).toBe(true)
+
+    const onlineCh = ch.channels.find((c: any) => c.unit === 'ONLINE')
+    expect(onlineCh).toEqual({ unit: 'ONLINE', label: 'ออนไลน์', revenue: 650, orders: 2, unpostedOrderSales: 200 })
+    expect(onlineCh).not.toHaveProperty('unpostedRevenue')
+  })
+})
