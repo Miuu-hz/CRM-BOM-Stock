@@ -1889,6 +1889,31 @@
       "invoice": "Invoice",
       "receipt": "Collected",
       "outstanding": "{{amount}} still uncollected — this deal is not closed"
+    },
+    "nextStep": {
+      "soCreated": "Sales order created",
+      "invoiced": "Invoiced",
+      "fullyCollected": "Fully collected",
+      "delivered": "Delivered"
+    },
+    "stage": {
+      "qt": {
+        "draft": "Draft",
+        "sent": "Sent",
+        "accepted": "Accepted",
+        "converted": "SO created"
+      },
+      "inv": {
+        "issued": "Issued",
+        "partial": "Partly paid",
+        "paid": "Paid"
+      },
+      "do": {
+        "draft": "Draft",
+        "ready": "Ready",
+        "shipped": "Shipped",
+        "delivered": "Delivered"
+      }
     }
   },
   "crm": {

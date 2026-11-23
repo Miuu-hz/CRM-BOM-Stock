@@ -16,6 +16,7 @@ import { useModalClose } from '../hooks/useModalClose'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { FilterBar, FilterSearch, FilterChips, StatusChips, SortLabel, sortRows, type SortState } from '../components/common/FilterBar'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
+import { RowMenu, StagePips, NextStepCell, type StageView, type NextStep } from '../components/common/DocRow'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
@@ -1260,15 +1261,6 @@ const Sales = () => {
     )
   }
 
-  const PageSizeSelect = () => (
-    <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value) as 25|50|100); setCurrentPage(1) }}
-      className="px-2 py-1.5 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--fg-2)] focus:outline-none focus:border-phopy-indigo">
-      <option value={25}>{t('sales.pagination.perPage', { count: 25 })}</option>
-      <option value={50}>{t('sales.pagination.perPage', { count: 50 })}</option>
-      <option value={100}>{t('sales.pagination.perPage', { count: 100 })}</option>
-    </select>
-  )
-
   // ── Pending counts for tab badges ──────────────────────────────────────────
   // pending* tab-badge counts now come from badgeCounts (fetched from DB directly, see above)
 
@@ -1404,10 +1396,11 @@ const Sales = () => {
     <FilterBar>
       <FilterSearch value={searchQuery} onChange={setSearchQuery} placeholder={placeholder} />
       {rows && (
-        <FilterChips>
+        // ชิปสถานะกันไว้อย่างน้อย 320px — ไม่งั้นโดนช่องวันที่/ปุ่มขวาบีบจนเหลือแค่ "ทั้ง" ให้ฝั่งขวาตกบรรทัดแทน
+        <div className="flex-1 min-w-[320px] flex"><FilterChips>
           <StatusChips rows={rows} value={filterStatus} onChange={setFilterStatus} order={STATUS_ORDER} always={TAB_STATUSES[activeTab]}
             allLabel={t('sales.common.all')} labelOf={st => t((STATUS_CONFIG[st]?.labelKey ?? st) as any)} />
-        </FilterChips>
+        </FilterChips></div>
       )}
       <div className="flex flex-wrap items-center gap-2 ml-auto">
         <div className="flex items-center gap-1.5 text-sm">
@@ -1445,6 +1438,54 @@ const Sales = () => {
   )
 
 
+  // ── แถวเอกสารแบบเดียวกับหน้าจัดซื้อ ──────────────────────────────────────────
+  // คลิกตรงไหนของแถวก็เปิดใบนั้น (เดิมต้องเล็งปุ่ม "ดู" เล็ก ๆ ท้ายแถว เลขที่สีน้ำเงินกดไม่ได้)
+  // ช่องขั้นต่อไป/เมนู ⋯ หยุด event ไว้ จะได้ไม่เปิดใบซ้อนตอนกดปุ่ม
+  // 12 ช่อง: เลขที่ 2 · ลูกค้า 3 · วันที่ 1 · ไปถึงไหน 2 · ยอด 1 · ขั้นต่อไป 2 · เมนู 1
+  const docList = (head: React.ReactNode[], body: React.ReactNode, total: number) => (
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
+        <span className="col-span-2">{head[0]}</span><span className="col-span-3">{head[1]}</span>
+        <span className="col-span-1">{head[2]}</span><span className="col-span-2">{t('purchase.common.progress')}</span>
+        <span className="col-span-1 text-right">{head[3]}</span><span className="col-span-2">{t('purchase.common.nextStep')}</span><span className="col-span-1" />
+      </div>
+      {body}
+      {Pagination({ total })}
+    </div>
+  )
+  const docRow = (key: string, i: number, open: () => void, c: { number: React.ReactNode; party: React.ReactNode; date?: React.ReactNode; progress: React.ReactNode; total?: React.ReactNode; next?: React.ReactNode; menu: React.ReactNode }) => (
+    <div key={key} role="button" tabIndex={0} onClick={open}
+      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open() } }}
+      className={`group grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm border-b border-[var(--border)]/20 cursor-pointer transition-colors ${i % 2 === 1 ? 'bg-[var(--surface-2)]/20 hover:bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}`}>
+      <div className="col-span-2 min-w-0">{c.number}</div>
+      <div className="col-span-3 min-w-0">{c.party}</div>
+      <div className="col-span-1 text-[var(--fg-3)] text-xs">{c.date}</div>
+      <div className="col-span-2 min-w-0">{c.progress}</div>
+      <div className="col-span-1 text-right text-[var(--fg-1)] font-medium text-xs tabular-nums">{c.total}</div>
+      <div className="col-span-2" onClick={e => e.stopPropagation()}>{c.next}</div>
+      <div className="col-span-1" onClick={e => e.stopPropagation()}>{c.menu}</div>
+    </div>
+  )
+  const docNo = (num: string, chips: React.ReactNode = null) => (
+    <>
+      <p className="font-mono text-xs text-[var(--primary)] group-hover:underline truncate">{num}</p>
+      {chips && <div className="flex items-center gap-1 mt-1 flex-wrap">{chips}</div>}
+    </>
+  )
+  const refChip = (text: string, tone = 'text-[var(--fg-4)] bg-gray-500/10') =>
+    <span key={text} className={`text-[10px] px-1.5 py-0.5 rounded leading-none ${tone}`}>{text}</span>
+  const partyCell = (name: string, sub?: string) => (
+    <>
+      <p className="text-[var(--fg-1)] font-medium truncate">{name}</p>
+      <p className="text-[11px] text-[var(--fg-4)] truncate">{sub || '-'}</p>
+    </>
+  )
+  const statusText = (s: string) => t((STATUS_CONFIG[s]?.labelKey ?? s) as any)
+  const deadView = (stages: string[], s: string): StageView | null =>
+    ['CANCELLED', 'REJECTED', 'EXPIRED'].includes(s) ? { stages, idx: 0, dead: statusText(s) } : null
+  const cancelledStep: NextStep = { kind: 'locked', label: t('purchase.nextStep.cancelled') }
+  const viewItem = (open: () => void) => ({ label: t('sales.viewDetails'), onClick: open })
+
   // ── Quotations ─────────────────────────────────────────────────────────────
   const QuotationsContent = () => {
     const filtered = filterItems(quotations, ['quotation_number', 'customer_name'], 'quotation_date')
@@ -1453,11 +1494,19 @@ const Sales = () => {
       DRAFT: { status: 'SENT', label: t('sales.actions.sendQuotation'), color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
       SENT:  { status: 'ACCEPTED', label: t('sales.status.approved'), color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
     }
+    const qtSO = (q: Quotation) => salesOrders.find(so => so.quotation_number === q.quotation_number && so.status !== 'CANCELLED')
+    const qtStages = [t('sales.stage.qt.draft'), t('sales.stage.qt.sent'), t('sales.stage.qt.accepted'), t('sales.stage.qt.converted')]
+    const qtNext = (q: Quotation, so?: SalesOrder): NextStep => {
+      if (so) return { kind: 'done', label: t('sales.nextStep.soCreated'), docNumber: so.so_number, onClick: () => setDetailSO(so) }
+      const n = qtNextStatus[q.status]
+      if (n) return { kind: 'action', label: n.label, onClick: () => handleUpdateQTStatus(q.id, n.status) }
+      if (q.status === 'ACCEPTED') return { kind: 'action', label: t('sales.actions.convertToSOFull'), onClick: () => handleConvertQtToSO(q) }
+      return cancelledStep
+    }
     return (
       <div className="space-y-3">
         {ListToolbar({ rows: searchItems(quotations, ['quotation_number', 'customer_name'], 'quotation_date'), placeholder: t('sales.searchQuotation'), action: (
           <>
-            {PageSizeSelect()}
             <button onClick={() => setActiveTab('templates')}
               className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:border-phopy-indigo text-sm">
               <LayoutTemplate className="w-4 h-4" /> {t('sales.common.template')}
@@ -1472,75 +1521,25 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><FileText className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyQuotation')}</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'quotation_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel(t('sales.common.date'), 'quotation_date')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.expiryDate'), 'expiry_date')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.total'), 'total_amount', 'right')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {items.map(q => {
-                  const next = qtNextStatus[q.status]
-                  return (
-                  <tr key={q.id} className="hover:bg-[var(--surface-2)] transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-mono text-xs font-semibold text-[var(--primary)]">{q.quotation_number}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-[var(--fg-1)] font-medium">{q.customer_name}</p>
-                      <p className="text-xs text-[var(--fg-4)]">{q.customer_code}</p>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--fg-3)] text-xs hidden sm:table-cell">{formatDate(q.quotation_date)}</td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={`text-xs font-medium ${q.expiry_date && q.expiry_date.slice(0, 10) < todayStr() ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
-                        {formatDate(q.expiry_date)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center"><StatusBadge status={q.status} /></td>
-                    <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(q.total_amount)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <button onClick={() => handleViewDetail(q, t('sales.docType.quotation'))}
-                          className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
-                        {['DRAFT', 'SENT'].includes(q.status) && (
-                          <button onClick={() => handleEditQT(q)}
-                            className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                        )}
-                        {next && (
-                          <button onClick={() => handleUpdateQTStatus(q.id, next.status)}
-                            className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
-                            <CheckCircle className="w-3 h-3" /> {next.label}
-                          </button>
-                        )}
-                        {q.status === 'ACCEPTED' && !convertedQtNumbers.has(q.quotation_number) && (
-                          <button onClick={() => handleConvertQtToSO(q)}
-                            className="px-2.5 py-1 text-xs text-[var(--primary)] bg-phopy-indigo/10 rounded-lg hover:bg-[var(--primary-soft)] flex items-center gap-1">
-                            <ArrowRight className="w-3 h-3" /> SO
-                          </button>
-                        )}
-                        {q.status === 'DRAFT' && (
-                          <button onClick={() => handleDeleteQuotation(q.id)}
-                            className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg hover:bg-[var(--danger-soft)]">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )})}
-              </tbody>
-            </table>
-            {Pagination({ total: filtered.length })}
-          </div>
+          docList([sortLabel(t('sales.common.number'), 'quotation_number'), sortLabel(t('sales.common.customer'), 'customer_name'), sortLabel(t('sales.common.date'), 'quotation_date'), sortLabel(t('sales.common.total'), 'total_amount', 'right')],
+            items.map((q, i) => {
+              const so = qtSO(q)
+              const expired = q.expiry_date && q.expiry_date.slice(0, 10) < todayStr()
+              const open = () => handleViewDetail(q, t('sales.docType.quotation'))
+              return docRow(q.id, i, open, {
+                number: docNo(q.quotation_number),
+                party: partyCell(q.customer_name, q.customer_code),
+                date: <>{formatDate(q.quotation_date)}{q.expiry_date && <p className={`text-[10px] ${expired ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.expiryDate')} {formatDate(q.expiry_date)}</p>}</>,
+                progress: <StagePips view={deadView(qtStages, q.status) ?? { stages: qtStages, idx: q.status === 'DRAFT' ? 0 : q.status === 'SENT' ? 1 : so ? 3 : 2 }} />,
+                total: formatCurrency(q.total_amount),
+                next: <NextStepCell step={qtNext(q, so)} />,
+                menu: <RowMenu label={t('purchase.rowMenu.more')} items={[
+                  viewItem(open),
+                  ...(['DRAFT', 'SENT'].includes(q.status) ? [{ label: t('sales.common.edit'), onClick: () => handleEditQT(q) }] : []),
+                  ...(q.status === 'DRAFT' ? [{ label: t('sales.common.delete'), onClick: () => handleDeleteQuotation(q.id), danger: true }] : []),
+                ]} />,
+              })
+            }), filtered.length)
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((q, i) => {
@@ -1626,12 +1625,24 @@ const Sales = () => {
       PARTIAL:    { status: 'DELIVERED',  label: t('sales.status.delivered'),  color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
       DELIVERED:  { status: 'COMPLETED',  label: t('sales.status.completed'),   color: 'text-success bg-success/10 hover:bg-[var(--success-soft)]' },
     }
+    const soStages = SO_DELIVERY_STEPS.map(s => s.label)
+    // ขั้นต่อไปของใบสั่งขาย: เดินสถานะส่งของก่อน · ส่งจบแล้วค่อยเป็นเรื่องใบแจ้งหนี้/เก็บเงิน
+    const soNext = (o: SalesOrder): NextStep => {
+      if (o.status === 'CANCELLED') return cancelledStep
+      const inv = invoices.find(i => i.so_number === o.so_number && i.status !== 'CANCELLED')
+      if (o.status === 'COMPLETED' && o.payment_status === 'PAID' && inv)
+        return { kind: 'done', label: t('purchase.nextStep.cycleClosed'), docNumber: inv.invoice_number, onClick: () => setDetailInv(inv) }
+      const n = soNextStatus[o.status]
+      if (n) return { kind: 'action', label: n.label, onClick: () => handleUpdateSOStatus(o.id, n.status) }
+      if (o.status !== 'COMPLETED') return { kind: 'locked', label: statusText(o.status) }
+      if (inv) return { kind: 'done', label: t('sales.nextStep.invoiced'), docNumber: inv.invoice_number, onClick: () => setDetailInv(inv) }
+      return { kind: 'action', label: t('sales.actions.createInvoice'), onClick: () => handleCreateInvoiceFromSO(o) }
+    }
 
     return (
       <div className="space-y-3">
         {ListToolbar({ rows: searchItems(salesOrders, ['so_number', 'customer_name'], 'order_date'), placeholder: t('sales.searchOrder'), action: (
           <>
-            {PageSizeSelect()}
             <button onClick={handleCreateSalesOrder}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> {t('sales.createOrder')}
@@ -1642,135 +1653,41 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyOrder')}</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'so_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel(t('sales.common.orderDate'), 'order_date')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.deliveryDate'), 'delivery_date')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.deliveryStatus'), 'status')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium hidden lg:table-cell">{sortLabel(t('sales.common.payment'), 'payment_status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.total'), 'total_amount', 'right')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {items.map(order => {
-                  const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
-                  const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
-                  const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
-                  const next = soNextStatus[order.status]
-                  const orderDOs = doBySoNumber.get(order.so_number) || []
-                  const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
-                  // ส่งครบ+เก็บเงินครบ = ปิดครบวงจร โชว์แบบหน้า PO ว่าจบที่ใบแจ้งหนี้ใบไหน
-                  const closedInv = order.status === 'COMPLETED' && order.payment_status === 'PAID'
-                    ? invoices.find(i => i.so_number === order.so_number && i.status !== 'CANCELLED') : undefined
-                  return (
-                    <tr key={order.id} className="hover:bg-[var(--surface-2)] transition-colors">
-                      <td className="px-4 py-3">
-                        <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))} className="font-mono text-xs font-semibold text-purple-400 hover:underline" title={t('sales.viewDetails')}>{order.so_number}</button>
-                        <div className="flex items-center gap-1 mt-1 flex-wrap">
-                          {order.quotation_number && (
-                            <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">QT: {order.quotation_number}</span>
-                          )}
-                          {(() => {
-                            const doAll = orderDOs
-                            const doDraft = doAll.filter(d => d.status === 'DRAFT')
-                            const doShipped = doAll.filter(d => d.status === 'SHIPPED')
-                            return (<>
-                              {doShipped.length > 0 && (
-                                <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">DO ×{doShipped.length}</span>
-                              )}
-                              {doDraft.length > 0 && (
-                                <span className="text-[10px] text-warning bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">DO {t('sales.creditNoteStatus.draft')} ×{doDraft.length}</span>
-                              )}
-                            </>)
-                          })()}
-                          {(() => { const invCount = invCountBySoNumber.get(order.so_number) || 0; return invCount > 0 ? (
-                            <span className="text-[10px] text-[var(--primary)] bg-phopy-indigo/10 px-1.5 py-0.5 rounded">INV ×{invCount}</span>
-                          ) : null })()}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="text-[var(--fg-1)] font-medium">{order.customer_name}</p>
-                        <p className="text-xs text-[var(--fg-4)]">{order.customer_code}</p>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{formatDate(order.order_date)}</td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span className={`text-xs font-medium ${isLate ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
-                          {formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-0.5 justify-center">
-                          {SO_DELIVERY_STEPS.slice(0, 5).map((s, i) => (
-                            <div key={s.status} className={`h-1.5 rounded-full flex-1 ${i <= stepIdx ? 'bg-phopy-indigo' : 'bg-[var(--border)]'}`} style={{ minWidth: 12 }} />
-                          ))}
-                        </div>
-                        <p className={`text-xs text-center mt-1 font-medium ${step?.color || 'text-[var(--fg-3)]'}`}>{step?.label ?? t((STATUS_CONFIG[order.status]?.labelKey ?? order.status) as any)}</p>
-                        {(order.pending_qty ?? 0) > 0 && (
-                          <p className="text-xs text-center text-warning">{t('sales.statusBadge.pendingDelivery', { count: order.pending_qty })}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center hidden lg:table-cell">
-                        <StatusBadge payment status={order.payment_status} />
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</td>
-                      <td className="px-4 py-3 text-right">
-                        {closedInv ? (
-                        <button onClick={() => handleViewDetail(closedInv, t('sales.docType.invoice'))}
-                          aria-label={`${t('purchase.nextStep.cycleClosed')} ${closedInv.invoice_number}`}
-                          className="inline-flex items-center gap-1.5 min-h-[40px] px-3 rounded-lg hover:bg-[var(--bg)] transition-colors">
-                          <CheckCircle className="w-3.5 h-3.5 text-success shrink-0" />
-                          <span className="text-xs text-[var(--fg-3)]">{t('purchase.nextStep.cycleClosed')}</span>
-                          <span className="text-xs font-mono text-[var(--primary)]">{closedInv.invoice_number}</span>
-                        </button>
-                        ) : (
-                        <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleViewDetail(order, t('sales.docType.salesOrder'))}
-                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
-                          {order.status === 'DRAFT' && (
-                            <button onClick={() => handleEditSO(order)}
-                              className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.edit')}>
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                          )}
-                          {order.status === 'DRAFT' && (
-                            <button onClick={() => handleDeleteSO(order.id)}
-                              className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.delete')}>
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                          {next && (
-                            <button onClick={() => handleUpdateSOStatus(order.id, next.status)}
-                              className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
-                              <CheckCircle className="w-3 h-3" /> {next.label}
-                            </button>
-                          )}
-                          {['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
-                            <button onClick={() => handleCreateInvoiceFromSO(order)}
-                              className="px-2 py-1 text-xs text-warning bg-[var(--warning-soft)] rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-1">
-                              <Receipt className="w-3 h-3" /> INV
-                            </button>
-                          )}
-                          {!hasDO && ['CONFIRMED','PROCESSING','READY','PARTIAL','DELIVERED','COMPLETED'].includes(order.status) && (
-                            <button onClick={() => handleIssueDeliveryOrder(order.id)}
-                              className="px-2 py-1 text-xs text-blue-400 bg-blue-500/10 rounded-lg hover:bg-[var(--info-soft)] flex items-center gap-1" title={t('sales.actions.issueDeliveryOrder')}>
-                              <Package className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {Pagination({ total: filtered.length })}
-          </div>
+          docList([sortLabel(t('sales.common.number'), 'so_number'), sortLabel(t('sales.common.customer'), 'customer_name'), sortLabel(t('sales.common.orderDate'), 'order_date'), sortLabel(t('sales.common.total'), 'total_amount', 'right')],
+            items.map((order, i) => {
+              const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
+              const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+              const orderDOs = doBySoNumber.get(order.so_number) || []
+              const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
+              const doShipped = orderDOs.filter(d => d.status === 'SHIPPED').length
+              const doDraft = orderDOs.filter(d => d.status === 'DRAFT').length
+              const invCount = invCountBySoNumber.get(order.so_number) || 0
+              const billable = ['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(order.status)
+              const open = () => handleViewDetail(order, t('sales.docType.salesOrder'))
+              return docRow(order.id, i, open, {
+                number: docNo(order.so_number, (order.quotation_number || doShipped || doDraft || invCount) ? <>
+                  {order.quotation_number && refChip(`QT: ${order.quotation_number}`)}
+                  {doShipped > 0 && refChip(`DO ×${doShipped}`, 'text-blue-400 bg-blue-500/10')}
+                  {doDraft > 0 && refChip(`DO ${t('sales.creditNoteStatus.draft')} ×${doDraft}`, 'text-warning bg-[var(--warning-soft)]')}
+                  {invCount > 0 && refChip(`INV ×${invCount}`, 'text-[var(--primary)] bg-phopy-indigo/10')}
+                </> : null),
+                party: partyCell(order.customer_name, order.customer_code),
+                date: <>{formatDate(order.order_date)}{order.delivery_date && <p className={`text-[10px] ${isLate ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.deliveryDate')} {formatDate(order.delivery_date)}</p>}</>,
+                progress: <>
+                  <StagePips view={deadView(soStages, order.status) ?? { stages: soStages, idx: stepIdx < 0 ? (order.status === 'PARTIAL' ? 3 : 0) : stepIdx }} />
+                  {(order.pending_qty ?? 0) > 0 && <p className="text-[10px] text-warning">{t('sales.statusBadge.pendingDelivery', { count: order.pending_qty })}</p>}
+                </>,
+                total: <>{formatCurrency(order.total_amount)}<div className="mt-1"><StatusBadge payment status={order.payment_status} /></div></>,
+                next: <NextStepCell step={soNext(order)} />,
+                menu: <RowMenu label={t('purchase.rowMenu.more')} items={[
+                  viewItem(open),
+                  ...(order.status === 'DRAFT' ? [{ label: t('sales.common.edit'), onClick: () => handleEditSO(order) }] : []),
+                  ...(billable ? [{ label: t('sales.actions.createInvoice'), onClick: () => handleCreateInvoiceFromSO(order) }] : []),
+                  ...(!hasDO && billable ? [{ label: t('sales.actions.issueDeliveryOrder'), onClick: () => handleIssueDeliveryOrder(order.id) }] : []),
+                  ...(order.status === 'DRAFT' ? [{ label: t('sales.common.delete'), onClick: () => handleDeleteSO(order.id), danger: true }] : []),
+                ]} />,
+              })
+            }), filtered.length)
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((order, i) => {
@@ -1876,11 +1793,11 @@ const Sales = () => {
   const InvoicesContent = () => {
     const filtered = filterItems(invoices, ['invoice_number', 'customer_name'], 'invoice_date')
     const items = paginate(filtered)
+    const invStages = [t('sales.stage.inv.issued'), t('sales.stage.inv.partial'), t('sales.stage.inv.paid')]
     return (
       <div className="space-y-3">
         {ListToolbar({ rows: searchItems(invoices, ['invoice_number', 'customer_name'], 'invoice_date'), placeholder: t('sales.searchInvoice'), action: (
           <>
-            {PageSizeSelect()}
             <button onClick={handleCreateInvoice}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> {t('sales.createInvoice')}
@@ -1894,79 +1811,29 @@ const Sales = () => {
             <p>{t('sales.emptyInvoice')}</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'invoice_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('SO', 'so_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.date'), 'invoice_date')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.dueDate'), 'due_date')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.total'), 'total_amount', 'right')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.balance'), 'balance_amount', 'right')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {items.map(inv => {
-                  const isOverdue = inv.payment_status === 'OVERDUE'
-                  const isUnpaid = (inv.payment_status === 'UNPAID' || inv.payment_status === 'PARTIAL' || isOverdue) && inv.status !== 'CANCELLED'
-                  return (
-                    <tr key={inv.id} className={`hover:bg-[var(--surface-2)] transition-colors ${isOverdue ? 'bg-red-500/5' : ''}`}>
-                      <td className="px-4 py-3">
-                        <p className="font-mono text-xs font-semibold text-warning">{inv.invoice_number}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="text-[var(--fg-1)] font-medium">{inv.customer_name}</p>
-                        <p className="text-xs text-[var(--fg-4)]">{inv.customer_code}</p>
-                      </td>
-                      <td className="px-4 py-3 hidden sm:table-cell">
-                        {inv.so_number && (
-                          <div className="flex items-center gap-1 flex-wrap">
-                            <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">{inv.so_number}</span>
-                            {(() => {
-                              const so = soByNumber.get(inv.so_number)
-                              return so?.quotation_number ? (
-                                <span className="text-[10px] text-[var(--fg-4)] bg-gray-500/10 px-1.5 py-0.5 rounded">{so.quotation_number}</span>
-                              ) : null
-                            })()}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(inv.invoice_date)}</td>
-                      <td className="px-4 py-3 hidden md:table-cell">
-                        <span className={`text-xs font-medium ${isOverdue ? 'text-danger' : 'text-[var(--fg-3)]'}`}>
-                          {formatDate(inv.due_date)}{isOverdue ? <AlertTriangle className="w-3 h-3 inline" /> : ''}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center"><StatusBadge payment status={inv.status === 'CANCELLED' ? 'CANCELLED' : inv.payment_status} /></td>
-                      <td className="px-4 py-3 text-right font-semibold text-[var(--fg-1)]">{formatCurrency(inv.total_amount)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={`text-xs font-semibold ${inv.status !== 'CANCELLED' && inv.balance_amount > 0 ? 'text-danger' : 'text-success'}`}>
-                          {formatCurrency(inv.status === 'CANCELLED' ? 0 : inv.balance_amount)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
-                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
-                          {isUnpaid && (
-                            <button onClick={() => handleRecordPayment(inv)}
-                              className="px-2.5 py-1 text-xs font-medium text-success bg-success/10 rounded-lg hover:bg-[var(--success-soft)] flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" /> {t('sales.actions.collectPayment')}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {Pagination({ total: filtered.length })}
-          </div>
+          docList([sortLabel(t('sales.common.number'), 'invoice_number'), sortLabel(t('sales.common.customer'), 'customer_name'), sortLabel(t('sales.common.date'), 'invoice_date'), sortLabel(t('sales.common.total'), 'total_amount', 'right')],
+            items.map((inv, i) => {
+              const cancelled = inv.status === 'CANCELLED'
+              const isOverdue = inv.payment_status === 'OVERDUE'
+              const isUnpaid = (inv.payment_status === 'UNPAID' || inv.payment_status === 'PARTIAL' || isOverdue) && !cancelled
+              const qtNo = inv.so_number ? soByNumber.get(inv.so_number)?.quotation_number : undefined
+              const open = () => handleViewDetail(inv, t('sales.docType.invoice'))
+              return docRow(inv.id, i, open, {
+                number: docNo(inv.invoice_number, inv.so_number ? <>
+                  {refChip(inv.so_number, 'text-purple-400 bg-purple-500/10')}
+                  {qtNo && refChip(qtNo)}
+                </> : null),
+                party: partyCell(inv.customer_name, inv.customer_code),
+                date: <>{formatDate(inv.invoice_date)}{inv.due_date && <p className={`text-[10px] ${isOverdue ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.dueDate')} {formatDate(inv.due_date)}</p>}</>,
+                progress: <StagePips view={cancelled ? { stages: invStages, idx: 0, dead: statusText('CANCELLED') }
+                  : { stages: invStages, idx: inv.payment_status === 'PAID' ? 2 : inv.payment_status === 'PARTIAL' ? 1 : 0 }} />,
+                total: <>{formatCurrency(inv.total_amount)}{!cancelled && inv.balance_amount > 0 && <p className="text-[10px] text-danger">{t('sales.common.balance')} {formatCurrency(inv.balance_amount)}</p>}</>,
+                next: <NextStepCell step={cancelled ? cancelledStep
+                  : isUnpaid ? { kind: 'action', label: t('sales.actions.collectPayment'), onClick: () => handleRecordPayment(inv) }
+                  : { kind: 'done', label: t('sales.nextStep.fullyCollected') }} />,
+                menu: <RowMenu label={t('purchase.rowMenu.more')} items={[viewItem(open)]} />,
+              })
+            }), filtered.length)
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((inv, i) => {
@@ -2048,53 +1915,21 @@ const Sales = () => {
             <p>{t('sales.emptyCreditNote')}</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'cn_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('INV', 'invoice_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.date'), 'credit_date')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{t('sales.common.reason')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">{sortLabel(t('sales.common.amount'), 'total_amount', 'right')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {items.map(cn => (
-                  <tr key={cn.id} className="hover:bg-[var(--surface-2)] transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-mono text-xs font-semibold text-danger">{cn.cn_number}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-[var(--fg-1)] font-medium">{cn.customer_name}</p>
-                      <p className="text-xs text-[var(--fg-4)]">{cn.customer_code}</p>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{cn.invoice_number}</td>
-                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(cn.credit_date)}</td>
-                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell max-w-[160px] truncate">{cn.reason}</td>
-                    <td className="px-4 py-3 text-center"><StatusBadge status={cn.status} /></td>
-                    <td className="px-4 py-3 text-right font-semibold text-danger">-{formatCurrency(cn.total_amount)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <button onClick={() => handleViewDetail(cn, t('sales.docType.creditNote'))}
-                          className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
-                        {cn.status === 'DRAFT' && (
-                          <button onClick={() => handleDeleteCreditNote(cn.id)} title={t('sales.common.delete')}
-                            className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {Pagination({ total: filtered.length })}
-          </div>
+          docList([sortLabel(t('sales.common.number'), 'cn_number'), sortLabel(t('sales.common.customer'), 'customer_name'), sortLabel(t('sales.common.date'), 'credit_date'), sortLabel(t('sales.common.amount'), 'total_amount', 'right')],
+            items.map((cn, i) => {
+              const open = () => handleViewDetail(cn, t('sales.docType.creditNote'))
+              return docRow(cn.id, i, open, {
+                number: docNo(cn.cn_number, cn.invoice_number ? refChip(`INV: ${cn.invoice_number}`) : null),
+                party: partyCell(cn.customer_name, cn.reason),
+                date: formatDate(cn.credit_date),
+                progress: <StatusBadge status={cn.status} />,
+                total: <span className="text-danger">-{formatCurrency(cn.total_amount)}</span>,
+                menu: <RowMenu label={t('purchase.rowMenu.more')} items={[
+                  viewItem(open),
+                  ...(cn.status === 'DRAFT' ? [{ label: t('sales.common.delete'), onClick: () => handleDeleteCreditNote(cn.id), danger: true }] : []),
+                ]} />,
+              })
+            }), filtered.length)
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((cn, i) => (
@@ -2155,41 +1990,19 @@ const Sales = () => {
             <p>{t('sales.emptyBackorder')}</p>
           </div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'bo_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('SO', 'so_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.originalDO'), 'original_do')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {items.map(bo => (
-                  <tr key={bo.id} className="hover:bg-[var(--surface-2)] transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-mono text-xs font-semibold text-warning">{bo.bo_number}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-[var(--fg-1)] font-medium">{bo.customer_name}</p>
-                      <p className="text-xs text-[var(--fg-4)]">{bo.customer_code}</p>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{bo.so_number}</td>
-                    <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{bo.original_do || '-'}</td>
-                    <td className="px-4 py-3 text-center"><StatusBadge status={bo.status} /></td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => handleViewDetail(bo, t('sales.docType.backorder'))}
-                        className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {Pagination({ total: filtered.length })}
-          </div>
+          docList([sortLabel(t('sales.common.number'), 'bo_number'), sortLabel(t('sales.common.customer'), 'customer_name'), '', ''],
+            items.map((bo, i) => {
+              const open = () => handleViewDetail(bo, t('sales.docType.backorder'))
+              return docRow(bo.id, i, open, {
+                number: docNo(bo.bo_number, <>
+                  {bo.so_number && refChip(`SO: ${bo.so_number}`, 'text-purple-400 bg-purple-500/10')}
+                  {bo.original_do && refChip(`DO: ${bo.original_do}`, 'text-blue-400 bg-blue-500/10')}
+                </>),
+                party: partyCell(bo.customer_name, bo.customer_code),
+                progress: <StatusBadge status={bo.status} />,
+                menu: <RowMenu label={t('purchase.rowMenu.more')} items={[viewItem(open)]} />,
+              })
+            }), filtered.length)
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((bo, i) => (
@@ -2232,11 +2045,12 @@ const Sales = () => {
       READY: { status: 'SHIPPED',  label: t('sales.status.sent'),    color: 'text-blue-400 bg-blue-500/10 hover:bg-[var(--info-soft)]' },
       SHIPPED: { status: 'DELIVERED', label: t('sales.status.delivered'), color: 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20' },
     }
+    const DO_FLOW = ['DRAFT', 'READY', 'SHIPPED', 'DELIVERED']
+    const doStages = [t('sales.stage.do.draft'), t('sales.stage.do.ready'), t('sales.stage.do.shipped'), t('sales.stage.do.delivered')]
     return (
       <div className="space-y-3">
         {ListToolbar({ rows: searchItems(deliveryOrders, ['do_number', 'customer_name'], 'delivery_date'), placeholder: t('sales.searchDelivery'), action: (
           <>
-            {PageSizeSelect()}
             <button onClick={() => toast(t('sales.actions.createDeliveryFromSO'))}
               className="flex items-center gap-1.5 px-4 py-2 bg-phopy-indigo text-white font-semibold rounded-lg hover:bg-phopy-indigo/80 text-sm">
               <Plus className="w-4 h-4" /> {t('sales.createDelivery')}
@@ -2247,58 +2061,24 @@ const Sales = () => {
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[var(--fg-4)]"><Package className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>{t('sales.emptyDelivery')}</p></div>
         ) : viewMode === 'list' ? (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--fg-3)]">
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.number'), 'do_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium">{sortLabel(t('sales.common.customer'), 'customer_name')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">{sortLabel('SO', 'so_number')}</th>
-                  <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">{sortLabel(t('sales.common.deliveryDate'), 'delivery_date')}</th>
-                  <th className="text-center px-4 py-2.5 font-medium">{sortLabel(t('sales.common.status'), 'status')}</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border)]/50">
-                {items.map(do_ => {
-                  const next = doNextStatus[do_.status]
-                  return (
-                    <tr key={do_.id} className="hover:bg-[var(--surface-2)] transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="font-mono text-xs font-semibold text-blue-400">{do_.do_number}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="text-[var(--fg-1)] font-medium">{do_.customer_name}</p>
-                        <p className="text-xs text-[var(--fg-4)]">{do_.customer_code}</p>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden sm:table-cell">{do_.so_number}</td>
-                      <td className="px-4 py-3 text-xs text-[var(--fg-3)] hidden md:table-cell">{formatDate(do_.delivery_date)}</td>
-                      <td className="px-4 py-3 text-center"><StatusBadge status={do_.status} /></td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <button onClick={() => handleViewDetail(do_, t('sales.docType.deliveryOrder'))}
-                            className="px-2.5 py-1 text-xs text-[var(--fg-2)] bg-[var(--bg)] rounded-lg hover:text-[var(--fg-1)]">{t('sales.common.view')}</button>
-                          {do_.status === 'DRAFT' && (
-                            <button onClick={() => handleDeleteDO(do_.id)}
-                              className="px-2 py-1 text-xs text-danger bg-[var(--danger-soft)] rounded-lg flex items-center gap-1" title={t('sales.common.delete')}>
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                          {next && (
-                            <button onClick={() => handleUpdateDOStatus(do_.id, next.status)}
-                              className={`px-2 py-1 text-xs rounded-lg flex items-center gap-1 ${next.color}`}>
-                              <CheckCircle className="w-3 h-3" /> {next.label}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {Pagination({ total: filtered.length })}
-          </div>
+          docList([sortLabel(t('sales.common.number'), 'do_number'), sortLabel(t('sales.common.customer'), 'customer_name'), sortLabel(t('sales.common.deliveryDate'), 'delivery_date'), ''],
+            items.map((do_, i) => {
+              const next = doNextStatus[do_.status]
+              const open = () => handleViewDetail(do_, t('sales.docType.deliveryOrder'))
+              return docRow(do_.id, i, open, {
+                number: docNo(do_.do_number, do_.so_number ? refChip(`SO: ${do_.so_number}`, 'text-purple-400 bg-purple-500/10') : null),
+                party: partyCell(do_.customer_name, do_.driver_name || do_.customer_code),
+                date: formatDate(do_.delivery_date),
+                progress: <StagePips view={deadView(doStages, do_.status) ?? { stages: doStages, idx: Math.max(0, DO_FLOW.indexOf(do_.status)) }} />,
+                next: <NextStepCell step={do_.status === 'CANCELLED' ? cancelledStep
+                  : next ? { kind: 'action', label: next.label, onClick: () => handleUpdateDOStatus(do_.id, next.status) }
+                  : { kind: 'done', label: t('sales.nextStep.delivered') }} />,
+                menu: <RowMenu label={t('purchase.rowMenu.more')} items={[
+                  viewItem(open),
+                  ...(do_.status === 'DRAFT' ? [{ label: t('sales.common.delete'), onClick: () => handleDeleteDO(do_.id), danger: true }] : []),
+                ]} />,
+              })
+            }), filtered.length)
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((do_, i) => {

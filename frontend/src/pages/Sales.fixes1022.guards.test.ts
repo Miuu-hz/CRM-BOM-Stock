@@ -63,13 +63,20 @@ describe('Sales.tsx — ตัวกรองวันที่ใช้วั�
 describe('Sales.tsx — ปุ่ม → SO ซ่อนเมื่อใบเสนอราคามี SO ที่ไม่ยกเลิกแล้ว', () => {
   it('ทั้งตาราง การ์ด และโมดัลรายละเอียดเช็ค converted', () => {
     expect(SRC).toContain('convertedQtNumbers')
-    expect((SRC.match(/q\.status === 'ACCEPTED' && !convertedQtNumbers\.has\(q\.quotation_number\)/g) || []).length).toBe(2)
+    // การ์ด: เช็ค convertedQtNumbers · แถวตาราง: qtNext เจอ SO (ไม่ยกเลิก) ก่อน → ขึ้น "เปิดใบสั่งขายแล้ว" แทนปุ่มแปลง
+    expect((SRC.match(/q\.status === 'ACCEPTED' && !convertedQtNumbers\.has\(q\.quotation_number\)/g) || []).length).toBe(1)
+    expect(SRC).toContain("so.quotation_number === q.quotation_number && so.status !== 'CANCELLED'")
+    const qtNext = SRC.slice(SRC.indexOf('const qtNext = '), SRC.indexOf('const qtNext = ') + 700)
+    expect(qtNext.indexOf('if (so) return')).toBeGreaterThan(-1)
+    expect(qtNext.indexOf('if (so) return')).toBeLessThan(qtNext.indexOf('handleConvertQtToSO'))
     expect(SRC).toContain("quotation.status === 'ACCEPTED' && !alreadyConverted")
   })
 })
 
 describe('Sales.tsx — ใบแจ้งหนี้ที่ยกเลิกแสดงยอดค้าง 0', () => {
   it("รายการ (ตาราง+การ์ด) ไม่โชว์ balance_amount ของใบ CANCELLED", () => {
-    expect((SRC.match(/formatCurrency\(inv\.status === 'CANCELLED' \? 0 : inv\.balance_amount\)/g) || []).length).toBe(2)
+    expect((SRC.match(/formatCurrency\(inv\.status === 'CANCELLED' \? 0 : inv\.balance_amount\)/g) || []).length).toBe(1)
+    // แถวตาราง: ใบยกเลิกไม่โชว์บรรทัดยอดค้างเลย
+    expect(SRC).toContain('!cancelled && inv.balance_amount > 0 &&')
   })
 })
