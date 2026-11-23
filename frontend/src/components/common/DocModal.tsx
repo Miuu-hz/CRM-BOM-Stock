@@ -86,13 +86,15 @@ export const FieldGrid = ({ fields }: { fields: { label: string; value?: ReactNo
   </dl>
 )
 
-export type DocItemRow = { name: string; sub?: string; qty: number; unit?: string; price: number; discount?: string; amount: number }
+export type DocItemRow = { name: string; sub?: string; warn?: string; qty: number; unit?: string; price: number; discount?: string; amount: number }
 const money = (n: number) => (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /** ตารางรายการแบบเอกสาร — # · รายการ · จำนวน · หน่วย · ราคา/หน่วย · ส่วนลด · จำนวนเงิน */
-export const ItemsTable = ({ rows, labels }: {
+//   qtyOnly = เอกสารที่ไม่มีราคา (ใบส่งของ/ค้างส่ง) ซ่อน 3 คอลัมน์เงิน ไม่ใช่โชว์ 0.00
+export const ItemsTable = ({ rows, labels, qtyOnly }: {
   rows: DocItemRow[]
   labels: { no: string; item: string; qty: string; unit: string; price: string; discount: string; amount: string; empty: string }
+  qtyOnly?: boolean
 }) => (
   <div className="rounded-xl border border-[var(--border)] overflow-x-auto">
     <table className="w-full text-sm">
@@ -102,23 +104,23 @@ export const ItemsTable = ({ rows, labels }: {
           <th className="px-3 py-2 text-left font-medium">{labels.item}</th>
           <th className="px-3 py-2 text-right font-medium">{labels.qty}</th>
           <th className="px-3 py-2 text-left font-medium">{labels.unit}</th>
-          <th className="px-3 py-2 text-right font-medium">{labels.price}</th>
+          {!qtyOnly && <><th className="px-3 py-2 text-right font-medium">{labels.price}</th>
           <th className="px-3 py-2 text-right font-medium">{labels.discount}</th>
-          <th className="px-3 py-2 text-right font-medium">{labels.amount}</th>
+          <th className="px-3 py-2 text-right font-medium">{labels.amount}</th></>}
         </tr>
       </thead>
       <tbody className="divide-y divide-[var(--border)]/60">
         {rows.length === 0 ? (
-          <tr><td colSpan={7} className="px-3 py-6 text-center text-xs text-[var(--fg-4)]">{labels.empty}</td></tr>
+          <tr><td colSpan={qtyOnly ? 4 : 7} className="px-3 py-6 text-center text-xs text-[var(--fg-4)]">{labels.empty}</td></tr>
         ) : rows.map((r, i) => (
           <tr key={i}>
             <td className="px-3 py-2 text-center text-xs text-[var(--fg-4)] tabular-nums">{i + 1}</td>
-            <td className="px-3 py-2"><p className="text-[var(--fg-1)]">{r.name}</p>{r.sub && <p className="text-[11px] text-[var(--fg-4)]">{r.sub}</p>}</td>
+            <td className="px-3 py-2"><p className="text-[var(--fg-1)]">{r.name}</p>{r.sub && <p className="text-[11px] text-[var(--fg-4)]">{r.sub}</p>}{r.warn && <p className="text-[11px] text-danger">{r.warn}</p>}</td>
             <td className="px-3 py-2 text-right tabular-nums">{(r.qty || 0).toLocaleString('th-TH')}</td>
             <td className="px-3 py-2 text-[var(--fg-3)]">{r.unit || '-'}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{money(r.price)}</td>
+            {!qtyOnly && <><td className="px-3 py-2 text-right tabular-nums">{money(r.price)}</td>
             <td className="px-3 py-2 text-right tabular-nums text-[var(--fg-3)]">{r.discount || '-'}</td>
-            <td className="px-3 py-2 text-right tabular-nums font-medium text-[var(--fg-1)]">{money(r.amount)}</td>
+            <td className="px-3 py-2 text-right tabular-nums font-medium text-[var(--fg-1)]">{money(r.amount)}</td></>}
           </tr>
         ))}
       </tbody>

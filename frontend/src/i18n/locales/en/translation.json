@@ -1934,7 +1934,10 @@
       "afterDiscount": "After discount",
       "lockedNote": "Confirmed — cannot be edited",
       "paidAmount": "Paid",
-      "status": "Status"
+      "status": "Status",
+      "docTrail": "Document trail",
+      "linkedWorkOrders": "Linked work orders",
+      "pendingApprovalBanner": "Waiting for approver"
     }
   },
   "crm": {

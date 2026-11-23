@@ -17,6 +17,7 @@ import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import { FilterBar, FilterSearch, FilterChips, StatusChips, SortLabel, sortRows, type SortState } from '../components/common/FilterBar'
 import { SourceDocModal } from '../components/accounting/SourceDocModal'
 import { RowMenu, StagePips, NextStepCell, type StageView, type NextStep } from '../components/common/DocRow'
+import { DocModal, DocBand, StatusFlow, DocSection, FieldGrid, ItemsTable, TotalsBox, LockedNote, btnPrimary, btnSecondary, btnDanger, btnClose, type DocItemRow } from '../components/common/DocModal'
 import { UnitPicker } from '../components/common/UnitPicker'
 import { VatModeSelector, VatModeField } from '../components/common/VatModeSelector'
 import { PaymentAttachments } from '../components/common/PaymentAttachments'
@@ -3200,20 +3201,33 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
   quotation: Quotation; onClose: () => void; onRefresh: () => void; onConvert: (q: Quotation) => void; companyName?: string; alreadyConverted?: boolean
 }) {
   const { t } = useTranslation()
-  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
-    salesService.getQuotation(quotation.id).then(r => setDetail(r.data)).catch(() => toast.error(t('sales.error.loadQuotations'))).finally(() => setLoading(false))
+    salesService.getQuotation(quotation.id)
+      .then(r => setDetail(r.data))
+      .catch(() => toast.error(t('sales.error.loadQuotations')))
+      .finally(() => setLoading(false))
   }, [quotation.id])
 
   const handlePrint = (format: 'a4' | 'thermal') => {
     if (!detail) return
     const co = getCachedCompanySettings()
     const bank = getCachedDefaultBankAccount()
-    printBill('qt', { ...detail, _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '', _bankName: bank?.bank_name || '', _bankAccountName: bank?.account_name || '', _bankAccountNumber: bank?.account_number || '', _bankQrImage: bank?.qr_code_base64 || '' }, format)
+    printBill('qt', {
+      ...detail,
+      _company: co.name || '-',
+      _companyAddress: co.address || '',
+      _companyTax: co.tax_id || '',
+      _companyPhone: co.phone || '',
+      _companyLogo: co.logo_base64 || '',
+      _bankName: bank?.bank_name || '',
+      _bankAccountName: bank?.account_name || '',
+      _bankAccountNumber: bank?.account_number || '',
+      _bankQrImage: bank?.qr_code_base64 || '',
+    }, format)
   }
 
   const updateStatus = async (status: string) => {
@@ -3225,121 +3239,209 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
       onClose()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || t('sales.toast.statusUpdateFailed'))
-    } finally { setUpdating(false) }
+    } finally {
+      setUpdating(false)
+    }
   }
 
-  const formatCurrency = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
-  const formatDate = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
+  const formatDate = (s?: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
+  const expiry = detail?.expiry_date || quotation.expiry_date
+  const isExpired = !!(expiry && expiry.slice(0, 10) < todayStr())
+
+  const isDead = ['CANCELLED', 'EXPIRED', 'REJECTED'].includes(quotation.status)
+  const deadLabel = quotation.status === 'CANCELLED' ? t('sales.status.cancelled')
+    : quotation.status === 'REJECTED' ? t('sales.status.rejected')
+    : quotation.status === 'EXPIRED' ? t('sales.status.expired')
+    : undefined
+  const currentStep = alreadyConverted ? 'CONVERTED' : quotation.status
+  const steps = [
+    { key: 'DRAFT', label: t('sales.status.draft') },
+    { key: 'SENT', label: t('sales.status.sent') },
+    { key: 'ACCEPTED', label: t('sales.status.approved') },
+    { key: 'CONVERTED', label: t('sales.stage.qt.converted') },
+  ]
+
+  const party = quotation.customer_code
+    ? `${quotation.customer_name} (${quotation.customer_code})`
+    : quotation.customer_name
+
+  const itemRows: DocItemRow[] = (detail?.items || []).map((it: any, i: number) => {
+    const name = it.product_name || it.productName || `${t('sales.common.itemNumberPrefix')} ${i + 1}`
+    const sub = it.product_code || it.productCode || undefined
+    const qty = Number(it.quantity || 0)
+    const unit = it.unit ? unitLabel(it.unit) : undefined
+    const price = Number(it.unit_price || 0)
+    const discount = it.discount_percent > 0 ? `${it.discount_percent}%` : undefined
+    const amount = Number(it.total_price ?? (qty * price))
+    return { name, sub, qty, unit, price, discount, amount }
+  })
+
+  const totalsRows: { label: string; value: number; sign?: '+' | '-' }[] = [
+    { label: t('sales.common.total'), value: Number(detail?.subtotal || 0) },
+  ]
+  if ((detail?.discount_amount || 0) > 0) {
+    totalsRows.push({
+      label: t('sales.common.discount'),
+      value: Number(detail.discount_amount),
+      sign: '-',
+    })
+  }
+  if ((detail?.extra_charge_amount || 0) > 0) {
+    totalsRows.push({
+      label: detail.extra_charge_label || t('common.extraCharge'),
+      value: Number(detail.extra_charge_amount),
+      sign: '+',
+    })
+  }
+  if ((detail?.tax_amount || 0) > 0) {
+    totalsRows.push({
+      label: `${t('sales.common.tax')} (${detail?.tax_rate ?? 0}%)`,
+      value: Number(detail.tax_amount),
+      sign: '+',
+    })
+  }
+
+  const isLocked = isDead || !!alreadyConverted
+  const canCancel = !isDead && !alreadyConverted
+
+  const footer = (
+    <div className="flex items-center justify-between gap-3 w-full flex-wrap">
+      <div>
+        <button type="button" onClick={onClose} className={btnClose}>
+          {t('sales.common.close')}
+        </button>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {isLocked && <LockedNote text={t('sales.detail.lockedNote')} />}
+        {canCancel && (
+          <button type="button" onClick={() => updateStatus('CANCELLED')} disabled={updating} className={btnDanger}>
+            {t('sales.common.cancel')}
+          </button>
+        )}
+        {!loading && (
+          <>
+            <button type="button" onClick={() => handlePrint('a4')} className={btnSecondary}>
+              <Printer className="w-4 h-4" />
+              <span>{t('sales.actions.printA4')}</span>
+            </button>
+            <button type="button" onClick={() => handlePrint('thermal')} className={btnSecondary}>
+              <Printer className="w-4 h-4" />
+              <span>{t('sales.actions.printThermal')}</span>
+            </button>
+          </>
+        )}
+        {quotation.status === 'DRAFT' && (
+          <button type="button" onClick={() => updateStatus('ACCEPTED')} disabled={updating} className={btnSecondary}>
+            {t('sales.status.approved')}
+          </button>
+        )}
+        {quotation.status === 'DRAFT' && (
+          <button type="button" onClick={() => updateStatus('SENT')} disabled={updating} className={btnPrimary}>
+            {t('sales.actions.sendQuotation')}
+          </button>
+        )}
+        {quotation.status === 'SENT' && (
+          <button type="button" onClick={() => updateStatus('ACCEPTED')} disabled={updating} className={btnPrimary}>
+            {t('sales.status.approved')}
+          </button>
+        )}
+        {quotation.status === 'ACCEPTED' && !alreadyConverted && (
+          <button type="button" onClick={() => onConvert(quotation)} disabled={updating} className={btnPrimary}>
+            <ArrowRight className="w-4 h-4" />
+            <span>{t('sales.actions.convertToSOFull')}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  )
 
   return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <div>
-            <p className="font-mono text-sm text-[var(--primary)] font-semibold">{quotation.quotation_number}</p>
-            <p className="text-[var(--fg-1)] font-bold">{quotation.customer_name}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={quotation.status} />
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
-          </div>
+    <DocModal
+      title={t('sales.detail.title', { doc: t('sales.docType.quotation') })}
+      onClose={onClose}
+      footer={footer}
+      wide
+    >
+      <DocBand icon={FileText} number={quotation.quotation_number} party={party} />
+
+      <StatusFlow steps={steps} current={currentStep} dead={deadLabel} />
+
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" />
         </div>
+      ) : (
+        <>
+          <DocSection title={t('sales.detail.docInfo')}>
+            <FieldGrid
+              fields={[
+                { label: t('sales.common.date'), value: formatDate(detail?.quotation_date || quotation.quotation_date) },
+                {
+                  label: t('sales.common.expiryDate'),
+                  value: formatDate(detail?.expiry_date || quotation.expiry_date),
+                  tone: isExpired ? 'text-danger font-medium' : undefined,
+                },
+                {
+                  label: t('sales.detail.vatMode'),
+                  value: detail
+                    ? `${VAT_MODE_LABEL[vatModeOf(detail?.tax_rate, detail?.vat_inclusive === 1)]}${detail.tax_rate ? ` (${detail.tax_rate}%)` : ''}`
+                    : '-',
+                },
+                { label: t('sales.common.campaign'), value: detail?.campaign || '-' },
+                {
+                  label: t('sales.detail.reference'),
+                  value: detail?.so_number || detail?.sales_order_number || (alreadyConverted ? t('sales.stage.qt.converted') : '-'),
+                },
+              ]}
+            />
+          </DocSection>
 
-        <div className="overflow-y-auto p-5 space-y-4">
-          {loading ? (
-            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.date')}</p>
-                  <p className="text-[var(--fg-1)]">{formatDate(detail?.quotation_date)}</p>
-                </div>
-                <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.expiryDate')}</p>
-                  <p className={`font-medium ${detail?.expiry_date && detail.expiry_date.slice(0, 10) < todayStr() ? 'text-danger' : 'text-[var(--fg-1)]'}`}>
-                    {formatDate(detail?.expiry_date)}
-                  </p>
-                </div>
-              </div>
+          <DocSection title={t('sales.detail.customerInfo')}>
+            <FieldGrid
+              fields={[
+                { label: t('sales.common.customerCode'), value: detail?.customer_code || quotation.customer_code || '-' },
+                { label: t('sales.detail.taxId'), value: detail?.customer_tax_id || detail?.tax_id || '-' },
+                { label: t('sales.detail.phone'), value: detail?.customer_phone || detail?.phone || '-' },
+                { label: t('sales.detail.address'), value: detail?.customer_address || detail?.address || '-', full: true },
+              ]}
+            />
+          </DocSection>
 
-              {/* Items */}
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
-                <div className="space-y-1">
-                  {(detail?.items || []).map((it: any, i: number) => (
-                    <div key={i} className="flex justify-between items-center py-2 px-3 bg-[var(--surface-2)] rounded-lg text-sm">
-                      <div>
-                        <p className="text-[var(--fg-1)]">{it.product_name || it.productName || `${t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
-                        <p className="text-xs text-[var(--fg-4)]">{it.quantity} × ฿{(it.unit_price || 0).toLocaleString()}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
-                      </div>
-                      <p className="text-[var(--fg-1)] font-medium">{formatCurrency(it.total_price)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <DocSection title={t('sales.common.items')}>
+            <ItemsTable
+              rows={itemRows}
+              labels={{
+                no: t('sales.detail.no'),
+                item: t('sales.detail.item'),
+                qty: t('sales.common.qty'),
+                unit: t('sales.common.unit'),
+                price: t('sales.common.unitPrice'),
+                discount: t('sales.common.discount'),
+                amount: t('sales.common.total'),
+                empty: t('sales.detail.noItems'),
+              }}
+            />
+            <div className="pt-2">
+              <TotalsBox
+                rows={totalsRows}
+                grand={{
+                  label: t('sales.common.grandTotal'),
+                  value: Number(detail?.total_amount ?? quotation.total_amount ?? 0),
+                }}
+              />
+            </div>
+          </DocSection>
 
-              {/* Totals */}
-              <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{formatCurrency(detail?.subtotal)}</span></div>
-                {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{formatCurrency(detail?.discount_amount)}</span></div>}
-                {(detail?.extra_charge_amount || 0) > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{detail.extra_charge_label || t('common.extraCharge')}</span><span>+{formatCurrency(detail.extra_charge_amount)}</span></div>}
-                {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate}%)</span><span>+{formatCurrency(detail?.tax_amount)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-                  <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span><span className="text-success">{formatCurrency(detail?.total_amount)}</span>
-                </div>
-              </div>
-
-              {detail?.notes && (
-                <div className="bg-[var(--bg)] rounded-lg p-3 text-sm text-[var(--fg-3)]">{t('sales.common.notes')} {detail.notes}</div>
-              )}
-            </>
+          {detail?.notes && (
+            <DocSection title={t('sales.common.notes')}>
+              <p className="text-sm text-[var(--fg-2)] whitespace-pre-wrap bg-[var(--surface-2)] rounded-xl p-3 border border-[var(--border)]">
+                {detail.notes}
+              </p>
+            </DocSection>
           )}
-        </div>
-
-        <div className="p-5 border-t border-[var(--border)] flex gap-2 shrink-0 flex-wrap">
-          {/* Print buttons */}
-          {!loading && (
-            <>
-              <button onClick={() => handlePrint('a4')} title={t('sales.actions.printA4')}
-                className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
-                <Printer className="w-4 h-4" />
-              </button>
-              <button onClick={() => handlePrint('thermal')} title={t('sales.actions.printThermal')}
-                className="px-2 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors text-xs">
-                <Printer className="w-3.5 h-3.5 inline" /> 80mm
-              </button>
-            </>
-          )}
-          {quotation.status === 'DRAFT' && (
-            <button onClick={() => updateStatus('SENT')} disabled={updating}
-              className="flex-1 py-2 bg-[var(--info-soft)] border border-blue-500/50 text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-500/30 disabled:opacity-50">
-              {t('sales.actions.sendQuotation')}
-            </button>
-          )}
-          {(quotation.status === 'SENT' || quotation.status === 'DRAFT') && (
-            <button onClick={() => updateStatus('ACCEPTED')} disabled={updating}
-              className="flex-1 py-2 bg-[var(--success-soft)] border border-success/50 text-success rounded-lg text-sm font-medium hover:bg-success/30 disabled:opacity-50">
-              {t('sales.status.approved')}
-            </button>
-          )}
-          {quotation.status === 'ACCEPTED' && !alreadyConverted && (
-            <button onClick={() => onConvert(quotation)} disabled={updating}
-              className="flex-1 py-2 bg-phopy-indigo text-white rounded-lg text-sm font-semibold hover:bg-phopy-indigo/80">
-              <ArrowRight className="w-4 h-4 inline mr-1" />{t('sales.actions.convertToSOFull')}
-            </button>
-          )}
-          {!['CANCELLED', 'EXPIRED'].includes(quotation.status) && (
-            <button onClick={() => updateStatus('CANCELLED')} disabled={updating}
-              className="py-2 px-3 text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] disabled:opacity-50">
-              {t('sales.common.cancel')}
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </div>
+        </>
+      )}
+    </DocModal>
   )
 }
 
@@ -3594,7 +3696,6 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   // Cancel reverses stock + journal for CONFIRMED+ orders — gate behind ADMIN/MANAGER/MASTER
   // same as other irreversible accounting actions elsewhere in the app.
   const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
-  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -3650,166 +3751,232 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
     try { await onIssueDO() } finally { setIssuingDO(false) }
   }
 
-  const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
 
   const SO_FLOW = ['DRAFT', 'CONFIRMED', 'PROCESSING', 'READY', 'DELIVERED', 'COMPLETED']
   const nextStatus: Record<string, string> = { DRAFT: 'CONFIRMED', CONFIRMED: 'PROCESSING', PROCESSING: 'READY', READY: 'DELIVERED', PARTIAL: 'DELIVERED', DELIVERED: 'COMPLETED' }
   const nextLabel: Record<string, string> = { DRAFT: t('sales.soActions.confirmSO'), CONFIRMED: t('sales.soActions.startProcessing'), PROCESSING: t('sales.status.readyToShip'), READY: t('sales.status.delivered'), PARTIAL: t('sales.status.delivered'), DELIVERED: t('sales.status.completed') }
 
-  return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <div>
-            <p className="font-mono text-sm text-purple-400 font-semibold">{salesOrder.so_number}</p>
-            <p className="text-[var(--fg-1)] font-bold">{salesOrder.customer_name}</p>
-            {salesOrder.quotation_number && <p className="text-xs text-[var(--fg-4)]">QT: {salesOrder.quotation_number}</p>}
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={salesOrder.status} />
-            <StatusBadge payment status={salesOrder.payment_status} />
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
-          </div>
-        </div>
+  const dead = ['CANCELLED', 'REJECTED'].includes(salesOrder.status)
+    ? t(STATUS_CONFIG[salesOrder.status]?.labelKey as any || 'sales.status.cancelled')
+    : undefined
 
-        <div className="overflow-y-auto p-5 space-y-4">
-          {/* Status Flow */}
-          <div className="flex items-center gap-1 overflow-x-auto py-1">
-            {SO_FLOW.map((s, i) => {
-              const currentIdx = SO_FLOW.indexOf(salesOrder.status)
-              const isPast = i < currentIdx
-              const isCurrent = i === currentIdx
-              return (
-                <div key={s} className="flex items-center gap-1 shrink-0">
-                  <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${isCurrent ? 'bg-purple-500 text-[var(--fg-1)]' : isPast ? 'bg-[var(--success-soft)] text-success' : 'bg-[var(--surface-2)] text-[var(--fg-4)]'}`}>
-                    {t(STATUS_CONFIG[s]?.labelKey as any || s)}
-                  </div>
-                  {i < SO_FLOW.length - 1 && <ArrowRight className="w-3 h-3 text-[var(--fg-4)] shrink-0" />}
-                </div>
-              )
-            })}
-          </div>
+  const itemRows: DocItemRow[] = (detail?.items || []).map((it: any, i: number) => {
+    const insufficient = it.stock_item_id && (it.stock_qty ?? Infinity) < it.quantity
+    return {
+      name: it.product_name || `${t('sales.common.itemNumberPrefix')} ${i + 1}`,
+      warn: insufficient ? t('sales.statusBadge.outOfStock', { count: it.stock_qty ?? 0 }) : undefined,
+      qty: Number(it.quantity) || 0,
+      unit: unitLabelTh(it.unit) || it.unit || '-',
+      price: Number(it.unit_price) || 0,
+      discount: it.discount_percent > 0 ? `${it.discount_percent}%` : '-',
+      amount: Number(it.total_price) || 0,
+    }
+  })
 
-          <DealTimeline soId={salesOrder.id} />
+  const totalRows: { label: string; value: number; sign?: '+' | '-' }[] = [
+    { label: t('sales.common.total'), value: Number(detail?.subtotal) || 0 },
+  ]
+  if ((detail?.discount_amount || 0) > 0) {
+    totalRows.push({ label: t('sales.common.discount'), value: Number(detail.discount_amount), sign: '-' })
+  }
+  if ((detail?.extra_charge_amount || 0) > 0) {
+    totalRows.push({ label: detail.extra_charge_label || t('common.extraCharge', { defaultValue: 'ค่าใช้จ่ายเพิ่มเติม' }), value: Number(detail.extra_charge_amount), sign: '+' })
+  }
+  if ((detail?.tax_amount || 0) > 0) {
+    totalRows.push({ label: `${t('sales.common.tax')} (${detail.tax_rate}%)`, value: Number(detail.tax_amount), sign: '+' })
+  }
 
-          {loading ? (
-            <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.orderDateLabel')}</p><p className="text-[var(--fg-1)]">{fmtD(detail?.order_date)}</p>
-                </div>
-                <div className="bg-[var(--bg)] rounded-lg p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.deliveryDate')}</p><p className="text-[var(--fg-1)]">{fmtD(detail?.delivery_date)}</p>
-                </div>
-              </div>
+  const isLocked = salesOrder.status === 'CANCELLED' || (!nextStatus[salesOrder.status] && salesOrder.status === 'COMPLETED')
 
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
-                {(detail?.items || []).map((it: any, i: number) => {
-                  const insufficient = it.stock_item_id && (it.stock_qty ?? Infinity) < it.quantity
-                  return (
-                    <div key={i} className={`flex justify-between items-start py-2 px-3 rounded-lg text-sm ${insufficient ? 'bg-[var(--danger-soft)] border border-danger/30' : 'bg-[var(--surface-2)]'}`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[var(--fg-1)]">{it.product_name || `${t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
-                        <p className="text-xs text-[var(--fg-4)]">{it.quantity} × {fmt(it.unit_price)}{it.discount_percent > 0 ? ` (-${it.discount_percent}%)` : ''}</p>
-                        {insufficient && (
-                          <p className="text-xs text-danger mt-0.5"><AlertTriangle className="w-4 h-4" /> {t('sales.statusBadge.outOfStock', { count: it.stock_qty ?? 0 })}</p>
-                        )}
-                      </div>
-                      <p className="text-[var(--fg-1)] font-medium ml-3">{fmt(it.total_price)}</p>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Linked Work Orders */}
-              {detail?.work_orders && detail.work_orders.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-[var(--fg-2)]">ใบสั่งผลิตที่เชื่อมกับใบขายนี้</p>
-                  <div className="border border-[var(--border)] rounded-xl overflow-hidden divide-y divide-[var(--border)]/50">
-                    {detail.work_orders.map((wo: any) => (
-                      <div key={wo.id} className="p-3 bg-[var(--surface-2)] flex items-center justify-between text-sm">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-mono font-semibold text-xs text-[var(--primary)]">{wo.wo_number}</p>
-                          <p className="text-[var(--fg-1)] text-xs mt-0.5 truncate">{wo.product_name}</p>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0 ml-3">
-                          <span className="text-xs text-[var(--fg-3)]">× {wo.quantity}</span>
-                          <span className="text-xs px-2 py-0.5 rounded font-medium bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-2)]">
-                            {wo.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.common.total')}</span><span>{fmt(detail?.subtotal)}</span></div>
-                {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{fmt(detail?.discount_amount)}</span></div>}
-                {(detail?.extra_charge_amount || 0) > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{detail.extra_charge_label || t('common.extraCharge')}</span><span>+{fmt(detail.extra_charge_amount)}</span></div>}
-                {(detail?.tax_amount || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate}%)</span><span>+{fmt(detail?.tax_amount)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-                  <span className="text-[var(--fg-1)]">{t('sales.common.grandTotal')}</span><span className="text-success">{fmt(detail?.total_amount)}</span>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="p-5 border-t border-[var(--border)] flex gap-2 shrink-0 flex-wrap">
-          {!loading && (
-            <button onClick={handlePrint} title={t('sales.actions.printSOA4')}
-              className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
-              <Printer className="w-4 h-4" />
-            </button>
-          )}
-          <button onClick={() => setShowSourceDoc(true)} title="สายเอกสาร"
-            className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
-            <FileText className="w-4 h-4" />
+  const footerContent = (
+    <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onClose} className={btnClose}>
+          {t('sales.common.close')}
+        </button>
+        {canCancelDoc && !['CANCELLED', 'COMPLETED'].includes(salesOrder.status) && (
+          <button
+            type="button"
+            onClick={() => updateStatus('CANCELLED')}
+            disabled={updating}
+            className={btnDanger}
+          >
+            {t('sales.common.cancel')}
           </button>
-          {salesOrder.status === 'PENDING_APPROVAL' ? (
-            <div className="flex-1 py-2 px-3 bg-amber-500/10 border border-amber-500/40 text-amber-400 rounded-lg text-sm font-medium text-center">
-              รออนุมัติจาก Approver
-            </div>
-          ) : nextStatus[salesOrder.status] ? (
-            <button onClick={() => updateStatus(nextStatus[salesOrder.status])} disabled={updating}
-              className="flex-1 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg text-sm font-medium hover:bg-purple-500/30 disabled:opacity-50">
-              {nextLabel[salesOrder.status]}
-            </button>
-          ) : null}
-          {['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
-            <button onClick={handleCreateInvoice} disabled={creatingInv}
-              className="flex-1 py-2 bg-[var(--warning-soft)] border border-yellow-500/50 text-warning rounded-lg text-sm font-medium hover:bg-[var(--warning-soft)] disabled:opacity-50 flex items-center justify-center gap-1">
-              {creatingInv ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Receipt className="w-3.5 h-3.5" />}
-              {t('sales.actions.createInvoice')}
-            </button>
-          )}
-          {!hasDeliveryOrder && onIssueDO && ['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
-            <button onClick={handleIssueDO} disabled={issuingDO}
-              className="flex-1 py-2 bg-blue-500/10 border border-blue-500/50 text-blue-400 rounded-lg text-sm font-medium hover:bg-[var(--info-soft)] disabled:opacity-50 flex items-center justify-center gap-1">
-              {issuingDO ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-3.5 h-3.5" />}
-              {t('sales.actions.issueDeliveryOrder')}
-            </button>
-          )}
-          {canCancelDoc && !['CANCELLED', 'COMPLETED'].includes(salesOrder.status) && (
-            <button onClick={() => updateStatus('CANCELLED')} disabled={updating}
-              className="py-2 px-3 text-danger border border-danger/30 rounded-lg text-sm hover:bg-[var(--danger-soft)] disabled:opacity-50">
-              {t('sales.common.cancel')}
-            </button>
-          )}
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap ml-auto">
+        {!loading && (
+          <button
+            type="button"
+            onClick={handlePrint}
+            title={t('sales.actions.printSOA4')}
+            className={btnSecondary}
+          >
+            <Printer className="w-4 h-4" />
+            <span>{t('sales.actions.printA4')}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowSourceDoc(true)}
+          title={t('sales.detail.docTrail', { defaultValue: 'สายเอกสาร' })}
+          className={btnSecondary}
+        >
+          <FileText className="w-4 h-4" />
+          <span>{t('sales.detail.docTrail', { defaultValue: 'สายเอกสาร' })}</span>
+        </button>
+        {salesOrder.status === 'PENDING_APPROVAL' && (
+          <span className="flex items-center gap-1.5 text-xs text-amber-500 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 font-medium">
+            <Clock className="w-3.5 h-3.5" />
+            {t('sales.detail.pendingApprovalBanner', { defaultValue: 'รออนุมัติจาก Approver' })}
+          </span>
+        )}
+        {!hasDeliveryOrder && onIssueDO && ['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
+          <button
+            type="button"
+            onClick={handleIssueDO}
+            disabled={issuingDO}
+            className={btnSecondary}
+          >
+            {issuingDO ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-4 h-4" />}
+            <span>{t('sales.actions.issueDeliveryOrder')}</span>
+          </button>
+        )}
+        {['CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED'].includes(salesOrder.status) && (
+          <button
+            type="button"
+            onClick={handleCreateInvoice}
+            disabled={creatingInv}
+            className={btnSecondary}
+          >
+            {creatingInv ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Receipt className="w-4 h-4" />}
+            <span>{t('sales.actions.createInvoice')}</span>
+          </button>
+        )}
+        {nextStatus[salesOrder.status] && salesOrder.status !== 'PENDING_APPROVAL' && (
+          <button
+            type="button"
+            onClick={() => updateStatus(nextStatus[salesOrder.status])}
+            disabled={updating}
+            className={btnPrimary}
+          >
+            {updating && <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+            <span>{nextLabel[salesOrder.status]}</span>
+          </button>
+        )}
+        {isLocked && (
+          <LockedNote text={t('sales.detail.lockedNote')} />
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <>
+      <DocModal
+        wide
+        title={t('sales.detail.title', { doc: t('sales.docType.salesOrder') })}
+        onClose={onClose}
+        footer={footerContent}
+      >
+        <DocBand
+          icon={ShoppingBag}
+          number={salesOrder.so_number}
+          party={salesOrder.customer_code ? `${salesOrder.customer_name} (${salesOrder.customer_code})` : salesOrder.customer_name}
+        />
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0 overflow-x-auto">
+            <StatusFlow
+              steps={SO_FLOW.map(s => ({ key: s, label: t(STATUS_CONFIG[s]?.labelKey as any || s) }))}
+              current={salesOrder.status === 'PARTIAL' ? 'READY' : salesOrder.status}
+              dead={dead}
+            />
+          </div>
+          <StatusBadge payment status={salesOrder.payment_status} />
         </div>
-      </motion.div>
+
+        <DealTimeline soId={salesOrder.id} />
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" />
+          </div>
+        ) : (
+          <>
+            <DocSection title={t('sales.detail.docInfo')}>
+              <FieldGrid
+                fields={[
+                  { label: t('sales.common.orderDateLabel'), value: fmtD(detail?.order_date || salesOrder.order_date) },
+                  { label: t('sales.common.deliveryDate'), value: fmtD(detail?.delivery_date || salesOrder.delivery_date) },
+                  { label: t('sales.detail.reference'), value: (salesOrder.quotation_number || detail?.quotation_number) ? <span className="font-mono">{salesOrder.quotation_number || detail?.quotation_number}</span> : undefined },
+                  { label: t('sales.common.customerCode'), value: salesOrder.customer_code || detail?.customer_code || undefined },
+                  { label: t('sales.detail.taxId'), value: detail?.customer_tax_id || undefined },
+                  { label: t('sales.detail.vatMode'), value: detail ? VAT_MODE_LABEL[vatModeOf(detail.tax_rate, detail.vat_inclusive === 1)] : undefined },
+                  { label: t('sales.detail.paymentTerms'), value: detail?.payment_terms || undefined },
+                  { label: t('sales.detail.address'), value: detail?.customer_address || undefined, full: true },
+                ]}
+              />
+            </DocSection>
+
+            <DocSection title={t('sales.common.items')}>
+              <ItemsTable
+                rows={itemRows}
+                labels={{
+                  no: t('sales.detail.no'),
+                  item: t('sales.detail.item'),
+                  qty: t('sales.common.qty'),
+                  unit: t('sales.common.unit'),
+                  price: t('sales.common.unitPrice'),
+                  discount: t('sales.common.discount'),
+                  amount: t('sales.common.amount'),
+                  empty: t('sales.detail.noItems'),
+                }}
+              />
+            </DocSection>
+
+            {detail?.work_orders && detail.work_orders.length > 0 && (
+              <DocSection title={t('sales.detail.linkedWorkOrders', { defaultValue: 'ใบสั่งผลิตที่เชื่อมกับใบขายนี้' })}>
+                <div className="border border-[var(--border)] rounded-xl overflow-hidden divide-y divide-[var(--border)]/50">
+                  {detail.work_orders.map((wo: any) => (
+                    <div key={wo.id} className="p-3 bg-[var(--surface-2)] flex items-center justify-between text-sm">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono font-semibold text-xs text-[var(--primary)]">{wo.wo_number}</p>
+                        <p className="text-[var(--fg-1)] text-xs mt-0.5 truncate">{wo.product_name}</p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-3">
+                        <span className="text-xs text-[var(--fg-3)]">× {wo.quantity}</span>
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-2)]">
+                          {wo.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </DocSection>
+            )}
+
+            <TotalsBox
+              rows={totalRows}
+              grand={{ label: t('sales.common.grandTotal'), value: Number(detail?.total_amount || salesOrder.total_amount) || 0 }}
+            />
+
+            {detail?.notes && (
+              <DocSection title={t('sales.common.notes')}>
+                <div className="rounded-xl border border-[var(--border)] p-3 text-sm text-[var(--fg-2)] bg-[var(--surface-2)]/30 break-words whitespace-pre-wrap">
+                  {detail.notes}
+                </div>
+              </DocSection>
+            )}
+          </>
+        )}
+      </DocModal>
       {showSourceDoc && (
         <SourceDocModal kind="SALES_ORDER" refId={salesOrder.id} title={salesOrder.so_number} onClose={() => setShowSourceDoc(false)} />
       )}
-    </div>
+    </>
   )
 }
 
@@ -3822,7 +3989,6 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   // Cancel invoice / void receipt reverses journal + stock — gate behind ADMIN/MANAGER/MASTER
   // same as other irreversible accounting actions elsewhere in the app.
   const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
-  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showPayment, setShowPayment] = useState(false)
@@ -3839,7 +4005,9 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   }
   useEffect(() => { loadDetail() }, [invoice.id])
   // ยอด/สถานะล่าสุดจาก detail (โหลดใหม่หลังยกเลิกใบเสร็จ) — props เป็นแค่ snapshot จากตาราง
-  const balance: number = (detail?.status ?? invoice.status) === 'CANCELLED' ? 0 : (detail?.balance_amount ?? invoice.balance_amount)
+  const docStatus: string = detail?.status ?? invoice.status
+  const isCancelled = docStatus === 'CANCELLED'
+  const balance: number = isCancelled ? 0 : (detail?.balance_amount ?? invoice.balance_amount)
   const payStatus: string = detail?.payment_status ?? invoice.payment_status
 
   const handlePrintInv = (format: 'a4' | 'thermal') => {
@@ -3936,180 +4104,199 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   }
 
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
-  const fmtD = (s: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
-  const isUnpaid = (payStatus === 'UNPAID' || payStatus === 'OVERDUE' || payStatus === 'PARTIAL')
-    && (detail?.status || invoice.status) !== 'CANCELLED'
+  const fmtD = (s?: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
+  const isUnpaid = (payStatus === 'UNPAID' || payStatus === 'OVERDUE' || payStatus === 'PARTIAL') && !isCancelled
+
+  const customerCode = detail?.customer_code ?? invoice.customer_code
+  const partyLabel = customerCode ? `${invoice.customer_name} (${customerCode})` : invoice.customer_name
+  const vatMode = vatModeOf(detail?.tax_rate ?? detail?.vat_rate, detail?.vat_inclusive === 1)
+
+  const itemRows: DocItemRow[] = (detail?.items || []).map((it: any, i: number) => ({
+    name: it.product_name || `${t('sales.common.itemNumberPrefix')} ${i + 1}`,
+    sub: it.product_code || undefined,
+    qty: Number(it.quantity) || 0,
+    unit: unitLabel(it.unit || '') || undefined,
+    price: Number(it.unit_price) || 0,
+    discount: it.discount_percent ? `${it.discount_percent}%` : undefined,
+    amount: Number(it.total_price) || 0,
+  }))
+
+  const totalAmount = Number(detail?.total_amount ?? invoice.total_amount) || 0
+  const taxAmount = Number(detail?.tax_amount ?? detail?.vat_amount ?? invoice.tax_amount) || 0
+  const subtotal = Number(detail?.subtotal ?? (totalAmount - taxAmount)) || 0
+  const discountAmount = Number(detail?.discount_amount) || 0
+  const extraChargeAmount = Number(detail?.extra_charge_amount) || 0
+  const paidAmount = Number(detail?.paid_amount) || 0
+  const whtList = (detail?.withholdingTax || []) as any[]
+  const whtTotal = whtList.reduce((s: number, w: any) => s + (Number(w.tax_amount) || 0), 0)
+
+  const totalRows: { label: string; value: number; sign?: '+' | '-' }[] = [
+    { label: t('sales.invoiceDetail.beforeTax'), value: subtotal },
+    ...(discountAmount > 0 ? [{ label: t('sales.common.discount'), value: discountAmount, sign: '-' as const }] : []),
+    ...(extraChargeAmount > 0 ? [{ label: detail?.extra_charge_label || t('common.extraCharge'), value: extraChargeAmount, sign: '+' as const }] : []),
+    ...(taxAmount > 0 ? [{ label: `${t('sales.common.tax')} (${detail?.tax_rate ?? detail?.vat_rate ?? 0}%)`, value: taxAmount, sign: '+' as const }] : []),
+    { label: t('sales.common.total'), value: totalAmount },
+    ...whtList.map((w: any) => ({
+      label: t('sales.invoiceDetail.withholdingTax', { type: w.tax_type, rate: w.tax_rate }),
+      value: Number(w.tax_amount) || 0,
+      sign: '-' as const,
+    })),
+    ...(whtList.length > 0 ? [{ label: t('sales.invoiceDetail.netAfterWht'), value: totalAmount - whtTotal }] : []),
+    ...(paidAmount > 0 ? [{ label: t('sales.invoiceDetail.paidAmount'), value: paidAmount, sign: '-' as const }] : []),
+  ]
+
+  const journalEntries = [
+    { dr: true, account: payMethod === 'CASH' ? t('sales.paymentAccount.cash') : t('sales.paymentAccount.bank'), label: t('sales.paymentModal.debitLabel'), amount: parseFloat(payAmount) || 0 },
+    { dr: false, account: t('sales.paymentAccount.receivable'), label: t('sales.paymentModal.creditLabel'), amount: parseFloat(payAmount) || 0 },
+  ]
 
   return (
     <>
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-4xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-
-        {/* Header */}
-        <div className="p-5 border-b border-[var(--border)] flex justify-between items-start shrink-0">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <p className="font-mono text-base text-warning font-bold">{invoice.invoice_number}</p>
-              {invoice.so_number && (
-                <div className="flex items-center gap-1.5 text-xs text-[var(--fg-4)]">
-                  <span className="px-1.5 py-0.5 bg-[var(--bg)] rounded font-mono">SO: {invoice.so_number}</span>
-                </div>
+      <DocModal
+        title={t('sales.detail.title', { doc: t('sales.docType.invoice') })}
+        onClose={onClose}
+        wide
+        footer={!loading && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} className={btnClose}>{t('sales.common.close')}</button>
+              {canCancelDoc && !isCancelled && (
+                <button onClick={handleCancelInvoice} disabled={saving} title={t('sales.actions.cancelInvoice')} className={btnDanger}>
+                  {t('sales.actions.cancelInvoice')}
+                </button>
               )}
             </div>
-            <p className="text-[var(--fg-1)] font-semibold text-lg">{invoice.customer_name}</p>
-            {invoice.customer_code && <p className="text-xs text-[var(--fg-4)] font-mono">{invoice.customer_code}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => handlePrintInv('a4')} disabled={!detail} title={t('sales.actions.printInvoiceA4')} className={btnSecondary}>
+                <Printer className="w-4 h-4" /> {t('sales.actions.printA4')}
+              </button>
+              <button onClick={() => handlePrintInv('thermal')} disabled={!detail} title={t('sales.actions.printThermal')} className={btnSecondary}>
+                <Printer className="w-4 h-4" /> {t('sales.actions.printThermal')}
+              </button>
+              <button onClick={() => setSourceDocModal({ kind: 'INVOICE', refId: invoice.id, title: invoice.invoice_number })} className={btnSecondary}>
+                <FileText className="w-4 h-4" /> {t('sales.detail.docTrail')}
+              </button>
+              {isUnpaid ? (
+                !showPayment && (
+                  <button onClick={() => setShowPayment(true)} className={btnPrimary}>
+                    <DollarSign className="w-4 h-4" /> {t('sales.paymentModal.title')}
+                  </button>
+                )
+              ) : (
+                <LockedNote text={t('sales.detail.lockedNote')} />
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge payment status={(detail?.status || invoice.status) === 'CANCELLED' ? 'CANCELLED' : payStatus} />
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)]"><X className="w-4 h-4" /></button>
-          </div>
+        )}
+      >
+        <DocBand icon={Receipt} number={invoice.invoice_number} party={partyLabel} />
+
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <StatusFlow
+            steps={[
+              { key: 'ISSUED', label: t('sales.stage.inv.issued') },
+              { key: 'PARTIAL', label: t('sales.stage.inv.partial') },
+              { key: 'PAID', label: t('sales.stage.inv.paid') },
+            ]}
+            current={payStatus === 'PAID' ? 'PAID' : payStatus === 'PARTIAL' ? 'PARTIAL' : 'ISSUED'}
+            dead={isCancelled ? t('sales.status.cancelled') : undefined}
+          />
+          <StatusBadge payment status={isCancelled ? 'CANCELLED' : payStatus} />
         </div>
 
-        <div className="overflow-y-auto p-5 space-y-5 flex-1">
-          {loading ? (
-            <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
-          ) : (
-            <>
-              {/* Info row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.invoiceDetail.issuedDate')}</p>
-                  <p className="text-[var(--fg-1)] font-medium">{fmtD(detail?.invoice_date)}</p>
-                </div>
-                <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.dueDate')}</p>
-                  <p className={detail?.payment_status === 'OVERDUE' ? 'text-danger font-medium' : 'text-[var(--fg-1)] font-medium'}>{fmtD(detail?.due_date)}</p>
-                </div>
-                <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.invoiceDetail.totalAmount')}</p>
-                  <p className="text-[var(--fg-1)] font-bold">{fmt(detail?.total_amount)}</p>
-                </div>
-                <div className="bg-[var(--bg)] rounded-xl p-3">
-                  <p className="text-[var(--fg-4)] text-xs mb-1">{t('sales.common.balance')}</p>
-                  <p className={balance > 0 ? 'text-danger font-bold' : 'text-success font-bold'}>{fmt(balance)}</p>
-                </div>
-              </div>
+        {loading ? (
+          <div className="text-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-phopy-indigo mx-auto" /></div>
+        ) : (
+          <>
+            <DocSection title={t('sales.detail.docInfo')}>
+              <FieldGrid
+                fields={[
+                  { label: t('sales.invoiceDetail.issuedDate'), value: fmtD(detail?.invoice_date ?? invoice.invoice_date) },
+                  { label: t('sales.common.dueDate'), value: fmtD(detail?.due_date ?? invoice.due_date), tone: payStatus === 'OVERDUE' ? 'text-danger font-medium' : undefined },
+                  { label: t('sales.detail.reference'), value: detail?.so_number || invoice.so_number },
+                  { label: t('sales.detail.vatMode'), value: VAT_MODE_LABEL[vatMode] },
+                  { label: t('sales.detail.taxId'), value: detail?.customer_tax_id || invoice.customer_tax_id },
+                  { label: t('sales.common.balance'), value: fmt(balance), tone: balance > 0 ? 'text-danger font-semibold' : 'text-success font-semibold' },
+                  { label: t('sales.detail.address'), value: detail?.customer_address || invoice.customer_address, full: true },
+                ]}
+              />
+            </DocSection>
 
-              {/* Items list */}
-              <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.common.items')}</p>
-                <div className="border border-[var(--border)] rounded-xl overflow-hidden">
-                  <div className="hidden sm:grid sm:grid-cols-12 px-3 py-2 bg-[var(--surface-2)] text-xs text-[var(--fg-4)] font-medium border-b border-[var(--border)]/50">
-                    <span className="col-span-5">{t('sales.common.product')}</span>
-                    <span className="col-span-2 text-center">{t('sales.common.qty')}</span>
-                    <span className="col-span-2 text-right">{t('sales.common.unitPrice')}</span>
-                    <span className="col-span-1 text-right">{t('sales.common.discount')}</span>
-                    <span className="col-span-2 text-right">{t('sales.common.lineTotal')}</span>
-                  </div>
-                  {(detail?.items || []).map((it: any, i: number) => (
-                    <div key={i} className={`grid grid-cols-2 gap-2 sm:grid-cols-12 sm:gap-0 px-3 py-3 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
-                      <div className="col-span-2 sm:col-span-5">
-                        <p className="text-[var(--fg-1)] font-medium">{it.product_name || `${t('sales.common.itemNumberPrefix')} ${i + 1}`}</p>
-                        {it.product_code && <p className="text-xs text-[var(--fg-4)] font-mono">{it.product_code}</p>}
+            <DocSection title={t('sales.common.items')}>
+              <ItemsTable
+                rows={itemRows}
+                labels={{
+                  no: t('sales.detail.no'),
+                  item: t('sales.detail.item'),
+                  qty: t('sales.common.qty'),
+                  unit: t('sales.common.unit'),
+                  price: t('sales.common.unitPrice'),
+                  discount: t('sales.common.discount'),
+                  amount: t('sales.common.lineTotal'),
+                  empty: t('sales.detail.noItems'),
+                }}
+              />
+            </DocSection>
+
+            <TotalsBox
+              rows={totalRows}
+              grand={{ label: t('sales.common.balance'), value: balance }}
+            />
+
+            {detail?.notes && (
+              <DocSection title={t('sales.common.notes')}>
+                <p className="text-sm text-[var(--fg-2)] whitespace-pre-wrap rounded-xl border border-[var(--border)] p-3">{detail.notes}</p>
+              </DocSection>
+            )}
+
+            <DocSection title={t('sales.invoiceDetail.paymentHistory')}>
+              {(detail?.receipts || []).length === 0 ? (
+                <div className="rounded-xl border border-[var(--border)] p-4 text-center text-xs text-[var(--fg-4)]">{t('sales.invoiceDetail.noPayments')}</div>
+              ) : (
+                <div className="space-y-2">
+                  {detail.receipts.map((r: any) => (
+                    <div key={r.id} className="rounded-xl border border-[var(--border)] p-4 text-sm space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="text-[var(--fg-1)] font-mono text-xs font-semibold">{r.receipt_number}</p>
+                          <p className="text-xs text-[var(--fg-4)] mt-0.5">{fmtD(r.receipt_date)} · {r.payment_method}{r.payment_reference ? ` · ${r.payment_reference}` : ''}</p>
+                          {r.notes && <p className="text-xs text-[var(--fg-3)] mt-1">{r.notes}</p>}
+                        </div>
+                        <p className="text-[var(--fg-1)] font-semibold tabular-nums ml-3">{fmt(r.amount)}</p>
                       </div>
-                      <p className="col-span-1 sm:col-span-2 sm:text-center text-[var(--fg-2)]">{it.quantity} {unitLabel(it.unit || '')}</p>
-                      <p className="col-span-1 sm:col-span-2 text-right text-[var(--fg-2)]">{fmt(it.unit_price)}</p>
-                      <p className="col-span-1 sm:col-span-1 sm:text-right text-[var(--fg-4)] text-xs">{it.discount_percent ? `${it.discount_percent}%` : '-'}</p>
-                      <p className="col-span-1 sm:col-span-2 text-right text-[var(--fg-1)] font-semibold">{fmt(it.total_price)}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={() => handlePrintReceipt(r, 'a4')} className={btnSecondary}>
+                          <Printer className="w-3.5 h-3.5" /> {t('sales.actions.printA4')}
+                        </button>
+                        <button onClick={() => handlePrintReceipt(r, 'thermal')} className={btnSecondary}>
+                          <Printer className="w-3.5 h-3.5" /> {t('sales.actions.printThermal')}
+                        </button>
+                        <button onClick={() => setSourceDocModal({ kind: 'PAYMENT', refId: r.id, title: r.receipt_number })} className={btnSecondary}>
+                          <FileText className="w-3.5 h-3.5" /> {t('sales.detail.docTrail')}
+                        </button>
+                        {canCancelDoc && (
+                          <button onClick={() => handleVoidReceipt(r.id)} title={t('sales.actions.voidReceipt')} className={btnDanger}>
+                            {t('sales.actions.voidReceipt')}
+                          </button>
+                        )}
+                      </div>
+                      <div className="pt-2 border-t border-[var(--border)]/60">
+                        <PaymentAttachments refType="RECEIPT" refId={r.id} />
+                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
+            </DocSection>
 
-              {/* Totals + Payment history — 2 columns on wide screen */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Totals */}
-                <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-1.5 text-sm">
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.invoiceDetail.summary')}</p>
-                  <div className="flex justify-between text-[var(--fg-3)]"><span>{t('sales.invoiceDetail.beforeTax')}</span><span>{fmt(detail?.subtotal ?? ((detail?.total_amount || 0) - (detail?.tax_amount || detail?.vat_amount || 0)))}</span></div>
-                  {(detail?.discount_amount || 0) > 0 && <div className="flex justify-between text-danger"><span>{t('sales.common.discount')}</span><span>-{fmt(detail.discount_amount)}</span></div>}
-                  {(detail?.extra_charge_amount || 0) > 0 && <div className="flex justify-between text-[var(--fg-3)]"><span>{detail.extra_charge_label || t('common.extraCharge')}</span><span>+{fmt(detail.extra_charge_amount)}</span></div>}
-                  {((detail?.tax_amount ?? detail?.vat_amount) || 0) > 0 && <div className="flex justify-between text-warning"><span>{t('sales.common.tax')} ({detail?.tax_rate ?? detail?.vat_rate ?? 7}%)</span><span>+{fmt(detail?.tax_amount ?? detail?.vat_amount)}</span></div>}
-                  <div className="flex justify-between text-[var(--fg-2)] border-t border-[var(--border)]/50 pt-1.5"><span>{t('sales.common.total')}</span><span>{fmt(detail?.total_amount)}</span></div>
-                  {(detail?.withholdingTax || []).length > 0 && (
-                    <>
-                      {(detail.withholdingTax as any[]).map((w: any) => (
-                        <div key={w.id} className="flex justify-between text-warning text-xs">
-                          <span>{t('sales.invoiceDetail.withholdingTax', { type: w.tax_type, rate: w.tax_rate })}</span>
-                          <span>-{fmt(w.tax_amount)}</span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between text-[var(--fg-2)] text-xs">
-                        <span>{t('sales.invoiceDetail.netAfterWht')}</span>
-                        <span>{fmt((detail?.total_amount || 0) - (detail?.withholdingTax || []).reduce((s: number, w: any) => s + (w.tax_amount || 0), 0))}</span>
-                      </div>
-                    </>
-                  )}
-                  {(detail?.paid_amount || 0) > 0 && <div className="flex justify-between text-success"><span>{t('sales.invoiceDetail.paidAmount')}</span><span>-{fmt(detail?.paid_amount)}</span></div>}
-                  <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2">
-                    <span className="text-[var(--fg-1)]">{t('sales.common.balance')}</span>
-                    <span className={balance > 0 ? 'text-danger' : 'text-success'}>{fmt(balance)}</span>
-                  </div>
-                </div>
+            <DocSection title={t('sales.invoiceDetail.attachments')}>
+              <PaymentAttachments refType="INVOICE" refId={invoice.id} />
+            </DocSection>
 
-                {/* Payment receipts */}
-                <div>
-                  <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.invoiceDetail.paymentHistory')}</p>
-                  {(detail?.receipts || []).length === 0 ? (
-                    <div className="bg-[var(--surface-2)] rounded-xl p-4 text-center text-sm text-[var(--fg-4)]">{t('sales.invoiceDetail.noPayments')}</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {detail.receipts.map((r: any) => (
-                        <div key={r.id} className="bg-[var(--surface-2)] rounded-xl px-4 py-3 text-sm">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <p className="text-[var(--fg-1)] font-mono text-xs font-semibold">{r.receipt_number}</p>
-                              <p className="text-xs text-[var(--fg-4)] mt-0.5">{fmtD(r.receipt_date)} · {r.payment_method}{r.payment_reference ? ` · ${r.payment_reference}` : ''}</p>
-                              {r.notes && <p className="text-xs text-[var(--fg-3)] mt-1 italic">"{r.notes}"</p>}
-                            </div>
-                            <p className="text-success font-bold ml-3">{fmt(r.amount)}</p>
-                          </div>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            <button onClick={() => handlePrintReceipt(r, 'a4')}
-                              className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
-                              <Printer className="w-3 h-3" /> A4
-                            </button>
-                            <button onClick={() => handlePrintReceipt(r, 'thermal')}
-                              className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
-                              <Printer className="w-3 h-3" /> 80mm
-                            </button>
-                            <button onClick={() => setSourceDocModal({ kind: 'PAYMENT', refId: r.id, title: r.receipt_number })}
-                              className="px-2 py-1 text-[var(--fg-4)] hover:text-[var(--fg-1)] border border-[var(--border)]/50 rounded-lg text-xs flex items-center gap-1">
-                              <FileText className="w-3 h-3" /> สายเอกสาร
-                            </button>
-                            {canCancelDoc && (
-                              <button onClick={() => handleVoidReceipt(r.id)} title={t('sales.actions.voidReceipt')}
-                                className="px-2 py-1 text-danger hover:text-danger border border-[var(--danger-soft)] bg-[var(--danger-soft)] rounded-lg text-xs flex items-center gap-1">
-                                <Ban className="w-3 h-3" /> {t('sales.actions.voidReceipt')}
-                              </button>
-                            )}
-                          </div>
-                          {/* Slip for this specific payment — a receipt-level ref, since one
-                              invoice can have several receipts each with their own slip. */}
-                          <div className="mt-3 pt-3 border-t border-[var(--border)]/30">
-                            <PaymentAttachments refType="RECEIPT" refId={r.id} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Supporting documents for this invoice (not payment slips — those live on
-                  the receipt above). ref_type=INVOICE via the shared attachments API. */}
-              <div>
-                <p className="text-xs font-semibold text-[var(--fg-3)] uppercase tracking-wide mb-2">{t('sales.invoiceDetail.attachments')}</p>
-                <PaymentAttachments refType="INVOICE" refId={invoice.id} />
-              </div>
-
-              {/* Record Payment Form */}
-              {isUnpaid && showPayment && (
-                <div className="bg-[var(--bg)] border border-phopy-indigo/30 rounded-xl p-4 space-y-3">
-                  <p className="text-sm font-semibold text-[var(--primary)]">{t('sales.paymentModal.title')}</p>
-                  <div className="grid grid-cols-2 gap-3">
+            {isUnpaid && showPayment && (
+              <DocSection title={t('sales.paymentModal.title')}>
+                <div className="rounded-xl border border-[var(--border)] p-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.amountLabel')}</label>
                       <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)}
@@ -4135,75 +4322,37 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
                     <div>
                       <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.paymentModal.refLabel')}</label>
                       <input type="text" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder={t('sales.paymentModal.refPlaceholder')}
-                        className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
+                        className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
                     </div>
                   </div>
                   <div>
                     <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('sales.common.notes')}</label>
                     <textarea value={payNote} onChange={e => setPayNote(e.target.value)} rows={2}
                       placeholder={t('sales.paymentModal.notePlaceholder')}
-                      className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm placeholder-gray-600 focus:outline-none focus:border-phopy-indigo resize-none" />
+                      className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo resize-none" />
                   </div>
-                  {/* Journal Preview */}
-                  <JournalPreview entries={[
-                    { dr: true,  account: payMethod === 'CASH' ? t('sales.paymentAccount.cash') : t('sales.paymentAccount.bank'), label: t('sales.paymentModal.debitLabel'), amount: parseFloat(payAmount) || 0 },
-                    { dr: false, account: t('sales.paymentAccount.receivable'), label: t('sales.paymentModal.creditLabel'), amount: parseFloat(payAmount) || 0 },
-                  ]} />
-
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setShowPayment(false)} className="px-3 py-2 text-[var(--fg-3)] text-sm hover:text-[var(--fg-1)]">{t('sales.common.cancel')}</button>
-                    <button onClick={handleRecordPayment} disabled={saving}
-                      className="flex-1 py-2 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-1">
+                  <JournalPreview entries={journalEntries} />
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowPayment(false)} className={btnSecondary}>{t('sales.common.cancel')}</button>
+                    <button onClick={handleRecordPayment} disabled={saving} className={btnPrimary}>
                       {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                       {t('sales.pos.confirmReceivePayment')}
                     </button>
                   </div>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        {!loading && (
-          <div className="px-5 py-4 border-t border-[var(--border)] shrink-0 flex flex-wrap items-center gap-2">
-            <button onClick={() => handlePrintInv('a4')} title={t('sales.actions.printInvoiceA4')}
-              className="px-3 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors flex items-center gap-1.5 text-sm">
-              <Printer className="w-4 h-4" /> A4
-            </button>
-            <button onClick={() => handlePrintInv('thermal')} title={t('sales.actions.printThermal')}
-              className="px-3 py-2 text-[var(--fg-4)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors text-sm flex items-center gap-1">
-              <Printer className="w-3.5 h-3.5" /> 80mm
-            </button>
-            <button onClick={() => setSourceDocModal({ kind: 'INVOICE', refId: invoice.id, title: invoice.invoice_number })}
-              className="px-3 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors flex items-center gap-1.5 text-sm">
-              <FileText className="w-4 h-4" /> สายเอกสาร
-            </button>
-            {canCancelDoc && (detail?.status || invoice.status) !== 'CANCELLED' && (
-              <button onClick={handleCancelInvoice} disabled={saving} title={t('sales.actions.cancelInvoice')}
-                className="px-3 py-2 text-danger border border-[var(--danger-soft)] bg-[var(--danger-soft)] rounded-lg hover:bg-red-500/20 transition-colors flex items-center gap-1.5 text-sm disabled:opacity-50">
-                <Ban className="w-4 h-4" /> {t('sales.actions.cancelInvoice')}
-              </button>
+              </DocSection>
             )}
-            <div className="flex-1" />
-            {isUnpaid && !showPayment && (
-              <button onClick={() => setShowPayment(true)}
-                className="px-5 py-2 bg-success text-white font-semibold rounded-lg hover:bg-success/80 text-sm flex items-center gap-2">
-                <DollarSign className="w-4 h-4" /> {t('sales.paymentModal.title')}
-              </button>
-            )}
-          </div>
+          </>
         )}
-      </motion.div>
-    </div>
-    {sourceDocModal && (
-      <SourceDocModal
-        kind={sourceDocModal.kind}
-        refId={sourceDocModal.refId}
-        title={sourceDocModal.title}
-        onClose={() => setSourceDocModal(null)}
-      />
-    )}
+      </DocModal>
+      {sourceDocModal && (
+        <SourceDocModal
+          kind={sourceDocModal.kind}
+          refId={sourceDocModal.refId}
+          title={sourceDocModal.title}
+          onClose={() => setSourceDocModal(null)}
+        />
+      )}
     </>
   )
 }
@@ -4477,7 +4626,6 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
   companyName?: string
 }) {
   const { t } = useTranslation()
-  useModalClose(onClose)
   const [saving, setSaving] = useState(false)
   const [showSourceDoc, setShowSourceDoc] = useState(false)
   const fmt = (v: number) => `฿${Number(v).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
@@ -4485,18 +4633,14 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
 
   const handlePrint = () => {
     const co = getCachedCompanySettings()
-    printBill('cn', { ...creditNote, _company: co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
+    printBill('cn', { ...creditNote, _company: companyName || co.name || '-', _companyAddress: co.address || '', _companyTax: co.tax_id || '', _companyPhone: co.phone || '', _companyLogo: co.logo_base64 || '' }, 'a4')
   }
 
-  const statusLabel: Record<string, string> = {
-    DRAFT: t('sales.creditNoteStatus.draft'), ISSUED: t('sales.creditNoteStatus.issued'), APPLIED: t('sales.creditNoteStatus.applied'), CANCELLED: t('sales.common.cancel'),
-  }
-  const statusColor: Record<string, string> = {
-    DRAFT: 'text-[var(--fg-3)] bg-gray-400/10',
-    ISSUED: 'text-blue-400 bg-blue-400/10',
-    APPLIED: 'text-success bg-success/10',
-    CANCELLED: 'text-danger bg-[var(--danger-soft)]',
-  }
+  const statusSteps = [
+    { key: 'DRAFT', label: t('sales.creditNoteStatus.draft') },
+    { key: 'ISSUED', label: t('sales.creditNoteStatus.issued') },
+    { key: 'APPLIED', label: t('sales.creditNoteStatus.applied') },
+  ]
 
   const handleIssue = async () => {
     setSaving(true)
@@ -4504,7 +4648,7 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
       const { data } = await api.put(`/sales/credit-notes/${creditNote.id}/status`, { status: 'ISSUED' })
       toast.success(t('sales.toast.creditNoteIssued'))
       // ลูกค้าจ่ายไปแล้วบางส่วน/ทั้งหมด → ใบลดหนี้นี้เกินยอดค้างที่เหลือ กลายเป็นเงินที่ต้องคืน/เป็นเครดิตให้ลูกค้า
-      if (data?.refundDue > 0) toast(t('sales.toast.creditNoteRefundDue', { amount: fmt(data.refundDue) }), { icon: '⚠️', duration: 6000 })
+      if (data?.refundDue > 0) toast(t('sales.toast.creditNoteRefundDue', { amount: fmt(data.refundDue) }), { icon: <AlertTriangle className="w-5 h-5 text-warning" />, duration: 6000 })
       onRefresh()
       onClose()
     } catch (err: any) {
@@ -4514,72 +4658,158 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
     }
   }
 
+  const partyName = creditNote.customer_name
+    ? `${creditNote.customer_name}${creditNote.customer_code ? ` (${creditNote.customer_code})` : ''}`
+    : creditNote.customer_code || '-'
+
+  const itemRows: DocItemRow[] = ((creditNote as any).items || []).map((it: any) => ({
+    name: it.product_name || it.name || it.description || t('sales.common.itemNumberPrefix'),
+    sub: it.product_code || it.code,
+    qty: Number(it.quantity || it.qty) || 0,
+    unit: it.unit ? (unitLabelTh(it.unit) || it.unit) : undefined,
+    price: Number(it.unit_price || it.price) || 0,
+    discount: it.discount ? String(it.discount) : undefined,
+    amount: Number(it.total_price || it.amount) || 0,
+  }))
+
+  const totalsBreakdown: { label: string; value: number; sign?: '+' | '-' }[] = []
+  if ((creditNote as any).subtotal != null) {
+    totalsBreakdown.push({ label: t('sales.common.subtotal'), value: Number((creditNote as any).subtotal) })
+  }
+  if ((creditNote as any).tax_amount != null) {
+    totalsBreakdown.push({ label: t('sales.common.tax'), value: Number((creditNote as any).tax_amount) })
+  }
+
+  const isCancelled = creditNote.status === 'CANCELLED'
+
   return (
     <>
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--fg-1)] font-mono">{creditNote.cn_number}</h2>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">{creditNote.customer_name}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[creditNote.status] || 'text-[var(--fg-3)] bg-gray-400/10'}`}>
-              {statusLabel[creditNote.status] || creditNote.status}
-            </span>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
-              <X className="w-4 h-4" />
+      <DocModal
+        title={t('sales.detail.title', { doc: t('sales.docType.creditNote') })}
+        onClose={onClose}
+        wide
+        footer={
+          <div className="flex items-center justify-between gap-3 w-full">
+            <button type="button" onClick={onClose} className={btnClose}>
+              {t('sales.common.close')}
             </button>
-          </div>
-        </div>
-
-        <div className="overflow-y-auto p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="bg-[var(--surface-2)] rounded-lg p-3">
-              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.creditNoteDetail.invoiceRef')}</p>
-              <p className="text-[var(--fg-1)] font-mono font-medium">{creditNote.invoice_number}</p>
+            <div className="flex items-center gap-2">
+              {creditNote.status !== 'DRAFT' && (
+                <LockedNote text={t('sales.detail.lockedNote')} />
+              )}
+              <button
+                type="button"
+                onClick={() => setShowSourceDoc(true)}
+                className={btnSecondary}
+                title={t('sales.detail.docTrail')}
+              >
+                <FileText className="w-4 h-4" />
+                <span>{t('sales.detail.docTrail')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                className={btnSecondary}
+                title={t('sales.actions.printCreditNoteA4')}
+              >
+                <Printer className="w-4 h-4" />
+                <span>{t('sales.actions.printCreditNoteA4')}</span>
+              </button>
+              {creditNote.status === 'DRAFT' && (
+                <button
+                  type="button"
+                  onClick={handleIssue}
+                  disabled={saving}
+                  className={btnPrimary}
+                >
+                  {saving ? (
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4" />
+                  )}
+                  <span>{t('sales.actions.issueCreditNote')}</span>
+                </button>
+              )}
             </div>
-            <div className="bg-[var(--surface-2)] rounded-lg p-3">
-              <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.creditNoteDetail.issuedDate')}</p>
-              <p className="text-[var(--fg-1)]">{fmtD(creditNote.credit_date)}</p>
-            </div>
           </div>
+        }
+      >
+        <DocBand
+          icon={RotateCcw}
+          number={creditNote.cn_number}
+          party={partyName}
+        />
 
-          <div className="bg-[var(--surface-2)] rounded-lg p-3">
-            <p className="text-xs text-[var(--fg-4)] mb-1">{t('sales.common.reason')}</p>
-            <p className="text-[var(--fg-1)] text-sm">{creditNote.reason || '-'}</p>
-          </div>
+        <StatusFlow
+          steps={statusSteps}
+          current={creditNote.status}
+          dead={isCancelled ? (t('sales.creditNoteStatus.cancelled') || t('sales.common.cancel')) : undefined}
+        />
 
-          <div className="bg-[var(--surface-2)] p-4 rounded-xl flex justify-between items-center">
-            <span className="text-[var(--fg-2)] text-sm font-semibold">{t('sales.creditNoteDetail.amount')}</span>
-            <span className="text-warning font-bold text-lg">{fmt(creditNote.total_amount)}</span>
-          </div>
-        </div>
+        <DocSection title={t('sales.detail.docInfo')}>
+          <FieldGrid
+            fields={[
+              {
+                label: t('sales.detail.reference'),
+                value: creditNote.invoice_number ? <span className="font-mono">{creditNote.invoice_number}</span> : '-',
+              },
+              {
+                label: t('sales.creditNoteDetail.issuedDate'),
+                value: fmtD(creditNote.credit_date),
+              },
+              {
+                label: t('sales.common.customerCode'),
+                value: creditNote.customer_code || '-',
+              },
+              {
+                label: t('sales.common.customerName'),
+                value: creditNote.customer_name || '-',
+              },
+            ]}
+          />
+        </DocSection>
 
-        <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap gap-2">
-          <button onClick={handlePrint} title={t('sales.actions.printCreditNoteA4')}
-            className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
-            <Printer className="w-4 h-4" />
-          </button>
-          <button onClick={() => setShowSourceDoc(true)} title="สายเอกสาร"
-            className="px-2.5 py-2 text-[var(--fg-3)] border border-[var(--border)] rounded-lg hover:text-[var(--fg-1)] hover:border-[var(--border)] transition-colors">
-            <FileText className="w-4 h-4" />
-          </button>
-          {creditNote.status === 'DRAFT' && (
-            <button onClick={handleIssue} disabled={saving}
-              className="flex-1 py-2 bg-orange-500 text-white font-semibold rounded-lg text-sm hover:bg-orange-400 disabled:opacity-50 flex items-center justify-center gap-2">
-              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {t('sales.actions.issueCreditNote')}
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </div>
-    {showSourceDoc && (
-      <SourceDocModal kind="CREDIT_NOTE" refId={creditNote.id} title={creditNote.cn_number} onClose={() => setShowSourceDoc(false)} />
-    )}
+        <DocSection title={t('sales.common.items')}>
+          <ItemsTable
+            rows={itemRows}
+            labels={{
+              no: t('sales.detail.no'),
+              item: t('sales.detail.item'),
+              qty: t('sales.common.qty'),
+              unit: t('sales.common.unit'),
+              price: t('sales.common.unitPrice'),
+              discount: t('sales.common.discount'),
+              amount: t('sales.common.amount'),
+              empty: t('sales.detail.noItems'),
+            }}
+          />
+        </DocSection>
+
+        <TotalsBox
+          rows={totalsBreakdown}
+          grand={{
+            label: t('sales.creditNoteDetail.amount'),
+            value: Number(creditNote.total_amount) || 0,
+          }}
+        />
+
+        {creditNote.reason && (
+          <DocSection title={t('sales.common.reason')}>
+            <p className="text-sm text-[var(--fg-2)] bg-[var(--surface-2)]/40 rounded-xl p-3 border border-[var(--border)] whitespace-pre-wrap">
+              {creditNote.reason}
+            </p>
+          </DocSection>
+        )}
+      </DocModal>
+
+      {showSourceDoc && (
+        <SourceDocModal
+          kind="CREDIT_NOTE"
+          refId={creditNote.id}
+          title={creditNote.cn_number}
+          onClose={() => setShowSourceDoc(false)}
+        />
+      )}
     </>
   )
 }
@@ -4591,7 +4821,6 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   onRefresh: () => void
 }) {
   const { t } = useTranslation()
-  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [saving, setSaving] = useState(false)
 
@@ -4602,12 +4831,9 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
   }, [backorder.id])
 
   const statusLabel: Record<string, string> = {
-    PENDING: t('sales.backorderStatus.pending'), FULFILLED: t('sales.backorderStatus.fulfilled'), CANCELLED: t('sales.common.cancel'),
-  }
-  const statusColor: Record<string, string> = {
-    PENDING: 'text-warning bg-[var(--warning-soft)]',
-    FULFILLED: 'text-success bg-success/10',
-    CANCELLED: 'text-danger bg-[var(--danger-soft)]',
+    PENDING: t('sales.backorderStatus.pending'),
+    FULFILLED: t('sales.backorderStatus.fulfilled'),
+    CANCELLED: t('sales.backorderStatus.cancelled'),
   }
 
   const handleFulfill = async () => {
@@ -4626,59 +4852,130 @@ function BackorderDetailModal({ backorder, onClose, onRefresh }: {
 
   const items: any[] = detail?.items || []
 
-  return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--fg-1)] font-mono">{backorder.bo_number}</h2>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">{backorder.customer_name} · SO: {backorder.so_number}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[backorder.status] || 'text-[var(--fg-3)] bg-gray-400/10'}`}>
-              {statusLabel[backorder.status] || backorder.status}
-            </span>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+  const itemRows: DocItemRow[] = useMemo(() => {
+    return items.map((item: any) => {
+      const remQty = Number(item.remaining_qty ?? ((item.ordered_qty ?? item.quantity ?? 0) - (item.delivered_qty ?? 0)))
+      const ordered = item.ordered_qty ?? item.quantity
+      const delivered = item.delivered_qty ?? 0
+      const sub = (ordered !== undefined || delivered !== undefined)
+        ? `${t('sales.backorderDetail.ordered')} ${ordered ?? 0} · ${t('sales.backorderDetail.delivered')} ${delivered}`
+        : undefined
+      const unit = item.unit ? unitLabelTh(item.unit) : '-'
+      const price = Number(item.unit_price ?? item.price ?? 0)
+      const amount = Number(item.amount ?? (remQty * price))
+      const discount = item.discount ? `${item.discount}%` : (item.discount_amount ? `${item.discount_amount}` : undefined)
 
-        <div className="overflow-y-auto p-5 space-y-4">
-          {items.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.backorderDetail.itemsTitle')}</p>
-              {items.map((item: any, i: number) => (
-                <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
-                  <p className="text-[var(--fg-1)] font-medium">{item.product_name || item.productName}</p>
-                  <div className="flex flex-wrap gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
-                    <span>{t('sales.backorderDetail.ordered')} <span className="text-[var(--fg-1)]">{item.ordered_qty ?? item.quantity}</span></span>
-                    <span>{t('sales.backorderDetail.delivered')} <span className="text-success">{item.delivered_qty ?? 0}</span></span>
-                    <span>{t('sales.backorderDetail.remaining')} <span className="text-warning">{item.remaining_qty ?? ((item.ordered_qty ?? item.quantity) - (item.delivered_qty ?? 0))}</span></span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-[var(--fg-4)] text-sm">
-              {detail === null ? t('sales.common.loading') : t('sales.backorderDetail.noItems')}
-            </div>
-          )}
-        </div>
+      return {
+        name: item.product_name || item.productName || item.name || '-',
+        sub,
+        qty: remQty,
+        unit,
+        price,
+        discount,
+        amount,
+      }
+    })
+  }, [items, t])
 
-        {backorder.status === 'PENDING' && (
-          <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap">
-            <button onClick={handleFulfill} disabled={saving}
-              className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
-              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Package className="w-4 h-4" />}
-              {t('sales.actions.fulfillBackorder')}
-            </button>
-          </div>
+  const itemLabels = {
+    no: t('sales.detail.no'),
+    item: t('sales.detail.item'),
+    qty: t('sales.common.qty'),
+    unit: t('sales.common.unit'),
+    price: t('sales.common.unitPrice'),
+    discount: t('sales.common.discount'),
+    amount: t('sales.common.amount'),
+    empty: detail === null ? t('sales.common.loading') : t('sales.detail.noItems'),
+  }
+
+  const fmtDate = (d?: string) => {
+    if (!d) return undefined
+    const parsed = new Date(d)
+    return isNaN(parsed.getTime()) ? d : parsed.toLocaleDateString('th-TH')
+  }
+
+  const fields = [
+    { label: t('sales.common.customerName'), value: backorder.customer_name },
+    { label: t('sales.common.customerCode'), value: backorder.customer_code || detail?.customer_code },
+    { label: t('sales.docType.salesOrder'), value: backorder.so_number || detail?.so_number },
+    { label: t('sales.common.originalDO'), value: backorder.original_do || detail?.original_do },
+    { label: t('sales.common.date'), value: fmtDate(detail?.created_at || detail?.date) },
+    { label: t('sales.common.status'), value: statusLabel[backorder.status] || backorder.status },
+  ]
+
+  const steps = [
+    { key: 'PENDING', label: t('sales.backorderStatus.pending') },
+    { key: 'FULFILLED', label: t('sales.backorderStatus.fulfilled') },
+  ]
+
+  const grandTotal = Number(detail?.total_amount ?? detail?.grand_total ?? itemRows.reduce((sum, r) => sum + r.amount, 0))
+
+  const footer = (
+    <div className="flex items-center justify-between w-full">
+      <button type="button" onClick={onClose} className={btnClose}>
+        {t('sales.common.close')}
+      </button>
+      <div className="flex items-center gap-2">
+        {backorder.status === 'PENDING' ? (
+          <button type="button" onClick={handleFulfill} disabled={saving} className={btnPrimary}>
+            {saving ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Package className="w-4 h-4" />
+            )}
+            {t('sales.actions.fulfillBackorder')}
+          </button>
+        ) : (
+          <LockedNote text={t('sales.detail.lockedNote')} />
         )}
-      </motion.div>
+      </div>
     </div>
+  )
+
+  return (
+    <DocModal
+      title={t('sales.detail.title', { doc: t('sales.docType.backorder') })}
+      onClose={onClose}
+      footer={footer}
+    >
+      <DocBand
+        icon={Package}
+        number={backorder.bo_number}
+        party={backorder.customer_code ? `${backorder.customer_name} (${backorder.customer_code})` : backorder.customer_name}
+      />
+
+      <StatusFlow
+        steps={steps}
+        current={backorder.status}
+        dead={backorder.status === 'CANCELLED' ? t('sales.backorderStatus.cancelled') : undefined}
+      />
+
+      <DocSection title={t('sales.detail.docInfo')}>
+        <FieldGrid fields={fields} />
+      </DocSection>
+
+      <DocSection title={t('sales.backorderDetail.itemsTitle')}>
+        <ItemsTable rows={itemRows} labels={itemLabels} />
+      </DocSection>
+
+      {itemRows.length > 0 && (
+        <TotalsBox
+          rows={detail?.tax_amount ? [
+            { label: t('sales.common.subtotal'), value: Number(detail?.subtotal ?? (grandTotal - Number(detail.tax_amount))) },
+            { label: t('sales.common.tax'), value: Number(detail.tax_amount) },
+          ] : []}
+          grand={{ label: t('sales.common.grandTotal'), value: grandTotal }}
+        />
+      )}
+
+      {detail?.notes && (
+        <DocSection title={t('sales.common.notes')}>
+          <p className="text-sm text-[var(--fg-2)] whitespace-pre-wrap bg-[var(--bg)] rounded-xl p-3 border border-[var(--border)]">
+            {detail.notes}
+          </p>
+        </DocSection>
+      )}
+    </DocModal>
   )
 }
 
@@ -4690,7 +4987,6 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
   companyName?: string
 }) {
   const { t } = useTranslation()
-  useModalClose(onClose)
   const [detail, setDetail] = useState<any>(null)
   const [saving, setSaving] = useState(false)
 
@@ -4719,64 +5015,118 @@ function DeliveryOrderDetailModal({ deliveryOrder, onClose, onRefresh, companyNa
 
   const items: any[] = detail?.items || []
 
-  return (
-    <div className="fixed inset-0 bg-[var(--fg-1)]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--fg-1)] font-mono">{deliveryOrder.do_number}</h2>
-            <p className="text-xs text-[var(--fg-4)] mt-0.5">{deliveryOrder.customer_name} · SO: {deliveryOrder.so_number}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={deliveryOrder.status} />
-            <button onClick={handlePrint} title={t('sales.actions.printDeliveryA4')}
-              className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
-              <Printer className="w-4 h-4" />
-            </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--fg-3)] hover:text-[var(--fg-1)]">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+  const steps = [
+    { key: 'DRAFT', label: t('sales.stage.do.draft') },
+    { key: 'READY', label: t('sales.stage.do.ready') },
+    { key: 'SHIPPED', label: t('sales.stage.do.shipped') },
+    { key: 'DELIVERED', label: t('sales.stage.do.delivered') },
+  ]
 
-        <div className="overflow-y-auto p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--fg-3)]">
-            <span>{t('sales.common.deliveryDate')} <span className="text-[var(--fg-1)]">{deliveryOrder.delivery_date ? new Date(deliveryOrder.delivery_date).toLocaleDateString('th-TH') : '-'}</span></span>
-            <span className="text-right">{deliveryOrder.driver_name || detail?.driver_name || '-'} {detail?.vehicle_plate || ''}</span>
-          </div>
-          {items.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-[var(--fg-2)]">{t('sales.common.items')}</p>
-              {items.map((item: any, i: number) => (
-                <div key={i} className="bg-[var(--surface-2)] rounded-lg p-3 text-sm">
-                  <p className="text-[var(--fg-1)] font-medium">{item.product_name}</p>
-                  <div className="flex flex-wrap gap-4 mt-1.5 text-xs text-[var(--fg-4)]">
-                    <span>{t('sales.backorderDetail.ordered')} <span className="text-[var(--fg-1)]">{item.ordered_qty ?? '-'}</span></span>
-                    <span>{t('sales.backorderDetail.delivered')} <span className="text-success">{item.quantity}</span> {item.unit || ''}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-[var(--fg-4)] text-sm">
-              {detail === null ? t('sales.common.loading') : t('sales.common.noData')}
-            </div>
-          )}
-        </div>
+  const rows: DocItemRow[] = items.map((it: any) => {
+    const qty = Number(it.quantity) || 0
+    const price = Number(it.unit_price ?? it.price ?? 0)
+    const amount = Number(it.amount ?? (qty * price))
+    const sub = it.ordered_qty != null
+      ? `${t('sales.backorderDetail.ordered')} ${it.ordered_qty}`
+      : (it.product_code || undefined)
+    const unitStr = it.unit ? (unitLabelTh(it.unit) || it.unit) : ''
+    return {
+      name: it.product_name || '-',
+      sub,
+      qty,
+      unit: unitStr,
+      price,
+      discount: it.discount ? String(it.discount) : undefined,
+      amount,
+    }
+  })
 
-        {deliveryOrder.status === 'SHIPPED' && (
-          <div className="p-5 border-t border-[var(--border)] shrink-0 flex flex-wrap">
-            <button onClick={handleDeliver} disabled={saving}
-              className="w-full py-2.5 bg-success text-white font-semibold rounded-lg text-sm hover:bg-success/80 disabled:opacity-50 flex items-center justify-center gap-2">
-              {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {t('sales.status.delivered')}
-            </button>
-          </div>
+
+  const driverInfo = [
+    deliveryOrder.driver_name || detail?.driver_name,
+    detail?.vehicle_plate || deliveryOrder.vehicle_plate
+  ].filter(Boolean).join(' ')
+
+  const notes = detail?.notes || (deliveryOrder as any).notes
+
+  const footer = (
+    <div className="flex items-center justify-between w-full">
+      <button type="button" onClick={onClose} className={btnClose}>
+        {t('sales.common.close')}
+      </button>
+      <div className="flex items-center gap-2">
+        {deliveryOrder.status !== 'SHIPPED' && (
+          <LockedNote text={t('sales.detail.lockedNote')} />
         )}
-      </motion.div>
+        <button type="button" onClick={handlePrint} className={btnSecondary}>
+          <Printer className="w-4 h-4" />
+          {t('sales.actions.printDeliveryA4')}
+        </button>
+        {deliveryOrder.status === 'SHIPPED' && (
+          <button type="button" onClick={handleDeliver} disabled={saving} className={btnPrimary}>
+            {saving ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            {t('sales.status.delivered')}
+          </button>
+        )}
+      </div>
     </div>
+  )
+
+  return (
+    <DocModal
+      title={t('sales.detail.title', { doc: t('sales.docType.deliveryOrder') })}
+      onClose={onClose}
+      footer={footer}
+      wide
+    >
+      <DocBand
+        icon={Package}
+        number={deliveryOrder.do_number}
+        party={`${deliveryOrder.customer_name}${deliveryOrder.customer_code ? ` (${deliveryOrder.customer_code})` : ''}`}
+      />
+
+      <StatusFlow
+        steps={steps}
+        current={deliveryOrder.status}
+        dead={deliveryOrder.status === 'CANCELLED' ? t('sales.status.cancelled') : undefined}
+      />
+
+      <DocSection title={t('sales.detail.docInfo')}>
+        <FieldGrid
+          fields={[
+            { label: t('sales.detail.reference'), value: deliveryOrder.so_number || '-' },
+            { label: t('sales.common.deliveryDate'), value: deliveryOrder.delivery_date ? new Date(deliveryOrder.delivery_date).toLocaleDateString('th-TH') : '-' },
+            { label: t('sales.common.customerCode'), value: deliveryOrder.customer_code || '-' },
+            { label: t('sales.detail.driver'), value: driverInfo || '-' },
+          ]}
+        />
+      </DocSection>
+
+      <DocSection title={t('sales.common.items')}>
+        <ItemsTable
+          qtyOnly
+          rows={rows}
+          labels={{
+            no: t('sales.detail.no'),
+            item: t('sales.detail.item'),
+            qty: t('sales.common.qty'),
+            unit: t('sales.common.unit'),
+            price: t('sales.common.unitPrice'),
+            discount: t('sales.common.discount'),
+            amount: t('sales.common.amount'),
+            empty: detail === null ? t('sales.common.loading') : t('sales.detail.noItems'),
+          }}
+        />
+      </DocSection>
+
+      {notes && (
+        <DocSection title={t('sales.common.notes')}>
+          <div className="rounded-xl border border-[var(--border)] p-3 text-sm text-[var(--fg-2)] whitespace-pre-wrap">
+            {notes}
+          </div>
+        </DocSection>
+      )}
+    </DocModal>
   )
 }
 

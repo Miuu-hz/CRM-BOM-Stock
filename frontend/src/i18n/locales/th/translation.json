@@ -1935,7 +1935,10 @@
       "afterDiscount": "หลังหักส่วนลด",
       "lockedNote": "ยืนยันแล้ว แก้ไขไม่ได้",
       "paidAmount": "รับชำระแล้ว",
-      "status": "สถานะ"
+      "status": "สถานะ",
+      "docTrail": "สายเอกสาร",
+      "linkedWorkOrders": "ใบสั่งผลิตที่เชื่อมกับใบขายนี้",
+      "pendingApprovalBanner": "รออนุมัติจากผู้อนุมัติ"
     }
   },
   "crm": {
