@@ -152,6 +152,36 @@ export interface ProposePair {
   factor: number
 }
 
+/** บันทึก/อัปเดตข้อเสนอจับคู่ SKU ลง platform_sku_proposals (ใช้ร่วมระหว่าง proposeSkuMapping และ proposeOnlineMapping) */
+export function upsertSkuProposal(
+  tenantId: string,
+  input: { sourceRef: string; sku?: string; stockItemId?: string; factor?: number },
+  userId: string,
+  now = new Date().toISOString(),
+): void {
+  const sourceRef = String(input.sourceRef || '').trim()
+  if (!sourceRef) throw new PlatformMonthError('ต้องระบุ source_ref')
+  let stockItemId = input.stockItemId ? String(input.stockItemId).trim() : ''
+  if (!stockItemId && input.sku) {
+    const found = db.prepare(`SELECT id FROM stock_items WHERE tenant_id = ? AND sku = ? AND status != 'INACTIVE'`).get(tenantId, input.sku) as any
+    if (!found) throw new PlatformMonthError(`ไม่พบ SKU "${input.sku}" ในคลัง`)
+    stockItemId = found.id
+  }
+  if (!stockItemId) throw new PlatformMonthError('ต้องระบุ sku หรือ stock_item_id')
+  if (!db.prepare(`SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ? AND status != 'INACTIVE'`).get(stockItemId, tenantId)) {
+    throw new PlatformMonthError('ไม่พบสินค้าในคลังของเทแนนต์นี้')
+  }
+  const factor = input.factor == null ? 1 : Number(input.factor)
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new PlatformMonthError('ตัวคูณ (factor) ต้องมากกว่า 0')
+  }
+  db.prepare(`
+    INSERT INTO platform_sku_proposals (id, tenant_id, source_ref, stock_item_id, factor, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(tenant_id, source_ref) DO UPDATE SET stock_item_id = excluded.stock_item_id, factor = excluded.factor, created_by = excluded.created_by, created_at = excluded.created_at
+  `).run(id25(), tenantId, sourceRef, stockItemId, factor, userId, now)
+}
+
 export function proposeSkuMapping(
   tenantId: string,
   input: { platform: string; shopKey: string; month: string; pairs: ProposePair[] },
@@ -168,22 +198,7 @@ export function proposeSkuMapping(
   for (const pair of input.pairs) {
     try {
       const sourceRef = sourceRefOf(input.platform, { product_id: pair.productId, variant_id: pair.variantId })
-      let stockItemId = pair.stockItemId
-      if (!stockItemId && pair.sku) {
-        const found = db.prepare(`SELECT id FROM stock_items WHERE tenant_id = ? AND sku = ?`).get(tenantId, pair.sku) as any
-        if (!found) throw new PlatformMonthError(`ไม่พบ SKU "${pair.sku}" ในคลัง`)
-        stockItemId = found.id
-      }
-      if (!stockItemId) throw new PlatformMonthError('ต้องระบุ sku หรือ stock_item_id')
-      if (!db.prepare(`SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ?`).get(stockItemId, tenantId)) {
-        throw new PlatformMonthError('ไม่พบสินค้าในคลังของเทแนนต์นี้')
-      }
-      const factor = Number(pair.factor) || 1
-      db.prepare(`
-        INSERT INTO platform_sku_proposals (id, tenant_id, source_ref, stock_item_id, factor, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(tenant_id, source_ref) DO UPDATE SET stock_item_id = excluded.stock_item_id, factor = excluded.factor, created_by = excluded.created_by, created_at = excluded.created_at
-      `).run(id25(), tenantId, sourceRef, stockItemId, factor, userId, now)
+      upsertSkuProposal(tenantId, { sourceRef, sku: pair.sku, stockItemId: pair.stockItemId, factor: pair.factor }, userId, now)
       accepted++
     } catch (err: any) {
       rejected.push({ pair, reason: err?.message || String(err) })

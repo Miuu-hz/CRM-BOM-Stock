@@ -241,5 +241,3 @@ export function registerOnlineOrderTools(server: IMcpServer, tenantId: string, u
     },
   )
 }
-
-export default registerOnlineOrderTools

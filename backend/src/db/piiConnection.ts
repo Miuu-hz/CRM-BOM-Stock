@@ -31,6 +31,12 @@ if (currentVersion < 1) {
   `)
 }
 
+try {
+  fs.chmodSync(piiDbPath, 0o600)
+} catch {
+  // ข้ามถ้า OS/filesystem ไม่รองรับ POSIX chmod (เช่น Windows หรือ :memory:)
+}
+
 export interface OrderPiiRow {
   tenantId: string
   platform: string
@@ -85,6 +91,19 @@ export function upsertOrderPii(rows: OrderPiiRow[]): void {
 }
 
 /**
+ * ลบข้อมูล PII เฉพาะ order_no ที่ระบุ (ใช้สำหรับชดเชยเมื่อ transaction ฐานหลักล้มเหลว เพื่อไม่ให้เกิดแถวค้างใน pii.db)
+ */
+export function deleteOrderPii(tenantId: string, platform: string, shopKey: string, orderNos: string[]): number {
+  if (!orderNos || orderNos.length === 0) return 0
+  const placeholders = orderNos.map(() => '?').join(',')
+  const res = piiDb.prepare(`
+    DELETE FROM online_order_pii
+    WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND order_no IN (${placeholders})
+  `).run(tenantId, String(platform || '').toUpperCase(), shopKey, ...orderNos)
+  return Number(res.changes) || 0
+}
+
+/**
  * ลบข้อมูล PII ทั้งหมดของ tenant (เรียกตอน purge tenant)
  */
 export function deleteTenantPii(tenantId: string): number {
@@ -102,5 +121,3 @@ export async function backupPiiTo(destPath: string): Promise<void> {
   }
   await piiDb.backup(destPath)
 }
-
-export default piiDb

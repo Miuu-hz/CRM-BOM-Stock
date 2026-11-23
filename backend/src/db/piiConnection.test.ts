@@ -4,7 +4,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { generateId } from '../utils/id'
-import { piiDb, piiDbPath, upsertOrderPii, deleteTenantPii, backupPiiTo } from './piiConnection'
+import { piiDb, piiDbPath, upsertOrderPii, deleteOrderPii, deleteTenantPii, backupPiiTo } from './piiConnection'
 
 const tenants: string[] = []
 afterEach(() => {
@@ -20,9 +20,23 @@ function newTenant() {
 }
 
 describe('piiConnection — ฐานข้อมูล PII แยกไฟล์ (pii.db)', () => {
-  it('เปิดฐานทดสอบแยกไฟล์และตั้ง PRAGMA user_version = 1', () => {
+  it('เปิดฐานทดสอบแยกไฟล์และตั้ง PRAGMA user_version = 1 + chmod 0600', () => {
     expect(path.basename(piiDbPath)).toContain('test')
     expect(Number(piiDb.pragma('user_version', { simple: true }))).toBe(1)
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(piiDbPath).mode & 0o777).toBe(0o600)
+    }
+  })
+
+  it('deleteOrderPii ลบเฉพาะ order_no ที่ระบุของเทแนนต์/ร้านนั้น', () => {
+    const t = newTenant()
+    upsertOrderPii([
+      { tenantId: t, platform: 'SHOPEE', shopKey: 'bebozch', orderNo: 'DEL-1', buyerName: 'สมชาย' },
+      { tenantId: t, platform: 'SHOPEE', shopKey: 'bebozch', orderNo: 'KEEP-1', buyerName: 'สมหญิง' },
+    ])
+    expect(deleteOrderPii(t, 'SHOPEE', 'bebozch', ['DEL-1'])).toBe(1)
+    const rows = piiDb.prepare('SELECT order_no FROM online_order_pii WHERE tenant_id = ?').all(t) as any[]
+    expect(rows.map((r) => r.order_no)).toEqual(['KEEP-1'])
   })
 
   it('upsertOrderPii บันทึกและอัปเดตแบบ idempotent โดยไม่สร้างแถวซ้ำ', () => {

@@ -1,5 +1,5 @@
 import db from '../db/sqlite'
-import { upsertOrderPii, type OrderPiiRow } from '../db/piiConnection'
+import { upsertOrderPii, deleteOrderPii, type OrderPiiRow } from '../db/piiConnection'
 import { generateId } from '../utils/id'
 import { maskName, maskPhone, maskAddress } from '../utils/piiMask'
 import { roundQty } from '../utils/qty'
@@ -10,7 +10,7 @@ import {
   StockItemRefError,
   isServiceItem,
 } from './stockItem.service'
-import { sourceRefOf } from './platformMonthSale.service'
+import { sourceRefOf, upsertSkuProposal } from './platformMonthSale.service'
 import {
   buildProductNameIndex,
   lookupProductByName,
@@ -30,11 +30,10 @@ import {
 
 export class OnlineOrderError extends Error {}
 
-export type OnlineStatusGroup = 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'UNPAID' | 'RETURNED'
+// 3 ตัวแรก = สถานะที่นับในยอดสรุปเป็นค่าเริ่มต้น (ACTIVE/COMPLETED/RETURNED) · 2 ตัวหลัง = ไม่นับเป็นค่าเริ่มต้น
+const ONLINE_STATUS_GROUPS = ['ACTIVE', 'COMPLETED', 'RETURNED', 'CANCELLED', 'UNPAID'] as const
+export type OnlineStatusGroup = (typeof ONLINE_STATUS_GROUPS)[number]
 export type OnlineSummaryGroupBy = 'province' | 'district' | 'product' | 'variant' | 'shop' | 'day' | 'month'
-
-const VALID_STATUS_GROUPS = new Set<OnlineStatusGroup>(['ACTIVE', 'COMPLETED', 'CANCELLED', 'UNPAID', 'RETURNED'])
-const DEFAULT_INCLUDE_STATUSES: OnlineStatusGroup[] = ['ACTIVE', 'COMPLETED', 'RETURNED']
 
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
 const normVariant = (v?: string | null): string => {
@@ -291,7 +290,13 @@ export function submitOnlineOrders(
     grouped.set(orderNo, list)
   }
 
-  // เตรียมข้อมูลระดับออเดอร์ + PII และ validate วันที่/สถานะก่อนเขียน
+  // เตรียมข้อมูลระดับออเดอร์ + บรรทัด + source_ref + PII ทั้งหมดก่อนแตะ pii.db
+  // เพื่อให้ transaction ฐานหลักล้มเหลวได้เฉพาะ DB error จริงเท่านั้น
+  interface ResolvedLine extends OnlineOrderInputRow {
+    variantClean: string | null
+    sourceRef: string
+  }
+
   interface PreparedOrder {
     orderNo: string
     orderTime: string
@@ -305,14 +310,14 @@ export function submitOnlineOrders(
     paymentMethod: string | null
     shippingOption: string | null
     trackingNo: string | null
-    buyerNameProvided: boolean
-    buyerPhoneProvided: boolean
-    fullAddressProvided: boolean
-    buyerNameMasked: string
-    buyerPhoneMasked: string
-    addressMasked: string
-    lines: OnlineOrderInputRow[]
+    buyerNameMasked: string | null
+    buyerPhoneMasked: string | null
+    addressMasked: string | null
+    lines: ResolvedLine[]
   }
+
+  const indices = loadShopProductIndices(tenantId, platform, shopKey)
+  const linkedRefs = loadActiveAliasRefs(tenantId)
 
   const prepared: PreparedOrder[] = []
   const piiRows: OrderPiiRow[] = []
@@ -334,14 +339,17 @@ export function submitOnlineOrders(
     const qtyReturnedSum = orderRows.reduce((s, r) => s + (r.qtyReturned ?? 0), 0)
     const statusGroup = statusGroupOf(platform, statusRaw, qtyReturnedSum)
 
+    // null / '' / ช่องว่างล้วน → ถือว่าไม่ส่งมา (null) ให้คงค่าเดิมทั้งใน dev.db และ pii.db
     const buyerName = firstNonEmpty(orderRows, (r) => r.buyerName)
     const buyerPhone = firstNonEmpty(orderRows, (r) => r.buyerPhone)
     const fullAddress = firstNonEmpty(orderRows, (r) => r.fullAddress)
     const postalCode = firstNonEmpty(orderRows, (r) => r.postalCode)
 
-    const buyerNameProvided = orderRows.some((r) => r.buyerName !== undefined)
-    const buyerPhoneProvided = orderRows.some((r) => r.buyerPhone !== undefined)
-    const fullAddressProvided = orderRows.some((r) => r.fullAddress !== undefined)
+    const resolvedLines: ResolvedLine[] = orderRows.map((l) => {
+      const variantClean = cleanOpt(l.variantName)
+      const sourceRef = resolveLineSourceRef(indices, platform, month, l.productName, variantClean)
+      return { ...l, variantClean, sourceRef }
+    })
 
     prepared.push({
       orderNo,
@@ -356,13 +364,10 @@ export function submitOnlineOrders(
       paymentMethod: firstNonEmpty(orderRows, (r) => r.paymentMethod),
       shippingOption: firstNonEmpty(orderRows, (r) => r.shippingOption),
       trackingNo: firstNonEmpty(orderRows, (r) => r.trackingNo),
-      buyerNameProvided,
-      buyerPhoneProvided,
-      fullAddressProvided,
-      buyerNameMasked: maskName(buyerName),
-      buyerPhoneMasked: maskPhone(buyerPhone),
-      addressMasked: maskAddress(fullAddress),
-      lines: orderRows,
+      buyerNameMasked: buyerName != null ? maskName(buyerName) : null,
+      buyerPhoneMasked: buyerPhone != null ? maskPhone(buyerPhone) : null,
+      addressMasked: fullAddress != null ? maskAddress(fullAddress) : null,
+      lines: resolvedLines,
     })
 
     if (buyerName || buyerPhone || fullAddress || postalCode) {
@@ -380,96 +385,132 @@ export function submitOnlineOrders(
   }
 
   // ลำดับเขียนตามสัญญาข้อ 2.2: PII ก่อน (upsert) แล้วค่อยฐานหลัก (transaction เดียว)
+  // ถ้าฐานหลักล้มเหลว → ชดเชยลบแถว pii.db ของออเดอร์ที่ไม่มีอยู่ใน online_orders เพื่อไม่ให้เกิด orphan
   if (piiRows.length > 0) {
     upsertOrderPii(piiRows)
   }
 
-  return db.transaction((): SubmitOnlineOrdersResult => {
-    const batchId = generateId()
-    const now = new Date().toISOString()
-    const indices = loadShopProductIndices(tenantId, platform, shopKey)
-    const linkedRefs = loadActiveAliasRefs(tenantId)
+  try {
+    return db.transaction((): SubmitOnlineOrdersResult => {
+      const batchId = generateId()
+      const now = new Date().toISOString()
 
-    let ordersInserted = 0
-    let ordersUpdated = 0
-    let linesUnlinked = 0
-    let returnEvents = 0
-    const unlinkedNameSet = new Set<string>()
+      let ordersInserted = 0
+      let ordersUpdated = 0
+      let linesUnlinked = 0
+      let returnEvents = 0
+      const unlinkedNameSet = new Set<string>()
 
-    const findOrder = db.prepare(`
-      SELECT id, buyer_name_masked, buyer_phone_masked, address_masked
-      FROM online_orders
-      WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND order_no = ?
-    `)
-    const selectOldLines = db.prepare(`
-      SELECT product_name, variant_name, qty_returned FROM online_order_lines WHERE order_id = ?
-    `)
-    const insertOrder = db.prepare(`
-      INSERT INTO online_orders (
-        id, tenant_id, platform, shop_key, order_no, order_time, order_date, month,
-        status_raw, status_group, province, district, postal_code, payment_method,
-        shipping_option, tracking_no, buyer_name_masked, buyer_phone_masked, address_masked,
-        first_seen_at, updated_at, last_batch_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    const updateOrder = db.prepare(`
-      UPDATE online_orders SET
-        order_time = ?, order_date = ?, month = ?, status_raw = ?, status_group = ?,
-        province = COALESCE(?, province), district = COALESCE(?, district),
-        postal_code = COALESCE(?, postal_code), payment_method = COALESCE(?, payment_method),
-        shipping_option = COALESCE(?, shipping_option), tracking_no = COALESCE(?, tracking_no),
-        buyer_name_masked = ?, buyer_phone_masked = ?, address_masked = ?,
-        updated_at = ?, last_batch_id = ?
-      WHERE id = ?
-    `)
-    const deleteLines = db.prepare(`DELETE FROM online_order_lines WHERE order_id = ?`)
-    const insertLine = db.prepare(`
-      INSERT INTO online_order_lines (
-        id, tenant_id, order_id, line_no, product_name, variant_name,
-        qty, qty_returned, list_price, net_price, source_ref
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    const insertReturnEvent = db.prepare(`
-      INSERT INTO online_return_events (
-        id, tenant_id, platform, shop_key, order_no, order_month,
-        product_name, variant_name, source_ref, qty_delta, status, detected_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
-    `)
+      const findOrder = db.prepare(`
+        SELECT id FROM online_orders
+        WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND order_no = ?
+      `)
+      const selectExistingEvents = db.prepare(`
+        SELECT product_name, variant_name, qty_delta FROM online_return_events
+        WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND order_no = ?
+      `)
+      const insertOrder = db.prepare(`
+        INSERT INTO online_orders (
+          id, tenant_id, platform, shop_key, order_no, order_time, order_date, month,
+          status_raw, status_group, province, district, postal_code, payment_method,
+          shipping_option, tracking_no, buyer_name_masked, buyer_phone_masked, address_masked,
+          first_seen_at, updated_at, last_batch_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      const updateOrder = db.prepare(`
+        UPDATE online_orders SET
+          order_time = ?, order_date = ?, month = ?, status_raw = ?, status_group = ?,
+          province = COALESCE(?, province), district = COALESCE(?, district),
+          postal_code = COALESCE(?, postal_code), payment_method = COALESCE(?, payment_method),
+          shipping_option = COALESCE(?, shipping_option), tracking_no = COALESCE(?, tracking_no),
+          buyer_name_masked = COALESCE(?, buyer_name_masked),
+          buyer_phone_masked = COALESCE(?, buyer_phone_masked),
+          address_masked = COALESCE(?, address_masked),
+          updated_at = ?, last_batch_id = ?
+        WHERE id = ?
+      `)
+      const deleteLines = db.prepare(`DELETE FROM online_order_lines WHERE order_id = ?`)
+      const insertLine = db.prepare(`
+        INSERT INTO online_order_lines (
+          id, tenant_id, order_id, line_no, product_name, variant_name,
+          qty, qty_returned, list_price, net_price, source_ref
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      const insertReturnEvent = db.prepare(`
+        INSERT INTO online_return_events (
+          id, tenant_id, platform, shop_key, order_no, order_month,
+          product_name, variant_name, source_ref, qty_delta, status, detected_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+      `)
 
-    for (const o of prepared) {
-      const resolvedLines = o.lines.map((l) => {
-        const variantClean = cleanOpt(l.variantName)
-        const sourceRef = resolveLineSourceRef(indices, platform, o.month, l.productName, variantClean)
-        return { ...l, variantClean, sourceRef }
-      })
+      for (const o of prepared) {
+        const existing = findOrder.get(tenantId, platform, shopKey, o.orderNo) as { id: string } | undefined
+        let orderId: string
 
-      const existing = findOrder.get(tenantId, platform, shopKey, o.orderNo) as any
-      let orderId: string
+        if (existing) {
+          ordersUpdated++
+          orderId = existing.id
 
-      if (existing) {
-        ordersUpdated++
-        orderId = existing.id
-
-        // ก่อนแทนที่บรรทัด: เทียบ qty_returned เดิมต่อ (product_name, variant_name)
-        const oldLines = selectOldLines.all(orderId) as Array<{
-          product_name: string
-          variant_name: string | null
-          qty_returned: number
-        }>
-        const oldReturnedByKey = new Map<string, number>()
-        for (const ol of oldLines) {
-          const k = `${normName(ol.product_name)}||${normVariant(ol.variant_name)}`
-          oldReturnedByKey.set(k, (oldReturnedByKey.get(k) || 0) + (Number(ol.qty_returned) || 0))
+          updateOrder.run(
+            o.orderTime,
+            o.orderDate,
+            o.month,
+            o.statusRaw,
+            o.statusGroup,
+            o.province,
+            o.district,
+            o.postalCode,
+            o.paymentMethod,
+            o.shippingOption,
+            o.trackingNo,
+            o.buyerNameMasked,
+            o.buyerPhoneMasked,
+            o.addressMasked,
+            now,
+            batchId,
+            orderId,
+          )
+          deleteLines.run(orderId)
+        } else {
+          ordersInserted++
+          orderId = generateId()
+          insertOrder.run(
+            orderId,
+            tenantId,
+            platform,
+            shopKey,
+            o.orderNo,
+            o.orderTime,
+            o.orderDate,
+            o.month,
+            o.statusRaw,
+            o.statusGroup,
+            o.province,
+            o.district,
+            o.postalCode,
+            o.paymentMethod,
+            o.shippingOption,
+            o.trackingNo,
+            o.buyerNameMasked ?? '',
+            o.buyerPhoneMasked ?? '',
+            o.addressMasked ?? '',
+            now,
+            now,
+            batchId,
+          )
         }
 
+        // คำนวณ return event ต่อ (order, product, variant) จากยอดคืนสะสมใหม่ ลบด้วยผลรวม qty_delta ของ event เดิมทุกสถานะ
+        // ครอบคลุมทั้งออเดอร์ใหม่ที่มาพร้อม qty_returned > 0 และกันสร้างซ้ำเมื่อส่งบางส่วนแล้วส่งเต็มอีกรอบ
         const newReturnedByKey = new Map<
           string,
           { qtyReturned: number; productName: string; variantName: string | null; sourceRef: string }
         >()
-        for (const nl of resolvedLines) {
+        for (const nl of o.lines) {
+          const qRet = Number(nl.qtyReturned) || 0
+          if (qRet <= 0) continue
           const k = `${normName(nl.productName)}||${normVariant(nl.variantClean)}`
           const prev = newReturnedByKey.get(k)
-          const qRet = Number(nl.qtyReturned) || 0
           if (prev) {
             prev.qtyReturned += qRet
           } else {
@@ -482,129 +523,109 @@ export function submitOnlineOrders(
           }
         }
 
-        for (const [k, info] of newReturnedByKey) {
-          const prevQty = oldReturnedByKey.get(k) || 0
-          const delta = roundQty(info.qtyReturned - prevQty)
-          if (delta > 0) {
-            insertReturnEvent.run(
-              generateId(),
-              tenantId,
-              platform,
-              shopKey,
-              o.orderNo,
-              o.month,
-              info.productName,
-              info.variantName,
-              info.sourceRef,
-              delta,
-              now,
-            )
-            returnEvents++
+        if (newReturnedByKey.size > 0) {
+          const existingEvents = selectExistingEvents.all(tenantId, platform, shopKey, o.orderNo) as Array<{
+            product_name: string
+            variant_name: string | null
+            qty_delta: number
+          }>
+          const accountedByKey = new Map<string, number>()
+          for (const ev of existingEvents) {
+            const k = `${normName(ev.product_name)}||${normVariant(ev.variant_name)}`
+            accountedByKey.set(k, (accountedByKey.get(k) || 0) + (Number(ev.qty_delta) || 0))
+          }
+
+          for (const [k, info] of newReturnedByKey) {
+            const prevTotal = accountedByKey.get(k) || 0
+            const delta = roundQty(info.qtyReturned - prevTotal)
+            if (delta > 0) {
+              insertReturnEvent.run(
+                generateId(),
+                tenantId,
+                platform,
+                shopKey,
+                o.orderNo,
+                o.month,
+                info.productName,
+                info.variantName,
+                info.sourceRef,
+                delta,
+                now,
+              )
+              returnEvents++
+            }
           }
         }
 
-        const nextNameMasked = o.buyerNameProvided ? o.buyerNameMasked : (existing.buyer_name_masked ?? '')
-        const nextPhoneMasked = o.buyerPhoneProvided ? o.buyerPhoneMasked : (existing.buyer_phone_masked ?? '')
-        const nextAddrMasked = o.fullAddressProvided ? o.addressMasked : (existing.address_masked ?? '')
-
-        updateOrder.run(
-          o.orderTime,
-          o.orderDate,
-          o.month,
-          o.statusRaw,
-          o.statusGroup,
-          o.province,
-          o.district,
-          o.postalCode,
-          o.paymentMethod,
-          o.shippingOption,
-          o.trackingNo,
-          nextNameMasked,
-          nextPhoneMasked,
-          nextAddrMasked,
-          now,
-          batchId,
-          orderId,
-        )
-        deleteLines.run(orderId)
-      } else {
-        ordersInserted++
-        orderId = generateId()
-        insertOrder.run(
-          orderId,
-          tenantId,
-          platform,
-          shopKey,
-          o.orderNo,
-          o.orderTime,
-          o.orderDate,
-          o.month,
-          o.statusRaw,
-          o.statusGroup,
-          o.province,
-          o.district,
-          o.postalCode,
-          o.paymentMethod,
-          o.shippingOption,
-          o.trackingNo,
-          o.buyerNameMasked,
-          o.buyerPhoneMasked,
-          o.addressMasked,
-          now,
-          now,
-          batchId,
-        )
+        o.lines.forEach((line, idx) => {
+          insertLine.run(
+            generateId(),
+            tenantId,
+            orderId,
+            idx + 1,
+            line.productName,
+            line.variantClean,
+            line.qty,
+            line.qtyReturned ?? 0,
+            line.listPrice != null ? Number(line.listPrice) : null,
+            line.netPrice,
+            line.sourceRef,
+          )
+          if (!linkedRefs.has(line.sourceRef)) {
+            linesUnlinked++
+            const label = [line.productName, line.variantClean].filter(Boolean).join(' · ')
+            unlinkedNameSet.add(label)
+          }
+        })
       }
 
-      resolvedLines.forEach((line, idx) => {
-        insertLine.run(
-          generateId(),
-          tenantId,
-          orderId,
-          idx + 1,
-          line.productName,
-          line.variantClean,
-          line.qty,
-          line.qtyReturned ?? 0,
-          line.listPrice != null ? Number(line.listPrice) : null,
-          line.netPrice,
-          line.sourceRef,
-        )
-        if (!linkedRefs.has(line.sourceRef)) {
-          linesUnlinked++
-          const label = [line.productName, line.variantClean].filter(Boolean).join(' · ')
-          unlinkedNameSet.add(label)
+      db.prepare(`
+        INSERT INTO online_import_batches (
+          id, tenant_id, platform, shop_key, rows_received,
+          orders_inserted, orders_updated, lines_unlinked, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        batchId,
+        tenantId,
+        platform,
+        shopKey,
+        input.rows.length,
+        ordersInserted,
+        ordersUpdated,
+        linesUnlinked,
+        userId,
+        now,
+      )
+
+      return {
+        batchId,
+        ordersInserted,
+        ordersUpdated,
+        linesUnlinked,
+        returnEvents,
+        unlinkedNames: [...unlinkedNameSet],
+      }
+    })()
+  } catch (err) {
+    if (piiRows.length > 0) {
+      try {
+        const orderNos = piiRows.map((r) => r.orderNo)
+        const placeholders = orderNos.map(() => '?').join(',')
+        const existingRows = db.prepare(`
+          SELECT order_no FROM online_orders
+          WHERE tenant_id = ? AND platform = ? AND shop_key = ? AND order_no IN (${placeholders})
+        `).all(tenantId, platform, shopKey, ...orderNos) as Array<{ order_no: string }>
+        const existingSet = new Set(existingRows.map((r) => r.order_no))
+        const orphanOrderNos = orderNos.filter((no) => !existingSet.has(no))
+        if (orphanOrderNos.length > 0) {
+          deleteOrderPii(tenantId, platform, shopKey, orphanOrderNos)
         }
-      })
+      } catch (compErr) {
+        console.error('⚠️ PII orphan compensation error:', compErr)
+      }
     }
-
-    db.prepare(`
-      INSERT INTO online_import_batches (
-        id, tenant_id, platform, shop_key, rows_received,
-        orders_inserted, orders_updated, lines_unlinked, created_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      batchId,
-      tenantId,
-      platform,
-      shopKey,
-      input.rows.length,
-      ordersInserted,
-      ordersUpdated,
-      linesUnlinked,
-      userId,
-      now,
-    )
-
-    return {
-      batchId,
-      ordersInserted,
-      ordersUpdated,
-      linesUnlinked,
-      returnEvents,
-      unlinkedNames: [...unlinkedNameSet],
-    }
-  })()
+    throw err
+  }
 }
 
 // ── Relink :N source_ref หลังมีไฟล์ products ใหม่ ──────────────────────────────────────────
@@ -641,8 +662,20 @@ export function relinkOnlineLines(tenantId: string, platform: string, shopKey: s
         AND source_ref = ? AND status = 'PENDING'
     `)
 
+    const aliasCache = new Map<string, boolean>()
+    const hasAlias = (ref: string): boolean => {
+      let cached = aliasCache.get(ref)
+      if (cached === undefined) {
+        cached = !!findPlatformAlias(tenantId, ref)
+        aliasCache.set(ref, cached)
+      }
+      return cached
+    }
+
     let updated = 0
     for (const line of pendingLines) {
+      // ห้ามเขียนทับ :N source_ref ที่คนผูก alias ไว้แล้ว ไม่งั้นการผูกด้วยมือจะหลุด
+      if (hasAlias(line.source_ref)) continue
       const nextRef = resolveLineSourceRef(indices, p, line.month, line.product_name, line.variant_name)
       if (nextRef !== line.source_ref) {
         updLine.run(nextRef, line.id)
@@ -723,8 +756,8 @@ export function getOnlineSummary(tenantId: string, filter: OnlineSummaryFilter):
 
   const statuses = (filter.includeStatuses && filter.includeStatuses.length > 0
     ? filter.includeStatuses
-    : DEFAULT_INCLUDE_STATUSES
-  ).filter((s) => VALID_STATUS_GROUPS.has(s))
+    : ONLINE_STATUS_GROUPS.slice(0, 3)
+  ).filter((s) => (ONLINE_STATUS_GROUPS as readonly string[]).includes(s))
 
   if (statuses.length === 0) return []
 
@@ -1057,7 +1090,7 @@ export interface OnlineProposePair {
 }
 
 /**
- * เสนอคู่จับคู่ SKU จาก MCP (ยังไม่ผูกจริง รอคนยืนยันที่หน้าเว็บ — ใช้ตาราง platform_sku_proposals เดิม)
+ * เสนอคู่จับคู่ SKU จาก MCP (ยังไม่ผูกจริง รอคนยืนยันที่หน้าเว็บ — ใช้ upsertSkuProposal ร่วมกับ platformMonthSale)
  */
 export function proposeOnlineMapping(
   tenantId: string,
@@ -1068,38 +1101,9 @@ export function proposeOnlineMapping(
   const rejected: Array<{ pair: OnlineProposePair; reason: string }> = []
   const now = new Date().toISOString()
 
-  const upsert = db.prepare(`
-    INSERT INTO platform_sku_proposals (id, tenant_id, source_ref, stock_item_id, factor, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(tenant_id, source_ref) DO UPDATE SET
-      stock_item_id = excluded.stock_item_id,
-      factor = excluded.factor,
-      created_by = excluded.created_by,
-      created_at = excluded.created_at
-  `)
-
   for (const pair of pairs) {
     try {
-      const sourceRef = String(pair.sourceRef || '').trim()
-      if (!sourceRef) throw new OnlineOrderError('ต้องระบุ source_ref')
-
-      let stockItemId = pair.stockItemId ? String(pair.stockItemId).trim() : ''
-      if (!stockItemId && pair.sku) {
-        const found = db.prepare(`SELECT id FROM stock_items WHERE tenant_id = ? AND sku = ? AND status != 'INACTIVE'`).get(tenantId, pair.sku) as any
-        if (!found) throw new OnlineOrderError(`ไม่พบ SKU "${pair.sku}" ในคลัง`)
-        stockItemId = found.id
-      }
-      if (!stockItemId) throw new OnlineOrderError('ต้องระบุ sku หรือ stock_item_id')
-      if (!db.prepare(`SELECT 1 FROM stock_items WHERE id = ? AND tenant_id = ? AND status != 'INACTIVE'`).get(stockItemId, tenantId)) {
-        throw new OnlineOrderError('ไม่พบสินค้าในคลังของเทแนนต์นี้')
-      }
-
-      const factor = pair.factor == null ? 1 : Number(pair.factor)
-      if (!Number.isFinite(factor) || factor <= 0) {
-        throw new OnlineOrderError('ตัวคูณ (factor) ต้องมากกว่า 0')
-      }
-
-      upsert.run(generateId(), tenantId, sourceRef, stockItemId, factor, userId, now)
+      upsertSkuProposal(tenantId, pair, userId, now)
       accepted++
     } catch (err: any) {
       rejected.push({ pair, reason: err?.message || String(err) })
@@ -1121,6 +1125,11 @@ export function confirmOnlineMapping(
   const sourceRef = String(input.sourceRef || '').trim()
   if (!sourceRef) throw new OnlineOrderError('ต้องระบุ sourceRef')
 
+  const factor = input.factor === undefined ? 1 : Number(input.factor)
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new OnlineOrderError('ตัวคูณ (factor) ต้องเป็นตัวเลขที่มากกว่า 0')
+  }
+
   const line = db.prepare(`
     SELECT product_name, variant_name FROM online_order_lines
     WHERE tenant_id = ? AND source_ref = ?
@@ -1137,7 +1146,6 @@ export function confirmOnlineMapping(
   `).get(input.stockItemId, tenantId) as { base: string } | undefined
   if (!item) throw new StockItemRefError('ไม่พบสินค้าในคลัง')
 
-  const factor = input.factor == null ? 1 : Number(input.factor)
   upsertPlatformAlias(
     tenantId,
     { sourceRef, name, stockItemId: input.stockItemId, unit: item.base || 'pcs', factor },
@@ -1422,11 +1430,22 @@ export function restockReturnEvents(tenantId: string, ids: string[], userId: str
         continue
       }
 
-      // ตรวจว่ารอบเดือนของออเดอร์นี้ยืนยันการขายแล้วหรือยัง
+      // ตรวจว่ารอบเดือนของออเดอร์นี้ยืนยันการขายแล้ว และยืนยันก่อนที่พบการคืน (sale_confirmed_at < event.detected_at)
       const pm = getMonth.get(tenantId, ev.platform, ev.shop_key, ev.order_month) as any
       if (!pm || !pm.sale_confirmed_at) {
         markSkipped.run(now, userId, ev.id, tenantId)
         skipped.push({ id: ev.id, orderNo: ev.order_no, reason: 'จะหักในรอบเดือนนั้นเอง' })
+        continue
+      }
+      const confirmedMs = Date.parse(pm.sale_confirmed_at)
+      const detectedMs = Date.parse(ev.detected_at)
+      const confirmedBeforeReturn =
+        Number.isFinite(confirmedMs) && Number.isFinite(detectedMs)
+          ? confirmedMs < detectedMs
+          : String(pm.sale_confirmed_at) < String(ev.detected_at)
+      if (!confirmedBeforeReturn) {
+        markSkipped.run(now, userId, ev.id, tenantId)
+        skipped.push({ id: ev.id, orderNo: ev.order_no, reason: 'รอบเดือนหักคืนนี้ไปแล้ว' })
         continue
       }
 

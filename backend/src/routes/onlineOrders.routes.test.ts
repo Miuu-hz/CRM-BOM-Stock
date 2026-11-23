@@ -135,4 +135,32 @@ describe('platformSettlement.routes — online-orders + requireRole on GET + pur
     expect(leftTarget.c).toBe(0)
     expect(leftOther.c).toBe(1)
   })
+
+  it('Finding 5: POST /online-orders/mapping/confirm ปฏิเสธ factor <= 0 หรือไม่ใช่ตัวเลข (400) และ /returns/restock ปฏิเสธ ids ที่ไม่ใช่ string[] ไม่ว่าง (400)', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    tenants.push(admin.tenantId)
+    const auth = { Authorization: `Bearer ${admin.token}` }
+
+    const stockId = generateId()
+    db.prepare(`
+      INSERT INTO stock_items (id, tenant_id, sku, name, category, quantity, unit, base_unit, unit_cost, location, status)
+      VALUES (?, ?, 'SKU-R5', 'สินค้าทดสอบ', 'FINISHED', 10, 'pcs', 'pcs', 50, 'WH1', 'ACTIVE')
+    `).run(stockId, admin.tenantId)
+
+    for (const badFactor of [-1, 0, 'abc', null]) {
+      const res = await request(app)
+        .post('/api/platform-settlement/online-orders/mapping/confirm')
+        .set(auth)
+        .send({ sourceRef: 'SHOPEE:V1', stockItemId: stockId, factor: badFactor })
+      expect(res.status, `factor=${String(badFactor)}`).toBe(400)
+    }
+
+    for (const badIds of [[], 'not-array', [123], [''], [null], ['ok', 42]]) {
+      const res = await request(app)
+        .post('/api/platform-settlement/online-orders/returns/restock')
+        .set(auth)
+        .send({ ids: badIds })
+      expect(res.status, `ids=${JSON.stringify(badIds)}`).toBe(400)
+    }
+  })
 })

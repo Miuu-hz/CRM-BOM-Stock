@@ -111,7 +111,11 @@ router.post('/online-orders/mapping/confirm', requireRole('ADMIN', 'MASTER', 'MA
     if (!sourceRef || !stockItemId) {
       return res.status(400).json({ success: false, message: 'ต้องระบุ sourceRef และ stockItemId' })
     }
-    confirmOnlineMapping(tenantId, { sourceRef, stockItemId, factor: Number(factor) || 1 }, req.user!.email)
+    const parsedFactor = factor === undefined || factor === '' ? 1 : Number(factor)
+    if (!Number.isFinite(parsedFactor) || parsedFactor <= 0) {
+      return res.status(400).json({ success: false, message: 'ตัวคูณ (factor) ต้องเป็นตัวเลขที่มากกว่า 0' })
+    }
+    confirmOnlineMapping(tenantId, { sourceRef, stockItemId, factor: parsedFactor }, req.user!.email)
     res.json({ success: true, data: getUnlinkedLines(tenantId) })
   } catch (err) {
     handlePhase2Error(res, err, 'ยืนยันคู่จับคู่สินค้าไม่สำเร็จ')
@@ -145,8 +149,8 @@ router.post('/online-orders/returns/restock', requireRole('ADMIN', 'MASTER', 'MA
   try {
     const tenantId = req.user!.tenantId
     const { ids } = req.body
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: 'ต้องระบุรายการที่ต้องการรับคืนเข้าสต็อก (ids)' })
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string' && id.trim().length > 0)) {
+      return res.status(400).json({ success: false, message: 'ids ต้องเป็นรายการรหัส (string) อย่างน้อย 1 รายการ' })
     }
     const result = restockReturnEvents(tenantId, ids, req.user!.email)
     res.json({ success: true, data: result })

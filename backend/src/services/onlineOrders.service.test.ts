@@ -429,4 +429,202 @@ describe('onlineOrders.service — ออเดอร์ออนไลน์ร
       unattributedQty: 3,
     })
   })
+
+  it('Finding 1a: พบการคืนตอนรอบเดือนยัง COLLECTING แล้วภายหลังยืนยันขาย (sale_confirmed_at >= detected_at) → restock ต้อง SKIP', () => {
+    const t = newTenant()
+    const stockId = makeStockItem(t, { name: 'หมอนยางพารา', quantity: 10, unitCost: 120 })
+    const monthId = generateId()
+    db.prepare(`
+      INSERT INTO platform_months (id, tenant_id, platform, shop_key, month, status, sale_confirmed_at)
+      VALUES (?, ?, 'SHOPEE', 'bebozch', '2026-10', 'COLLECTING', NULL)
+    `).run(monthId, t)
+
+    // พบการคืนขณะรอบเดือนยัง COLLECTING
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [sampleRow({ orderNo: 'ORD-LATE-CONFIRM', orderTime: '2026-10-15 10:00', qty: 2, qtyReturned: 1 })],
+    })
+    const [ev] = listReturnEvents(t, 'PENDING')
+    expect(ev).toBeDefined()
+    confirmOnlineMapping(t, { sourceRef: ev.sourceRef!, stockItemId: stockId, factor: 1 }, 'tester')
+
+    // ภายหลังรอบเดือนถูกยืนยันการขาย (sale_confirmed_at > detected_at) → รอบเดือนหักคืนนี้ใน qty_net ไปแล้ว
+    const confirmedAfter = new Date(Date.parse(ev.detectedAt) + 60_000).toISOString()
+    db.prepare(`UPDATE platform_months SET status = 'SALE_CONFIRMED', sale_confirmed_at = ? WHERE id = ?`)
+      .run(confirmedAfter, monthId)
+
+    const res = restockReturnEvents(t, [ev.id], 'tester')
+    expect(res.restocked).toHaveLength(0)
+    expect(res.skipped).toHaveLength(1)
+    expect(res.skipped[0]).toMatchObject({ id: ev.id, reason: 'รอบเดือนหักคืนนี้ไปแล้ว' })
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM stock_movements WHERE tenant_id = ?`).get(t) as any).c).toBe(0)
+    expect((db.prepare(`SELECT quantity FROM stock_items WHERE id = ?`).get(stockId) as any).quantity).toBe(10)
+  })
+
+  it('Finding 1b/1c: ออเดอร์ใหม่ที่มี qty_returned>0 สร้าง 1 event และส่งบางส่วนแล้วส่งเต็มซ้ำไม่สร้าง event ซ้ำ', () => {
+    const t = newTenant()
+
+    // 1) ออเดอร์ใหม่ที่มาพร้อม qty_returned > 0 → สร้าง 1 event ทันที
+    const first = submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [
+        sampleRow({ orderNo: 'ORD-PARTIAL', productName: 'สินค้า A', variantName: 'แดง', qty: 2, qtyReturned: 1 }),
+        sampleRow({ orderNo: 'ORD-PARTIAL', productName: 'สินค้า B', variantName: 'ฟ้า', qty: 1, qtyReturned: 0 }),
+      ],
+    })
+    expect(first.returnEvents).toBe(1)
+    expect(listReturnEvents(t)).toHaveLength(1)
+    expect(listReturnEvents(t)[0].qtyDelta).toBe(1)
+
+    // 2) ส่งบางส่วน (ขาดสินค้า A ไปชั่วคราว) → ไม่สร้าง event
+    const partial = submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [
+        sampleRow({ orderNo: 'ORD-PARTIAL', productName: 'สินค้า B', variantName: 'ฟ้า', qty: 1, qtyReturned: 0 }),
+      ],
+    })
+    expect(partial.returnEvents).toBe(0)
+
+    // 3) ส่งเต็มกลับมาอีกครั้งพร้อมสินค้า A qty_returned=1 → ยังต้องมีแค่ 1 event เดิม ไม่สร้างซ้ำ
+    const fullAgain = submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [
+        sampleRow({ orderNo: 'ORD-PARTIAL', productName: 'สินค้า A', variantName: 'แดง', qty: 2, qtyReturned: 1 }),
+        sampleRow({ orderNo: 'ORD-PARTIAL', productName: 'สินค้า B', variantName: 'ฟ้า', qty: 1, qtyReturned: 0 }),
+      ],
+    })
+    expect(fullAgain.returnEvents).toBe(0)
+    expect(listReturnEvents(t)).toHaveLength(1)
+  })
+
+  it('Finding 2: ส่ง buyer_name/buyer_phone/full_address เป็น null หรือ "" ต้องคงค่าเดิมทั้งใน dev.db และ pii.db', () => {
+    const t = newTenant()
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [sampleRow({ orderNo: 'ORD-PII-KEEP' })],
+    })
+
+    // ส่งซ้ำโดยส่ง PII เป็น null / '' / ช่องว่างล้วน
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [
+        sampleRow({
+          orderNo: 'ORD-PII-KEEP',
+          status: 'สำเร็จ',
+          buyerName: null,
+          buyerPhone: '',
+          fullAddress: '   ',
+        }),
+      ],
+    })
+
+    const mainRow = db.prepare(`SELECT buyer_name_masked, buyer_phone_masked, address_masked FROM online_orders WHERE tenant_id = ? AND order_no = ?`)
+      .get(t, 'ORD-PII-KEEP') as any
+    expect(mainRow.buyer_name_masked).toBe('ธัชพxxx')
+    expect(mainRow.buyer_phone_masked).toBe('081-234-5xxx')
+    expect(mainRow.address_masked).toContain('เลขที่ xxx หมู่ที่ 4')
+
+    const piiRow = piiDb.prepare(`SELECT buyer_name, buyer_phone, full_address FROM online_order_pii WHERE tenant_id = ? AND order_no = ?`)
+      .get(t, 'ORD-PII-KEEP') as any
+    expect(piiRow.buyer_name).toBe('ธัชพงษ์')
+    expect(piiRow.buyer_phone).toBe('081-234-5678')
+    expect(piiRow.full_address).toContain('858/7')
+  })
+
+  it('Finding 3: ถ้า transaction ฐานหลักล้มเหลว → ชดเชยลบแถว orphan ใน pii.db แต่ไม่แตะออเดอร์ที่มีอยู่เดิม', () => {
+    const t = newTenant()
+    // ออเดอร์ที่มีอยู่เดิมแล้ว
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [sampleRow({ orderNo: 'ORD-EXISTING', buyerName: 'ธัชพงษ์' })],
+    })
+
+    const trigName = `trg_fail_${generateId().slice(0, 10)}`
+    db.exec(`
+      CREATE TEMP TRIGGER ${trigName}
+      BEFORE INSERT ON online_import_batches
+      WHEN NEW.tenant_id = '${t}'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced_main_tx_failure');
+      END;
+    `)
+    try {
+      expect(() =>
+        submitOnlineOrders(t, {
+          platform: 'SHOPEE',
+          shopKey: 'bebozch',
+          rows: [
+            sampleRow({ orderNo: 'ORD-EXISTING', buyerName: 'ธัชพงษ์' }),
+            sampleRow({ orderNo: 'ORD-ORPHAN', buyerName: 'ทีปกร สะอาดถิ่น', buyerPhone: '089-111-2222' }),
+          ],
+        }),
+      ).toThrow(/forced_main_tx_failure/)
+    } finally {
+      db.exec(`DROP TRIGGER IF EXISTS ${trigName}`)
+    }
+
+    // ออเดอร์ใหม่ที่ rollback ไปต้องไม่ค้างในทั้งฐานหลักและ pii.db
+    expect(db.prepare(`SELECT 1 FROM online_orders WHERE tenant_id = ? AND order_no = ?`).get(t, 'ORD-ORPHAN')).toBeUndefined()
+    expect(piiDb.prepare(`SELECT 1 FROM online_order_pii WHERE tenant_id = ? AND order_no = ?`).get(t, 'ORD-ORPHAN')).toBeUndefined()
+
+    // ออเดอร์เดิมต้องยังอยู่ครบทั้งสองฐาน
+    expect(db.prepare(`SELECT 1 FROM online_orders WHERE tenant_id = ? AND order_no = ?`).get(t, 'ORD-EXISTING')).toBeDefined()
+    expect(piiDb.prepare(`SELECT 1 FROM online_order_pii WHERE tenant_id = ? AND order_no = ?`).get(t, 'ORD-EXISTING')).toBeDefined()
+  })
+
+  it('Finding 4: relinkOnlineLines ห้ามเขียนทับ :N source_ref ที่คนผูก alias ไว้แล้ว (ผูกด้วยมือไม่หลุด)', () => {
+    const t = newTenant()
+    const stockA = makeStockItem(t, { sku: 'MANUAL-A', name: 'หมอน A', quantity: 20, unitCost: 100 })
+
+    submitOnlineOrders(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      rows: [
+        sampleRow({ orderNo: 'ORD-KEEP-ALIAS', orderTime: '2026-10-12 10:00', productName: 'หมอนยางพารา', variantName: 'ลายดอกไม้' }),
+        sampleRow({ orderNo: 'ORD-KEEP-ALIAS', orderTime: '2026-10-12 10:00', productName: 'ผ้าห่ม', variantName: 'สีฟ้า' }),
+      ],
+    })
+
+    const manualRef = 'SHOPEE:Nหมอนยางพารา||ลายดอกไม้'
+    confirmOnlineMapping(t, { sourceRef: manualRef, stockItemId: stockA, factor: 1 }, 'admin')
+
+    submitFile(t, {
+      platform: 'SHOPEE',
+      shopKey: 'bebozch',
+      month: '2026-10',
+      fileType: 'products',
+      data: {
+        rows: [
+          { level: 'parent', product_id: 'P100', product_name: 'หมอนยางพารา', qty_confirmed: 5, sales_confirmed: 1000 },
+          { level: 'variant', product_id: 'P100', variant_id: 'V101', product_name: 'หมอนยางพารา', variant_name: 'ลายดอกไม้', qty_confirmed: 5, sales_confirmed: 1000 },
+          { level: 'parent', product_id: 'P200', product_name: 'ผ้าห่ม', qty_confirmed: 5, sales_confirmed: 1000 },
+          { level: 'variant', product_id: 'P200', variant_id: 'V202', product_name: 'ผ้าห่ม', variant_name: 'สีฟ้า', qty_confirmed: 5, sales_confirmed: 1000 },
+        ],
+      },
+    })
+
+    const lines = db.prepare(`SELECT product_name, source_ref FROM online_order_lines WHERE tenant_id = ?`).all(t) as any[]
+    const lineA = lines.find((l) => l.product_name === 'หมอนยางพารา')!
+    const lineB = lines.find((l) => l.product_name === 'ผ้าห่ม')!
+    expect(lineA.source_ref).toBe(manualRef) // คง :N ที่ผูกด้วยมือไว้
+    expect(lineB.source_ref).toBe('SHOPEE:V202') // ตัวที่ยังไม่ผูก relink ตามปกติ
+  })
+
+  it('Finding 5: confirmOnlineMapping ปฏิเสธ factor <= 0 หรือ non-finite', () => {
+    const t = newTenant()
+    const stockId = makeStockItem(t, { sku: 'S-FAC', name: 'สินค้าทดสอบ', quantity: 10, unitCost: 50 })
+
+    for (const badFactor of [0, -1, -0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        confirmOnlineMapping(t, { sourceRef: 'SHOPEE:V999', stockItemId: stockId, factor: badFactor }, 'admin'),
+      ).toThrow(OnlineOrderError)
+    }
+  })
 })
