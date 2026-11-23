@@ -3,9 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import {
   getFeeMappings,
   updateFeeMappings,
-  postPlatformSettlement,
   SettlementError,
-  recordSettlementPayout,
 } from '../services/platformSettlement.service'
 import { PlatformMonthError } from '../services/platformMonth.service'
 import { StockItemRefError } from '../services/stockItem.service'
@@ -284,7 +282,7 @@ router.post('/months/:id/unpost', requireRole('ADMIN', 'MASTER', 'MANAGER'), (re
   }
 })
 
-// ==================== เฟส 1 (เดิม): ผูกค่าธรรมเนียม + ลงบัญชีรอบโอน ====================
+// ==================== ผูกค่าธรรมเนียมแพลตฟอร์ม ====================
 
 // GET /api/platform-settlement/fee-mappings
 router.get('/fee-mappings', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
@@ -309,57 +307,6 @@ router.put('/fee-mappings', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Req
   } catch (err) {
     console.error('Update fee mappings error:', err)
     res.status(500).json({ success: false, message: 'บันทึกการผูกค่าธรรมเนียมไม่สำเร็จ' })
-  }
-})
-
-// POST /api/platform-settlement/confirm  body: SettlementBatch — ลงบัญชีจริง
-router.post('/confirm', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
-  try {
-    const tenantId = req.user!.tenantId
-    const { platform, periodStart, periodEnd, grossSales, vatAmount, cogsAmount, fees, payoutAmount, sourceFilename } = req.body
-
-    if (!platform || !periodStart || !periodEnd || !(grossSales > 0)) {
-      return res.status(400).json({ success: false, message: 'ข้อมูลไม่ครบ: platform, periodStart, periodEnd, grossSales ต้องมี' })
-    }
-
-    const result = postPlatformSettlement({
-      tenantId,
-      platform: String(platform).toUpperCase(),
-      periodStart,
-      periodEnd,
-      grossSales: Number(grossSales),
-      vatAmount: vatAmount != null ? Number(vatAmount) : undefined,
-      cogsAmount: cogsAmount != null ? Number(cogsAmount) : undefined,
-      fees: Array.isArray(fees) ? fees.map((f: any) => ({ feeType: String(f.feeType), amount: Number(f.amount) || 0 })) : [],
-      payoutAmount: payoutAmount != null ? Number(payoutAmount) : undefined,
-      createdBy: req.user!.email,
-      sourceFilename,
-    })
-
-    res.json({ success: true, data: result })
-  } catch (err) {
-    if (err instanceof SettlementError) {
-      return res.status(400).json({ success: false, message: err.message })
-    }
-    console.error('Confirm settlement error:', err)
-    res.status(500).json({ success: false, message: 'ลงบัญชีไม่สำเร็จ' })
-  }
-})
-
-// บันทึกเงินโอนของรอบที่ลงยอดขายไว้ก่อนแล้ว (ขั้น 3 ที่มาทีหลัง)
-router.post('/:id/payout', requireRole('ADMIN', 'MASTER', 'MANAGER'), (req: Request, res: Response) => {
-  try {
-    const result = recordSettlementPayout({
-      tenantId: req.user!.tenantId,
-      batchId: req.params.id,
-      payoutAmount: Number(req.body?.payoutAmount),
-      createdBy: req.user!.email,
-    })
-    res.json({ success: true, data: result })
-  } catch (error: any) {
-    const known = error instanceof SettlementError
-    if (!known) console.error('Record settlement payout error:', error)
-    res.status(known ? 400 : 500).json({ success: false, message: known ? error.message : 'บันทึกเงินโอนไม่สำเร็จ' })
   }
 })
 
