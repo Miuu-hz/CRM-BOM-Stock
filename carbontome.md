@@ -2192,3 +2192,17 @@ tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · G
 - backup อัตโนมัติรอบหน้าจะตัด `phopy-db-*` เหลือ 3 ไฟล์ · `backups/pre-*` ตอนนี้มี 4 ไฟล์ (ยังไม่ได้ลบตัวเก่าสุด)
 - rollback: `backups/pre-online-orders-2026-11-23.db.gz` + `/scratch/pre-online-dist/` + `git reset --hard de021d5` ใน /opt/crm
 - ยังไม่ push origin · ยังไม่ได้เปิดหน้าเว็บจริงบนมือถือ
+
+---
+
+## 📅 Session Log — 24 พ.ย. 2026 (คำสั่ง Master ใน LINE + สรุป POS รายวันเข้ากลุ่ม)
+
+สัญญากลาง: `docs/contracts/line-master-commands.md` · ผู้คุม Claude Code · เขียนโค้ดโดย agy (Gemini 4 Neon High)
+
+- คำสั่งเฉพาะ Master (เช็คจาก `line_master_links`, ไม่ใช่ demo): `/pos` `/รายได้` `/บริษัท` `/ผูก pos tenant <รหัส>` `/เลิกผูก pos` `/คำสั่ง` · ตอบด้วย reply (ฟรี)
+- ผูกกลุ่มด้วยรหัส tenant ตรงเป๊ะเท่านั้น (ค้นชื่อ = ได้ปุ่มยืนยัน) · บริษัทอ่านสดจาก `company_settings` ไม่มีรายชื่อในโค้ด
+- คอลัมน์ใหม่ `line_group_mappings.pos_daily` · กลุ่มที่ผูกด้วย `/ผูก pos` ได้การ์ด POS เมื่อวาน 09:00 (นับโควตาตามจำนวนสมาชิก, เพดาน 100/บริษัท/เดือนคงเดิม, ไม่พอ = เตือน Master ครั้งเดียว)
+- กลุ่มรับเฉพาะ POS: ตัด push ใบสั่งผลิตและสถานะใบขอซื้อเข้ากลุ่ม (ลบ `pushToAllGroups`)
+- สรุปผู้บริหาร: เพิ่มรายได้ตามบัญชี จำนวนบิล วิธีจ่าย · แก้บั๊ก SQL comment กลืนเงื่อนไขสถานะ (บิลซื้อยกเลิก/ร่างถูกนับ)
+- ตรวจ: tsc ผ่าน · backend 1629 เทสต์ผ่าน · Goldfish LGTM (ก่อนรอบเปลี่ยนเป็นผูกด้วยรหัส tenant)
+- ยังไม่ได้ลองบน LINE จริง · rollback: `backups/pre-line-master-2026-11-24.db.gz` + `/scratch/pre-line-master-dist/` + `git reset --hard 18dcf49`
