@@ -2243,3 +2243,10 @@ tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · G
 - เจ้าของยืนยันให้ทุกคนในกลุ่มที่ผูกเห็นเหมือนการ์ดผู้บริหาร · หัวข้อแพลตฟอร์มแสดงเสมอ · สูตรเงินเก๊ะย้ายจาก pos.routes มา posShiftSummary (ค่าที่ลงตอนปิดกะไม่เปลี่ยน)
 - `/สินค้า` ที่ไม่มีใบรับซื้อแต่มีสูตร → วัตถุดิบ ≤15 ตัว + วันที่/ราคาซื้อล่าสุด
 - rollback: `backups/pre-line-eos-2026-11-24.db.gz` + `/scratch/pre-line-eos-dist/` + `git reset --hard 29fbda1`
+
+### รอบ 5 (24 พ.ย. 2026) — ขับรถจาก LINE (ใช้งานรถยนต์) + `demo` รวมกับ `สลับทดสอบ`
+- สัญญากลาง `docs/contracts/line-car-trips.md` · เมนูพนักงานใหม่ (ถอดสลิป/เช็คสต็อก/งานผลิต เพิ่มงานของฉัน + ใช้งานรถยนต์ → เมนูย่อย `staff_car`) · GPS เริ่ม/จุดแวะ/สิ้นสุด + เลขไมล์พิมพ์เอง · ปิดเองใน 12 ชม. · ขอความยินยอม PDPA
+- env ใหม่ (ยังไม่ใส่): `GOOGLE_ROUTES_API_KEY` (ไม่มี = route UNAVAILABLE ไม่มีระยะแผนที่/ธง), `MY_TASKS_URL`
+- `demo` ของ Master: พนักงาน/ผู้จัดการ = บัญชีทดสอบจริง EMP-TEST/MGR-TEST ใน Testshop · ADMIN/GUEST = ดูอย่างเดียว · `สลับทดสอบ` = ชื่อเล่นของ demo · คนที่ไม่ใช่ Master ใช้ไม่ได้ทั้งสองคำ
+- ตรวจ: tsc, backend 1698, frontend 445, รีวิวไม่รู้บริบท Argon = LGTM (ขับรถ, demo) · ยังไม่ได้ลองบน LINE จริง/Google จริง
+- rollback: `backups/pre-line-drive-2026-11-24.db.gz` + `/scratch/pre-line-drive-{dist,fe-dist}/` + `git reset --hard e22f1fe`
