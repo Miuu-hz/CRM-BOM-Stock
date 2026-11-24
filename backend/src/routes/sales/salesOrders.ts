@@ -11,6 +11,7 @@ import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
 import { evaluateSalesOrderStock, planSalesOrderProduction, produceForSalesOrder } from '../../services/salesOrderProduction.service'
 import { WorkOrderTransitionError } from '../../services/workOrderTransition.service'
+import { userCan } from '../../services/rbac.service'
 import { WO_PRIVILEGED_ROLES } from '../../services/stockMovement.service'
 
 const router = Router()
@@ -534,10 +535,11 @@ router.post('/:id/produce-shortfall', async (req: Request, res: Response) => {
   try {
     const isMaster = req.user?.role === 'MASTER'
     const role = req.user?.role || ''
-    if (!isMaster && !WO_PRIVILEGED_ROLES.includes(role)) {
+    const canComplete = userCan(req.user!, 'production', 'write')
+    if (!isMaster && !canComplete && !WO_PRIVILEGED_ROLES.includes(role)) {
       return res.status(403).json({
         success: false,
-        message: `ไม่มีสิทธิ์สั่งผลิต — ต้องเป็น ${WO_PRIVILEGED_ROLES.join('/')}`,
+        message: `ไม่มีสิทธิ์สั่งผลิต — ต้องอยู่แผนก PRODUCTION หรือเป็น ${WO_PRIVILEGED_ROLES.join('/')}`,
       })
     }
 
@@ -546,6 +548,7 @@ router.post('/:id/produce-shortfall', async (req: Request, res: Response) => {
       email: req.user?.email || 'system',
       role,
       isMaster,
+      canComplete,
     }
 
     const result = produceForSalesOrder(tenantId, req.params.id, actor)

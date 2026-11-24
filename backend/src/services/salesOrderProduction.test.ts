@@ -7,6 +7,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import salesOrdersRouter from '../routes/sales/salesOrders'
 import workOrderRouter from '../routes/workOrder.routes'
 import { createTestUser } from '../test/testAuth'
+import { createWorkOrder, transitionWorkOrder } from './workOrderTransition.service'
 import { planSalesOrderProduction, produceForSalesOrder } from './salesOrderProduction.service'
 
 const app = express()
@@ -129,6 +130,10 @@ function seedSalesOrder(
   }
 
   return { id, soNumber }
+}
+
+function seedPlannedWO(tenantId: string, bomId: string) {
+  return createWorkOrder(tenantId, { bomId, productName: 'หมอนอิง', quantity: 1, unit: 'pcs', materials: [] }, { notify: false }).id
 }
 
 describe('SO Make-To-Order (ผลิตอัตโนมัติจากใบขาย)', () => {
@@ -383,5 +388,30 @@ describe('SO Make-To-Order (ผลิตอัตโนมัติจากใ�
     expect(res.status).toBe(403)
     expect(res.body.success).toBe(false)
     expect(res.body.message).toMatch(/ไม่มีสิทธิ์สั่งผลิต/)
+  })
+
+  it('RBAC: USER แผนก PRODUCTION สั่งผลิตจากใบขายได้จนปิดงาน · แผนกอื่นไม่ได้ · ปิดใบสั่งผลิตตรงๆ ยังไม่ได้', async () => {
+    const admin = createTestUser({ role: 'ADMIN' })
+    const T = trackTenant(admin.tenantId)
+    const staff = createTestUser({ role: 'USER', tenantId: T })
+    const setDepts = (d: string[]) => db.prepare('UPDATE users SET departments = ? WHERE id = ?').run(JSON.stringify(d), staff.userId)
+    const customer = seedCustomer(T)
+    const raw = seedStockItem(T, { name: 'ใยโพลี', category: 'RAW', quantity: 10, unit: 'kg' })
+    const fg = seedStockItem(T, { name: 'หมอนอิง', category: 'FINISHED', quantity: 0, unit: 'pcs' })
+    const bom = seedBom(T, fg.id, { outputQty: 1, outputUnit: 'pcs' })
+    seedBomItem(T, bom.id, { itemType: 'MATERIAL', materialId: raw.id, quantity: 1, unit: 'kg' })
+    const { id: soId } = seedSalesOrder(T, customer.id, [{ stockItemId: fg.id, quantity: 2, unit: 'pcs', unitPrice: 100 }])
+    const produce = () => request(app).post(`/api/sales-orders/${soId}/produce-shortfall`).set('Authorization', `Bearer ${staff.token}`)
+
+    setDepts(['SALES', 'STOCK'])
+    expect((await produce()).status).toBe(403)
+
+    setDepts(['PRODUCTION', 'SALES', 'STOCK'])
+    const res = await produce()
+    expect(res.body.message).toBeUndefined()
+    expect(res.status).toBe(200)
+    expect(res.body.data.workOrders[0].status).toBe('COMPLETED')
+
+    expect(() => transitionWorkOrder(T, seedPlannedWO(T, bom.id), 'CANCELLED', { role: 'USER', isMaster: false, canComplete: true })).toThrow(/ไม่มีสิทธิ์ยกเลิก/)
   })
 })

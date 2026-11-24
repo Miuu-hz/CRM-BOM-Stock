@@ -52,6 +52,14 @@ export interface Employee {
   updated_at?: string
 }
 
+export interface LinkableUser {
+  id: string
+  name: string
+  email: string
+  status: string
+  line_only: number
+}
+
 export interface EmployeeInput {
   code?: string
   first_name: string
@@ -855,8 +863,14 @@ export const hrService = {
     return res.data.data
   },
 
-  async inviteEmployeeToLine(id: string): Promise<{ code: string; expires_in_minutes: number; created_line_only_account: boolean }> {
-    const res = await api.post(`/hr/employees/${id}/line-invite`)
+  /** บัญชีที่ผูกกับพนักงานได้ — เฉพาะ ADMIN/MASTER (คนอื่นได้ 403) */
+  async getLinkableUsers(): Promise<LinkableUser[]> {
+    const res = await api.get('/users')
+    return res.data.data || []
+  },
+
+  async inviteEmployeeToLine(id: string, newAccount = false): Promise<{ code: string; expires_in_minutes: number; created_line_only_account: boolean }> {
+    const res = await api.post(`/hr/employees/${id}/line-invite`, newAccount ? { new_account: true } : undefined)
     return res.data.data
   },
 

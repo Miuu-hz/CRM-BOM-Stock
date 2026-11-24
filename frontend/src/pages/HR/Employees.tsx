@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, Plus, Search, Pencil, UserMinus, X, MessageCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, FaceEnrollmentStatus, OrgUnit, PayItem, Shift } from '../../services/hr.service'
+import hrService, { Employee, EmployeeInput, EmployeeStatus, EmploymentType, FaceEnrollmentStatus, LinkableUser, OrgUnit, PayItem, Shift } from '../../services/hr.service'
 
 const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   MONTHLY: 'รายเดือน',
@@ -40,6 +40,7 @@ interface FormState {
   sso_enrolled: boolean
   device_pin: string
   shift_id: string
+  user_id: string
   notes: string
 }
 
@@ -64,6 +65,7 @@ const emptyForm = (): FormState => ({
   sso_enrolled: true,
   device_pin: '',
   shift_id: '',
+  user_id: '',
   notes: '',
 })
 
@@ -80,6 +82,7 @@ export default function Employees() {
   const [editing, setEditing] = useState<Employee | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
   const [saving, setSaving] = useState(false)
+  const [linkable, setLinkable] = useState<LinkableUser[] | null>(null)
   const [payItems, setPayItems] = useState<PayItem[]>([])
   const [empPayItems, setEmpPayItems] = useState<Record<string, { checked: boolean; amount: string }>>({})
   const [checkinPin, setCheckinPin] = useState('')
@@ -107,10 +110,21 @@ export default function Employees() {
     }
   }
 
-  const handleLineInvite = async (emp: Employee) => {
+  // ดึงไม่ได้ (ไม่ใช่ Admin) = ซ่อนช่องผูกบัญชี
+  const loadLinkable = () => {
+    setLinkable(null)
+    Promise.resolve(hrService.getLinkableUsers?.()).then((u) => setLinkable(u || null)).catch(() => setLinkable(null))
+  }
+
+  const handleLineInvite = async (emp: Employee, newAccount = false) => {
     try {
-      setLineInvite(await hrService.inviteEmployeeToLine(emp.id))
+      setLineInvite(await (newAccount ? hrService.inviteEmployeeToLine(emp.id, true) : hrService.inviteEmployeeToLine(emp.id)))
     } catch (err: any) {
+      const data = err?.response?.data
+      if (data?.code === 'ERP_ACCOUNT_EXISTS') {
+        if (window.confirm(`${data.message}\n\nถ้าเป็นคนละคนที่ชื่อซ้ำกัน กด "ตกลง" เพื่อสร้างบัญชี LINE ใหม่`)) await handleLineInvite(emp, true)
+        return
+      }
       toast.error(err?.response?.data?.message || err?.response?.data?.error || 'สร้างรหัสเชิญไม่สำเร็จ')
     }
   }
@@ -144,6 +158,7 @@ export default function Employees() {
   const openCreate = () => {
     setEditing(null)
     setForm(emptyForm())
+    loadLinkable()
     setEmpPayItems({})
     setCheckinPin('')
     setDeletePin(false)
@@ -174,8 +189,10 @@ export default function Employees() {
       sso_enrolled: emp.sso_enrolled !== 0,
       device_pin: emp.device_pin || '',
       shift_id: emp.shift_id || '',
+      user_id: emp.user_id || '',
       notes: emp.notes || '',
     })
+    loadLinkable()
     setEmpPayItems({})
     setFace(null)
     setConfirmFace(false)
@@ -233,6 +250,7 @@ export default function Employees() {
         shift_id: form.shift_id || null,
         notes: form.notes.trim() || null,
       }
+      if (linkable && form.user_id !== (editing?.user_id || '')) payload.user_id = form.user_id || null
       if (deletePin) {
         payload.checkin_pin = null
       } else if (checkinPin.trim()) {
@@ -633,6 +651,26 @@ export default function Employees() {
                     ))}
                   </select>
                 </div>
+                {linkable && (
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--fg-2)] mb-1">บัญชีผู้ใช้ ERP ที่ผูก</label>
+                    <select
+                      aria-label="บัญชีผู้ใช้ ERP ที่ผูก"
+                      value={form.user_id}
+                      onChange={(e) => setForm({ ...form, user_id: e.target.value })}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-[var(--fg-1)]"
+                    >
+                      <option value="">-- ไม่ผูกบัญชี --</option>
+                      {linkable
+                        .filter((u) => u.id === editing?.user_id || (!u.line_only && u.status === 'active'))
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.line_only ? `${u.name} (LINE อย่างเดียว)` : `${u.name} — ${u.email}`}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-medium text-[var(--fg-2)]">

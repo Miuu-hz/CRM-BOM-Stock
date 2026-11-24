@@ -67,6 +67,24 @@ function hasOrgCycle(tenantId: string, selfId: string | null, parentId: string |
   return false
 }
 
+/** ผูกบัญชี = ให้สิทธิ์บัญชีนั้น จึงจำกัดเท่าคนที่จัดการผู้ใช้ได้ (user.routes.ts) */
+const canLinkAccount = (req: Request) => req.user!.role === 'ADMIN' || req.user!.role === 'MASTER'
+
+/** พนักงานย้ายจากบัญชี "LINE อย่างเดียว" ไปบัญชีอื่น: ย้าย LINE ที่ผูกไว้ตามไป แล้วปิดบัญชีเดิมไม่ให้ค้างซ้ำ */
+function retireLineOnlyAccount(tenantId: string, oldUserId: string | null, newUserId: string | null) {
+  if (!oldUserId || oldUserId === newUserId) return
+  if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND tenant_id = ? AND line_only = 1').get(oldUserId, tenantId)) return
+  if (newUserId) {
+    // OR IGNORE: บัญชีปลายทางมี LINE อยู่แล้ว (UNIQUE tenant+user) ให้คงของปลายทาง
+    db.prepare(`UPDATE OR IGNORE line_user_mappings SET user_id = ?, role = (SELECT role FROM users WHERE id = ?)
+      WHERE tenant_id = ? AND user_id = ?`).run(newUserId, newUserId, tenantId, oldUserId)
+  }
+  db.prepare('DELETE FROM line_user_mappings WHERE user_id = ? AND tenant_id = ?').run(oldUserId, tenantId)
+  db.prepare('DELETE FROM line_link_tokens WHERE user_id = ? AND tenant_id = ?').run(oldUserId, tenantId)
+  db.prepare('DELETE FROM line_login_tokens WHERE user_id = ? AND tenant_id = ?').run(oldUserId, tenantId)
+  db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ? AND tenant_id = ?`).run(oldUserId, tenantId)
+}
+
 // GET /api/hr/me — พนักงานที่ผูกกับบัญชีผู้ใช้ของตัวเอง (คืนครบทุก field)
 router.get('/me', (req: Request, res: Response) => {
   try {
@@ -409,6 +427,9 @@ router.post('/employees', requirePermission('hr', 'write'), async (req: Request,
     }
 
     const userId = body.user_id != null && String(body.user_id).trim() !== '' ? String(body.user_id).trim() : null
+    if (userId !== null && !canLinkAccount(req)) {
+      return res.status(403).json({ success: false, message: 'ผูกบัญชีผู้ใช้กับพนักงานได้เฉพาะผู้ดูแลระบบ (Admin)' })
+    }
     if (userId) {
       const u = db.prepare('SELECT id FROM users WHERE id = ? AND tenant_id = ?').get(userId, tenantId)
       if (!u) {
@@ -577,6 +598,9 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
     const userId = body.user_id !== undefined
       ? (body.user_id != null && String(body.user_id).trim() !== '' ? String(body.user_id).trim() : null)
       : existing.user_id
+    if (userId !== (existing.user_id ?? null) && !canLinkAccount(req)) {
+      return res.status(403).json({ success: false, message: 'ผูกบัญชีผู้ใช้กับพนักงานได้เฉพาะผู้ดูแลระบบ (Admin)' })
+    }
     if (userId) {
       const u = db.prepare('SELECT id FROM users WHERE id = ? AND tenant_id = ?').get(userId, tenantId)
       if (!u) {
@@ -640,6 +664,8 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
       checkinPinHash, now,
       id, tenantId
     )
+
+    db.transaction(() => retireLineOnlyAccount(tenantId, existing.user_id, userId))()
 
     if (status !== 'ACTIVE' || (existing.user_id && existing.user_id !== userId)) {
       db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, id)

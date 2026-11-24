@@ -22,6 +22,8 @@ export interface TransitionActor {
   email?: string
   role: string
   isMaster: boolean
+  /** ปิดงานผลิตได้แม้ role ไม่ถึง — ใช้กับการสั่งผลิตจากใบขายที่ตรวจสิทธิ์ production:write มาแล้ว (ไม่รวมยกเลิก) */
+  canComplete?: boolean
 }
 
 export interface TransitionOptions {
@@ -150,7 +152,7 @@ export function transitionWorkOrder(
     throw new WorkOrderTransitionError(400, seqError)
   }
 
-  if ((toStatus === 'CANCELLED' || toStatus === 'COMPLETED') && !actor.isMaster && !WO_PRIVILEGED_ROLES.includes(actor.role)) {
+  if ((toStatus === 'CANCELLED' || (toStatus === 'COMPLETED' && !actor.canComplete)) && !actor.isMaster && !WO_PRIVILEGED_ROLES.includes(actor.role)) {
     throw new WorkOrderTransitionError(403, `ไม่มีสิทธิ์${toStatus === 'CANCELLED' ? 'ยกเลิก' : 'ปิด'}ใบสั่งผลิต — ต้องเป็น ${WO_PRIVILEGED_ROLES.join('/')}`)
   }
 

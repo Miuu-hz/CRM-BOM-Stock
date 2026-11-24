@@ -15,6 +15,8 @@ interface TenantUser {
   role: string
   departments: string[]
   status: string
+  line_only?: number
+  employee_code?: string | null
 }
 
 const ROLE_VALUES = ['ADMIN', 'MANAGER', 'POWERUSER', 'USER'] as const
@@ -259,7 +261,7 @@ export default function AdminUserManagement() {
         <div className="flex items-center gap-2">
           <Users size={18} className="text-[var(--primary)]" />
           <h3 className="font-semibold text-[var(--fg-1)]">{t('settings.adminUserManagement.title')}</h3>
-          <span className="px-2 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--fg-3)] text-xs">{t('settings.adminUserManagement.userCount', { count: users.length })}</span>
+          <span className="px-2 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--fg-3)] text-xs">{t('settings.adminUserManagement.userCount', { count: users.filter(u => !u.line_only).length })}</span>
         </div>
         <button onClick={() => setModal({ open: true, user: null })}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--primary)] text-white text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer">
@@ -292,9 +294,10 @@ export default function AdminUserManagement() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-[var(--fg-1)] text-sm truncate">{u.name}</span>
                     <RoleBadge role={u.role} />
+                    {u.employee_code && <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--surface)] border border-[var(--border)] text-[var(--fg-3)]">HR: {u.employee_code}</span>}
                     {isMe && <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--success-soft)] text-[var(--success)]">{t('settings.adminUserManagement.youBadge')}</span>}
                   </div>
-                  <div className="text-xs text-[var(--fg-4)] truncate">{u.email}</div>
+                  <div className="text-xs text-[var(--fg-4)] truncate">{u.line_only ? 'บัญชี LINE อย่างเดียว (ไม่นับจำนวนผู้ใช้)' : u.email}</div>
                   {u.departments.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {u.departments.map(d => (
@@ -308,7 +311,7 @@ export default function AdminUserManagement() {
                     className="p-2 rounded-lg hover:bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--primary)] transition-colors cursor-pointer" title={t('settings.adminUserManagement.edit')}>
                     <Pencil size={15} />
                   </button>
-                  {!isMe && !isAdminRole && (
+                  {!isMe && !isAdminRole && !u.line_only && (
                     <button onClick={() => genResetCode(u)}
                       className="p-2 rounded-lg hover:bg-[var(--surface)] text-[var(--fg-3)] hover:text-[var(--primary)] transition-colors cursor-pointer" title="สร้างรหัสรีเซ็ตรหัสผ่าน">
                       <KeyRound size={15} />

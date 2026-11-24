@@ -23,8 +23,12 @@ const ASSIGNABLE_ROLES = ['ADMIN', 'MANAGER', 'POWERUSER', 'USER']
 router.get('/', (req, res) => {
   const db = getDb()
   const users = db.prepare(
-    `SELECT id, email, name, role, departments, custom_permissions, status, created_at
-     FROM users WHERE tenant_id = ? ORDER BY created_at DESC`
+    `SELECT u.id, u.email, u.name, u.role, u.departments, u.custom_permissions, u.status, u.created_at,
+            COALESCE(u.line_only, 0) AS line_only, e.code AS employee_code
+     FROM users u
+     LEFT JOIN employees e ON e.user_id = u.id AND e.tenant_id = u.tenant_id
+     WHERE u.tenant_id = ? AND NOT (COALESCE(u.line_only, 0) = 1 AND u.status <> 'active')
+     ORDER BY u.created_at DESC`
   ).all(req.user!.tenantId) as any[]
 
   const data = users.map(u => ({
