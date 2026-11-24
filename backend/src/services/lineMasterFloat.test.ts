@@ -150,13 +150,13 @@ describe('LINE Master ลอย', () => {
         expect(db.prepare('SELECT COUNT(*) AS n FROM line_master_notify WHERE line_user_id = ?').get(uid)).toEqual({ n: 1 })
     })
 
-    it('7. สลับทดสอบ เปิดเมนู demo 5 ปุ่ม → เลือก USER เข้าบัญชีทดสอบ Testshop → master กลับเป็น Master ดูบริษัทเดิม', async () => {
+    it('7. demo เปิดเมนู 5 ปุ่ม → เลือก USER เข้าบัญชีทดสอบ Testshop → master กลับเป็น Master ดูบริษัทเดิม', async () => {
         const acc = seedTestshopTestAccounts(); if (!acc) return
         const { sync, say, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
         linkTestshop(uid, acc.empUserId, 'USER')
         const src = { source: { type: 'user', userId: uid } }
 
-        const menu = JSON.parse(await say(uid, 'สลับทดสอบ'))
+        const menu = JSON.parse(await say(uid, 'demo'))
         expect(menu[0].quickReply.items).toHaveLength(5)
         expect(link(uid).as_member).toBe(0)
 
@@ -323,22 +323,16 @@ describe('LINE Master ลอย', () => {
         expect(mappings(uid)[0]).toMatchObject({ user_id: userId, role: 'USER', demo_role: null })
     })
 
-    it('19. Master พิมพ์ สลับทดสอบ ทั้งตอนลอยและตอน as_member=1 → เปิดเมนู demo 5 ปุ่ม', async () => {
-        const acc = seedTestshopTestAccounts(); if (!acc) return
-        const { say, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
-        linkTestshop(uid, acc.empUserId, 'USER')
+    it('19. Master พิมพ์ สลับทดสอบ → ไม่เปิดเมนู demo และไม่แก้ line_master_links/mapping (ไหลไป fallback ปกติ)', async () => {
+        const { say } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        const testUser = member('Testshop', uid, 'USER')
+        const llm = vi.spyOn(lineBotService as any, 'handleLLMFallback').mockResolvedValue(undefined)
 
-        const floatingMenu = JSON.parse(await say(uid, 'สลับทดสอบ'))
-        expect(floatingMenu[0].quickReply.items).toHaveLength(5)
-        expect(floatingMenu[0].text).toContain('Master')
-        expect(link(uid).as_member).toBe(0)
-
-        await press(uid, 'action=demo_role&role=USER')
-        expect(link(uid).as_member).toBe(1)
-
-        const memberMenu = JSON.parse(await say(uid, 'สลับทดสอบ'))
-        expect(memberMenu[0].quickReply.items).toHaveLength(5)
-        expect(memberMenu[0].text).toContain('พนักงานทดสอบ')
+        const out = JSON.parse(await say(uid, 'สลับทดสอบ'))
+        expect(llm).toHaveBeenCalledTimes(1)
+        expect(out).toHaveLength(0)
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: null })
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')).toMatchObject({ user_id: testUser, role: 'USER' })
     })
 
     it('20. MGR-TEST ถูก LINE อื่นผูกอยู่แล้ว → กด MANAGER ตกกลับมาเป็น demo_role view และไม่แก้ mapping ทั้งสองฝั่ง', async () => {

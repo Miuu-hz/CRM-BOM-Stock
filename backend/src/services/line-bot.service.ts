@@ -2313,7 +2313,7 @@ class LineBotService {
                 richMenus.syncUser(tenantId, client.token, event.source.userId, linked.menu).catch(() => {})
             }
             // demo "ยังไม่ผูกบัญชี": Master เห็นบอทแบบคนที่เพิ่งเพิ่มเพื่อน — ทุกข้อความทำเหมือนไม่มีการผูก ยกเว้นคำสั่ง demo (ทางกลับ)
-            const isDemoCmd = ['demo', 'โหมด demo', 'สลับทดสอบ'].includes(lower)
+            const isDemoCmd = ['demo', 'โหมด demo'].includes(lower)
             const mlUser = src === 'user' && event.source?.userId ? this.masterLink(event.source.userId) : undefined
             const me = linked?.demo && linked.role === 'GUEST' && !isDemoCmd ? null : linked
             // ── สรุปปิดกะ: ตอบด้วย reply เท่านั้น (ฟรี ไม่กินโควตา push) · ก่อนด่านลงทะเบียนเพราะในกลุ่มที่ผูกแล้วใครก็ใช้ได้ ──
@@ -2488,7 +2488,7 @@ class LineBotService {
                 return
             }
 
-            // ── โหมด demo (และชื่อเล่น "สลับทดสอบ"): เฉพาะ Master ในแชทส่วนตัว ──
+            // ── โหมด demo: เฉพาะ Master ในแชทส่วนตัว ──
             if (me && isDemoCmd) {
                 const deny = (t: string) => client.replyMessage(event.replyToken, { type: 'text', text: t })
                 if (src !== 'user') await deny('โหมด demo ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ')
