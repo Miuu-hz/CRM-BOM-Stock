@@ -74,3 +74,9 @@ non-master silent in group for every command · demo Master silent · as_member 
 /ผูก pos while viewing another company · moving a group · /เลิกผูก pos · /บริษัท 0/1/many matches · % in query does not match everything ·
 work order creates no group push · daily group push: once per day, cost = members, cap refusal alerts Master once, empty day skipped, code-bound group gets none.
 - Also update helpCard exec list with one row: `/คำสั่ง` "คำสั่ง Master".
+
+## 7. Decisions after the read-only study
+- pushToAllGroups is deleted, and the spy on it in backend/src/routes/settings.billingPermission.test.ts (~line 108) goes too (that file is now a target, spy line only; no no-op stub).
+- handleGroupLink success text keeps "✅ ผูกกลุ่มนี้กับ <company> แล้ว" as its first line.
+- pos_group dedupe date = `today` of sendExecDigests. `/ผูก pos` or `/เลิกผูก pos` in private chat → "ใช้ได้ในกลุ่มเท่านั้น".
+- dailySalesCard: one optional period label, the existing call is unchanged. Existing dead code (BOM/PR parsers, 409 route) is NOT touched.
