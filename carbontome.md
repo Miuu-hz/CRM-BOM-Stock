@@ -2236,3 +2236,10 @@ tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · G
 - ตรวจ: tsc, เทสต์ backend/frontend ชุดเต็ม, รีวิวปิดท้าย Neon High = LGTM · ยังไม่ได้ลองบนหน้าจอจริง
 - ค้าง: EMP-001 (tenant_msqy2xbn) เจ้าของจะผูกเองในหน้า HR · offboard ยังไม่ลบ `line_link_tokens`/`line_login_tokens` ของบัญชี line_only
 - rollback: `backups/pre-staff-link-2026-11-24.db.gz` + `/scratch/pre-staff-link-dist/` + `git reset --hard 50d1764`
+
+### รอบ 4 (24 พ.ย. 2026) — `/สรุป` = การ์ดปิดกะ (EOS) · `/สินค้า` แสดงวัตถุดิบตามสูตร
+- สัญญากลาง `docs/contracts/line-shift-summary-recipe.md` · ผู้สั่งการ Neon, คนเขียน Hydrogen (ผ่านรอบแรก), รีวิวไม่รู้บริบท Argon = LGTM
+- `/สรุป [วันนี้|เมื่อวาน]` ตอบการ์ดปิดกะตัวเดียวกับผู้บริหาร (reply ฟรี) รวมกะที่ยังเปิด (เงินในเก๊ะ "ควรมี · ยังไม่นับ") · `เดือนนี้` และ `/pos` = การ์ดยอดขายเดิม · `line_shift_expense_groups = 0` → กลุ่มได้การ์ดยอดขาย
+- เจ้าของยืนยันให้ทุกคนในกลุ่มที่ผูกเห็นเหมือนการ์ดผู้บริหาร · หัวข้อแพลตฟอร์มแสดงเสมอ · สูตรเงินเก๊ะย้ายจาก pos.routes มา posShiftSummary (ค่าที่ลงตอนปิดกะไม่เปลี่ยน)
+- `/สินค้า` ที่ไม่มีใบรับซื้อแต่มีสูตร → วัตถุดิบ ≤15 ตัว + วันที่/ราคาซื้อล่าสุด
+- rollback: `backups/pre-line-eos-2026-11-24.db.gz` + `/scratch/pre-line-eos-dist/` + `git reset --hard 29fbda1`
