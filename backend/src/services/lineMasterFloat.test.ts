@@ -12,12 +12,14 @@ const MASTER_EMAIL = 'm@float.test'
 process.env.MASTER_BB_USERNAME = MASTER_EMAIL
 const tenants: string[] = []
 const lines: string[] = []
+const testshopEmpIds: string[] = []
 afterEach(() => {
     vi.restoreAllMocks()
     for (const t of tenants.splice(0)) for (const tb of ['line_user_mappings', 'line_link_tokens', 'users', 'company_settings', 'line_master_notify', 'tenant_subscriptions'])
         db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t)
     for (const l of lines.splice(0)) for (const tb of ['line_master_links', 'line_master_notify', 'line_user_mappings'])
         db.prepare(`DELETE FROM ${tb} WHERE line_user_id = ?`).run(l)
+    for (const id of testshopEmpIds.splice(0)) db.prepare('DELETE FROM employees WHERE id = ?').run(id)
     db.prepare(`DELETE FROM users WHERE tenant_id = 'Testshop' AND email LIKE '%@float.test'`).run()
 })
 
@@ -25,7 +27,7 @@ function rig() {
     const replies: any[] = []
     const push = vi.fn(async (_to: string, _m: any) => {})
     vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ token: 't', replyMessage: async (_t: string, m: any) => { replies.push(m) }, pushMessage: push })
-    vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
+    const sync = vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
     const send = async (uid: string, ev: any) => {
         const n = replies.length, event = { replyToken: 'rt', source: { type: 'user', userId: uid }, ...ev }
         await lineBotService.handleEvent(lineBotService.resolveTenant(event), event)
@@ -33,7 +35,7 @@ function rig() {
     }
     const say = (uid: string, text: string) => send(uid, { type: 'message', message: { type: 'text', text } })
     const press = (uid: string, data: string) => send(uid, { type: 'postback', postback: { data } })
-    return { replies, push, say, press }
+    return { replies, push, sync, say, press }
 }
 
 function company(label: string) {
@@ -56,6 +58,25 @@ function member(tenantId: string, uid: string, role: string) {
     db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'ทดสอบ', ?, ?, 'active')`).run(userId, `${userId}@float.test`, role, tenantId)
     db.prepare('INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, ?)').run(generateId(), tenantId, userId, uid, role)
     return userId
+}
+
+function linkTestshop(uid: string, userId: string, role: string) {
+    db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, 'Testshop', ?, ?, ?)`).run(generateId(), userId, uid, role)
+}
+
+function seedTestshopTestAccounts(opts?: { mgrRole?: string; mgrEmpStatus?: string; mgrUserStatus?: string }) {
+    if (db.prepare("SELECT 1 FROM employees WHERE tenant_id = 'Testshop' AND code IN ('EMP-TEST','MGR-TEST')").get()) return null
+    const empUserId = generateId(), mgrUserId = generateId(), empId = generateId(), mgrEmpId = generateId()
+    db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'พนักงานทดสอบ', 'USER', 'Testshop', 'active')`)
+        .run(empUserId, `${empUserId}@float.test`)
+    db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, employment_type, base_wage, start_date, status, user_id) VALUES (?, 'Testshop', 'EMP-TEST', 'พนักงานทดสอบ', 'MONTHLY', 0, '2026-01-01', 'ACTIVE', ?)`)
+        .run(empId, empUserId)
+    db.prepare(`INSERT INTO users (id, email, password, name, role, tenant_id, status) VALUES (?, ?, 'x', 'ผู้จัดการทดสอบ', ?, 'Testshop', ?)`)
+        .run(mgrUserId, `${mgrUserId}@float.test`, opts?.mgrRole ?? 'MANAGER', opts?.mgrUserStatus ?? 'active')
+    db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, employment_type, base_wage, start_date, status, user_id) VALUES (?, 'Testshop', 'MGR-TEST', 'ผู้จัดการทดสอบ', 'MONTHLY', 0, '2026-01-01', ?, ?)`)
+        .run(mgrEmpId, opts?.mgrEmpStatus ?? 'ACTIVE', mgrUserId)
+    testshopEmpIds.push(empId, mgrEmpId)
+    return { empUserId, mgrUserId }
 }
 
 const link = (uid: string) => db.prepare('SELECT * FROM line_master_links WHERE line_user_id = ?').get(uid) as any
@@ -129,19 +150,27 @@ describe('LINE Master ลอย', () => {
         expect(db.prepare('SELECT COUNT(*) AS n FROM line_master_notify WHERE line_user_id = ?').get(uid)).toEqual({ n: 1 })
     })
 
-    it('7. สลับทดสอบ → บัญชีทดสอบ Testshop · master → กลับเป็น Master ดูบริษัทเดิม', async () => {
-        const { say } = rig(), A = company('เอ'), uid = master(A.tenantId)
-        const testUser = member('Testshop', uid, 'USER')
+    it('7. สลับทดสอบ เปิดเมนู demo 5 ปุ่ม → เลือก USER เข้าบัญชีทดสอบ Testshop → master กลับเป็น Master ดูบริษัทเดิม', async () => {
+        const acc = seedTestshopTestAccounts(); if (!acc) return
+        const { sync, say, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        linkTestshop(uid, acc.empUserId, 'USER')
         const src = { source: { type: 'user', userId: uid } }
 
-        expect(await say(uid, 'สลับทดสอบ')).toContain('บัญชีทดสอบของร้านสาธิต')
-        expect(link(uid).as_member).toBe(1)
+        const menu = JSON.parse(await say(uid, 'สลับทดสอบ'))
+        expect(menu[0].quickReply.items).toHaveLength(5)
+        expect(link(uid).as_member).toBe(0)
+
+        const out = await press(uid, 'action=demo_role&role=USER')
+        expect(out).toContain('ร้านสาธิต')
+        expect(out).toContain('พิมพ์ demo เพื่อเปลี่ยน หรือ master เพื่อกลับ')
+        expect(link(uid)).toMatchObject({ as_member: 1, demo_role: null })
         expect(lineBotService.resolveTenant(src)).toBe('Testshop')
-        expect((lineBotService as any).linkedUser('Testshop', uid)).toMatchObject({ user_id: testUser, realRole: 'USER' })
+        expect(sync).toHaveBeenLastCalledWith('Testshop', 't', uid, 'staff')
 
         expect(await say(uid, 'master')).toContain('กลับเป็น Master แล้ว')
-        expect(link(uid).as_member).toBe(0)
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: null })
         expect(lineBotService.resolveTenant(src)).toBe(A.tenantId)
+        expect(sync).toHaveBeenLastCalledWith(A.tenantId, 't', uid, 'exec')
     })
 
     it('8. notifyMasters ส่งถึงทุกลิงก์ · แจ้งแพ็กเกจใกล้หมดครั้งเดียวต่อรอบ', async () => {
@@ -193,6 +222,137 @@ describe('LINE Master ลอย', () => {
             process.env.MASTER_BB_USERNAME = String(link(uid).master_id).slice(7)
             expect((lineBotService as any).masterLink(uid)).toBeTruthy()
         } finally { process.env.MASTER_BB_USERNAME = old }
+    })
+
+    it('13. กด USER/MANAGER เข้าบัญชีทดสอบจริง EMP-TEST/MGR-TEST · demo ขณะเป็นบัญชีทดสอบแสดงชื่อบัญชี · ใช้ role จริงจาก users', async () => {
+        const acc = seedTestshopTestAccounts(); if (!acc) return
+        const { sync, say, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        linkTestshop(uid, acc.empUserId, 'USER')
+
+        await press(uid, 'action=demo_role&role=USER')
+        expect(link(uid)).toMatchObject({ as_member: 1, demo_role: null })
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')?.user_id).toBe(acc.empUserId)
+        expect(sync).toHaveBeenLastCalledWith('Testshop', 't', uid, 'staff')
+
+        for (const cmd of ['demo', '/demo']) {
+            const res = JSON.parse(await say(uid, cmd))
+            expect(res[0].quickReply.items).toHaveLength(5)
+            expect(res[0].text).toContain('พนักงานทดสอบ')
+        }
+
+        await press(uid, 'action=demo_role&role=MANAGER')
+        expect(link(uid)).toMatchObject({ as_member: 1, demo_role: null })
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')).toMatchObject({ user_id: acc.mgrUserId, role: 'MANAGER' })
+        expect(sync).toHaveBeenLastCalledWith('Testshop', 't', uid, 'manager')
+
+        // role จริงของ MGR-TEST เป็น USER → ต้องบันทึก USER และ sync เมนู staff (ไม่เขียน role จากปุ่ม)
+        for (const id of testshopEmpIds.splice(0)) db.prepare('DELETE FROM employees WHERE id = ?').run(id)
+        db.prepare(`DELETE FROM line_user_mappings WHERE tenant_id = 'Testshop' AND line_user_id = ?`).run(uid)
+        db.prepare(`DELETE FROM users WHERE tenant_id = 'Testshop' AND email LIKE '%@float.test'`).run()
+        const acc2 = seedTestshopTestAccounts({ mgrRole: 'USER' }); if (!acc2) return
+        linkTestshop(uid, acc2.empUserId, 'USER')
+        await press(uid, 'action=demo_role&role=MANAGER')
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')).toMatchObject({ user_id: acc2.mgrUserId, role: 'USER' })
+        expect(sync).toHaveBeenLastCalledWith('Testshop', 't', uid, 'staff')
+    })
+
+    it('14. กด ADMIN หรือ off จากบัญชีทดสอบ (as_member=1) → กลับไปดูบริษัทเดิม', async () => {
+        const acc = seedTestshopTestAccounts(); if (!acc) return
+        const { sync, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        linkTestshop(uid, acc.empUserId, 'USER')
+        const src = { source: { type: 'user', userId: uid } }
+
+        await press(uid, 'action=demo_role&role=USER')
+        expect(link(uid).as_member).toBe(1)
+
+        await press(uid, 'action=demo_role&role=ADMIN')
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: 'ADMIN' })
+        expect(lineBotService.resolveTenant(src)).toBe(A.tenantId)
+        expect(sync).toHaveBeenLastCalledWith(A.tenantId, 't', uid, 'exec')
+
+        await press(uid, 'action=demo_role&role=USER')
+        expect(link(uid).as_member).toBe(1)
+
+        const out = await press(uid, 'action=demo_role&role=off')
+        expect(out).toContain('กลับเป็น Master แล้ว')
+        expect(out).toContain(A.name)
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: null })
+        expect(lineBotService.resolveTenant(src)).toBe(A.tenantId)
+        expect(sync).toHaveBeenLastCalledWith(A.tenantId, 't', uid, 'exec')
+    })
+
+    it('15. ไม่มี mapping ใน Testshop → กด USER ตกกลับมาเป็นโหมด demo ดูอย่างเดียว', async () => {
+        const { sync, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        const out = await press(uid, 'action=demo_role&role=USER')
+        expect(out).toContain('(โหมด demo)')
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: 'USER' })
+        expect(mappings(uid)).toHaveLength(0)
+        expect(sync).toHaveBeenLastCalledWith(A.tenantId, 't', uid, 'staff')
+    })
+
+    it('16. MGR-TEST ไม่ active → กด MANAGER ตกกลับมาเป็นโหมด demo และไม่ย้าย mapping', async () => {
+        const acc = seedTestshopTestAccounts({ mgrEmpStatus: 'RESIGNED' }); if (!acc) return
+        const { sync, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        linkTestshop(uid, acc.empUserId, 'USER')
+
+        await press(uid, 'action=demo_role&role=USER')
+        expect(link(uid).as_member).toBe(1)
+
+        await press(uid, 'action=demo_role&role=MANAGER')
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: 'MANAGER' })
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')?.user_id).toBe(acc.empUserId)
+        expect(sync).toHaveBeenLastCalledWith(A.tenantId, 't', uid, 'manager')
+    })
+
+    it('17. mapping ใน Testshop เป็นบัญชีจริงที่ไม่ใช่บัญชีทดสอบ (ADMIN) → ไม่ย้าย mapping เด็ดขาด', async () => {
+        const { press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        const adminUserId = member('Testshop', uid, 'ADMIN')
+
+        await press(uid, 'action=demo_role&role=USER')
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: 'USER' })
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')).toMatchObject({ user_id: adminUserId, role: 'ADMIN' })
+    })
+
+    it('18. ผู้ใช้ทั่วไปพิมพ์ demo หรือปลอม postback demo_role → ปฏิเสธและไม่เปลี่ยนสิทธิ์', async () => {
+        const { say, press } = rig(), A = company('เอ'), uid = 'U' + generateId(); lines.push(uid)
+        const userId = member(A.tenantId, uid, 'USER')
+
+        expect(await say(uid, 'demo')).toContain('🔒')
+        expect(await press(uid, 'action=demo_role&role=ADMIN')).toContain('🔒')
+        expect(await press(uid, 'action=demo_role&role=MANAGER')).toContain('🔒')
+        expect(mappings(uid)[0]).toMatchObject({ user_id: userId, role: 'USER', demo_role: null })
+    })
+
+    it('19. Master พิมพ์ สลับทดสอบ ทั้งตอนลอยและตอน as_member=1 → เปิดเมนู demo 5 ปุ่ม', async () => {
+        const acc = seedTestshopTestAccounts(); if (!acc) return
+        const { say, press } = rig(), A = company('เอ'), uid = master(A.tenantId)
+        linkTestshop(uid, acc.empUserId, 'USER')
+
+        const floatingMenu = JSON.parse(await say(uid, 'สลับทดสอบ'))
+        expect(floatingMenu[0].quickReply.items).toHaveLength(5)
+        expect(floatingMenu[0].text).toContain('Master')
+        expect(link(uid).as_member).toBe(0)
+
+        await press(uid, 'action=demo_role&role=USER')
+        expect(link(uid).as_member).toBe(1)
+
+        const memberMenu = JSON.parse(await say(uid, 'สลับทดสอบ'))
+        expect(memberMenu[0].quickReply.items).toHaveLength(5)
+        expect(memberMenu[0].text).toContain('พนักงานทดสอบ')
+    })
+
+    it('20. MGR-TEST ถูก LINE อื่นผูกอยู่แล้ว → กด MANAGER ตกกลับมาเป็น demo_role view และไม่แก้ mapping ทั้งสองฝั่ง', async () => {
+        const acc = seedTestshopTestAccounts(); if (!acc) return
+        const { sync, press } = rig(), A = company('เอ'), uid = master(A.tenantId), otherUid = 'U' + generateId(); lines.push(otherUid)
+        linkTestshop(uid, acc.empUserId, 'USER')
+        linkTestshop(otherUid, acc.mgrUserId, 'MANAGER')
+
+        const out = await press(uid, 'action=demo_role&role=MANAGER')
+        expect(out).toContain('(โหมด demo)')
+        expect(link(uid)).toMatchObject({ as_member: 0, demo_role: 'MANAGER' })
+        expect(mappings(uid).find(m => m.tenant_id === 'Testshop')).toMatchObject({ user_id: acc.empUserId, role: 'USER' })
+        expect(mappings(otherUid).find(m => m.tenant_id === 'Testshop')).toMatchObject({ user_id: acc.mgrUserId, role: 'MANAGER' })
+        expect(sync).toHaveBeenLastCalledWith(A.tenantId, 't', uid, 'manager')
     })
 })
 

@@ -353,6 +353,33 @@ class LineBotService {
         return m && !m.as_member ? m : undefined
     }
 
+    /** หาบัญชีทดสอบปลายทางของร้านสาธิต Testshop (ต้องมี mapping ใน Testshop ที่เป็น EMP-TEST หรือ MGR-TEST อยู่แล้ว · ไม่ระบุปลายทาง = สลับอีกฝั่ง) */
+    private findTestAccountSwap(lineUserId: string, targetCode?: 'EMP-TEST' | 'MGR-TEST'): { user_id: string; role: string; name: string } | null {
+        const db = getDb()
+        const cur = db.prepare(`
+            SELECT e.code FROM line_user_mappings lum
+            JOIN employees e ON e.tenant_id = lum.tenant_id AND e.user_id = lum.user_id
+            WHERE lum.tenant_id = 'Testshop' AND lum.line_user_id = ?
+        `).get(lineUserId) as { code: string } | undefined
+        if (cur?.code !== 'EMP-TEST' && cur?.code !== 'MGR-TEST') return null
+        const code = targetCode ?? (cur.code === 'EMP-TEST' ? 'MGR-TEST' : 'EMP-TEST')
+        return (db.prepare(`
+            SELECT e.user_id, u.role, u.name FROM employees e
+            JOIN users u ON u.id = e.user_id AND u.tenant_id = e.tenant_id
+            WHERE e.tenant_id = 'Testshop' AND e.code = ? AND e.status = 'ACTIVE' AND u.status = 'active'
+              AND NOT EXISTS (SELECT 1 FROM line_user_mappings x WHERE x.tenant_id = 'Testshop' AND x.user_id = e.user_id AND x.line_user_id != ?)
+        `).get(code, lineUserId) as { user_id: string; role: string; name: string } | undefined) ?? null
+    }
+
+    /** ออกจากบัญชีทดสอบ/โหมด demo กลับเป็น Master ลอยบนบริษัทที่ดูอยู่ */
+    private async resetMasterToFloat(lineUserId: string, ml: any, replyToken: string, client: any) {
+        const view = ml.view_tenant_id || ''
+        getDb().prepare('UPDATE line_master_links SET as_member = 0, demo_role = NULL WHERE line_user_id = ?').run(lineUserId)
+        const back = this.linkedUser(view, lineUserId)
+        if (back) await richMenus.syncUser(view, client.token, lineUserId, back.menu)
+        await client.replyMessage(replyToken, { type: 'text', text: `กลับเป็น Master แล้ว · ตอนนี้ดู: ${companyName(view) || view}` })
+    }
+
     /** LINE ของ Master ที่เปิดรับแจ้งเตือนชนิดนี้ของบริษัทนี้ */
     private masterSubscribers(tenantId: string, kind: string): string[] {
         return (getDb().prepare(`
@@ -2269,11 +2296,7 @@ class LineBotService {
             if (src === 'user' && ['master', 'กลับเป็น master'].includes(lower)) {
                 const uid = event.source.userId, ml = this.masterLink(uid)
                 if (ml?.as_member || ml?.demo_role) {
-                    const view = ml.view_tenant_id || ''
-                    getDb().prepare('UPDATE line_master_links SET as_member = 0, demo_role = NULL WHERE line_user_id = ?').run(uid)
-                    const back = this.linkedUser(view, uid)
-                    if (back) await richMenus.syncUser(view, client.token, uid, back.menu)
-                    await client.replyMessage(event.replyToken, { type: 'text', text: `กลับเป็น Master แล้ว · ตอนนี้ดู: ${companyName(view) || view}` })
+                    await this.resetMasterToFloat(uid, ml, event.replyToken, client)
                     return
                 }
             }
@@ -2291,7 +2314,8 @@ class LineBotService {
                 richMenus.syncUser(tenantId, client.token, event.source.userId, linked.menu).catch(() => {})
             }
             // demo "ยังไม่ผูกบัญชี": Master เห็นบอทแบบคนที่เพิ่งเพิ่มเพื่อน — ทุกข้อความทำเหมือนไม่มีการผูก ยกเว้นคำสั่ง demo (ทางกลับ)
-            const me = linked?.demo && linked.role === 'GUEST' && !['demo', 'โหมด demo'].includes(lower) ? null : linked
+            const mlUser = src === 'user' && event.source?.userId ? this.masterLink(event.source.userId) : undefined
+            const me = linked?.demo && linked.role === 'GUEST' && !['demo', 'โหมด demo'].includes(lower) && !(lower === 'สลับทดสอบ' && mlUser) ? null : linked
             // ── สรุปปิดกะ: ตอบด้วย reply เท่านั้น (ฟรี ไม่กินโควตา push) · ก่อนด่านลงทะเบียนเพราะในกลุ่มที่ผูกแล้วใครก็ใช้ได้ ──
             // กลุ่มที่ยังไม่ผูก (tenantId ว่าง) และแชทส่วนตัวที่ยังไม่ผูก (me ว่าง) ไม่เข้าตรงนี้ → ไปด่านลงทะเบียนตามเดิม
             if (['สรุปการปิดกะ', 'สรุปปิดกะ', 'ปิดกะ'].includes(lower) && (src === 'user' ? !!me : !!tenantId)) {
@@ -2464,52 +2488,37 @@ class LineBotService {
                 return
             }
 
-            // ── โหมด demo: MASTER ดูบอทเป็นตำแหน่งที่ต่ำกว่า (ลดสิทธิ์อย่างเดียว) ──
-            if (me && ['demo', 'โหมด demo'].includes(lower)) {
+            // ── โหมด demo (และ "สลับทดสอบ" ของ Master): เลือกตำแหน่งจำลองหรือบัญชีทดสอบร้านสาธิต ──
+            if (me && (['demo', 'โหมด demo'].includes(lower) || (lower === 'สลับทดสอบ' && mlUser))) {
                 const deny = (t: string) => client.replyMessage(event.replyToken, { type: 'text', text: t })
                 if (src !== 'user') await deny('โหมด demo ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ')
-                else if (me.realRole !== 'MASTER') await deny('🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ')
+                else if (!mlUser && me.realRole !== 'MASTER') await deny('🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ')
                 else {
+                    const status = mlUser?.as_member
+                        ? `${me.name ? `${me.name} (` : ''}${ROLE_LABEL[me.role] ?? me.role}${me.name ? ')' : ''} · บัญชีทดสอบร้านสาธิต`
+                        : me.demo
+                            ? `${ROLE_LABEL[me.role] ?? me.role} (โหมด demo)`
+                            : (ROLE_LABEL[me.role] ?? me.role)
                     const btn = (label: string, role: string) => ({ type: 'action', action: { type: 'postback', label, data: `action=demo_role&role=${role}`, displayText: label } })
                     await client.replyMessage(event.replyToken, {
-                        type: 'text', text: `โหมด demo: เลือกตำแหน่งที่อยากดู\nตอนนี้: ${ROLE_LABEL[me.role] ?? me.role}`,
+                        type: 'text', text: `โหมด demo: เลือกตำแหน่งที่อยากดู\nตอนนี้: ${status}`,
                         quickReply: { items: [btn(ROLE_LABEL.ADMIN, 'ADMIN'), btn(ROLE_LABEL.MANAGER, 'MANAGER'), btn(ROLE_LABEL.USER, 'USER'), btn(ROLE_LABEL.GUEST, 'GUEST'), btn('กลับเป็น Master', 'off')] },
                     })
                 }
                 return
             }
 
-            // ── Master ลอยสลับเป็นบัญชีทดสอบของ Testshop (ต้องมี mapping ของ LINE นี้ใน Testshop อยู่แล้ว) ──
-            if (me && src === 'user' && lower === 'สลับทดสอบ' && this.floatingLink(event.source.userId)
-                && getDb().prepare(`SELECT 1 FROM line_user_mappings WHERE tenant_id = 'Testshop' AND line_user_id = ?`).get(event.source.userId)) {
-                const uid = event.source.userId
-                getDb().prepare('UPDATE line_master_links SET as_member = 1 WHERE line_user_id = ?').run(uid)
-                this.setActiveTenant(uid, 'Testshop')
-                const t = this.linkedUser('Testshop', uid)
-                if (t) await richMenus.syncUser('Testshop', client.token, uid, t.menu)
-                await client.replyMessage(event.replyToken, { type: 'text', text: 'ตอนนี้เป็นบัญชีทดสอบของร้านสาธิต · พิมพ์ สลับทดสอบ เพื่อสลับพนักงาน/ผู้จัดการ · พิมพ์ master เพื่อกลับเป็น Master' })
-                return
-            }
-
-            // ── ร้านสาธิต Testshop: สลับ LINE นี้ระหว่างบัญชีทดสอบ พนักงาน (EMP-TEST) ↔ ผู้จัดการ (MGR-TEST) ──
-            // LINE เดียวผูกได้บัญชีเดียวต่อร้าน จึงย้ายการผูกไปมา · ล็อกไว้ที่ Testshop + ต้องเป็นบัญชีทดสอบอยู่แล้ว (ร้านจริงใช้ยกสิทธิ์ไม่ได้)
+            // ── ร้านสาธิต Testshop (ผู้ใช้ทั่วไป): สลับ LINE นี้ระหว่างบัญชีทดสอบ พนักงาน (EMP-TEST) ↔ ผู้จัดการ (MGR-TEST) ──
             if (me && tenantId === 'Testshop' && src === 'user' && lower === 'สลับทดสอบ') {
-                const db = getDb()
-                const cur = db.prepare('SELECT code FROM employees WHERE tenant_id = ? AND user_id = ?').get(tenantId, me.user_id) as any
-                const other = cur?.code === 'EMP-TEST' ? 'MGR-TEST' : cur?.code === 'MGR-TEST' ? 'EMP-TEST' : null
-                const to = other && db.prepare(`
-                    SELECT e.user_id, u.role, u.name FROM employees e JOIN users u ON u.id = e.user_id AND u.tenant_id = e.tenant_id
-                    WHERE e.tenant_id = ? AND e.code = ? AND e.status = 'ACTIVE' AND u.status = 'active'
-                `).get(tenantId, other) as any
+                const to = this.findTestAccountSwap(event.source.userId)
                 if (!to) {
                     await client.replyMessage(event.replyToken, { type: 'text', text: 'คำสั่งนี้ใช้ได้เฉพาะบัญชีทดสอบของร้านสาธิตครับ' })
                     return
                 }
-                db.prepare('UPDATE line_user_mappings SET user_id = ?, role = ?, demo_role = NULL WHERE tenant_id = ? AND line_user_id = ?')
+                getDb().prepare('UPDATE line_user_mappings SET user_id = ?, role = ?, demo_role = NULL WHERE tenant_id = ? AND line_user_id = ?')
                     .run(to.user_id, to.role, tenantId, event.source.userId)
                 await richMenus.syncUser(tenantId, client.token, event.source.userId, menuKeyForRole(to.role))
-                await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้เป็น: ${to.name} (${ROLE_LABEL[to.role] ?? to.role})
-พิมพ์ สลับทดสอบ เพื่อสลับกลับ` })
+                await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้เป็น: ${to.name} (${ROLE_LABEL[to.role] ?? to.role})\nพิมพ์ สลับทดสอบ เพื่อสลับกลับ` })
                 return
             }
 
@@ -2601,19 +2610,54 @@ class LineBotService {
                 return
             }
 
-            // โหมด demo: เปลี่ยนได้เฉพาะ MASTER จริง (เช็คจาก realRole ที่มาจากตาราง users ไม่ใช่จากปุ่ม) · เก็บต่อบริษัท
+            // โหมด demo: เปลี่ยนได้เฉพาะ Master จริง (เช็คจาก line_master_links / users.role ไม่ใช่จากปุ่ม)
             if (action === 'demo_role' && event.source?.type === 'user') {
                 const lineUserId = event.source.userId, role = params.get('role') ?? ''
-                const me = this.linkedUser(tenantId, lineUserId)
-                if (!me) return
-                if (me.realRole !== 'MASTER') {
-                    await client.replyMessage(event.replyToken, { type: 'text', text: '🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ' })
-                    return
+                const ml = this.masterLink(lineUserId)
+                if (!ml) {
+                    const me = this.linkedUser(tenantId, lineUserId)
+                    if (!me) return
+                    if (me.realRole !== 'MASTER') {
+                        await client.replyMessage(event.replyToken, { type: 'text', text: '🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ' })
+                        return
+                    }
                 }
                 if (!['ADMIN', 'MANAGER', 'USER', 'GUEST', 'off'].includes(role)) return
+
+                if (ml) {
+                    if (role === 'off') {
+                        await this.resetMasterToFloat(lineUserId, ml, event.replyToken, client)
+                        return
+                    }
+                    if (role === 'MANAGER' || role === 'USER') {
+                        const to = this.findTestAccountSwap(lineUserId, role === 'MANAGER' ? 'MGR-TEST' : 'EMP-TEST')
+                        if (to) {
+                            db.transaction(() => {
+                                db.prepare(`UPDATE line_user_mappings SET user_id = ?, role = ?, demo_role = NULL WHERE tenant_id = 'Testshop' AND line_user_id = ?`)
+                                    .run(to.user_id, to.role, lineUserId)
+                                db.prepare('UPDATE line_master_links SET as_member = 1, demo_role = NULL WHERE line_user_id = ?').run(lineUserId)
+                                this.setActiveTenant(lineUserId, 'Testshop')
+                            })()
+                            await richMenus.syncUser('Testshop', client.token, lineUserId, menuKeyForRole(to.role))
+                            await client.replyMessage(event.replyToken, {
+                                type: 'text',
+                                text: `ตอนนี้เป็น: ${to.name} (${ROLE_LABEL[to.role] ?? to.role})\nใช้บัญชีทดสอบจริงของร้านสาธิต (เช็คอิน/ขอลาบันทึกในร้านสาธิต)\nพิมพ์ demo เพื่อเปลี่ยน หรือ master เพื่อกลับ`,
+                            })
+                            return
+                        }
+                    }
+                    const view = ml.view_tenant_id || ''
+                    db.prepare('UPDATE line_master_links SET as_member = 0, demo_role = ? WHERE line_user_id = ?').run(role, lineUserId)
+                    const now = this.linkedUser(view, lineUserId)
+                    if (!now) return
+                    await richMenus.syncUser(view, client.token, lineUserId, now.menu)
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้ดูแบบ: ${ROLE_LABEL[role]} (โหมด demo)\nพิมพ์ demo เพื่อเปลี่ยนหรือกลับเป็น Master` })
+                    return
+                }
+
+                // Legacy MASTER ใน line_user_mappings (ไม่มี line_master_links) — คงพฤติกรรมเดิมทุกประการ
                 const demo = role === 'off' ? null : role
-                if (this.floatingLink(lineUserId)) db.prepare('UPDATE line_master_links SET demo_role = ? WHERE line_user_id = ?').run(demo, lineUserId)
-                else db.prepare('UPDATE line_user_mappings SET demo_role = ? WHERE tenant_id = ? AND line_user_id = ?').run(demo, tenantId, lineUserId)
+                db.prepare('UPDATE line_user_mappings SET demo_role = ? WHERE tenant_id = ? AND line_user_id = ?').run(demo, tenantId, lineUserId)
                 const now = this.linkedUser(tenantId, lineUserId)
                 if (!now) return
                 await richMenus.syncUser(tenantId, client.token, lineUserId, now.menu)
