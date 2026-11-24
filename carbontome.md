@@ -2250,3 +2250,8 @@ tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · G
 - `demo` ของ Master: พนักงาน/ผู้จัดการ = บัญชีทดสอบจริง EMP-TEST/MGR-TEST ใน Testshop · ADMIN/GUEST = ดูอย่างเดียว · `สลับทดสอบ` = ชื่อเล่นของ demo · คนที่ไม่ใช่ Master ใช้ไม่ได้ทั้งสองคำ
 - ตรวจ: tsc, backend 1698, frontend 445, รีวิวไม่รู้บริบท Argon = LGTM (ขับรถ, demo) · ยังไม่ได้ลองบน LINE จริง/Google จริง
 - rollback: `backups/pre-line-drive-2026-11-24.db.gz` + `/scratch/pre-line-drive-{dist,fe-dist}/` + `git reset --hard e22f1fe`
+
+### รอบ 5.1 (24 พ.ย. 2026) — ลบคำสั่ง `สลับทดสอบ` เหลือ `demo` อย่างเดียว
+- MGR-TEST (Testshop) ตั้งเป็น MANAGER แผนก SALES+STOCK บนข้อมูลจริง (เจ้าของอนุมัติ) · อนุมัติลา/แลกกะ/นอกสถานที่ของทีมทดสอบได้ ไม่รวมเบิกล่วงหน้าและของตัวเอง
+- ตรวจ: tsc, backend 1698 เทสต์ · ยังไม่ได้ลองบน LINE จริง
+- rollback: `backups/pre-demo-alias-2026-11-24.db.gz` + `/scratch/pre-demo-alias-dist/` + `git reset --hard 56a9316`
