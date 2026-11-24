@@ -118,7 +118,9 @@ export default function Employees() {
 
   const handleLineInvite = async (emp: Employee, newAccount = false) => {
     try {
-      setLineInvite(await (newAccount ? hrService.inviteEmployeeToLine(emp.id, true) : hrService.inviteEmployeeToLine(emp.id)))
+      const res = await (newAccount ? hrService.inviteEmployeeToLine(emp.id, true) : hrService.inviteEmployeeToLine(emp.id))
+      setLineInvite(res)
+      if (res.created_line_only_account) void loadData()
     } catch (err: any) {
       const data = err?.response?.data
       if (data?.code === 'ERP_ACCOUNT_EXISTS') {

@@ -328,6 +328,9 @@ describe('หน้าทะเบียนพนักงาน (Employees)', (
     expect(mockHr.inviteEmployeeToLine).toHaveBeenNthCalledWith(2, 'e9', true)
     expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('มีบัญชีชื่อนี้แล้วในระบบ ERP'))
     expect(await screen.findByText('CONFIRM-CODE-888')).toBeTruthy()
+    await waitFor(() => {
+      expect(mockHr.getEmployees).toHaveBeenCalledTimes(2)
+    })
 
     confirmSpy.mockRestore()
   })

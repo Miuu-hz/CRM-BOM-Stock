@@ -22,7 +22,7 @@ router.post('/employees/:id/line-invite', requirePermission('hr', 'write'), (req
       const linked = db.prepare(`SELECT role FROM users WHERE id = ? AND tenant_id = ? AND status = 'active'`).get(userId, tenantId) as any
       if (!linked) return res.status(409).json({ success: false, message: 'บัญชีผู้ใช้ของพนักงานคนนี้ถูกระงับอยู่ เปิดใช้งานบัญชีก่อนเชิญ' })
       // รหัสเชิญ = สิทธิ์เข้า LINE ในนามบัญชีนั้น จึงออกให้บัญชีที่ role สูงกว่าตัวเองไม่ได้
-      if ((ROLE_HIERARCHY as Record<string, number>)[linked.role] > (ROLE_HIERARCHY as Record<string, number>)[req.user!.role]) {
+      if (((ROLE_HIERARCHY as Record<string, number>)[linked.role] ?? Infinity) > ((ROLE_HIERARCHY as Record<string, number>)[req.user!.role] ?? 0)) {
         return res.status(403).json({ success: false, message: 'เชิญบัญชีที่มีระดับสิทธิ์สูงกว่าคุณไม่ได้ ให้ผู้ดูแลระบบเป็นคนเชิญ' })
       }
     }

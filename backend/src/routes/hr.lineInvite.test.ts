@@ -19,7 +19,7 @@ app.use('/api/hr', authenticate, hrRoutes)
 app.use('/api/users', userRoutes)
 
 const tenants: string[] = []
-afterEach(() => { for (const t of tenants.splice(0)) for (const tb of ['employees', 'line_link_tokens', 'line_user_mappings', 'users']) db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t) })
+afterEach(() => { for (const t of tenants.splice(0)) for (const tb of ['employees', 'line_link_tokens', 'line_login_tokens', 'line_user_mappings', 'users']) db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t) })
 function emp(tenantId: string, status = 'ACTIVE') {
     const id = generateId()
     db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, employment_type, base_wage, start_date, status) VALUES (?, ?, ?, 'มาลี', 'ใจดี', 'DAILY', 400, '2026-01-01', ?)`).run(id, tenantId, 'E' + id.slice(0, 6), status)
@@ -70,6 +70,27 @@ describe('เชิญพนักงานเข้า LINE (ไม่มีบ
         expect((await invite({ new_account: true })).status).toBe(201)
     })
 
+    it('มีบัญชี ERP อีเมลเดียวกันแม้ชื่อต่างกัน → 409 ERP_ACCOUNT_EXISTS', async () => {
+        const admin = await createTestUser({ role: 'ADMIN' }); tenants.push(admin.tenantId)
+        const erp = await createTestUser({ role: 'USER', tenantId: admin.tenantId })
+        db.prepare("UPDATE users SET name = 'คนละชื่อ', email = 'same@mail.com' WHERE id = ?").run(erp.userId)
+        const id = generateId()
+        db.prepare(`INSERT INTO employees (id, tenant_id, code, first_name, last_name, email, employment_type, base_wage, start_date, status) VALUES (?, ?, ?, 'สมหญิง', 'ใจดี', 'Same@Mail.com', 'DAILY', 400, '2026-01-01', 'ACTIVE')`).run(id, admin.tenantId, 'E' + id.slice(0, 6))
+        const res = await request(app).post(`/api/hr/employees/${id}/line-invite`).set('Authorization', `Bearer ${admin.token}`)
+        expect([res.status, res.body.code]).toEqual([409, 'ERP_ACCOUNT_EXISTS'])
+    })
+
+    it('POST /api/hr/employees ผูก user_id ได้เฉพาะ Admin · HR ได้ 403', async () => {
+        const admin = await createTestUser({ role: 'ADMIN' }); tenants.push(admin.tenantId)
+        const T = admin.tenantId
+        const erp = await createTestUser({ role: 'USER', tenantId: T })
+        const hr = await createTestUser({ role: 'USER', tenantId: T })
+        db.prepare(`UPDATE users SET departments = '["HR"]' WHERE id = ?`).run(hr.userId)
+        const payload = { first_name: 'สมชาย', employment_type: 'DAILY', base_wage: 400, start_date: '2026-01-01', user_id: erp.userId }
+        expect((await request(app).post('/api/hr/employees').set('Authorization', `Bearer ${hr.token}`).send(payload)).status).toBe(403)
+        expect((await request(app).post('/api/hr/employees').set('Authorization', `Bearer ${admin.token}`).send(payload)).status).toBe(201)
+    })
+
     it('ผูกบัญชี: เฉพาะ Admin · ย้าย LINE ตามไปและปิดบัญชี LINE เดิม · HR เชิญบัญชี role สูงกว่าไม่ได้', async () => {
         const admin = await createTestUser({ role: 'ADMIN' }); tenants.push(admin.tenantId)
         const T = admin.tenantId
@@ -80,6 +101,7 @@ describe('เชิญพนักงานเข้า LINE (ไม่มีบ
         await request(app).post(`/api/hr/employees/${id}/line-invite`).set('Authorization', `Bearer ${admin.token}`)
         const old = (db.prepare('SELECT user_id FROM employees WHERE id = ?').get(id) as any).user_id
         db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, ?, 'USER')`).run(generateId(), T, old, 'U' + id)
+        db.prepare(`INSERT INTO line_login_tokens (token_hash, tenant_id, user_id, expires_at) VALUES (?, ?, ?, datetime('now', '+5 minutes'))`).run(generateId(), T, old)
         const put = (token: string, user_id: string | null) => request(app).put(`/api/hr/employees/${id}`).set('Authorization', `Bearer ${token}`)
             .send({ code: 'E1', first_name: 'มาลี', employment_type: 'DAILY', base_wage: 400, start_date: '2026-01-01', user_id })
 
@@ -90,6 +112,7 @@ describe('เชิญพนักงานเข้า LINE (ไม่มีบ
         expect((db.prepare('SELECT status FROM users WHERE id = ?').get(old) as any).status).toBe('inactive')
         expect((db.prepare('SELECT user_id FROM line_user_mappings WHERE tenant_id = ?').all(T) as any[]).map(m => m.user_id)).toEqual([erp.userId])
         expect((db.prepare('SELECT COUNT(*) c FROM line_link_tokens WHERE user_id = ?').get(old) as any).c).toBe(0)
+        expect((db.prepare('SELECT COUNT(*) c FROM line_login_tokens WHERE user_id = ?').get(old) as any).c).toBe(0)
 
         const list = await request(app).get('/api/users').set('Authorization', `Bearer ${admin.token}`)
         expect(list.body.data.map((u: any) => u.id)).not.toContain(old)
@@ -97,5 +120,35 @@ describe('เชิญพนักงานเข้า LINE (ไม่มีบ
 
         expect((await put(admin.token, admin.userId)).status).toBe(200)
         expect((await request(app).post(`/api/hr/employees/${id}/line-invite`).set('Authorization', `Bearer ${hr.token}`)).status).toBe(403)
+    })
+
+    it('retireLineOnlyAccount: คง LINE เดิมของบัญชี ERP ปลายทางถ้ามีอยู่แล้ว · และล้างเมื่อยกเลิกการผูก (user_id: null)', async () => {
+        const admin = await createTestUser({ role: 'ADMIN' }); tenants.push(admin.tenantId)
+        const T = admin.tenantId
+        const erp2 = await createTestUser({ role: 'USER', tenantId: T })
+        db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, 'U-ERP-2', 'USER')`).run(generateId(), T, erp2.userId)
+
+        const id1 = emp(T)
+        await request(app).post(`/api/hr/employees/${id1}/line-invite`).set('Authorization', `Bearer ${admin.token}`)
+        const old1 = (db.prepare('SELECT user_id FROM employees WHERE id = ?').get(id1) as any).user_id
+        db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, 'U-OLD-1', 'USER')`).run(generateId(), T, old1)
+
+        const put1 = await request(app).put(`/api/hr/employees/${id1}`).set('Authorization', `Bearer ${admin.token}`)
+            .send({ code: 'E-KEEP', first_name: 'มาลี', employment_type: 'DAILY', base_wage: 400, start_date: '2026-01-01', user_id: erp2.userId })
+        expect(put1.status).toBe(200)
+        expect((db.prepare('SELECT status FROM users WHERE id = ?').get(old1) as any).status).toBe('inactive')
+        expect((db.prepare('SELECT COUNT(*) c FROM line_user_mappings WHERE user_id = ?').get(old1) as any).c).toBe(0)
+        expect((db.prepare('SELECT line_user_id FROM line_user_mappings WHERE user_id = ?').get(erp2.userId) as any).line_user_id).toBe('U-ERP-2')
+
+        const id2 = emp(T)
+        await request(app).post(`/api/hr/employees/${id2}/line-invite`).set('Authorization', `Bearer ${admin.token}`)
+        const old2 = (db.prepare('SELECT user_id FROM employees WHERE id = ?').get(id2) as any).user_id
+        db.prepare(`INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role) VALUES (?, ?, ?, 'U-OLD-2', 'USER')`).run(generateId(), T, old2)
+
+        const put2 = await request(app).put(`/api/hr/employees/${id2}`).set('Authorization', `Bearer ${admin.token}`)
+            .send({ code: 'E-UNLINK', first_name: 'มาลี', employment_type: 'DAILY', base_wage: 400, start_date: '2026-01-01', user_id: null })
+        expect(put2.status).toBe(200)
+        expect((db.prepare('SELECT status FROM users WHERE id = ?').get(old2) as any).status).toBe('inactive')
+        expect((db.prepare('SELECT COUNT(*) c FROM line_user_mappings WHERE user_id = ?').get(old2) as any).c).toBe(0)
     })
 })

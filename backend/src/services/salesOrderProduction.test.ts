@@ -412,6 +412,12 @@ describe('SO Make-To-Order (ผลิตอัตโนมัติจากใ�
     expect(res.status).toBe(200)
     expect(res.body.data.workOrders[0].status).toBe('COMPLETED')
 
-    expect(() => transitionWorkOrder(T, seedPlannedWO(T, bom.id), 'CANCELLED', { role: 'USER', isMaster: false, canComplete: true })).toThrow(/ไม่มีสิทธิ์ยกเลิก/)
+    const woId = seedPlannedWO(T, bom.id)
+    transitionWorkOrder(T, woId, 'PLANNED', { role: 'ADMIN', isMaster: false })
+    transitionWorkOrder(T, woId, 'IN_PROGRESS', { role: 'ADMIN', isMaster: false })
+    expect((await request(app).put(`/api/work-orders/${woId}/status`).set('Authorization', `Bearer ${staff.token}`).send({ status: 'COMPLETED' })).status).toBe(403)
+    expect((await request(app).put(`/api/work-orders/${woId}/status`).set('Authorization', `Bearer ${staff.token}`).send({ status: 'CANCELLED' })).status).toBe(403)
+
+    expect(() => transitionWorkOrder(T, woId, 'CANCELLED', { role: 'USER', isMaster: false, canComplete: true })).toThrow(/ไม่มีสิทธิ์ยกเลิก/)
   })
 })

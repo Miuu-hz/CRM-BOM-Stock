@@ -520,12 +520,28 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
   try {
     const tenantId = req.user!.tenantId
     const id = req.params.id
-    const existing = db.prepare('SELECT * FROM employees WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+    let existing = db.prepare('SELECT * FROM employees WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
     if (!existing) {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลพนักงาน' })
     }
 
     const body = req.body || {}
+
+    let hashedCheckinPin: string | null | undefined
+    if (body.checkin_pin !== undefined) {
+      if (body.checkin_pin === null) {
+        hashedCheckinPin = null
+      } else if (typeof body.checkin_pin === 'string' && PIN_RE.test(body.checkin_pin)) {
+        hashedCheckinPin = await bcrypt.hash(body.checkin_pin, 10)
+        existing = db.prepare('SELECT * FROM employees WHERE id = ? AND tenant_id = ?').get(id, tenantId) as any
+        if (!existing) {
+          return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลพนักงาน' })
+        }
+      } else {
+        return res.status(400).json({ success: false, message: 'PIN ต้องเป็นตัวเลข 4–6 หลัก' })
+      }
+    }
+    const checkinPinHash = body.checkin_pin !== undefined ? hashedCheckinPin! : existing.checkin_pin_hash
 
     const firstName = body.first_name !== undefined
       ? (typeof body.first_name === 'string' ? body.first_name.trim() : '')
@@ -622,17 +638,6 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
       }
     }
 
-    let checkinPinHash = existing.checkin_pin_hash
-    if (body.checkin_pin !== undefined) {
-      if (body.checkin_pin === null) {
-        checkinPinHash = null
-      } else if (typeof body.checkin_pin === 'string' && PIN_RE.test(body.checkin_pin)) {
-        checkinPinHash = await bcrypt.hash(body.checkin_pin, 10)
-      } else {
-        return res.status(400).json({ success: false, message: 'PIN ต้องเป็นตัวเลข 4–6 หลัก' })
-      }
-    }
-
     const taxAllowances = body.tax_allowances !== undefined
       ? normalizeTaxAllowances(body.tax_allowances)
       : existing.tax_allowances
@@ -648,28 +653,30 @@ router.put('/employees/:id', requirePermission('hr', 'write'), async (req: Reque
     const ssoEnrolled = body.sso_enrolled !== undefined ? (body.sso_enrolled ? 1 : 0) : existing.sso_enrolled
     const now = new Date().toISOString()
 
-    db.prepare(`
-      UPDATE employees SET
-        code = ?, first_name = ?, last_name = ?, nickname = ?, org_unit_id = ?, position = ?,
-        employment_type = ?, base_wage = ?, start_date = ?, end_date = ?, status = ?,
-        national_id = ?, bank_name = ?, bank_account = ?, phone = ?, email = ?, address = ?,
-        sso_enrolled = ?, tax_allowances = ?, user_id = ?, device_pin = ?, shift_id = ?, notes = ?,
-        checkin_pin_hash = ?, updated_at = ?
-      WHERE id = ? AND tenant_id = ?
-    `).run(
-      code, firstName, optStr('last_name'), optStr('nickname'), orgUnitId, optStr('position'),
-      employmentType, baseWage, startDate, endDate, status,
-      optStr('national_id'), optStr('bank_name'), optStr('bank_account'), optStr('phone'), optStr('email'), optStr('address'),
-      ssoEnrolled, taxAllowances, userId, devicePin, shiftId, optStr('notes'),
-      checkinPinHash, now,
-      id, tenantId
-    )
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE employees SET
+          code = ?, first_name = ?, last_name = ?, nickname = ?, org_unit_id = ?, position = ?,
+          employment_type = ?, base_wage = ?, start_date = ?, end_date = ?, status = ?,
+          national_id = ?, bank_name = ?, bank_account = ?, phone = ?, email = ?, address = ?,
+          sso_enrolled = ?, tax_allowances = ?, user_id = ?, device_pin = ?, shift_id = ?, notes = ?,
+          checkin_pin_hash = ?, updated_at = ?
+        WHERE id = ? AND tenant_id = ?
+      `).run(
+        code, firstName, optStr('last_name'), optStr('nickname'), orgUnitId, optStr('position'),
+        employmentType, baseWage, startDate, endDate, status,
+        optStr('national_id'), optStr('bank_name'), optStr('bank_account'), optStr('phone'), optStr('email'), optStr('address'),
+        ssoEnrolled, taxAllowances, userId, devicePin, shiftId, optStr('notes'),
+        checkinPinHash, now,
+        id, tenantId
+      )
 
-    db.transaction(() => retireLineOnlyAccount(tenantId, existing.user_id, userId))()
+      retireLineOnlyAccount(tenantId, existing.user_id, userId)
 
-    if (status !== 'ACTIVE' || (existing.user_id && existing.user_id !== userId)) {
-      db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, id)
-    }
+      if (status !== 'ACTIVE' || (existing.user_id && existing.user_id !== userId)) {
+        db.prepare('DELETE FROM hr_face_enrollments WHERE tenant_id = ? AND employee_id = ?').run(tenantId, id)
+      }
+    })()
 
     const updated = db.prepare(`
       SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
