@@ -154,7 +154,7 @@ describe('LINE Master commands + daily POS group summary', () => {
         const { sayInGroup } = rig()
         const A = company('ร้านเอ-' + generateId().slice(0, 4))
         const gid = newGroup()
-        const cmds = ['/pos', '/รายได้', `/บริษัท ${A.name}`, `/ผูก pos ${A.name}`, '/เลิกผูก pos', '/คำสั่ง']
+        const cmds = ['/pos', '/รายได้', `/บริษัท ${A.name}`, `/ผูก pos tenant ${A.tenantId}`, '/เลิกผูก pos', '/คำสั่ง']
 
         // คนทั่วไปที่ไม่ได้ลงทะเบียน + พนักงาน ADMIN ในบริษัท
         const stranger = 'U' + generateId(); lines.push(stranger)
@@ -284,11 +284,11 @@ describe('LINE Master commands + daily POS group summary', () => {
         const gid = newGroup()
 
         // แชทส่วนตัวต้องปฏิเสธ
-        expect(JSON.stringify(await say(uid, `/ผูก pos ${B.name}`))).toContain('ใช้ได้ในกลุ่มเท่านั้น')
+        expect(JSON.stringify(await say(uid, `/ผูก pos tenant ${B.tenantId}`))).toContain('ใช้ได้ในกลุ่มเท่านั้น')
         expect(JSON.stringify(await say(uid, '/เลิกผูก pos'))).toContain('ใช้ได้ในกลุ่มเท่านั้น')
 
         // ผูกกลุ่มกับ B ทั้งที่ Master ดู A อยู่ (สมาชิก 5 → 150 > cap 100 → มีคำเตือน)
-        const bindOut = JSON.stringify(await sayInGroup(gid, uid, `/ผูกpos ${B.name}`))
+        const bindOut = JSON.stringify(await sayInGroup(gid, uid, `/ผูกpos tenant ${B.tenantId}`))
         expect(bindOut).toContain(B.name)
         expect(bindOut).toContain('09:00')
         expect(bindOut).toContain('150')
@@ -300,7 +300,7 @@ describe('LINE Master commands + daily POS group summary', () => {
         expect(notifyB).toBeTruthy()
 
         // ย้ายกลุ่มจาก B → A
-        const moveOut = JSON.stringify(await sayInGroup(gid, uid, `/ผูก pos ${A.name}`))
+        const moveOut = JSON.stringify(await sayInGroup(gid, uid, `/ผูก pos tenant ${A.tenantId}`))
         expect(moveOut).toContain(A.name)
         expect(moveOut).toContain(B.name)
         expect(db.prepare('SELECT is_active, pos_daily FROM line_group_mappings WHERE tenant_id = ? AND group_id = ?').get(B.tenantId, gid))
@@ -323,7 +323,7 @@ describe('LINE Master commands + daily POS group summary', () => {
         const uid = master(A.tenantId)
         const gid = newGroup()
 
-        const out = JSON.stringify(await sayInGroup(gid, uid, `/ผูก pos ${A.name}`))
+        const out = JSON.stringify(await sayInGroup(gid, uid, `/ผูก pos tenant ${A.tenantId}`))
         expect(out).toContain(A.name)
         expect(out).toContain('ไม่ทราบจำนวนสมาชิก')
         expect(db.prepare('SELECT is_active, pos_daily FROM line_group_mappings WHERE tenant_id = ? AND group_id = ?').get(A.tenantId, gid))
@@ -362,6 +362,41 @@ describe('LINE Master commands + daily POS group summary', () => {
         expect(syncSpy).toHaveBeenCalled()
         await say(uid, `/บริษัท ${c3.name}`)
         expect((db.prepare('SELECT view_tenant_id FROM line_master_links WHERE line_user_id = ?').get(uid) as any).view_tenant_id).toBe(c3.tenantId)
+    })
+
+    it('8b. ผูกด้วยรหัส tenant: ชื่อ/รหัสบางส่วนไม่ผูกทันที · ชื่อซ้ำไม่วนลูป · บริษัทที่เพิ่ม/ลบทีหลังมีผลทันที', async () => {
+        const { say, sayInGroup } = rig()
+        const tag = generateId().slice(0, 6)
+        const A = company(`Same_${tag}`), B = company(`Same_${tag}`)
+        const uid = master(A.tenantId), gid = newGroup()
+        const bound = () => (db.prepare('SELECT tenant_id FROM line_group_mappings WHERE group_id = ? AND is_active = 1').all(gid) as any[]).map(r => r.tenant_id)
+
+        // ชื่อซ้ำกันสองบริษัท → ปุ่มส่งรหัส กดแล้วผูกตัวที่เลือกจริง
+        const btns = await sayInGroup(gid, uid, `/ผูก pos Same_${tag}`)
+        expect(bound()).toEqual([])
+        const pick = btns[0].quickReply.items.find((i: any) => i.action.text.endsWith(B.tenantId))
+        await sayInGroup(gid, uid, pick.action.text)
+        expect(bound()).toEqual([B.tenantId])
+
+        // รหัสไม่มี tenant_ นำหน้า + สะกด tanent ก็ได้ · รหัสที่ไม่มีอยู่ไม่เปลี่ยนการผูก
+        await sayInGroup(gid, uid, `/ผูก pos tanent ${A.tenantId.replace(/^tenant_/, '')}`)
+        expect(bound()).toEqual([A.tenantId])
+        expect(JSON.stringify(await sayInGroup(gid, uid, '/ผูก pos tenant ไม่มีรหัสนี้'))).toContain('ไม่พบบริษัท')
+        expect(bound()).toEqual([A.tenantId])
+
+        // ชื่อค้นเจอบริษัทเดียวก็ยังต้องยืนยันด้วยปุ่ม · บริษัทใหม่เห็นทันที ไม่ต้องแก้โค้ด
+        const C = company(`New_${tag}`)
+        const one = await sayInGroup(gid, uid, `/ผูก pos New_${tag}`)
+        expect(one[0].quickReply.items.map((i: any) => i.action.text)).toEqual([`/ผูก pos tenant ${C.tenantId}`])
+        expect(bound()).toEqual([A.tenantId])
+        expect(JSON.stringify(await say(uid, `/บริษัท _${tag}`))).toContain(`tenant ${C.tenantId}`)
+
+        // ลบบริษัทแล้วผูกไม่ได้
+        db.prepare('DELETE FROM company_settings WHERE tenant_id = ?').run(C.tenantId)
+        expect(JSON.stringify(await sayInGroup(gid, uid, `/ผูก pos tenant ${C.tenantId}`))).toContain('ไม่พบบริษัท')
+        // กลุ่มล็อกแล้ว ระบุ tenant อื่นตรงเป๊ะก็ดูไม่ได้ · ในกลุ่มไม่โชว์รายการรหัส
+        expect(JSON.stringify(await sayInGroup(gid, uid, `/pos tenant ${B.tenantId}`))).toContain('ล็อกไว้กับ')
+        expect((await sayInGroup(gid, uid, '/บริษัท'))[0].text).toBe('เลือกบริษัท')
     })
 
     it('9. ใบสั่งผลิตและ PR ไม่ push เข้ากลุ่มอีกต่อไป · /คำสั่ง และ helpCard exec', async () => {

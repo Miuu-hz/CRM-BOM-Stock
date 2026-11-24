@@ -829,7 +829,7 @@ class LineBotService {
                 this.saveGroup(row.tenant_id, groupId)
                 db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
             })()
-            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · แจ้งเตือน POS รายวัน ให้ Master พิมพ์ /ผูก pos`
+            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · แจ้งเตือน POS รายวัน ให้ Master พิมพ์ /ผูก pos tenant <รหัส>`
         }
         await client.replyMessage(replyToken, { type: 'text', text })
     }
@@ -879,12 +879,22 @@ class LineBotService {
         return { s, card }
     }
 
-    /** ค้นหาบริษัทจากชื่อหรือ tenant_id (ไม่สนตัวพิมพ์, escape %/_) — 0/หลายตัวตอบกลับเองแล้วคืน null */
-    private async pickCompany(query: string, cmdPrefix: string, replyToken: string, client: any, lockedTenantId = ''): Promise<{ tenant_id: string; name: string } | null> {
+    /** หาบริษัทสดจาก company_settings: "tenant <รหัส>" หรือรหัสตรงเป๊ะ → ตัวเดียวแน่นอน · นอกนั้นค้นชื่อ/รหัสบางส่วน (escape %/_) — ไม่ได้ตัวเดียวตอบกลับเองแล้วคืน null
+     *  idOnly: ผลค้นบางส่วนไม่พอ ต้องยืนยันด้วยปุ่มที่ส่งรหัส (ใช้ตอนผูกกลุ่ม) · showIds: แนบรหัสในข้อความ (แชทส่วนตัวเท่านั้น) */
+    private async pickCompany(query: string, cmdPrefix: string, replyToken: string, client: any, opt: { lockedTenantId?: string; idOnly?: boolean; showIds?: boolean } = {}): Promise<{ tenant_id: string; name: string } | null> {
+        const { lockedTenantId = '', idOnly = false, showIds = false } = opt
         const q = query.trim()
         const db = getDb()
+        const keyword = q.match(/^(?:tenant|tanent)\s+(\S+)$/i)
+        const id = keyword ? keyword[1] : q
+        // พิมพ์รหัสแบบไม่มี "tenant_" นำหน้าก็ได้ · รหัสตรงเป๊ะมาก่อนแบบเติม prefix
+        const byId = id ? db.prepare(`
+            SELECT tenant_id, COALESCE(name, '') AS name FROM company_settings
+            WHERE tenant_id = ? COLLATE NOCASE OR tenant_id = ? COLLATE NOCASE
+            ORDER BY tenant_id = ? COLLATE NOCASE DESC LIMIT 1
+        `).get(id, `tenant_${id}`, id) as { tenant_id: string; name: string } | undefined : undefined
         const pat = q ? `%${q.replace(/[!%_]/g, '!$&')}%` : ''
-        const rows = (q
+        const rows = (byId ? [byId] : keyword ? [] : q
             ? db.prepare(`
                 SELECT tenant_id, COALESCE(name, '') AS name FROM company_settings
                 WHERE tenant_id IS NOT NULL AND tenant_id != ''
@@ -897,7 +907,7 @@ class LineBotService {
             `).all()) as { tenant_id: string; name: string }[]
 
         const exact = q && rows.length > 1
-            ? rows.filter(r => r.name.trim().toLowerCase() === q.toLowerCase() || r.tenant_id.toLowerCase() === q.toLowerCase())
+            ? rows.filter(r => r.name.trim().toLowerCase() === q.toLowerCase())
             : []
         const picked = exact.length === 1 ? exact : rows
 
@@ -912,15 +922,16 @@ class LineBotService {
             await client.replyMessage(replyToken, { type: 'text', text: `🔒 กลุ่มนี้ล็อกไว้กับ ${companyName(lockedTenantId) || lockedTenantId}` })
             return null
         }
-        if (picked.length === 1 && q) return picked[0]
+        if (picked.length === 1 && q && (byId || !idOnly)) return picked[0]
         // ไม่เดาบริษัทเมื่อยังไม่ระบุ (เช่น กลุ่มยังไม่ผูก) หรือค้นเจอหลายตัว — ส่งปุ่ม message action ให้เลือก
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: q ? `พบ ${picked.length} บริษัท · เลือกบริษัท` : 'เลือกบริษัท',
+            text: ((q ? `พบ ${picked.length} บริษัท · เลือกบริษัท` : 'เลือกบริษัท')
+                + (showIds ? `\n\n${picked.map(r => `${r.name.trim() || '-'}\ntenant ${r.tenant_id}`).join('\n\n')}` : '')).slice(0, 5000), // LINE จำกัด 5,000 ตัวอักษร
             quickReply: {
                 items: picked.slice(0, 13).map(r => {
                     const full = r.name.trim() || r.tenant_id
-                    return { type: 'action', action: { type: 'message', label: full.slice(0, 20), text: `${cmdPrefix} ${full}` } }
+                    return { type: 'action', action: { type: 'message', label: full.slice(0, 20), text: `${cmdPrefix} tenant ${r.tenant_id}` } }
                 }),
             },
         })
@@ -937,10 +948,11 @@ class LineBotService {
                 type: 'text',
                 text: [
                     '📋 คำสั่ง Master',
-                    '/pos [วันนี้|เมื่อวาน|เดือนนี้] [บริษัท] — ยอดขาย POS',
-                    '/รายได้ [วันนี้|เมื่อวาน|เดือนนี้] [บริษัท] — รายได้ตามบัญชี + POS',
-                    '/บริษัท <บริษัท> — สลับบริษัทที่ดูอยู่',
-                    '/ผูก pos <บริษัท> — ผูกกลุ่มรับสรุป POS 09:00 (ในกลุ่ม)',
+                    '/pos [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — ยอดขาย POS',
+                    '/รายได้ [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — รายได้ตามบัญชี + POS',
+                    '/บริษัท — ดูรหัส tenant ทุกบริษัท (แชทส่วนตัว)',
+                    '/บริษัท tenant <รหัส> — สลับบริษัทที่ดูอยู่',
+                    '/ผูก pos tenant <รหัส> — ผูกกลุ่มรับสรุป POS 09:00 (ในกลุ่ม)',
                     '/เลิกผูก pos — เลิกผูกกลุ่มนี้ (ในกลุ่ม)',
                     '/คำสั่ง — แสดงคำสั่งทั้งหมด',
                 ].join('\n'),
@@ -968,7 +980,7 @@ class LineBotService {
                     return true
                 }
             } else {
-                const picked = await this.pickCompany(q, cmdPrefix, replyToken, client, src !== 'user' ? tenantId : '')
+                const picked = await this.pickCompany(q, cmdPrefix, replyToken, client, { lockedTenantId: src !== 'user' ? tenantId : '' })
                 if (!picked) return true
                 targetId = picked.tenant_id
             }
@@ -991,7 +1003,7 @@ class LineBotService {
 
         const compMatch = text.match(/^\/บริษัท(?:\s+([\s\S]*))?$/)
         if (compMatch) {
-            const picked = await this.pickCompany(compMatch[1] ?? '', '/บริษัท', replyToken, client)
+            const picked = await this.pickCompany(compMatch[1] ?? '', '/บริษัท', replyToken, client, { showIds: src === 'user' })
             if (!picked) return true
             getDb().prepare('UPDATE line_master_links SET view_tenant_id = ?, as_member = 0 WHERE line_user_id = ?').run(picked.tenant_id, userId)
             await client.replyMessage(replyToken, { type: 'text', text: `ตอนนี้ดู: ${picked.name || picked.tenant_id} (Master)` })
@@ -1008,7 +1020,7 @@ class LineBotService {
             }
             const groupId = event.source.groupId ?? event.source.roomId
             if (!groupId) return true
-            const picked = await this.pickCompany(bindMatch[1] ?? '', '/ผูก pos', replyToken, client)
+            const picked = await this.pickCompany(bindMatch[1] ?? '', '/ผูก pos', replyToken, client, { idOnly: true })
             if (!picked) return true
 
             const db = getDb()
@@ -1029,6 +1041,7 @@ class LineBotService {
             const left = this.pushQuotaLeft(picked.tenant_id)
             const lines = [
                 `✅ ผูกกลุ่มนี้กับ ${picked.name || picked.tenant_id} แล้ว`,
+                `🏷️ tenant ${picked.tenant_id}`,
                 ...(movedFrom ? [`↪️ ย้ายมาจาก: ${movedFrom}`] : []),
                 '🕘 ส่งสรุป POS ทุกวัน 09:00 น.',
             ]

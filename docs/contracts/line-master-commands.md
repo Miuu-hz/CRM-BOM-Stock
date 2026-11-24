@@ -80,3 +80,9 @@ work order creates no group push · daily group push: once per day, cost = membe
 - handleGroupLink success text keeps "✅ ผูกกลุ่มนี้กับ <company> แล้ว" as its first line.
 - pos_group dedupe date = `today` of sendExecDigests. `/ผูก pos` or `/เลิกผูก pos` in private chat → "ใช้ได้ในกลุ่มเท่านั้น".
 - dailySalesCard: one optional period label, the existing call is unchanged. Existing dead code (BOM/PR parsers, 409 route) is NOT touched.
+
+## 8. Tenant-based binding (owner, 2026-11-24; overrides the company resolution in section 2)
+- Companies are never listed in code: every lookup reads company_settings live, so adding or removing a company needs no code change.
+- `tenant <id>` (exact, with or without the `tenant_` prefix) works in /pos, /รายได้, /บริษัท and /ผูก pos. Partial names are still a search for reading,
+  but /ผูก pos binds only on an exact tenant id: a name search answers with buttons that send `/ผูก pos tenant <id>`.
+- All buttons send the tenant id (two companies may share a name). `/บริษัท` in private chat lists the ids; in a group it never does.
