@@ -278,13 +278,42 @@ export function getItemHistory(tenantId: string, stockItemId: string): ItemHisto
     price: r.price === null || r.price === undefined ? null : Number(r.price),
   }))
 
-  // ฝั่งขาย (POS): รวมยอดที่ยังไม่คืนต่อวันไทย ไม่มีราคาระดับวัตถุดิบจึงคืน price = null เสมอ
+  // ฝั่งขาย (บิล POS): สินค้าตัวนี้เป็นเมนูเอง ราคาอยู่บนบิล รวมต่อวันไทย+ราคา
+  const menuRaw = db.prepare(`
+    SELECT COALESCE(b.closed_at, b.opened_at) AS date, i.quantity AS qty, i.unit_price AS price,
+           COALESCE(NULLIF(c.sale_unit, ''), ?) AS unit
+      FROM pos_menu_configs c
+      JOIN pos_bill_items i ON i.pos_menu_id = c.id
+      JOIN pos_running_bills b ON b.id = i.bill_id
+     WHERE c.product_id = ?
+       AND c.tenant_id = ?
+       AND b.tenant_id = c.tenant_id
+       AND b.status = 'PAID'
+       AND (i.status IS NULL OR i.status NOT IN ('CANCELLED', 'VOID'))
+  `).all(item.unit, stockItemId, tenantId) as any[]
+
+  const menuByDay = new Map<string, ItemHistoryRow>()
+  for (const r of menuRaw) {
+    const day = toThaiDay(r.date)
+    if (!day) continue
+    const price = Number(r.price) || 0
+    const key = `${day}|${price}`
+    const row = menuByDay.get(key)
+    if (row) row.qty += Number(r.qty) || 0
+    else menuByDay.set(key, { side: 'sell', kind: 'pos', date: day, doc: 'POS', party: null, qty: Number(r.qty) || 0, unit: r.unit || null, price })
+  }
+
+  // ฝั่งขาย (POS ตัดเป็นวัตถุดิบของเมนูอื่น): รวมยอดที่ยังไม่คืนต่อวันไทย ไม่มีราคาระดับวัตถุดิบจึงคืน price = null เสมอ
+  // ตัดรายการที่เป็นเมนูของตัวเองออก เพราะนับจากบิลข้างบนแล้ว
   const posRaw = db.prepare(`
     SELECT psd.deducted_at AS date, psd.quantity_deducted AS qty
       FROM pos_stock_deductions psd
      WHERE psd.stock_item_id = ?
        AND psd.tenant_id = ?
        AND (psd.returned IS NULL OR psd.returned = 0)
+       AND NOT EXISTS (SELECT 1 FROM pos_bill_items i
+                         JOIN pos_menu_configs c ON c.id = i.pos_menu_id
+                        WHERE i.id = psd.bill_item_id AND c.product_id = psd.stock_item_id)
      ORDER BY psd.deducted_at DESC
   `).all(stockItemId, tenantId) as any[]
 
@@ -308,7 +337,7 @@ export function getItemHistory(tenantId: string, stockItemId: string): ItemHisto
       price: null,
     }))
 
-  const sells = [...soRows, ...posRows]
+  const sells = [...soRows, ...menuByDay.values(), ...posRows]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 10)
 

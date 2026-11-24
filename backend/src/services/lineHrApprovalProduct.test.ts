@@ -183,12 +183,10 @@ function addSO(tenantId: string, o: {
 }
 
 function addPosDeduction(tenantId: string, stockItemId: string, qty: number, deductedAt: string, returned = 0) {
-    let menu = db.prepare('SELECT id FROM pos_menu_configs WHERE tenant_id = ? AND product_id = ?').get(tenantId, stockItemId) as any
-    if (!menu) {
-        const menuId = generateId()
-        db.prepare('INSERT INTO pos_menu_configs (id, tenant_id, product_id, pos_price) VALUES (?, ?, ?, 50)').run(menuId, tenantId, stockItemId)
-        menu = { id: menuId }
-    }
+    // เมนูคนละตัวกับวัตถุดิบ: วัตถุดิบถูกตัดเพราะขายเมนูนี้
+    const menu = { id: generateId() }
+    const dishId = addStockItem(tenantId, { name: 'จานเมนู', sku: 'DISH-' + menu.id })
+    db.prepare('INSERT INTO pos_menu_configs (id, tenant_id, product_id, pos_price) VALUES (?, ?, ?, 50)').run(menu.id, tenantId, dishId)
     const billId = generateId(), itemId = generateId()
     db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status) VALUES (?, ?, ?, 'T1', 'PAID')`)
         .run(billId, tenantId, 'B-' + billId.slice(0, 8))
@@ -674,5 +672,43 @@ describe('LINE Feature B: /สินค้า + getItemHistory', () => {
         expect(json).not.toContain('GR-DRAFT')
         expect(json).not.toContain('SO-DRAFT')
         expect(json).not.toContain('SO-CANCEL')
+        expect(json).not.toContain('ไม่มีใบรับซื้อ')
+    })
+
+    it('เมนู POS: ราคาขายมาจากบิล PAID รวมต่อวันไทย+ราคา, ตัดบิลยกเลิก/รายการ VOID/บริษัทอื่น, ไม่นับการตัดสต็อกตัวเองซ้ำ', async () => {
+        const { say } = rig()
+        const A = company('บริษัทเมนู')
+        const B = company('บริษัทเมนูอื่น')
+        const admin = member(A.tenantId, 'ADMIN')
+        const dish = addStockItem(A.tenantId, { name: 'ข้าวผัดเด็ก', sku: 'FD-K', qty: 0, unit: 'plate' })
+        const menuId = generateId()
+        db.prepare("INSERT INTO pos_menu_configs (id, tenant_id, product_id, pos_price, sale_unit) VALUES (?, ?, ?, 89, 'จาน')").run(menuId, A.tenantId, dish)
+
+        const sell = (qty: number, price: number, closedAt: string | null, o: { bill?: string; item?: string; tenant?: string } = {}) => {
+            const bill = generateId(), line = generateId(), tid = o.tenant ?? A.tenantId
+            db.prepare("INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, opened_at, closed_at) VALUES (?, ?, ?, 'โต๊ะ', ?, '2026-11-01T05:00:00.000Z', ?)")
+                .run(bill, tid, 'B-' + bill, o.bill ?? 'PAID', closedAt)
+            db.prepare('INSERT INTO pos_bill_items (id, tenant_id, bill_id, pos_menu_id, product_name, quantity, unit_price, total_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                .run(line, tid, bill, menuId, 'ข้าวผัดเด็ก', qty, price, qty * price, o.item ?? 'PENDING')
+            return line
+        }
+        const own = sell(1, 89, '2026-11-14T18:00:00.000Z') // 01:00 วันที่ 15 ไทย
+        sell(2, 89, '2026-11-15T05:00:00.000Z')
+        sell(1, 50, '2026-11-15T06:00:00.000Z')             // ราคาต่างกัน = คนละบรรทัด
+        sell(1, 70, null)                                   // ไม่มี closed_at → ใช้ opened_at
+        sell(9, 89, '2026-11-16T05:00:00.000Z', { bill: 'CANCELLED' })
+        sell(9, 89, '2026-11-16T05:00:00.000Z', { item: 'VOID' })
+        sell(9, 89, '2026-11-16T05:00:00.000Z', { tenant: B.tenantId })
+        db.prepare("INSERT INTO pos_stock_deductions (id, tenant_id, bill_item_id, stock_item_id, quantity_deducted, deducted_at, returned) VALUES (?, ?, ?, ?, 1, '2026-11-14T18:00:00.000Z', 0)")
+            .run(generateId(), A.tenantId, own, dish)
+
+        const h = getItemHistory(A.tenantId, dish)
+        expect(h.buys).toHaveLength(0)
+        expect(h.lines.map(l => [l.date, l.qty, l.unit, l.price]).sort()).toEqual([
+            ['2026-11-01', 1, 'จาน', 70], ['2026-11-15', 1, 'จาน', 50], ['2026-11-15', 3, 'จาน', 89],
+        ])
+        const json = JSON.stringify(await say(admin.uid, '/สินค้า ข้าวผัดเด็ก'))
+        expect(json).toContain('฿89/จาน')
+        expect(json).toContain('ไม่มีใบรับซื้อของรายการนี้')
     })
 })

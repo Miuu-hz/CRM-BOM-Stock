@@ -1385,6 +1385,9 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
                         )
                     })
                     : [txt('ยังไม่มีประวัติซื้อ-ขาย', { size: 'xs', color: P.ink500, margin: 'sm' })]),
+                ...(d.lines.length && !d.lines.some(r => r.side === 'buy')
+                    ? [txt('ไม่มีใบรับซื้อของรายการนี้ จึงไม่มีราคาซื้อ', { size: 'xs', color: P.ink500, margin: 'md', wrap: true })]
+                    : []),
                 txt('ราคาตามเอกสาร อาจรวมหรือไม่รวม VAT', { size: 'xxs', color: P.ink500, margin: 'lg', wrap: true }),
             ],
         })
