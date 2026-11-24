@@ -817,6 +817,12 @@ export function runMigrations(db: any): void {
     }
   } catch (e) { console.error('line_group_mappings migration error:', e) }
 
+  // กลุ่มที่ผูกกับบริษัทรับสรุป POS รายวันเฉพาะเมื่อ Master เปิดด้วย /ผูก pos (ผูกด้วยรหัส 6 หลัก = 0)
+  try {
+    const grpCols = (db.prepare('PRAGMA table_info(line_group_mappings)').all() as any[]).map((c: any) => c.name)
+    if (grpCols.length && !grpCols.includes('pos_daily')) db.exec('ALTER TABLE line_group_mappings ADD COLUMN pos_daily INTEGER NOT NULL DEFAULT 0')
+  } catch (e) { console.warn('Migration line_group_mappings.pos_daily skipped:', e) }
+
   // Migration: LINE link tokens — temporary codes for linking LINE userId to system user
   // No FK on user_id: master accounts use synthetic IDs (master_${email}) not in users table
   try {

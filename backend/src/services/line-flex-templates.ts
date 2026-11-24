@@ -484,7 +484,7 @@ export const flexTemplates = {
             guest:   [['ลิงก์ [รหัส 6 หลัก]', 'เชื่อมบัญชี LINE กับ ERP'], ['วิธีเชื่อมบัญชี', 'ขั้นตอนขอรหัส']],
             staff:   [['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['สูตร [ชื่อ]', 'ส่วนผสม + ต้นทุน'], ['สถานะ', 'ใบสั่งผลิตที่กำลังทำ'], ['ออเดอร์', 'ใบสั่งขายล่าสุด'], ['บัญชีของฉัน', 'บริษัทและตำแหน่งที่ผูกไว้']],
             manager: [['รออนุมัติ', 'คำขอที่คุณอนุมัติได้'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สรุปการปิดกะ', 'ยอดปิดกะวันนี้'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['สถานะ', 'ใบสั่งผลิตที่กำลังทำ'], ['ออเดอร์', 'ใบสั่งขายล่าสุด']],
-            exec:    [['ยอดขายวันนี้', 'POS วันนี้เทียบสัปดาห์ก่อน'], ['สรุปผู้บริหาร', 'สรุปยอดเมื่อวาน'], ['กำไรเดือนนี้', 'จากสมุดบัญชีที่ลงแล้ว'], ['รออนุมัติ', 'คำขอที่ค้างทั้งหมด'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สรุปการปิดกะ', 'ยอดปิดกะวันนี้'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง']],
+            exec:    [['ยอดขายวันนี้', 'POS วันนี้เทียบสัปดาห์ก่อน'], ['สรุปผู้บริหาร', 'สรุปยอดเมื่อวาน'], ['กำไรเดือนนี้', 'จากสมุดบัญชีที่ลงแล้ว'], ['รออนุมัติ', 'คำขอที่ค้างทั้งหมด'], ['สต็อกต่ำ', 'ของที่ต่ำกว่าจุดสั่งซื้อ'], ['สรุปการปิดกะ', 'ยอดปิดกะวันนี้'], ['สต็อก [ชื่อ]', 'ค้นหาสินค้าในคลัง'], ['/คำสั่ง', 'คำสั่ง Master (เฉพาะ Master)']],
         }
         return card({
             alt: 'คำสั่งที่ใช้ได้', kicker: 'Phopy ERP', title: '📖 คำสั่งที่ใช้ได้',
@@ -535,20 +535,22 @@ export const flexTemplates = {
         })
     },
 
-    // 8. ยอดขายวันนี้ (ผู้บริหาร) — ตัวเลขจาก posSales() ตัวเดียวกับ Phopy Board
+    // 8. ยอดขาย POS (ผู้บริหาร / กลุ่มรายวัน) — ตัวเลขจาก posSales() ตัวเดียวกับ Phopy Board
     dailySalesCard: (d: {
         company: string; logoUrl?: string; logo?: string; date: string; revenue: number; bills: number; avgBill: number; discount: number
         byMethod: { label: string; amount: number; count: number }[]; cancelled: { bills: number; amount: number }
-        lastWeek: number | null
+        lastWeek: number | null; period?: string
     }) => {
+        const period = d.period || 'วันนี้'
         const delta = d.lastWeek && d.lastWeek > 0 ? ((d.revenue - d.lastWeek) / d.lastWeek) * 100 : null
         const max = d.byMethod[0]?.amount || 0
+        const sub = d.date.includes('..') ? d.date.split('..').map(thDate).join(' – ') : thDate(d.date)
         return card({
-            alt: `ยอดขายวันนี้ ${baht(d.revenue)} · ${d.bills} บิล${d.company ? ` · ${d.company}` : ''}`,
-            kicker: d.company || 'Phopy ERP', title: '📈 ยอดขายวันนี้', sub: thDate(d.date),
+            alt: `ยอดขาย${period} ${baht(d.revenue)} · ${d.bills} บิล${d.company ? ` · ${d.company}` : ''}`,
+            kicker: d.company || 'Phopy ERP', title: `📈 ยอดขาย${period}`, sub,
             logoUrl: d.logoUrl ?? d.logo,
             body: [
-                hero('ยอดขาย POS ที่ชำระแล้ว', baht(d.revenue), `· ${d.bills} บิล`),
+                hero(`ยอดขาย POS ที่ชำระแล้ว (${period})`, baht(d.revenue), `· ${d.bills} บิล`),
                 tiles([
                     ['เฉลี่ย/บิล', baht(d.avgBill), P.ink900],
                     ['เทียบสัปดาห์ก่อน', delta === null ? '–' : `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%`,
@@ -557,16 +559,34 @@ export const flexTemplates = {
                 sectionTitle('ช่องทางชำระ'),
                 ...(d.byMethod.length
                     ? d.byMethod.map((m, i) => barRow(m.label, `${m.count} บิล`, m.amount, max, i))
-                    : [txt('ยังไม่มีบิลที่ชำระวันนี้', { size: 'xs', color: P.ink500 })]),
+                    : [txt(`ยังไม่มีบิลที่ชำระ${period}`, { size: 'xs', color: P.ink500 })]),
                 ...(d.discount > 0 || d.cancelled.bills > 0 ? [
                     sectionTitle('ควรดู'),
                     ...(d.discount > 0 ? [kv('🏷️ ส่วนลดรวม', baht(d.discount), P.mango600)] : []),
                     ...(d.cancelled.bills > 0 ? [kv(`🔴 ยกเลิกบิล ${d.cancelled.bills} ใบ`, baht(d.cancelled.amount), P.danger)] : []),
                 ] : []),
             ],
-            buttons: [uriBtn('ดูรายการขายวันนี้', `${APP_URL}/accounting/pos-clearing`, true)],
+            buttons: [uriBtn(`ดูรายการขาย${period}`, `${APP_URL}/accounting/pos-clearing`, true)],
         })
     },
+
+    // 8b. รายได้เท่านั้น (Master /รายได้ — ไม่มีต้นทุน/กำไร เผื่อใช้ในกลุ่ม)
+    revenueCard: (d: {
+        company: string; logoUrl?: string; logo?: string; from: string; to: string; period: string
+        revenue: number; posRevenue: number; posBills: number
+    }) => card({
+        alt: `รายได้${d.period} ${baht(d.revenue)}${d.company ? ` · ${d.company}` : ''}`,
+        kicker: d.company || 'Phopy ERP',
+        title: `💵 รายได้${d.period}`,
+        sub: `${d.from === d.to ? thDate(d.from) : `${thDate(d.from)} – ${thDate(d.to)}`} · จากสมุดบัญชีที่ลงแล้ว`,
+        logoUrl: d.logoUrl ?? d.logo,
+        body: [
+            hero(`รายได้${d.period} (ตามบัญชี)`, baht(d.revenue)),
+            kv('ยอดขาย POS (ชำระแล้ว)', `${baht(d.posRevenue)} (${d.posBills} บิล)`),
+            txt('POS รวมอยู่ในรายได้แล้ว ไม่ต้องบวกกัน', { size: 'xxs', color: P.ink500, margin: 'md', wrap: true }),
+        ],
+        buttons: [uriBtn('เปิด Phopy Board', `${APP_URL}/accounting/phopy-board`, true)],
+    }),
 
     // 9. กำไรเดือนนี้ (ผู้บริหาร) — ledgerRevenue/Cogs/Opex ตัวเดียวกับ Phopy Board
     monthProfitCard: (d: { company: string; logoUrl?: string; logo?: string; from: string; to: string; revenue: number; cogs: number; opex: number }) => {
@@ -1164,6 +1184,9 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
         logo?: string
         day: string
         sales: number
+        income?: number
+        bills?: number
+        byMethod?: { label: string; amount: number; count: number }[]
         purchases: number
         withdrawals: number
         purchaseSources: { label: string; amount: number }[]
@@ -1195,13 +1218,24 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
             })
             body.push({
                 type: 'box', layout: 'vertical', margin: 'md', contents: [
-                    dotRow('#3949E5', 'ยอดขาย', d.sales),
+                    dotRow('#3949E5', d.bills !== undefined ? `ยอดขาย POS (${d.bills} บิล)` : 'ยอดขาย', d.sales),
                     dotRow('#F5A524', 'ยอดซื้อ', d.purchases),
                     dotRow('#DC2626', 'ยอดเบิก', d.withdrawals),
                 ],
             })
         } else {
-            body.push(hero('ยอดของเมื่อวาน', '฿0', 'ไม่มียอดขาย ซื้อ หรือเบิก', P.sand100, P.ink500))
+            body.push(hero('ยอดของเมื่อวาน', '฿0', 'ไม่มียอด POS ซื้อ หรือเบิก', P.sand100, P.ink500))
+        }
+
+        if (d.income !== undefined) {
+            body.push(kv('รายได้ตามบัญชี', baht(d.income), P.indigo))
+        }
+        if (d.byMethod && d.byMethod.length > 0) {
+            body.push(sectionTitle(`ช่องทางชำระ POS (${d.bills ?? 0} บิล)`))
+            const maxMethod = d.byMethod[0]?.amount || 0
+            d.byMethod.forEach((m, i) => body.push(barRow(m.label, `${m.count} บิล`, m.amount, maxMethod, i)))
+        } else if (!hasDonut && d.bills !== undefined) {
+            body.push(kv('บิล POS', `${d.bills} บิล`))
         }
 
         // Section แหล่งซื้อ

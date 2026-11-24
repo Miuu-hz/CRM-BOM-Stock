@@ -17,12 +17,13 @@ afterEach(() => {
         for (const tb of [
             'pos_payments', 'pos_running_bills', 'pos_shift_cash_movements', 'pos_shifts',
             'purchase_invoices', 'purchase_orders', 'suppliers',
-            'delivery_orders', 'customers', 'accounts',
-            'line_user_mappings', 'line_master_notify', 'line_master_links', 'line_push_counts',
+            'delivery_orders', 'sales_orders', 'customers', 'journal_lines', 'journal_entries', 'accounts',
+            'line_user_mappings', 'line_group_mappings', 'line_master_notify', 'line_master_links', 'line_push_counts',
             'users', 'company_settings'
         ]) {
             try { db.prepare(`DELETE FROM ${tb} WHERE tenant_id = ?`).run(t) } catch {}
         }
+        try { db.prepare('DELETE FROM line_master_alerts WHERE key LIKE ?').run(`%${t}%`) } catch {}
     }
 })
 
@@ -71,7 +72,7 @@ function insertSupplier(tenantId: string, name: string) {
     return id
 }
 
-function insertPurchaseInvoice(tenantId: string, supplierId: string, amount: number, invoiceDate: string, status = 'ISSUED') {
+function insertPurchaseInvoice(tenantId: string, supplierId: string, amount: number, invoiceDate: string, status: string | null = 'ISSUED') {
     const id = generateId()
     const poId = generateId()
     db.prepare(`
@@ -346,5 +347,44 @@ describe('Executive Digest Service & LINE Push', () => {
         }
         walk(card)
         expect(JSON.stringify(card).length).toBeLessThan(30000)
+    })
+
+    it('(g) บิลซื้อสถานะ DRAFT/CANCELLED/VOID ไม่ถูกนับ · นับเฉพาะ ISSUED และ status IS NULL + income/bills/byMethod', () => {
+        const t = setupTenant('ร้านตรวจสถานะบิลซื้อ')
+        const yesterday = '2026-11-17'
+        const today = '2026-11-18'
+        const sup = insertSupplier(t, 'ผู้ขายทดสอบ')
+
+        insertPurchaseInvoice(t, sup, 1000, yesterday, 'DRAFT')
+        insertPurchaseInvoice(t, sup, 2000, yesterday, 'CANCELLED')
+        insertPurchaseInvoice(t, sup, 3000, yesterday, 'VOID')
+        insertPurchaseInvoice(t, sup, 400, yesterday, 'ISSUED')
+        insertPurchaseInvoice(t, sup, 250, yesterday, null)
+
+        // เพิ่มบิล POS + รายได้ตามบัญชีของเมื่อวาน
+        insertPosBill(t, 1500, `${yesterday}T05:00:00Z`, 'PAID')
+        const revAcc = insertAccount(t, '4101', 'รายได้จากการขาย', 'REVENUE', 'REVENUE')
+        const jeId = generateId()
+        db.prepare(`
+            INSERT INTO journal_entries (id, tenant_id, entry_number, date, description, total_debit, total_credit, is_posted)
+            VALUES (?, ?, ?, ?, 'รายได้เมื่อวาน', 1800, 1800, 1)
+        `).run(jeId, t, 'JV-' + jeId.slice(0, 6), yesterday)
+        db.prepare(`
+            INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, debit, credit)
+            VALUES (?, ?, ?, ?, 0, 1800)
+        `).run(generateId(), t, jeId, revAcc)
+
+        const d = buildExecDigest(t, yesterday, today)
+        expect(d.purchases).toBe(650)
+        expect(d.income).toBe(1800)
+        expect(d.bills).toBe(1)
+        expect(d.byMethod).toEqual([{ label: 'เงินสด', amount: 1500, count: 1 }])
+
+        const card = flexTemplates.execDigestCard({ ...d, company: 'ร้านตรวจสถานะบิลซื้อ' })
+        const json = JSON.stringify(card)
+        expect(json).toContain('รายได้ตามบัญชี')
+        expect(json).toContain('1,800')
+        expect(json).toContain('1 บิล')
+        expect(json).toContain('เงินสด')
     })
 })

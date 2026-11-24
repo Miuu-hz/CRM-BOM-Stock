@@ -248,6 +248,14 @@ class LineBotService {
                 inner.getGroupMemberProfile(groupId, userId),
             getRoomMemberProfile: (roomId: string, userId: string) =>
                 inner.getRoomMemberProfile(roomId, userId),
+            getGroupMembersCount: async (groupId: string): Promise<number> => {
+                const r = await (inner.getGroupMemberCount ? inner.getGroupMemberCount(groupId) : inner.getGroupMembersCount(groupId))
+                return Number(r?.count)
+            },
+            getRoomMembersCount: async (roomId: string): Promise<number> => {
+                const r = await (inner.getRoomMemberCount ? inner.getRoomMemberCount(roomId) : inner.getRoomMembersCount(roomId))
+                return Number(r?.count)
+            },
             getMessageContent: async (messageId: string): Promise<Buffer> => {
                 const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
                     headers: { Authorization: `Bearer ${config.channel_access_token}` },
@@ -425,10 +433,13 @@ class LineBotService {
         return Math.max(0, BULK_PUSH_CAP() - (row?.n ?? 0))
     }
 
-    /** จอง 1 ข้อความจากเพดาน push รายเดือนของบริษัท (อะตอมมิก) — false = เต็มแล้ว */
-    private claimPush(tenantId: string): boolean {
-        return getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, 1)
-            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + 1 WHERE n < ?`).run(tenantId, thaiToday().slice(0, 7), BULK_PUSH_CAP()).changes > 0
+    /** จอง n ข้อความจากเพดาน push รายเดือนของบริษัท (อะตอมมิก, ไม่เกินเพดานแม้ insert แรก) — false = เต็มแล้ว */
+    private claimPush(tenantId: string, n = 1): boolean {
+        const cap = BULK_PUSH_CAP()
+        if (!(n > 0) || n > cap) return false
+        return getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, ?)
+            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + ? WHERE n + ? <= ?`)
+            .run(tenantId, thaiToday().slice(0, 7), n, n, n, cap).changes > 0
     }
 
     public async pushToUser(tenantId: string, userId: string, message: any): Promise<boolean> {
@@ -444,20 +455,6 @@ class LineBotService {
         // รับข้อความตัวอักษรเปล่าด้วย — LINE รับเฉพาะ object
         try { await client.pushMessage(m.line_user_id, typeof message === 'string' ? { type: 'text', text: message } : message); return true }
         catch (err) { console.error(`pushToUser failed → ${userId}:`, err); return false }
-    }
-
-    public async pushToAllGroups(tenantId: string, message: any) {
-        const client = this.getClient(tenantId)
-        if (!client) return
-        const db = getDb()
-        const groups = db.prepare(
-            'SELECT group_id FROM line_group_mappings WHERE tenant_id = ? AND is_active = 1'
-        ).all(tenantId) as any[]
-        for (const g of groups) {
-            try { await client.pushMessage(g.group_id, message) } catch (err) {
-                console.error(`pushToAllGroups failed for ${g.group_id}:`, err)
-            }
-        }
     }
 
     // ── Work Order notifications ───────────────────────────────────────────────
@@ -479,7 +476,6 @@ class LineBotService {
 
         const targets = new Set<string>()
         if (pr.requesterLineUserId) targets.add(pr.requesterLineUserId)
-        if (pr.sourceGroupId)       targets.add(pr.sourceGroupId)
         this.masterSubscribers(tenantId, 'purchase').forEach(id => targets.add(id))
         for (const target of targets) {
             try { await client.pushMessage(target, card) } catch (err) {
@@ -495,7 +491,6 @@ class LineBotService {
             this.pushToRole(tenantId, 'MANAGER', msg),
             this.pushToRole(tenantId, 'MASTER',  msg),
             this.pushToMasterSubscribers(tenantId, 'work_order', msg),
-            this.pushToAllGroups(tenantId, msg),
         ])
     }
 
@@ -505,7 +500,6 @@ class LineBotService {
             this.pushToRole(tenantId, 'MASTER',  msg),
             this.pushToMasterSubscribers(tenantId, 'work_order', msg),
             this.pushToRole(tenantId, 'MANAGER', msg),
-            this.pushToAllGroups(tenantId, msg),
         ])
     }
 
@@ -544,12 +538,14 @@ class LineBotService {
         return cfg?.line_shift_expense_groups === 1
     }
 
-    // ── สรุปผู้บริหาร 09:00 (Exec Dashboard Digest) ─────────────────────────
+    // ── สรุปผู้บริหาร + POS กลุ่ม 09:00 (Exec Dashboard Digest) ─────────────
     public async sendExecDigests(today: string) {
         const tenants = (getDb().prepare(`
             SELECT DISTINCT tenant_id FROM company_settings WHERE tenant_id IS NOT NULL AND tenant_id != ''
             UNION
             SELECT DISTINCT tenant_id FROM line_user_mappings WHERE tenant_id IS NOT NULL AND tenant_id != ''
+            UNION
+            SELECT DISTINCT tenant_id FROM line_group_mappings WHERE is_active = 1 AND pos_daily = 1 AND tenant_id IS NOT NULL AND tenant_id != ''
         `).all() as any[]).map(r => r.tenant_id as string)
 
         const yesterday = addDaysStr(today, -1)
@@ -559,34 +555,92 @@ class LineBotService {
                 const tenantClient = this.getClient(tenantId)
                 if (!tenantClient) continue
 
-                const recipients = new Set<string>([
-                    ...this.adminLineUsers(tenantId).map(u => u.line_user_id),
-                    ...this.masterSubscribers(tenantId, 'daily'),
-                ])
-                if (recipients.size === 0) continue
-
-                const digest = buildExecDigest(tenantId, yesterday, today)
-                if (digest.sales === 0 && digest.purchases === 0 && digest.withdrawals === 0 && (!digest.deliveries || digest.deliveries.length === 0)) {
-                    continue
+                // 1. สรุปผู้บริหารรายคน
+                try {
+                    const recipients = new Set<string>([
+                        ...this.adminLineUsers(tenantId).map(u => u.line_user_id),
+                        ...this.masterSubscribers(tenantId, 'daily'),
+                    ])
+                    if (recipients.size > 0) {
+                        const digest = buildExecDigest(tenantId, yesterday, today)
+                        const empty = digest.sales === 0 && digest.income === 0 && digest.purchases === 0 && digest.withdrawals === 0 && (!digest.deliveries || digest.deliveries.length === 0)
+                        if (!empty) {
+                            const card = flexTemplates.execDigestCard({
+                                ...digest,
+                                company: companyName(tenantId),
+                                logoUrl: companyLogoUrl(tenantId),
+                            })
+                            // วันละครั้งต่อบริษัท — cron ซ้ำ/รีสตาร์ทตอน 9 โมงต้องไม่ส่งซ้ำ (claim แบบ sync ก่อน await แรก)
+                            if (getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(`exec_digest:${tenantId}:${today}`).changes) {
+                                for (const lineUserId of recipients) {
+                                    if (!this.claimPush(tenantId)) {
+                                        console.warn(`sendExecDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)
+                                        break
+                                    }
+                                    try {
+                                        await tenantClient.pushMessage(lineUserId, card)
+                                    } catch (err) {
+                                        console.error(`sendExecDigests push failed → ${lineUserId}:`, err)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.error(`[sendExecDigests] private digest ${tenantId} failed:`, err?.message ?? err)
                 }
 
-                const card = flexTemplates.execDigestCard({
-                    ...digest,
-                    company: companyName(tenantId),
-                    logoUrl: companyLogoUrl(tenantId),
-                })
+                // 2. สรุป POS เมื่อวานเข้ากลุ่มที่เปิด pos_daily=1 (รันแม้ไม่มีผู้รับรายคนหรือ exec digest ว่าง)
+                const groups = getDb().prepare(
+                    'SELECT group_id FROM line_group_mappings WHERE tenant_id = ? AND is_active = 1 AND pos_daily = 1'
+                ).all(tenantId) as { group_id: string }[]
+                if (groups.length === 0) continue
 
-                // วันละครั้งต่อบริษัท — cron ซ้ำ/รีสตาร์ทตอน 9 โมงต้องไม่ส่งซ้ำ (claim แบบ sync ก่อน await แรก)
-                if (!getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(`exec_digest:${tenantId}:${today}`).changes) continue
-                for (const lineUserId of recipients) {
-                    if (!this.claimPush(tenantId)) {
-                        console.warn(`sendExecDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)
-                        break
-                    }
+                const { s: pos, card: posCard } = this.buildPosCard(tenantId, 'เมื่อวาน', today)
+                if (pos.bills === 0 && pos.cancelled.bills === 0) continue
+
+                const capKey = `pos_group_cap:${tenantId}:${today.slice(0, 7)}`
+                const label = companyName(tenantId) || tenantId
+                for (const g of groups) {
                     try {
-                        await tenantClient.pushMessage(lineUserId, card)
+                        // จอง dedupe แบบ sync ก่อน await แรก — พังหรือโควตาไม่พอก็ไม่ยิงซ้ำในวันเดียวกัน
+                        const claimed = getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))")
+                            .run(`pos_group:${tenantId}:${g.group_id}:${today}`).changes > 0
+                        if (!claimed) continue
+
+                        const n = await this.groupMemberCount(tenantClient, g.group_id, String(g.group_id).startsWith('R'))
+                        if (n === null) {
+                            console.warn(`[sendExecDigests] skip group ${g.group_id} (${tenantId}): member count unknown`)
+                            continue
+                        }
+
+                        if (tenantClient.getMessageQuota && tenantClient.getMessageQuotaConsumption) {
+                            let oaBlocked = false
+                            try {
+                                const quota = await tenantClient.getMessageQuota()
+                                if (quota?.type === 'limited') {
+                                    const used = Number((await tenantClient.getMessageQuotaConsumption())?.totalUsage) || 0
+                                    if (used + n > Number(quota.value)) {
+                                        oaBlocked = true
+                                        console.warn(`[sendExecDigests] OA quota skip ${g.group_id} (${tenantId}): ${used}+${n}>${quota.value}`)
+                                        await this.alertMastersOnce(capKey, `⚠️ หยุดส่งสรุป POS เข้ากลุ่มของ ${label}: โควตา LINE OA ไม่พอ (ใช้ไป ${used}/${quota.value}, กลุ่มใช้ ${n} ข้อความ)`)
+                                    }
+                                }
+                            } catch (err) {
+                                console.error(`[sendExecDigests] OA quota check failed for ${g.group_id}:`, err)
+                            }
+                            if (oaBlocked) continue
+                        }
+
+                        if (!this.claimPush(tenantId, n)) {
+                            console.warn(`[sendExecDigests] company cap skip ${g.group_id} (${tenantId}): need ${n}`)
+                            await this.alertMastersOnce(capKey, `⚠️ หยุดส่งสรุป POS เข้ากลุ่มของ ${label}: เกินเพดานข้อความเดือนนี้ (เหลือ ${this.pushQuotaLeft(tenantId)}/${BULK_PUSH_CAP()}, กลุ่มใช้ ${n} ข้อความ)`)
+                            continue
+                        }
+
+                        await tenantClient.pushMessage(g.group_id, posCard)
                     } catch (err) {
-                        console.error(`sendExecDigests push failed → ${lineUserId}:`, err)
+                        console.error(`[sendExecDigests] group POS push failed → ${g.group_id} (${tenantId}):`, err)
                     }
                 }
             } catch (err: any) {
@@ -771,11 +825,11 @@ class LineBotService {
             text = '🔒 กลุ่มนี้ผูกกับบริษัทอื่นอยู่\nถ้าจะย้าย ให้เชิญบอทออกจากกลุ่มแล้วเชิญเข้าใหม่ก่อนส่งรหัส'
         else {
             db.transaction(() => {
-                db.prepare('UPDATE line_group_mappings SET is_active = 0 WHERE group_id = ? AND tenant_id != ?').run(groupId, row.tenant_id)
+                db.prepare('UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE group_id = ? AND tenant_id != ?').run(groupId, row.tenant_id)
                 this.saveGroup(row.tenant_id, groupId)
                 db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
             })()
-            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nกลุ่มนี้จะได้รับแจ้งเตือนของบริษัทนี้`
+            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · แจ้งเตือน POS รายวัน ให้ Master พิมพ์ /ผูก pos`
         }
         await client.replyMessage(replyToken, { type: 'text', text })
     }
@@ -784,17 +838,229 @@ class LineBotService {
     private saveGroup(tenantId: string, groupId: string) {
         const db = getDb()
         db.prepare(`
-            INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active)
-            VALUES (lower(hex(randomblob(12))), ?, ?, 1)
-            ON CONFLICT(tenant_id, group_id) DO UPDATE SET is_active = 1
+            INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily)
+            VALUES (lower(hex(randomblob(12))), ?, ?, 1, 0)
+            ON CONFLICT(tenant_id, group_id) DO UPDATE SET is_active = 1, pos_daily = 0
         `).run(tenantId, groupId)
     }
 
     private deactivateGroup(tenantId: string, groupId: string) {
         const db = getDb()
         db.prepare(
-            'UPDATE line_group_mappings SET is_active = 0 WHERE tenant_id = ? AND group_id = ?'
+            'UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE tenant_id = ? AND group_id = ?'
         ).run(tenantId, groupId)
+    }
+
+    private async groupMemberCount(client: any, groupId: string, isRoom: boolean): Promise<number | null> {
+        try {
+            const fn = isRoom ? client.getRoomMembersCount : client.getGroupMembersCount
+            if (!fn) return null
+            const res = await fn(groupId)
+            const n = typeof res === 'number' ? res : Number(res?.count)
+            return Number.isFinite(n) && n > 0 ? n : null
+        } catch {
+            return null
+        }
+    }
+
+    private buildPosCard(tenantId: string, period: 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้', today = thaiToday()) {
+        const from = period === 'เมื่อวาน' ? addDaysStr(today, -1) : period === 'เดือนนี้' ? `${today.slice(0, 7)}-01` : today
+        const to = period === 'เมื่อวาน' ? from : today
+        const s = posSales(tenantId, from, to)
+        const lwDate = period === 'เดือนนี้' ? null : addDaysStr(from, -7)
+        const last = lwDate ? posSales(tenantId, lwDate, lwDate) : null
+        const card = flexTemplates.dailySalesCard({
+            company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId),
+            date: from === to ? from : `${from}..${to}`, period,
+            revenue: s.revenue, bills: s.bills, avgBill: s.avgBill,
+            discount: s.discount, byMethod: s.byMethod, cancelled: s.cancelled,
+            lastWeek: last && last.bills > 0 ? last.revenue : null,
+        })
+        return { s, card }
+    }
+
+    /** ค้นหาบริษัทจากชื่อหรือ tenant_id (ไม่สนตัวพิมพ์, escape %/_) — 0/หลายตัวตอบกลับเองแล้วคืน null */
+    private async pickCompany(query: string, cmdPrefix: string, replyToken: string, client: any, lockedTenantId = ''): Promise<{ tenant_id: string; name: string } | null> {
+        const q = query.trim()
+        const db = getDb()
+        const pat = q ? `%${q.replace(/[!%_]/g, '!$&')}%` : ''
+        const rows = (q
+            ? db.prepare(`
+                SELECT tenant_id, COALESCE(name, '') AS name FROM company_settings
+                WHERE tenant_id IS NOT NULL AND tenant_id != ''
+                  AND (LOWER(COALESCE(name, '')) LIKE LOWER(?) ESCAPE '!' OR LOWER(tenant_id) LIKE LOWER(?) ESCAPE '!')
+                ORDER BY tenant_id
+            `).all(pat, pat)
+            : db.prepare(`
+                SELECT tenant_id, COALESCE(name, '') AS name FROM company_settings
+                WHERE tenant_id IS NOT NULL AND tenant_id != '' ORDER BY tenant_id
+            `).all()) as { tenant_id: string; name: string }[]
+
+        const exact = q && rows.length > 1
+            ? rows.filter(r => r.name.trim().toLowerCase() === q.toLowerCase() || r.tenant_id.toLowerCase() === q.toLowerCase())
+            : []
+        const picked = exact.length === 1 ? exact : rows
+
+        if (picked.length === 0) {
+            await client.replyMessage(replyToken, { type: 'text', text: q ? `ไม่พบบริษัท "${q}"` : 'ไม่พบบริษัท' })
+            return null
+        }
+        if (lockedTenantId) {
+            // ค้นเจอหลายบริษัทแต่มีบริษัทของกลุ่มอยู่ด้วย → ใช้บริษัทของกลุ่ม
+            const own = picked.find(r => r.tenant_id === lockedTenantId)
+            if (own) return own
+            await client.replyMessage(replyToken, { type: 'text', text: `🔒 กลุ่มนี้ล็อกไว้กับ ${companyName(lockedTenantId) || lockedTenantId}` })
+            return null
+        }
+        if (picked.length === 1 && q) return picked[0]
+        // ไม่เดาบริษัทเมื่อยังไม่ระบุ (เช่น กลุ่มยังไม่ผูก) หรือค้นเจอหลายตัว — ส่งปุ่ม message action ให้เลือก
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: q ? `พบ ${picked.length} บริษัท · เลือกบริษัท` : 'เลือกบริษัท',
+            quickReply: {
+                items: picked.slice(0, 13).map(r => {
+                    const full = r.name.trim() || r.tenant_id
+                    return { type: 'action', action: { type: 'message', label: full.slice(0, 20), text: `${cmdPrefix} ${full}` } }
+                }),
+            },
+        })
+        return null
+    }
+
+    /** คำสั่ง Master ที่ขึ้นต้นด้วย / — คืน true เมื่อจัดการแล้ว (ทุกคำตอบใช้ replyMessage ฟรี) */
+    private async handleMasterCommand(tenantId: string, src: 'user' | 'group' | 'room', event: any, text: string, ml: any, client: any): Promise<boolean> {
+        const replyToken = event.replyToken
+        const userId = event.source.userId as string
+
+        if (text === '/คำสั่ง') {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: [
+                    '📋 คำสั่ง Master',
+                    '/pos [วันนี้|เมื่อวาน|เดือนนี้] [บริษัท] — ยอดขาย POS',
+                    '/รายได้ [วันนี้|เมื่อวาน|เดือนนี้] [บริษัท] — รายได้ตามบัญชี + POS',
+                    '/บริษัท <บริษัท> — สลับบริษัทที่ดูอยู่',
+                    '/ผูก pos <บริษัท> — ผูกกลุ่มรับสรุป POS 09:00 (ในกลุ่ม)',
+                    '/เลิกผูก pos — เลิกผูกกลุ่มนี้ (ในกลุ่ม)',
+                    '/คำสั่ง — แสดงคำสั่งทั้งหมด',
+                ].join('\n'),
+            })
+            return true
+        }
+
+        const posMatch = text.match(/^\/pos(?:\s+([\s\S]*))?$/i)
+        const revMatch = !posMatch ? text.match(/^\/รายได้(?:\s+([\s\S]*))?$/) : null
+        if (posMatch || revMatch) {
+            const isPos = !!posMatch
+            const cmd = isPos ? '/pos' : '/รายได้'
+            const rest = ((posMatch ?? revMatch)![1] ?? '').trim()
+            const pm = rest.match(/^(วันนี้|เมื่อวาน|เดือนนี้)(?:\s+([\s\S]*))?$/)
+            const period = (pm ? pm[1] : (isPos ? 'วันนี้' : 'เดือนนี้')) as 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้'
+            const q = (pm ? (pm[2] ?? '') : rest).trim()
+            const cmdPrefix = pm ? `${cmd} ${period}` : cmd
+
+            let targetId = ''
+            if (!q) {
+                if (src === 'user' && ml.view_tenant_id) targetId = ml.view_tenant_id
+                else if (src !== 'user' && tenantId) targetId = tenantId
+                else {
+                    await this.pickCompany('', cmdPrefix, replyToken, client)
+                    return true
+                }
+            } else {
+                const picked = await this.pickCompany(q, cmdPrefix, replyToken, client, src !== 'user' ? tenantId : '')
+                if (!picked) return true
+                targetId = picked.tenant_id
+            }
+
+            if (isPos) {
+                await client.replyMessage(replyToken, this.buildPosCard(targetId, period).card)
+            } else {
+                const today = thaiToday()
+                const from = period === 'เมื่อวาน' ? addDaysStr(today, -1) : period === 'เดือนนี้' ? `${today.slice(0, 7)}-01` : today
+                const to = period === 'เมื่อวาน' ? from : today
+                const pos = posSales(targetId, from, to)
+                await client.replyMessage(replyToken, flexTemplates.revenueCard({
+                    company: companyName(targetId), logoUrl: companyLogoUrl(targetId),
+                    from, to, period,
+                    revenue: ledgerRevenue(targetId, from, to), posRevenue: pos.revenue, posBills: pos.bills,
+                }))
+            }
+            return true
+        }
+
+        const compMatch = text.match(/^\/บริษัท(?:\s+([\s\S]*))?$/)
+        if (compMatch) {
+            const picked = await this.pickCompany(compMatch[1] ?? '', '/บริษัท', replyToken, client)
+            if (!picked) return true
+            getDb().prepare('UPDATE line_master_links SET view_tenant_id = ?, as_member = 0 WHERE line_user_id = ?').run(picked.tenant_id, userId)
+            await client.replyMessage(replyToken, { type: 'text', text: `ตอนนี้ดู: ${picked.name || picked.tenant_id} (Master)` })
+            const view = this.linkedUser(picked.tenant_id, userId)
+            if (view) await richMenus.syncUser(picked.tenant_id, client.token, userId, view.menu)
+            return true
+        }
+
+        const bindMatch = text.match(/^\/ผูก\s*pos(?:\s+([\s\S]*))?$/i)
+        if (bindMatch) {
+            if (src === 'user') {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ใช้ได้ในกลุ่มเท่านั้น' })
+                return true
+            }
+            const groupId = event.source.groupId ?? event.source.roomId
+            if (!groupId) return true
+            const picked = await this.pickCompany(bindMatch[1] ?? '', '/ผูก pos', replyToken, client)
+            if (!picked) return true
+
+            const db = getDb()
+            const prev = db.prepare('SELECT tenant_id FROM line_group_mappings WHERE group_id = ? AND is_active = 1 AND tenant_id != ? ORDER BY joined_at DESC LIMIT 1')
+                .get(groupId, picked.tenant_id) as { tenant_id: string } | undefined
+            const movedFrom = prev ? (companyName(prev.tenant_id) || prev.tenant_id) : ''
+
+            db.transaction(() => {
+                db.prepare('UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE group_id = ? AND tenant_id != ?').run(groupId, picked.tenant_id)
+                this.saveGroup(picked.tenant_id, groupId)
+                db.prepare('UPDATE line_group_mappings SET pos_daily = 1 WHERE tenant_id = ? AND group_id = ?').run(picked.tenant_id, groupId)
+                // คนที่ผูกกลุ่มให้บริษัทนี้จะได้สรุปผู้บริหารรายวันของบริษัทนี้ด้วย
+                db.prepare("INSERT OR IGNORE INTO line_master_notify (line_user_id, tenant_id, kind) VALUES (?, ?, 'daily')").run(userId, picked.tenant_id)
+            })()
+
+            const members = await this.groupMemberCount(client, groupId, src === 'room')
+            const cap = BULK_PUSH_CAP()
+            const left = this.pushQuotaLeft(picked.tenant_id)
+            const lines = [
+                `✅ ผูกกลุ่มนี้กับ ${picked.name || picked.tenant_id} แล้ว`,
+                ...(movedFrom ? [`↪️ ย้ายมาจาก: ${movedFrom}`] : []),
+                '🕘 ส่งสรุป POS ทุกวัน 09:00 น.',
+            ]
+            if (members !== null) {
+                const est = members * 30
+                lines.push(`👥 สมาชิก ${members} คน → ประมาณ ${est} ข้อความ/เดือน`)
+                lines.push(`📊 โควตาบริษัทเหลือ ${left}/${cap} ข้อความเดือนนี้`)
+                if (est > cap) lines.push(`⚠️ ประมาณ ${est} ข้อความ/เดือน เกินเพดานบริษัท (${cap}/เดือน)`)
+            } else {
+                lines.push('👥 ไม่ทราบจำนวนสมาชิกในกลุ่ม')
+                lines.push(`📊 โควตาบริษัทเหลือ ${left}/${cap} ข้อความเดือนนี้`)
+            }
+            await client.replyMessage(replyToken, { type: 'text', text: lines.join('\n') })
+            return true
+        }
+
+        if (/^\/เลิกผูก\s*pos$/i.test(text)) {
+            if (src === 'user') {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ใช้ได้ในกลุ่มเท่านั้น' })
+                return true
+            }
+            const groupId = event.source.groupId ?? event.source.roomId
+            if (!groupId) return true
+            getDb().prepare('UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE group_id = ?').run(groupId)
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: '✅ เลิกผูกกลุ่มนี้แล้ว (หยุดส่งสรุป POS รายวัน)\nหากต้องการปิดสรุปผู้บริหารส่วนตัว ให้พิมพ์ "แจ้งเตือน" ในแชทส่วนตัว',
+            })
+            return true
+        }
+
+        return false
     }
 
     // ── Profile helper (works for both personal and group source) ────────────
@@ -1404,7 +1670,7 @@ class LineBotService {
         // ── leave: bot removed from group/room ───────────────────────────────
         if (event.type === 'leave') {
             const groupId = event.source.groupId ?? event.source.roomId
-            if (groupId) getDb().prepare('UPDATE line_group_mappings SET is_active = 0 WHERE group_id = ?').run(groupId)
+            if (groupId) getDb().prepare('UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE group_id = ?').run(groupId)
             return
         }
 
@@ -1486,6 +1752,11 @@ class LineBotService {
         // ── text message ──────────────────────────────────────────────────────
         if (event.type === 'message' && event.message.type === 'text') {
             const text = event.message.text.trim()
+            // คำสั่ง Master (/) ตรวจก่อนด่านลงทะเบียน — เฉพาะ Master ลอยที่ไม่ติดโหมด demo · คนอื่นไหลตามปกติ
+            if (text.startsWith('/')) {
+                const ml = event.source?.userId ? this.floatingLink(event.source.userId) : undefined
+                if (ml && !ml.demo_role && await this.handleMasterCommand(tenantId, src, event, text, ml, client)) return
+            }
             // คนชินพิมพ์ /demo /help แบบแอปแชทอื่น — ตัด / นำหน้าทิ้ง ไม่งั้นหลุดไป AI fallback
             const lower = text.toLowerCase().replace(/^\//, '')
 

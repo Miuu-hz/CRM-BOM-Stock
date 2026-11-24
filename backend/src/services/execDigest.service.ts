@@ -1,9 +1,12 @@
 import db from '../db/sqlite'
-import { posSales, cashDrawer, r2 } from './phopyBoard.service'
+import { posSales, ledgerRevenue, cashDrawer, r2 } from './phopyBoard.service'
 
 export interface ExecDigest {
   day: string
   sales: number
+  income: number
+  bills: number
+  byMethod: { label: string; amount: number; count: number }[]
   purchases: number
   withdrawals: number
   purchaseSources: { label: string; amount: number }[]
@@ -13,19 +16,25 @@ export interface ExecDigest {
 }
 
 export function buildExecDigest(tenantId: string, day: string /* YYYY-MM-DD Thai date = yesterday */, today: string): ExecDigest {
-  // 1. Sales: posSales(tenantId, day, day).revenue — same as "ยอดขายวันนี้"
-  const sales = r2(posSales(tenantId, day, day).revenue)
+  // 1. Sales: posSales(tenantId, day, day) — same as "ยอดขายวันนี้" + รายได้ตามบัญชีของเมื่อวาน
+  const pos = posSales(tenantId, day, day)
+  const sales = r2(pos.revenue)
+  const bills = pos.bills
+  const byMethod = pos.byMethod.map(({ label, amount, count }) => ({ label, amount, count }))
+  const income = r2(ledgerRevenue(tenantId, day, day))
 
   // 2. Purchases & Drawer Purchases
   const drawer = cashDrawer(tenantId, day, day)
   const drawerPurchases = drawer.movements.filter(m => m.category === 'PURCHASE')
   const drawerPurchaseTotal = r2(drawerPurchases.reduce((s, m) => s + (Number(m.amount) || 0), 0))
 
+  // บิลที่จับคู่เงินออกลิ้นชักแล้วนับในฝั่งลิ้นชัก (กันนับซ้ำ)
   const piRows = db.prepare(`
     SELECT pi.total_amount, sp.name AS supplier_name
     FROM purchase_invoices pi
     LEFT JOIN suppliers sp ON sp.id = pi.supplier_id AND (sp.tenant_id = pi.tenant_id OR sp.tenant_id IS NULL)
-    WHERE pi.tenant_id = ? AND date(pi.invoice_date) = ? AND pi.pos_cash_movement_id IS NULL -- บิลที่จับคู่เงินออกลิ้นชักแล้ว นับในฝั่งลิ้นชัก (กันนับซ้ำ) AND (pi.status IS NULL OR pi.status NOT IN ('CANCELLED', 'DRAFT', 'VOID'))
+    WHERE pi.tenant_id = ? AND date(pi.invoice_date) = ? AND pi.pos_cash_movement_id IS NULL
+      AND (pi.status IS NULL OR pi.status NOT IN ('CANCELLED', 'DRAFT', 'VOID'))
   `).all(tenantId, day) as Array<{ total_amount: number; supplier_name: string | null }>
 
   const supplierTotals = new Map<string, number>()
@@ -83,6 +92,9 @@ export function buildExecDigest(tenantId: string, day: string /* YYYY-MM-DD Thai
   return {
     day,
     sales,
+    income,
+    bills,
+    byMethod,
     purchases,
     withdrawals,
     purchaseSources: topSources,

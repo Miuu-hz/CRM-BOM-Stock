@@ -105,21 +105,19 @@ describe('สรุปปิดกะเข้ากลุ่ม LINE', () => {
     const push = vi.fn().mockResolvedValue(undefined)
     vi.spyOn(lineBotService as any, 'getClient').mockReturnValue({ pushMessage: push })
     vi.spyOn(lineBotService as any, 'adminLineUsers').mockReturnValue([{ line_user_id: 'U-admin' }])
-    const groups = vi.spyOn(lineBotService, 'pushToAllGroups').mockResolvedValue(undefined)
     await lineBotService.notifyShiftClosed(a.tenantId, summary)
-    return { push, groups }
+    return { push }
   }
 
   it('ปิดอยู่ (ค่าตั้งต้น) → ส่งรายคนอย่างเดียว', async () => {
-    const { push, groups } = await run(false)
+    const { push } = await run(false)
+    expect(push).toHaveBeenCalledTimes(1)
     expect(push).toHaveBeenCalledWith('U-admin', expect.objectContaining({ type: 'flex' }))
-    expect(groups).not.toHaveBeenCalled()
   })
 
   // push เข้ากลุ่มกินโควตาตามจำนวนสมาชิก → เปิดแล้วก็ไม่ push เข้ากลุ่ม คนในกลุ่มพิมพ์ "สรุปการปิดกะ" แทน (reply ฟรี)
   it('เปิด → ยังไม่ push เข้ากลุ่ม · admin ได้การ์ดใบเดียว (ค่าใช้จ่ายรวมอยู่ในการ์ด)', async () => {
-    const { push, groups } = await run(true)
-    expect(groups).not.toHaveBeenCalled()
+    const { push } = await run(true)
     expect(push).toHaveBeenCalledTimes(1)
     expect(push.mock.calls[0][1].type).toBe('flex')
   })
