@@ -181,3 +181,142 @@ export function getBuyLog(tenantId: string, stockItemId: string, limit = 20): Pr
     qty: s.qty, unit: s.unit, price: s.unitPrice, kind: 'sale' as const, name: s.name ?? null,
   }))
 }
+
+export interface ItemHistoryRow {
+  side: 'buy' | 'sell'
+  kind: 'gr' | 'so' | 'pos'
+  date: string
+  doc: string
+  party: string | null
+  qty: number
+  unit: string | null
+  price: number | null
+}
+
+export interface ItemHistory {
+  item: { id: string; sku: string; name: string; quantity: number; unit: string } | null
+  buys: ItemHistoryRow[]
+  sells: ItemHistoryRow[]
+  lines: ItemHistoryRow[]
+}
+
+/** ประวัติซื้อ-ขายของสินค้า 1 ตัว (อ่านอย่างเดียว) — ใช้กับคำสั่ง /สินค้า ใน LINE */
+export function getItemHistory(tenantId: string, stockItemId: string): ItemHistory {
+  const itemRow = db.prepare(`
+    SELECT id, sku, name, quantity, COALESCE(NULLIF(base_unit, ''), unit) AS unit
+      FROM stock_items
+     WHERE id = ? AND tenant_id = ?
+  `).get(stockItemId, tenantId) as any
+  if (!itemRow) return { item: null, buys: [], sells: [], lines: [] }
+
+  const item = {
+    id: itemRow.id as string,
+    sku: itemRow.sku as string,
+    name: itemRow.name as string,
+    quantity: Number(itemRow.quantity) || 0,
+    unit: (itemRow.unit ?? '') as string,
+  }
+
+  // แปลงวันที่/timestamp เป็นวันไทย YYYY-MM-DD (SQLite CURRENT_TIMESTAMP เป็น UTC แบบไม่มี T/Z)
+  const toThaiDay = (v: string | null | undefined): string => {
+    const s = String(v ?? '').trim()
+    if (!s) return ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+    const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s
+    const ms = Date.parse(iso)
+    return Number.isFinite(ms) ? new Date(ms + 7 * 3600_000).toISOString().slice(0, 10) : s.slice(0, 10)
+  }
+
+  // ฝั่งซื้อ: ใช้ gr.receipt_date (วันรับจริงต่างจากวัน movement ในข้อมูลจริง) และไม่ตัดแถวที่ไม่มี stock_qty ทิ้ง
+  const buyRaw = db.prepare(`
+    SELECT gr.receipt_date AS date, gr.gr_number AS doc, s.name AS party,
+           gri.accepted_qty AS qty, poi.unit AS unit, poi.unit_price AS price
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.id = gri.goods_receipt_id
+      LEFT JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
+      LEFT JOIN suppliers s ON s.id = gr.supplier_id
+     WHERE COALESCE(NULLIF(gri.stock_item_id, ''), gri.material_id) = ?
+       AND gr.tenant_id = ?
+       AND gr.status = 'CONFIRMED'
+     ORDER BY gr.receipt_date DESC, gr.gr_number DESC
+     LIMIT 10
+  `).all(stockItemId, tenantId) as any[]
+
+  const buys: ItemHistoryRow[] = buyRaw.map(r => ({
+    side: 'buy',
+    kind: 'gr',
+    date: toThaiDay(r.date),
+    doc: r.doc,
+    party: r.party ?? null,
+    qty: Number(r.qty) || 0,
+    unit: r.unit ?? null,
+    price: r.price === null || r.price === undefined ? null : Number(r.price),
+  }))
+
+  // ฝั่งขาย (ใบสั่งขาย): ไม่เอาใบที่ร่างหรือยกเลิก
+  const soRaw = db.prepare(`
+    SELECT so.order_date AS date, so.so_number AS doc, c.name AS party,
+           soi.quantity AS qty, soi.unit AS unit, soi.unit_price AS price
+      FROM sales_order_items soi
+      JOIN sales_orders so ON so.id = soi.sales_order_id
+      LEFT JOIN customers c ON c.id = so.customer_id
+     WHERE soi.stock_item_id = ?
+       AND so.tenant_id = ?
+       AND so.status NOT IN ('CANCELLED', 'DRAFT')
+     ORDER BY so.order_date DESC, so.so_number DESC
+     LIMIT 10
+  `).all(stockItemId, tenantId) as any[]
+
+  const soRows: ItemHistoryRow[] = soRaw.map(r => ({
+    side: 'sell',
+    kind: 'so',
+    date: toThaiDay(r.date),
+    doc: r.doc,
+    party: r.party ?? null,
+    qty: Number(r.qty) || 0,
+    unit: r.unit ?? null,
+    price: r.price === null || r.price === undefined ? null : Number(r.price),
+  }))
+
+  // ฝั่งขาย (POS): รวมยอดที่ยังไม่คืนต่อวันไทย ไม่มีราคาระดับวัตถุดิบจึงคืน price = null เสมอ
+  const posRaw = db.prepare(`
+    SELECT psd.deducted_at AS date, psd.quantity_deducted AS qty
+      FROM pos_stock_deductions psd
+     WHERE psd.stock_item_id = ?
+       AND psd.tenant_id = ?
+       AND (psd.returned IS NULL OR psd.returned = 0)
+     ORDER BY psd.deducted_at DESC
+  `).all(stockItemId, tenantId) as any[]
+
+  const posByDay = new Map<string, number>()
+  for (const r of posRaw) {
+    const day = toThaiDay(r.date)
+    if (!day) continue
+    posByDay.set(day, (posByDay.get(day) ?? 0) + (Number(r.qty) || 0))
+  }
+  const posRows: ItemHistoryRow[] = [...posByDay.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, 10)
+    .map(([day, qty]) => ({
+      side: 'sell',
+      kind: 'pos',
+      date: day,
+      doc: 'POS',
+      party: null,
+      qty,
+      unit: item.unit || null,
+      price: null,
+    }))
+
+  const sells = [...soRows, ...posRows]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 10)
+
+  // สูงสุด 10 บรรทัด: ซื้อได้ถึง 5 + ขายได้ถึง 5 ถ้าฝั่งหนึ่งน้อยกว่าให้เติมจากอีกฝั่ง
+  const buyTake = Math.min(buys.length, Math.max(5, 10 - sells.length))
+  const sellTake = Math.min(sells.length, 10 - buyTake)
+  const lines = [...buys.slice(0, buyTake), ...sells.slice(0, sellTake)]
+    .sort((a, b) => b.date.localeCompare(a.date))
+
+  return { item, buys, sells, lines }
+}

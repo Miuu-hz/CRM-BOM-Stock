@@ -85,7 +85,7 @@ try {
     console.warn('⚠️ @line/bot-sdk is not installed. LINE Bot functionality will be disabled.')
 }
 
-import { flexTemplates, IN_CHAT_APPROVAL } from './line-flex-templates'
+import { flexTemplates, IN_CHAT_APPROVAL, APPROVAL_MODULES } from './line-flex-templates'
 import { getSubscription } from './subscription.service'
 import { handleDecision } from '../routes/approval.routes' // วนกันกับ approval.routes แต่ใช้ตอนเรียกเท่านั้น
 import { detectIntent } from './llm.service'
@@ -97,6 +97,8 @@ import { intakeBillImage, MAX_PENDING_PER_TENANT } from './billInbox.service'
 import { logLine, describeEvent, describeMessages } from './lineLog'
 import { buildShiftSummary } from './posShiftSummary.service'
 import { buildExecDigest } from './execDigest.service'
+import { getItemHistory } from './stockCostBasis.service'
+import { normName, aliasEnabled } from './stockItem.service'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน', GUEST: 'ยังไม่ผูกบัญชี' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -130,6 +132,50 @@ function isMasterId(id: string): boolean {
 // แจ้งเตือนของบริษัทที่ Master (LINE ลอย) เปิดรับเองได้ — ปิดเป็นค่าเริ่มต้น
 // ป้ายปุ่มตอบด่วนของ LINE ยาวได้ไม่เกิน 20 ตัวอักษร (รวมเครื่องหมายหน้าชื่อ) → ชื่อชนิดต้องสั้น
 const MASTER_NOTIFY_KINDS: [string, string][] = [['shift', 'ปิดกะ'], ['approval', 'คำขออนุมัติ'], ['work_order', 'ใบสั่งผลิต'], ['purchase', 'ใบขอซื้อ'], ['daily', 'สรุปผู้บริหาร']]
+
+const HR_APPROVAL_WINDOW_MS = 30 * 60 * 1000
+const PRODUCT_ALLOWED_ROLES = new Set(['MASTER', 'ADMIN', 'OWNER'])
+const PRODUCT_ALLOWED_DEPTS = new Set(['IT', 'PURCHASE', 'SALES', 'STOCK', 'PRODUCTION'])
+
+// แปลง timestamp (ISO UTC หรือ SQLite CURRENT_TIMESTAMP) เป็น ms เพื่อเช็คกรอบเวลา 30 นาที
+function parseUtcMs(ts?: string | null): number {
+    if (!ts) return NaN
+    const s = String(ts).trim()
+    const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s
+    return Date.parse(iso)
+}
+
+function parseJsonArray(raw: unknown): string[] {
+    if (!raw) return []
+    try {
+        const v = JSON.parse(String(raw))
+        return Array.isArray(v) ? v.map(x => String(x).trim().toUpperCase()) : []
+    } catch { return [] }
+}
+
+// คะแนนจับคู่คำค้น: มีคำค้นตรงๆ = 1, ไม่งั้นใช้สัดส่วน bigram ที่ซ้อนกันแบบ multiset เพื่อรองรับพิมพ์ตก/สลับตัว
+function bigramScore(text: string, q: string): number {
+    const t = normName(text)
+    if (!t || q.length < 2) return 0
+    if (t.includes(q)) return 1
+    if (t.length < 2) return 0
+    const counts = new Map<string, number>()
+    for (let i = 0; i < t.length - 1; i++) {
+        const bg = t.slice(i, i + 2)
+        counts.set(bg, (counts.get(bg) ?? 0) + 1)
+    }
+    let shared = 0
+    const total = q.length - 1
+    for (let i = 0; i < total; i++) {
+        const bg = q.slice(i, i + 2)
+        const left = counts.get(bg) ?? 0
+        if (left > 0) {
+            shared++
+            counts.set(bg, left - 1)
+        }
+    }
+    return shared / total
+}
 
 export const companyLogoUrl = (tenantId: string) => {
     const row = getDb().prepare('SELECT logo_base64 FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
@@ -871,6 +917,8 @@ class LineBotService {
                     '/บริษัท tenant <รหัส> — สลับบริษัทที่ดูอยู่',
                     '/ผูก pos tenant <รหัส> — ผูกกลุ่ม ให้ทุกคนในกลุ่มพิมพ์ /สรุป ดูยอด POS ได้ (ในกลุ่ม)',
                     '/เลิกผูก pos — เลิกผูกกลุ่มนี้ (ในกลุ่ม)',
+                    '/สินค้า <ชื่อ> — คงเหลือ + ประวัติซื้อ-ขาย (แชทส่วนตัว)',
+                    '/อนุมัติ · /อนุมัติ <เลข> · /ไม่อนุมัติ <เลข> <เหตุผล> — คำขอ HR ภายใน 30 นาที (แชทส่วนตัว)',
                     '/คำสั่ง — แสดงคำสั่งทั้งหมด',
                 ].join('\n'),
             })
@@ -1311,6 +1359,481 @@ class LineBotService {
             rows: rows.slice(0, 6).map(r => ({ requestNumber: r.request_number, moduleType: r.module_type, requesterName: r.requester_name,
                 amount: Number(r.amount) || 0, createdAt: r.created_at })),
         }))
+    }
+
+    /** โหลดข้อมูลผู้ใช้สำหรับตรวจสิทธิ์อนุมัติ (รองรับทั้งบัญชี master_* ที่ไม่มีแถวใน users และผู้ใช้ปกติ) */
+    private loadApprovalUser(reqTenant: string, me: any) {
+        const mid = String(me.user_id)
+        const raw = (me.realRole === 'MASTER' && mid.startsWith('master_')
+            ? { id: mid, email: mid.slice(7), role: 'MASTER', departments: null, custom_permissions: null }
+            : getDb().prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, reqTenant)) as any
+        if (!raw) return null
+        const departments = parseJsonArray(raw.departments)
+        let customPermissions: Record<string, boolean> | undefined
+        if (raw.custom_permissions) {
+            try { customPermissions = JSON.parse(raw.custom_permissions) } catch { customPermissions = undefined }
+        }
+        return { id: raw.id as string, email: raw.email as string, role: raw.role as string, departments, customPermissions }
+    }
+
+    /** ตรวจว่าผู้อนุมัติคนนี้มีสิทธิ์ตัดสินคำขอนี้หรือไม่ (กันไม่ให้คนไม่มีสิทธิ์เห็นข้อมูลคำขอ) */
+    private canUserDecide(reqTenant: string, u: { id: string; email: string; role: string; departments: any[]; customPermissions?: any }, row: any): boolean {
+        const isAdminOrMaster = ['ADMIN', 'MASTER', 'OWNER'].includes(u.role)
+        if (!isAdminOrMaster && row.requester_id === u.id) return false
+        return canApprove(
+            reqTenant,
+            { userId: u.id, email: u.email, role: u.role, departments: u.departments, customPermissions: u.customPermissions },
+            row.module_type,
+            Number(row.amount) || 0,
+            row.reference_id,
+        )
+    }
+
+    /** ตัวตัดสินคำขอ HR ร่วมกันระหว่างปุ่มบนการ์ด (postback) และคำสั่ง /ใช่ — คืน null เมื่อไม่ได้ผูกบัญชี */
+    private async decideApprovalInChat(
+        tenantId: string,
+        lineUserId: string,
+        requestId: string,
+        decision: 'APPROVED' | 'REJECTED',
+        reason = '',
+    ): Promise<string | null> {
+        const db = getDb()
+        // Master ลอยตัว: การ์ด/คำสั่งอาจมาจากบริษัทอื่นที่ไม่ได้ดูอยู่ → ใช้บริษัทของคำขอเอง
+        const ml = this.masterLink(lineUserId)
+        const ownerTenant: string | undefined = ml ? (db.prepare('SELECT tenant_id FROM approval_requests WHERE id = ?').get(requestId) as any)?.tenant_id : undefined
+        const floating = !!ml && (!ml.as_member || (!!ownerTenant && ownerTenant !== tenantId))
+        const reqTenant: string = floating ? (ownerTenant ?? tenantId) : tenantId
+        const me = floating
+            ? { user_id: ml.master_id, realRole: 'MASTER', demo: !!ml.demo_role }
+            : this.linkedUser(reqTenant, lineUserId)
+        if (!me) return null
+        if (me.demo) return '❌ โหมด demo ไม่อนุญาตให้อนุมัติ กรุณาออกจากโหมด demo ก่อนครับ'
+
+        const row = db.prepare('SELECT module_type, status, created_at, request_number FROM approval_requests WHERE id = ? AND tenant_id = ?').get(requestId, reqTenant) as any
+        const u = this.loadApprovalUser(reqTenant, me)
+        // ด่านแพ็กเกจเดียวกับ /api/approval บนเว็บ: หมดอายุ → เฉพาะ ADMIN
+        const sub = getSubscription(reqTenant)
+        if (u && u.role !== 'ADMIN' && (sub.status === 'EXPIRED' || sub.status === 'CANCELLED')) {
+            return '❌ แพ็กเกจหมดอายุ กรุณาติดต่อผู้ดูแลบริษัทเพื่อต่ออายุ'
+        }
+        if (!row || !u || !IN_CHAT_APPROVAL.includes(row.module_type)) {
+            return '❌ รายการนี้อนุมัติในแชทไม่ได้ กรุณาเปิดในเว็บครับ'
+        }
+        if (row.status !== 'PENDING') {
+            return 'รายการนี้ถูกตัดสินไปแล้วครับ'
+        }
+        const createdMs = parseUtcMs(row.created_at)
+        if (!Number.isFinite(createdMs) || Date.now() - createdMs > HR_APPROVAL_WINDOW_MS) {
+            return `เลย 30 นาทีแล้ว อนุมัติในเว็บ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/approvals`
+        }
+
+        const cleanReason = reason.trim()
+        const comment = cleanReason ? `ทาง LINE: ${cleanReason}` : 'ทาง LINE'
+        const req = {
+            params: { id: requestId },
+            body: { decision, comment },
+            user: {
+                userId: u.id, email: u.email, role: u.role,
+                department: u.departments[0], departments: u.departments,
+                tenantId: reqTenant, customPermissions: u.customPermissions,
+            },
+        }
+        let out: any = {}
+        const res: any = { status: () => res, json: (j: any) => { out = j; return res } }
+        await handleDecision(req as any, res)
+        return out.success
+            ? (decision === 'APPROVED' ? `✅ อนุมัติแล้ว (${row.request_number})` : `❌ ไม่อนุมัติแล้ว (${row.request_number})`)
+            : /already|ตัดสินไปแล้ว/.test(out.message || '') ? 'รายการนี้ถูกตัดสินไปแล้วครับ'
+            : `❌ ${out.message || 'ทำรายการไม่สำเร็จ'}`
+    }
+
+    /** คำสั่งอนุมัติคำขอ HR ทาง LINE: /อนุมัติ, /ไม่อนุมัติ, /ใช่, /ไม่ใช่ (แชทส่วนตัวเท่านั้น) */
+    private async handleHrApprovalCommand(
+        tenantId: string,
+        src: 'user' | 'group' | 'room',
+        me: any,
+        event: any,
+        text: string,
+        client: any,
+    ): Promise<boolean> {
+        const db = getDb()
+        const replyToken = event.replyToken
+        const lineUserId = event.source.userId as string
+        const appUrl = process.env.APP_URL ?? 'https://erp.phopy.net'
+
+        // ── /ใช่ หรือ /ไม่ใช่ (ต้องมี / นำหน้าและตรงคำเป๊ะเท่านั้น) ──
+        if (text === '/ใช่' || text === '/ไม่ใช่') {
+            const hasPending = db.prepare(
+                "SELECT id FROM line_pending_tasks WHERE line_user_id = ? AND type IN ('hr_approve', 'hr_reject') ORDER BY created_at DESC LIMIT 1"
+            ).get(lineUserId) as { id: string } | undefined
+            // ไม่มีรายการค้างยืนยัน → ไหลตามโฟลว์เดิมของระบบ
+            if (!hasPending) return false
+            if (src !== 'user') {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ใช้ได้ในแชทส่วนตัวเท่านั้น' })
+                return true
+            }
+            // ดึงและลบทิ้งก่อนในทรานแซกชันเดียว กันกดซ้ำแล้วรันสองรอบ
+            const pending = db.transaction(() => {
+                const row = db.prepare(
+                    "SELECT * FROM line_pending_tasks WHERE line_user_id = ? AND type IN ('hr_approve', 'hr_reject') ORDER BY created_at DESC LIMIT 1"
+                ).get(lineUserId) as any
+                if (row) db.prepare('DELETE FROM line_pending_tasks WHERE id = ?').run(row.id)
+                return row
+            })()
+            if (!pending) {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ไม่มีคำขอที่รอยืนยันครับ' })
+                return true
+            }
+            if (text === '/ไม่ใช่') {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ยกเลิกแล้ว คำขอยังรออยู่' })
+                return true
+            }
+            const expMs = parseUtcMs(pending.expires_at)
+            if (!Number.isFinite(expMs) || Date.now() > expMs) {
+                await client.replyMessage(replyToken, { type: 'text', text: `เลย 30 นาทีแล้ว อนุมัติในเว็บ ${appUrl}/approvals` })
+                return true
+            }
+            const decision = pending.type === 'hr_reject' ? 'REJECTED' : 'APPROVED'
+            const resultText = await this.decideApprovalInChat(pending.tenant_id, lineUserId, pending.title, decision, pending.description ?? '')
+            await client.replyMessage(replyToken, { type: 'text', text: resultText ?? '❌ ทำรายการไม่สำเร็จ' })
+            return true
+        }
+
+        const approveMatch = text.match(/^\/อนุมัติ(?:\s+([\s\S]*))?$/)
+        const rejectMatch = !approveMatch ? text.match(/^\/ไม่อนุมัติ(?:\s+([\s\S]*))?$/) : null
+        if (!approveMatch && !rejectMatch) return false
+
+        if (src !== 'user') {
+            await client.replyMessage(replyToken, { type: 'text', text: 'ใช้ได้ในแชทส่วนตัวเท่านั้น' })
+            return true
+        }
+        if (me.demo) {
+            await client.replyMessage(replyToken, { type: 'text', text: '❌ โหมด demo ไม่อนุญาตให้อนุมัติ กรุณาออกจากโหมด demo ก่อนครับ' })
+            return true
+        }
+
+        const isReject = !!rejectMatch
+        const rest = ((approveMatch ?? rejectMatch)![1] ?? '').trim()
+
+        // ── /อนุมัติ (ไม่ระบุเลข) → รายการคำขอ HR ของบริษัทที่ดูอยู่ สูงสุด 10 รายการ ──
+        if (!isReject && !rest) {
+            if (!tenantId) {
+                await client.replyMessage(replyToken, { type: 'text', text: 'กรุณาเลือกบริษัทก่อนด้วยคำสั่ง /บริษัท' })
+                return true
+            }
+            const u = this.loadApprovalUser(tenantId, me)
+            if (!u) {
+                await client.replyMessage(replyToken, { type: 'text', text: '✅ ไม่มีคำขอ HR ที่รอคุณอนุมัติครับ' })
+                return true
+            }
+            const placeholders = IN_CHAT_APPROVAL.map(() => '?').join(',')
+            const pendingRows = db.prepare(`
+                SELECT id, tenant_id, request_number, module_type, reference_id, requester_id, requester_name, amount, description, status, created_at
+                FROM approval_requests
+                WHERE tenant_id = ? AND module_type IN (${placeholders}) AND status = 'PENDING'
+                ORDER BY created_at DESC LIMIT 200
+            `).all(tenantId, ...IN_CHAT_APPROVAL) as any[]
+            const decidedRows = db.prepare(`
+                SELECT id, tenant_id, request_number, module_type, reference_id, requester_id, requester_name, amount, description, status, created_at,
+                       COALESCE(approver_2_at, approver_1_at, executed_at, updated_at) AS decided_at
+                FROM approval_requests
+                WHERE tenant_id = ? AND module_type IN (${placeholders}) AND status IN ('APPROVED', 'EXECUTED', 'REJECTED')
+                ORDER BY COALESCE(approver_2_at, approver_1_at, executed_at, updated_at) DESC LIMIT 50
+            `).all(tenantId, ...IN_CHAT_APPROVAL) as any[]
+
+            const nowMs = Date.now()
+            const active: any[] = []
+            const expired: any[] = []
+            for (const r of pendingRows) {
+                if (!this.canUserDecide(tenantId, u, r)) continue
+                const cMs = parseUtcMs(r.created_at)
+                if (Number.isFinite(cMs) && nowMs - cMs <= HR_APPROVAL_WINDOW_MS) {
+                    active.push({
+                        requestNumber: r.request_number, moduleType: r.module_type,
+                        requesterName: r.requester_name, description: r.description ?? '',
+                        amount: Number(r.amount) || 0, state: 'active' as const,
+                        minutesLeft: Math.max(1, Math.ceil((cMs + HR_APPROVAL_WINDOW_MS - nowMs) / 60000)),
+                        _sort: cMs,
+                    })
+                } else {
+                    expired.push({
+                        requestNumber: r.request_number, moduleType: r.module_type,
+                        requesterName: r.requester_name, description: r.description ?? '',
+                        amount: Number(r.amount) || 0, state: 'expired' as const,
+                        _sort: Number.isFinite(cMs) ? cMs : 0,
+                    })
+                }
+            }
+            active.sort((a, b) => a._sort - b._sort)
+            expired.sort((a, b) => a._sort - b._sort)
+
+            const recentDecided: any[] = []
+            for (const r of decidedRows) {
+                const dMs = parseUtcMs(r.decided_at)
+                if (!Number.isFinite(dMs) || nowMs - dMs > HR_APPROVAL_WINDOW_MS) continue
+                if (!this.canUserDecide(tenantId, u, r)) continue
+                recentDecided.push({
+                    requestNumber: r.request_number, moduleType: r.module_type,
+                    requesterName: r.requester_name, description: r.description ?? '',
+                    amount: Number(r.amount) || 0,
+                    state: r.status === 'REJECTED' ? 'rejected' as const : 'approved' as const,
+                    _sort: dMs,
+                })
+            }
+            recentDecided.sort((a, b) => b._sort - a._sort)
+
+            const combined = [...active, ...expired, ...recentDecided].slice(0, 10)
+            await client.replyMessage(replyToken, flexTemplates.hrApprovalListCard({
+                company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId), rows: combined,
+            }))
+            return true
+        }
+
+        if (isReject && !rest) {
+            await client.replyMessage(replyToken, { type: 'text', text: 'กรุณาระบุเลขคำขอ เช่น /ไม่อนุมัติ APR-2026-00001 เหตุผล' })
+            return true
+        }
+
+        // ── /อนุมัติ <number> [tenant <id>] หรือ /ไม่อนุมัติ <number> [tenant <id>] [reason] ──
+        const fl = this.floatingLink(lineUserId)
+        let reqNum = ''
+        let explicitTenant = ''
+        let reason = ''
+        if (fl) {
+            const pm = rest.match(/^(\S+)(?:\s+tenant\s+(\S+))?(?:\s+([\s\S]*))?$/i)
+            reqNum = pm?.[1] ?? ''
+            explicitTenant = pm?.[2] ?? ''
+            reason = (pm?.[3] ?? '').trim()
+        } else {
+            const pm = rest.match(/^(\S+)(?:\s+([\s\S]*))?$/)
+            reqNum = pm?.[1] ?? ''
+            reason = (pm?.[2] ?? '').trim()
+        }
+        if (!reqNum) {
+            await client.replyMessage(replyToken, { type: 'text', text: 'ไม่พบคำขอนี้' })
+            return true
+        }
+
+        const candidates = fl
+            ? (explicitTenant
+                ? db.prepare(`
+                    SELECT id, tenant_id, request_number, module_type, reference_id, requester_id, requester_name, amount, description, status, created_at
+                    FROM approval_requests WHERE tenant_id = ? AND request_number = ? COLLATE NOCASE
+                `).all(explicitTenant, reqNum)
+                : db.prepare(`
+                    SELECT id, tenant_id, request_number, module_type, reference_id, requester_id, requester_name, amount, description, status, created_at
+                    FROM approval_requests WHERE request_number = ? COLLATE NOCASE ORDER BY created_at DESC
+                `).all(reqNum)) as any[]
+            : db.prepare(`
+                SELECT id, tenant_id, request_number, module_type, reference_id, requester_id, requester_name, amount, description, status, created_at
+                FROM approval_requests WHERE tenant_id = ? AND request_number = ? COLLATE NOCASE
+            `).all(tenantId, reqNum) as any[]
+
+        // กรองเฉพาะคำขอที่ผู้นี้มีสิทธิ์ตัดสินจริง — ห้ามเปิดเผยว่าคำขอมีอยู่ถ้าไม่มีสิทธิ์
+        const allowed = candidates.filter(r => {
+            const actor = this.loadApprovalUser(r.tenant_id, me)
+            return !!actor && this.canUserDecide(r.tenant_id, actor, r)
+        })
+        if (allowed.length === 0) {
+            await client.replyMessage(replyToken, { type: 'text', text: 'ไม่พบคำขอนี้' })
+            return true
+        }
+        if (allowed.length > 1) {
+            // เลขคำขอไม่ซ้ำแค่ภายในบริษัทเดียว — Master ลอยเจอหลายบริษัทต้องให้เลือก ไม่เดาเอง
+            const cmd = isReject ? '/ไม่อนุมัติ' : '/อนุมัติ'
+            const tail = isReject && reason ? ` ${reason}` : ''
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `พบคำขอ ${reqNum} ใน ${allowed.length} บริษัท · เลือกบริษัท`,
+                quickReply: {
+                    items: allowed.slice(0, 13).map(r => {
+                        const cname = companyName(r.tenant_id) || r.tenant_id
+                        return {
+                            type: 'action',
+                            action: { type: 'message', label: cname.slice(0, 20), text: `${cmd} ${r.request_number} tenant ${r.tenant_id}${tail}`.slice(0, 300) },
+                        }
+                    }),
+                },
+            })
+            return true
+        }
+
+        const row = allowed[0]
+        if (!IN_CHAT_APPROVAL.includes(row.module_type)) {
+            await client.replyMessage(replyToken, { type: 'text', text: `❌ รายการนี้อนุมัติในแชทไม่ได้ กรุณาเปิดในเว็บ ${appUrl}/approvals` })
+            return true
+        }
+        const actor = this.loadApprovalUser(row.tenant_id, me)
+        const sub = getSubscription(row.tenant_id)
+        if (actor && actor.role !== 'ADMIN' && (sub.status === 'EXPIRED' || sub.status === 'CANCELLED')) {
+            await client.replyMessage(replyToken, { type: 'text', text: '❌ แพ็กเกจหมดอายุ กรุณาติดต่อผู้ดูแลบริษัทเพื่อต่ออายุ' })
+            return true
+        }
+        if (row.status !== 'PENDING') {
+            await client.replyMessage(replyToken, { type: 'text', text: 'รายการนี้ถูกตัดสินไปแล้วครับ' })
+            return true
+        }
+        const createdMs = parseUtcMs(row.created_at)
+        if (!Number.isFinite(createdMs) || Date.now() - createdMs > HR_APPROVAL_WINDOW_MS) {
+            await client.replyMessage(replyToken, { type: 'text', text: `เลย 30 นาทีแล้ว อนุมัติในเว็บ ${appUrl}/approvals` })
+            return true
+        }
+
+        const pendingId = `hrp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+        const expiresAt = new Date(createdMs + HR_APPROVAL_WINDOW_MS).toISOString()
+        const pendingType = isReject ? 'hr_reject' : 'hr_approve'
+        // เก็บได้ 1 คำถามต่อผู้ใช้ LINE — คำถามใหม่แทนที่ของเก่าในทรานแซกชันเดียว โดยไม่แตะแถว task/menu
+        db.transaction(() => {
+            db.prepare("DELETE FROM line_pending_tasks WHERE line_user_id = ? AND type IN ('hr_approve', 'hr_reject')").run(lineUserId)
+            db.prepare(`
+                INSERT INTO line_pending_tasks (id, tenant_id, line_user_id, type, title, description, stock_context, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+            `).run(pendingId, row.tenant_id, lineUserId, pendingType, row.id, isReject ? reason : '', expiresAt)
+        })()
+
+        const mod = APPROVAL_MODULES[row.module_type]
+        const modLabel = mod ? `${mod.icon} ${mod.label}` : row.module_type
+        const comp = companyName(row.tenant_id) || row.tenant_id
+        const amt = Number(row.amount) || 0
+        const minsLeft = Math.max(1, Math.ceil((createdMs + HR_APPROVAL_WINDOW_MS - Date.now()) / 60000))
+        const lines = [
+            `${modLabel} · ${row.request_number}`,
+            `ผู้ขอ: ${row.requester_name}`,
+            `รายละเอียด: ${row.description || '-'}`,
+            ...(amt > 0 ? [`ยอดเงิน: ฿${amt.toLocaleString('th-TH', { maximumFractionDigits: 2 })}`] : []),
+            `บริษัท: ${comp}`,
+            ...(isReject && reason ? [`เหตุผล: ${reason}`] : []),
+            `⏳ เหลือเวลา ${minsLeft} นาที`,
+            '',
+            `ต้องการ${isReject ? 'ไม่อนุมัติ' : 'อนุมัติ'} ${row.request_number} จริงหรือไม่ ตอบ /ใช่ หรือ /ไม่ใช่`,
+        ]
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: lines.join('\n'),
+            quickReply: {
+                items: [
+                    { type: 'action', action: { type: 'message', label: '✅ /ใช่', text: '/ใช่' } },
+                    { type: 'action', action: { type: 'message', label: '❌ /ไม่ใช่', text: '/ไม่ใช่' } },
+                ],
+            },
+        })
+        return true
+    }
+
+    /** คำสั่งดูประวัติซื้อ-ขายสินค้า: /สินค้า <ชื่อ> หรือ /สินค้า sku <SKU> (แชทส่วนตัว + เฉพาะสิทธิ์ที่กำหนด) */
+    private async handleProductCommand(
+        tenantId: string,
+        src: 'user' | 'group' | 'room',
+        me: any,
+        event: any,
+        text: string,
+        client: any,
+    ): Promise<boolean> {
+        const match = text.match(/^\/สินค้า(?:\s+([\s\S]*))?$/)
+        if (!match) return false
+
+        const replyToken = event.replyToken
+        if (src !== 'user') {
+            await client.replyMessage(replyToken, { type: 'text', text: 'ใช้ได้ในแชทส่วนตัวเท่านั้น' })
+            return true
+        }
+
+        const db = getDb()
+        let allowed = PRODUCT_ALLOWED_ROLES.has(me.role)
+        if (!allowed && tenantId) {
+            const u = db.prepare('SELECT departments FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, tenantId) as { departments?: string } | undefined
+            allowed = parseJsonArray(u?.departments).some(d => PRODUCT_ALLOWED_DEPTS.has(d))
+        }
+        if (!allowed) {
+            await client.replyMessage(replyToken, { type: 'text', text: '🔒 สำหรับผู้ดูแล หรือฝ่าย IT / จัดซื้อ / ขาย / คลัง / ผลิต เท่านั้นครับ' })
+            return true
+        }
+        if (!tenantId) {
+            await client.replyMessage(replyToken, { type: 'text', text: 'กรุณาเลือกบริษัทก่อนด้วยคำสั่ง /บริษัท' })
+            return true
+        }
+
+        const sendHistory = async (stockItemId: string) => {
+            const hist = getItemHistory(tenantId, stockItemId)
+            if (!hist.item) {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ไม่พบสินค้า' })
+                return
+            }
+            await client.replyMessage(replyToken, flexTemplates.itemHistoryCard({
+                company: companyName(tenantId),
+                logoUrl: companyLogoUrl(tenantId),
+                name: hist.item.name,
+                sku: hist.item.sku,
+                quantity: hist.item.quantity,
+                unit: hist.item.unit,
+                lines: hist.lines,
+            }))
+        }
+
+        const raw = (match[1] ?? '').trim()
+        const skuMatch = raw.match(/^sku\s+(.+)$/i)
+        if (skuMatch) {
+            const sku = skuMatch[1].trim()
+            const found = db.prepare("SELECT id FROM stock_items WHERE tenant_id = ? AND status != 'INACTIVE' AND sku = ? COLLATE NOCASE LIMIT 1")
+                .get(tenantId, sku) as { id: string } | undefined
+            if (!found) {
+                await client.replyMessage(replyToken, { type: 'text', text: 'ไม่พบสินค้า' })
+                return true
+            }
+            await sendHistory(found.id)
+            return true
+        }
+
+        const q = normName(raw)
+        if (q.length < 2) {
+            await client.replyMessage(replyToken, { type: 'text', text: 'กรุณาพิมพ์ชื่อสินค้าอย่างน้อย 2 ตัวอักษร เช่น /สินค้า นมสด' })
+            return true
+        }
+
+        const items = db.prepare("SELECT id, sku, name FROM stock_items WHERE tenant_id = ? AND status != 'INACTIVE'")
+            .all(tenantId) as { id: string; sku: string; name: string }[]
+        const aliasMap = new Map<string, string[]>()
+        if (aliasEnabled(tenantId)) {
+            const aliasRows = db.prepare("SELECT stock_item_id, name FROM stock_item_aliases WHERE tenant_id = ? AND name_norm NOT LIKE '__platform__:%'")
+                .all(tenantId) as { stock_item_id: string; name: string }[]
+            for (const a of aliasRows) {
+                const list = aliasMap.get(a.stock_item_id) ?? []
+                list.push(a.name)
+                aliasMap.set(a.stock_item_id, list)
+            }
+        }
+
+        const scored = items
+            .map(it => {
+                const skuScore = normName(it.sku) === q ? 1 : 0
+                const nameScore = bigramScore(it.name, q)
+                const aliasScore = (aliasMap.get(it.id) ?? []).reduce((best, a) => Math.max(best, bigramScore(a, q)), 0)
+                return { ...it, score: Math.max(skuScore, nameScore, aliasScore) }
+            })
+            .filter(it => it.score >= 0.8)
+            .sort((a, b) => b.score - a.score || a.name.length - b.name.length || a.name.localeCompare(b.name))
+            .slice(0, 10)
+
+        if (scored.length === 0) {
+            await client.replyMessage(replyToken, { type: 'text', text: 'ไม่พบสินค้า' })
+            return true
+        }
+        if (scored.length === 1) {
+            await sendHistory(scored[0].id)
+            return true
+        }
+
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: `พบสินค้า ${scored.length} รายการ · เลือกรายการที่ต้องการดูประวัติ\n${scored.map((m, i) => `${i + 1}. ${m.name} (${m.sku})`).join('\n')}`,
+            quickReply: {
+                items: scored.map(m => ({
+                    type: 'action',
+                    action: { type: 'message', label: m.name.slice(0, 20), text: `/สินค้า sku ${m.sku}` },
+                })),
+            },
+        })
+        return true
     }
 
     private async handleLowStock(tenantId: string, replyToken: string, client: any) {
@@ -1763,6 +2286,12 @@ class LineBotService {
                 return
             }
 
+            // ── คำสั่ง HR approval (/อนุมัติ /ไม่อนุมัติ /ใช่ /ไม่ใช่) และ /สินค้า (แชทส่วนตัวเท่านั้น) ──
+            if (me && text.startsWith('/')) {
+                if (await this.handleHrApprovalCommand(tenantId, src, me, event, text, client)) return
+                if (await this.handleProductCommand(tenantId, src, me, event, text, client)) return
+            }
+
             // ── เมนูตามตำแหน่ง (ข้อมูลเงิน/อนุมัติ → แชทส่วนตัวเท่านั้น ไม่โชว์ในกลุ่ม) ──
             const menuCmd: Record<string, MenuKey[]> = {
                 'ยอดขายวันนี้': ['exec'], 'สรุปผู้บริหาร': ['exec'], 'กำไรเดือนนี้': ['exec'],
@@ -2008,44 +2537,10 @@ class LineBotService {
                 return
             }
 
-            // ── อนุมัติ/ไม่อนุมัติคำขอ HR จากการ์ด (เฉพาะแชทส่วนตัว) — ด่านสิทธิ์ใช้ตัวเดียวกับหน้าเว็บ ──
+            // ── อนุมัติ/ไม่อนุมัติคำขอ HR จากการ์ด (เฉพาะแชทส่วนตัว) — ใช้ตัวช่วยเดียวกับคำสั่ง /อนุมัติ ──
             if ((action === 'approve_req' || action === 'reject_req') && id && event.source?.type === 'user') {
-                // Master ลอยตัว: การ์ดอาจมาจากบริษัทอื่นที่ไม่ได้ดูอยู่ (เปิดแจ้งเตือนไว้) — Master เข้าได้ทุกบริษัท จึงใช้บริษัทของคำขอเอง
-                // อยู่บัญชีทดสอบ (as_member) แต่การ์ดมาจากบริษัทอื่นที่เปิดแจ้งเตือนไว้ → อนุมัติในฐานะ Master เช่นกัน
-                const ml = this.masterLink(event.source.userId)
-                const ownerTenant: string | undefined = ml ? (db.prepare('SELECT tenant_id FROM approval_requests WHERE id = ?').get(id) as any)?.tenant_id : undefined
-                const floating = !!ml && (!ml.as_member || (!!ownerTenant && ownerTenant !== tenantId))
-                const reqTenant: string = floating ? (ownerTenant ?? tenantId) : tenantId
-                const me = floating ? { user_id: ml.master_id, realRole: 'MASTER' } : this.linkedUser(reqTenant, event.source.userId)
-                if (!me) return
-                const row = db.prepare('SELECT module_type FROM approval_requests WHERE id = ? AND tenant_id = ?').get(id, reqTenant) as any
-                // บัญชี master_<email> ไม่มีแถวใน users (ดู auth.routes.ts) → ประกอบข้อมูลเองเหมือนตอนล็อกอินเว็บ
-                const mid = String(me.user_id)
-                const u = (me.realRole === 'MASTER' && mid.startsWith('master_')
-                    ? { id: mid, email: mid.slice(7), role: 'MASTER', departments: null, custom_permissions: null }
-                    : db.prepare('SELECT id, email, role, departments, custom_permissions FROM users WHERE id = ? AND tenant_id = ?').get(me.user_id, reqTenant)) as any
-                // ด่านแพ็กเกจเดียวกับ /api/approval บนเว็บ: หมดอายุ → เฉพาะ ADMIN
-                const sub = getSubscription(reqTenant)
-                if (u && u.role !== 'ADMIN' && (sub.status === 'EXPIRED' || sub.status === 'CANCELLED')) {
-                    await client.replyMessage(event.replyToken, { type: 'text', text: '❌ แพ็กเกจหมดอายุ กรุณาติดต่อผู้ดูแลบริษัทเพื่อต่ออายุ' })
-                    return
-                }
-                if (!row || !u || !IN_CHAT_APPROVAL.includes(row.module_type)) {
-                    await client.replyMessage(event.replyToken, { type: 'text', text: '❌ รายการนี้อนุมัติในแชทไม่ได้ กรุณาเปิดในเว็บครับ' })
-                    return
-                }
-                const departments = u.departments ? JSON.parse(u.departments) : []
-                const req = {
-                    params: { id }, body: { decision: action === 'approve_req' ? 'APPROVED' : 'REJECTED', comment: 'ทาง LINE' },
-                    user: { userId: u.id, email: u.email, role: u.role, department: departments[0], departments, tenantId: reqTenant,
-                        customPermissions: u.custom_permissions ? JSON.parse(u.custom_permissions) : undefined },
-                }
-                let out: any = {}
-                const res: any = { status: () => res, json: (j: any) => { out = j; return res } }
-                await handleDecision(req as any, res)
-                const text = out.success ? (action === 'approve_req' ? '✅ อนุมัติแล้ว' : '❌ ไม่อนุมัติแล้ว')
-                    : /already|ตัดสินไปแล้ว/.test(out.message || '') ? 'รายการนี้ถูกตัดสินไปแล้วครับ' : `❌ ${out.message || 'ทำรายการไม่สำเร็จ'}`
-                await client.replyMessage(event.replyToken, { type: 'text', text })
+                const text = await this.decideApprovalInChat(tenantId, event.source.userId, id, action === 'approve_req' ? 'APPROVED' : 'REJECTED')
+                if (text) await client.replyMessage(event.replyToken, { type: 'text', text })
                 return
             }
 
@@ -2063,7 +2558,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
             // ── ยืนยัน/ยกเลิก pending task ───────────────────────────────────
             if ((action === 'confirm_task' || action === 'cancel_task') && id) {
                 const pending = db.prepare(
-                    "SELECT * FROM line_pending_tasks WHERE id = ? AND tenant_id = ? AND line_user_id = ?"
+                    "SELECT * FROM line_pending_tasks WHERE id = ? AND tenant_id = ? AND line_user_id = ? AND type IN ('task', 'menu')"
                 ).get(id, tenantId, event.source.userId) as any
 
                 if (!pending) {

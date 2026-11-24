@@ -1287,4 +1287,107 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
         })
     },
 
+    // ─── รายการคำขอ HR สำหรับคำสั่ง /อนุมัติ (สูงสุด 10 รายการ) ─────────────────
+    hrApprovalListCard: (d: {
+        company: string
+        logoUrl?: string
+        rows: {
+            requestNumber: string
+            moduleType: string
+            requesterName: string
+            description: string
+            amount: number
+            state: 'active' | 'expired' | 'approved' | 'rejected'
+            minutesLeft?: number
+        }[]
+    }) => {
+        if (d.rows.length === 0) return { type: 'text', text: '✅ ไม่มีคำขอ HR ที่รอคุณอนุมัติครับ' }
+        const msg = card({
+            alt: `📝 คำขอ HR ${d.rows.length} รายการ${d.company ? ` · ${d.company}` : ''}`,
+            kicker: d.company || 'Phopy ERP',
+            title: `📝 คำขออนุมัติ HR (${d.rows.length})`,
+            tone: P.mango600,
+            logoUrl: d.logoUrl,
+            body: d.rows.map(r => {
+                const m = APPROVAL_MODULES[r.moduleType] ?? { label: r.moduleType, icon: '📋' }
+                const prefix = r.state === 'approved' ? '✅' : r.state === 'rejected' ? '❌' : m.icon
+                const statusSub = r.state === 'expired'
+                    ? 'ต้องอนุมัติในเว็บ'
+                    : r.state === 'active'
+                        ? `เหลือ ${r.minutesLeft ?? 1} นาที`
+                        : r.state === 'approved' ? 'อนุมัติแล้ว' : 'ไม่อนุมัติ'
+                const sub = [r.requesterName, r.description, statusSub].filter(Boolean).join(' · ')
+                const right = r.amount > 0
+                    ? baht(r.amount)
+                    : r.state === 'approved' ? '✅' : r.state === 'rejected' ? '❌' : r.state === 'expired' ? 'ในเว็บ' : `${r.minutesLeft ?? 1}น.`
+                const color = r.state === 'approved' ? P.success : r.state === 'rejected' ? P.danger : r.state === 'active' ? P.indigo : P.ink500
+                return listRow(`${prefix} ${m.label} · ${r.requestNumber}`, sub, right, color)
+            }),
+            buttons: [uriBtn('เปิดหน้าอนุมัติ', `${APP_URL}/approvals`, false)],
+        }) as any
+        const active = d.rows.filter(r => r.state === 'active')
+        if (active.length) {
+            msg.quickReply = {
+                items: active.slice(0, 13).map(r => ({
+                    type: 'action',
+                    action: { type: 'message', label: r.requestNumber.slice(0, 20), text: `/อนุมัติ ${r.requestNumber}` },
+                })),
+            }
+        }
+        return msg
+    },
+
+    // ─── ประวัติซื้อ-ขายสินค้า สำหรับคำสั่ง /สินค้า (ไม่มีต้นทุน/กำไร) ───────────
+    itemHistoryCard: (d: {
+        company: string
+        logoUrl?: string
+        name: string
+        sku: string
+        quantity: number
+        unit: string
+        lines: {
+            side: 'buy' | 'sell'
+            date: string
+            doc: string
+            party: string | null
+            qty: number
+            unit: string | null
+            price: number | null
+        }[]
+    }) => {
+        const dmy = (ymd: string) => {
+            const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+            return m ? `${Number(m[3])}/${Number(m[2])}/${m[1].slice(-2)}` : (ymd || '-')
+        }
+        const fmt = (n: number) => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })
+        const onHand = `${fmt(d.quantity)} ${d.unit || ''}`.trim()
+        return card({
+            alt: `📦 ${d.name} (${d.sku}) · คงเหลือ ${onHand}`,
+            kicker: d.company || 'Phopy ERP',
+            title: d.name,
+            sub: `SKU: ${d.sku} · คงเหลือ ${onHand}`,
+            logoUrl: d.logoUrl,
+            body: [
+                kv('คงเหลือในคลัง', onHand, d.quantity <= 0 ? P.danger : P.ink900),
+                sectionTitle('ประวัติซื้อ-ขายล่าสุด'),
+                ...(d.lines.length
+                    ? d.lines.map(r => {
+                        const qtyUnit = `${fmt(r.qty)}${r.unit ? ` ${r.unit}` : ''}`
+                        const priceStr = r.price === null || r.price === undefined
+                            ? 'ไม่มีราคา'
+                            : (r.unit ? `${baht(r.price)}/${r.unit}` : baht(r.price))
+                        const color = r.price === null || r.price === undefined ? P.ink500 : (r.side === 'buy' ? P.success : P.danger)
+                        return listRow(
+                            `${dmy(r.date)} ${r.side === 'buy' ? '🟢ซื้อ' : '🔴ขาย'} ${qtyUnit}`,
+                            [r.doc, r.party].filter(Boolean).join(' · '),
+                            priceStr,
+                            color,
+                        )
+                    })
+                    : [txt('ยังไม่มีประวัติซื้อ-ขาย', { size: 'xs', color: P.ink500, margin: 'sm' })]),
+                txt('ราคาตามเอกสาร อาจรวมหรือไม่รวม VAT', { size: 'xxs', color: P.ink500, margin: 'lg', wrap: true }),
+            ],
+        })
+    },
+
 };
