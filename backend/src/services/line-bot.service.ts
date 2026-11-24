@@ -353,8 +353,8 @@ class LineBotService {
         return m && !m.as_member ? m : undefined
     }
 
-    /** หาบัญชีทดสอบปลายทางของร้านสาธิต Testshop (ต้องมี mapping ใน Testshop ที่เป็น EMP-TEST หรือ MGR-TEST อยู่แล้ว · ไม่ระบุปลายทาง = สลับอีกฝั่ง) */
-    private findTestAccountSwap(lineUserId: string, targetCode?: 'EMP-TEST' | 'MGR-TEST'): { user_id: string; role: string; name: string } | null {
+    /** หาบัญชีทดสอบปลายทางของร้านสาธิต Testshop (ต้องมี mapping ใน Testshop ที่เป็น EMP-TEST หรือ MGR-TEST อยู่แล้ว) */
+    private findTestAccountSwap(lineUserId: string, targetCode: 'EMP-TEST' | 'MGR-TEST'): { user_id: string; role: string; name: string } | null {
         const db = getDb()
         const cur = db.prepare(`
             SELECT e.code FROM line_user_mappings lum
@@ -362,13 +362,12 @@ class LineBotService {
             WHERE lum.tenant_id = 'Testshop' AND lum.line_user_id = ?
         `).get(lineUserId) as { code: string } | undefined
         if (cur?.code !== 'EMP-TEST' && cur?.code !== 'MGR-TEST') return null
-        const code = targetCode ?? (cur.code === 'EMP-TEST' ? 'MGR-TEST' : 'EMP-TEST')
         return (db.prepare(`
             SELECT e.user_id, u.role, u.name FROM employees e
             JOIN users u ON u.id = e.user_id AND u.tenant_id = e.tenant_id
             WHERE e.tenant_id = 'Testshop' AND e.code = ? AND e.status = 'ACTIVE' AND u.status = 'active'
               AND NOT EXISTS (SELECT 1 FROM line_user_mappings x WHERE x.tenant_id = 'Testshop' AND x.user_id = e.user_id AND x.line_user_id != ?)
-        `).get(code, lineUserId) as { user_id: string; role: string; name: string } | undefined) ?? null
+        `).get(targetCode, lineUserId) as { user_id: string; role: string; name: string } | undefined) ?? null
     }
 
     /** ออกจากบัญชีทดสอบ/โหมด demo กลับเป็น Master ลอยบนบริษัทที่ดูอยู่ */
@@ -2314,8 +2313,9 @@ class LineBotService {
                 richMenus.syncUser(tenantId, client.token, event.source.userId, linked.menu).catch(() => {})
             }
             // demo "ยังไม่ผูกบัญชี": Master เห็นบอทแบบคนที่เพิ่งเพิ่มเพื่อน — ทุกข้อความทำเหมือนไม่มีการผูก ยกเว้นคำสั่ง demo (ทางกลับ)
+            const isDemoCmd = ['demo', 'โหมด demo', 'สลับทดสอบ'].includes(lower)
             const mlUser = src === 'user' && event.source?.userId ? this.masterLink(event.source.userId) : undefined
-            const me = linked?.demo && linked.role === 'GUEST' && !['demo', 'โหมด demo'].includes(lower) && !(lower === 'สลับทดสอบ' && mlUser) ? null : linked
+            const me = linked?.demo && linked.role === 'GUEST' && !isDemoCmd ? null : linked
             // ── สรุปปิดกะ: ตอบด้วย reply เท่านั้น (ฟรี ไม่กินโควตา push) · ก่อนด่านลงทะเบียนเพราะในกลุ่มที่ผูกแล้วใครก็ใช้ได้ ──
             // กลุ่มที่ยังไม่ผูก (tenantId ว่าง) และแชทส่วนตัวที่ยังไม่ผูก (me ว่าง) ไม่เข้าตรงนี้ → ไปด่านลงทะเบียนตามเดิม
             if (['สรุปการปิดกะ', 'สรุปปิดกะ', 'ปิดกะ'].includes(lower) && (src === 'user' ? !!me : !!tenantId)) {
@@ -2488,8 +2488,8 @@ class LineBotService {
                 return
             }
 
-            // ── โหมด demo (และ "สลับทดสอบ" ของ Master): เลือกตำแหน่งจำลองหรือบัญชีทดสอบร้านสาธิต ──
-            if (me && (['demo', 'โหมด demo'].includes(lower) || (lower === 'สลับทดสอบ' && mlUser))) {
+            // ── โหมด demo (และชื่อเล่น "สลับทดสอบ"): เฉพาะ Master ในแชทส่วนตัว ──
+            if (me && isDemoCmd) {
                 const deny = (t: string) => client.replyMessage(event.replyToken, { type: 'text', text: t })
                 if (src !== 'user') await deny('โหมด demo ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ')
                 else if (!mlUser && me.realRole !== 'MASTER') await deny('🔒 โหมด demo ใช้ได้เฉพาะ Master ครับ')
@@ -2505,20 +2505,6 @@ class LineBotService {
                         quickReply: { items: [btn(ROLE_LABEL.ADMIN, 'ADMIN'), btn(ROLE_LABEL.MANAGER, 'MANAGER'), btn(ROLE_LABEL.USER, 'USER'), btn(ROLE_LABEL.GUEST, 'GUEST'), btn('กลับเป็น Master', 'off')] },
                     })
                 }
-                return
-            }
-
-            // ── ร้านสาธิต Testshop (ผู้ใช้ทั่วไป): สลับ LINE นี้ระหว่างบัญชีทดสอบ พนักงาน (EMP-TEST) ↔ ผู้จัดการ (MGR-TEST) ──
-            if (me && tenantId === 'Testshop' && src === 'user' && lower === 'สลับทดสอบ') {
-                const to = this.findTestAccountSwap(event.source.userId)
-                if (!to) {
-                    await client.replyMessage(event.replyToken, { type: 'text', text: 'คำสั่งนี้ใช้ได้เฉพาะบัญชีทดสอบของร้านสาธิตครับ' })
-                    return
-                }
-                getDb().prepare('UPDATE line_user_mappings SET user_id = ?, role = ?, demo_role = NULL WHERE tenant_id = ? AND line_user_id = ?')
-                    .run(to.user_id, to.role, tenantId, event.source.userId)
-                await richMenus.syncUser(tenantId, client.token, event.source.userId, menuKeyForRole(to.role))
-                await client.replyMessage(event.replyToken, { type: 'text', text: `ตอนนี้เป็น: ${to.name} (${ROLE_LABEL[to.role] ?? to.role})\nพิมพ์ สลับทดสอบ เพื่อสลับกลับ` })
                 return
             }
 
