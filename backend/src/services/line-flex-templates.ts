@@ -1020,9 +1020,10 @@ export const flexTemplates = {
     // ─── Samsung One UI 9 Style: สรุปปิดกะ → LINE ส่วนตัวของ Admin ─────────────
     // สีจาก Phopy Design System (indigo/mango/sand/ink) · แบบร่างที่เจ้าของเลือก: Desktop/pos-shift-line-mockup.html
     shiftCloseCard: (s: {
-        shiftNumber: string; shopName: string; openedAt: string; closedAt: string; closedByName: string
+        shiftNumber: string; shopName: string; status?: 'OPEN' | 'CLOSED'
+        openedAt: string; closedAt: string | null; openedByName?: string; closedByName: string
         billCount: number; totalRevenue: number; cashRevenue: number; bankRevenue: number
-        expectedCash: number; countedCash: number; difference: number
+        expectedCash: number; countedCash: number | null; difference: number | null
         topSales: { name: string; qty: number; amount: number }[]
         buys: { total: number; top: { label: string; sub: string; amount: number }[] }
         alerts: { voids: number; itemVoids: number; discountTotal: number }
@@ -1035,9 +1036,15 @@ export const flexTemplates = {
             danger: '#DC2626', danger50: '#FEE2E2', success: '#16A34A', success50: '#DCFCE7',
         }
         const baht = (n: number) => `฿${(Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
-        const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })
-        const diff = s.difference
-        const drawer = diff < 0 ? { bg: C.danger50, pill: C.danger, text: `🔴 ขาด ${baht(-diff)}` }
+        const hhmm = (iso: string) => {
+            const norm = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso
+            return new Date(norm).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })
+        }
+        const isOpen = s.status === 'OPEN' || s.countedCash === null || s.difference === null
+        const diff = s.difference ?? 0
+        const drawer = isOpen
+            ? { bg: C.sand100, pill: C.ink500, text: '⏳ ยังไม่นับ' }
+            : diff < 0 ? { bg: C.danger50, pill: C.danger, text: `🔴 ขาด ${baht(-diff)}` }
             : diff > 0 ? { bg: C.mango50, pill: C.mango600, text: `🟠 เกิน ${baht(diff)}` }
             : { bg: C.success50, pill: C.success, text: '🟢 ตรงพอดี' }
         const pad = (all: string) => ({ paddingAll: all })
@@ -1109,15 +1116,20 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
             : ''
         return {
             type: 'flex',
-            altText: (`🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล)${deliveryText} · ส่วนลดรวม ${baht(s.alerts.discountTotal)} · ${drawer.text}`).slice(0, 400),
+            altText: (isOpen
+                ? `🟢 กะเปิดอยู่ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล)${deliveryText} · ส่วนลดรวม ${baht(s.alerts.discountTotal)} · ควรมีในลิ้นชัก ${baht(s.expectedCash)} (ยังไม่นับ)`
+                : `🔒 ปิดกะ ${s.shiftNumber}${s.shopName ? ` · ${s.shopName}` : ''} · ขาย ${baht(s.totalRevenue)} (${s.billCount} บิล)${deliveryText} · ส่วนลดรวม ${baht(s.alerts.discountTotal)} · ${drawer.text}`
+            ).slice(0, 400),
             contents: {
                 type: 'bubble', size: 'mega',
                 header: {
                     type: 'box', layout: 'vertical', backgroundColor: C.indigo, ...pad('18px'), spacing: 'xs',
                     contents: [
-                        { type: 'text', text: '🔒 ปิดกะแล้ว', size: 'xxs', weight: 'bold', color: '#DDE1FD' },
+                        { type: 'text', text: isOpen ? '🟢 กะกำลังเปิดอยู่ (ยังไม่ปิดกะ)' : '🔒 ปิดกะแล้ว', size: 'xxs', weight: 'bold', color: '#DDE1FD' },
                         { type: 'text', text: s.shiftNumber, size: 'lg', weight: 'bold', color: '#FFFFFF' },
-                        { type: 'text', text: [s.shopName, `${hhmm(s.openedAt)} – ${hhmm(s.closedAt)}`, s.closedByName && `ปิดโดย ${s.closedByName}`].filter(Boolean).join(' · '),
+                        { type: 'text', text: isOpen
+                            ? [s.shopName, `เปิด ${hhmm(s.openedAt)} – ปัจจุบัน`, s.openedByName && `เปิดโดย ${s.openedByName}`].filter(Boolean).join(' · ')
+                            : [s.shopName, `${hhmm(s.openedAt)} – ${hhmm(s.closedAt!)}`, s.closedByName && `ปิดโดย ${s.closedByName}`].filter(Boolean).join(' · '),
                           size: 'xxs', color: '#DDE1FD', wrap: true },
                     ],
                 },
@@ -1146,18 +1158,21 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
                             ] },
                         ] },
                         { type: 'box', layout: 'vertical', backgroundColor: drawer.bg, cornerRadius: '18px', ...pad('12px'), margin: 'md', contents: [
-                            { type: 'text', text: '💰 เงินในลิ้นชัก · ควรมี → นับได้', size: 'xxs', color: C.ink500, weight: 'bold' },
+                            { type: 'text', text: isOpen ? '💰 เงินในลิ้นชัก (ยังไม่ปิดกะ)' : '💰 เงินในลิ้นชัก · ควรมี → นับได้', size: 'xxs', color: C.ink500, weight: 'bold' },
                             { type: 'box', layout: 'horizontal', alignItems: 'center', margin: 'xs', contents: [
-                                { type: 'text', text: `${baht(s.expectedCash)} → ${baht(s.countedCash)}`, size: 'md', weight: 'bold', color: C.ink900, flex: 1 },
+                                { type: 'text', text: isOpen ? `ควรมี ${baht(s.expectedCash)} · ยังไม่นับ` : `${baht(s.expectedCash)} → ${baht(s.countedCash!)}`, size: 'md', weight: 'bold', color: C.ink900, flex: 1 },
                                 { type: 'box', layout: 'vertical', flex: 0, backgroundColor: drawer.pill, cornerRadius: 'xxl',
                                   paddingStart: '10px', paddingEnd: '10px', paddingTop: '4px', paddingBottom: '4px',
                                   contents: [{ type: 'text', text: drawer.text, size: 'xs', weight: 'bold', color: '#FFFFFF' }] },
                             ] },
                         ] },
                         section('🍽️ ขายดีสุด 5 อันดับ', 'ตามยอดเงิน', rankList(sales, C.indigo50, C.indigo, sales[0]?.amount || 0), 'ไม่มีบิลที่ชำระในกะนี้'),
-                        ...(deliveryRows.length ? [
-                            section('🛵 ยอด Delivery / ส่วนลด > 20%', `รวม ${s.deliveryDiscounts!.reduce((t, d) => t + d.count, 0)} บิล`, deliveryRows, '')
-                        ] : []),
+                        section(
+                            '🛵 ยอด Delivery / ส่วนลด > 20%',
+                            deliveryRows.length ? `รวม ${s.deliveryDiscounts!.reduce((t, d) => t + d.count, 0)} บิล` : '0 บิล',
+                            deliveryRows,
+                            'ไม่มีรายการแพลตฟอร์มในกะนี้',
+                        ),
                         section('🛒 ซื้อและเบิกในกะนี้', `รวม ${baht(s.buys.total)}`, buyRankRows, 'ไม่มีการซื้อหรือเบิกในกะนี้'),
                         ...(chips.length ? [{ type: 'box', layout: 'vertical', margin: 'xl', spacing: 'xs', contents: chips.map(c => ({
                             type: 'box', layout: 'horizontal', contents: [{ type: 'box', layout: 'vertical', flex: 0, backgroundColor: C.sand100, cornerRadius: 'xxl',
@@ -1354,6 +1369,12 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
             unit: string | null
             price: number | null
         }[]
+        recipeIngredients?: {
+            name: string
+            date: string | null
+            unit: string | null
+            price: number | null
+        }[]
     }) => {
         const dmy = (ymd: string) => {
             const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
@@ -1361,6 +1382,9 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
         }
         const fmt = (n: number) => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })
         const onHand = `${fmt(d.quantity)} ${d.unit || ''}`.trim()
+        const recipe = d.recipeIngredients ?? []
+        const hasRecipe = recipe.length > 0
+        const shownRecipe = recipe.slice(0, 15)
         return card({
             alt: `📦 ${d.name} (${d.sku}) · คงเหลือ ${onHand}`,
             kicker: d.company || 'Phopy ERP',
@@ -1385,9 +1409,25 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
                         )
                     })
                     : [txt('ยังไม่มีประวัติซื้อ-ขาย', { size: 'xs', color: P.ink500, margin: 'sm' })]),
-                ...(d.lines.length && !d.lines.some(r => r.side === 'buy')
+                ...(d.lines.length && !d.lines.some(r => r.side === 'buy') && !hasRecipe
                     ? [txt('ไม่มีใบรับซื้อของรายการนี้ จึงไม่มีราคาซื้อ', { size: 'xs', color: P.ink500, margin: 'md', wrap: true })]
                     : []),
+                ...(hasRecipe ? [
+                    sectionTitle('วัตถุดิบในสูตร (ราคาล่าสุด)'),
+                    ...shownRecipe.map(ing => {
+                        const hasGr = !!ing.date
+                        const priceStr = !hasGr
+                            ? 'ไม่มีใบรับซื้อ'
+                            : (ing.price === null || ing.price === undefined
+                                ? 'ไม่มีราคา'
+                                : (ing.unit ? `${baht(ing.price)}/${ing.unit}` : baht(ing.price)))
+                        const color = hasGr && ing.price !== null && ing.price !== undefined ? P.success : P.ink500
+                        return listRow(ing.name, hasGr ? dmy(ing.date!) : '', priceStr, color)
+                    }),
+                    ...(recipe.length > 15
+                        ? [txt(`และอีก ${recipe.length - 15} รายการ`, { size: 'xs', color: P.ink500, margin: 'sm' })]
+                        : []),
+                ] : []),
                 txt('ราคาตามเอกสาร อาจรวมหรือไม่รวม VAT', { size: 'xxs', color: P.ink500, margin: 'lg', wrap: true }),
             ],
         })

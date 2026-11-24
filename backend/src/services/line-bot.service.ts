@@ -804,7 +804,7 @@ class LineBotService {
                 this.saveGroup(row.tenant_id, groupId)
                 db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
             })()
-            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · ถ้าจะให้กลุ่มพิมพ์ /สรุป ดูยอด POS ให้ Master พิมพ์ /ผูก pos tenant <รหัส>`
+            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · ถ้าจะให้กลุ่มพิมพ์ /สรุป ดูสรุปกะ/ยอด POS ให้ Master พิมพ์ /ผูก pos tenant <รหัส>`
         }
         await client.replyMessage(replyToken, { type: 'text', text })
     }
@@ -824,6 +824,68 @@ class LineBotService {
         db.prepare(
             'UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE tenant_id = ? AND group_id = ?'
         ).run(tenantId, groupId)
+    }
+
+    private toThaiDayStr(ts: string): string {
+        const s = String(ts || '').trim()
+        const norm = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s
+        return thaiDateStr(norm)
+    }
+
+    private buildShiftSummaryMessages(
+        tenantId: string,
+        day: string,
+        opts: { includeOpen: boolean; emptyText: string; overflowText: (total: number, appUrl: string) => string }
+    ): any[] {
+        const db = getDb()
+        const closedRows = db.prepare(`
+            SELECT id, closed_at FROM pos_shifts
+            WHERE tenant_id = ? AND status = 'CLOSED' AND closed_at IS NOT NULL
+              AND closed_at >= date(?, '-1 day') AND closed_at < date(?, '+2 day')
+            ORDER BY closed_at ASC, id ASC
+        `).all(tenantId, day, day) as { id: string; closed_at: string }[]
+        const shiftIds = closedRows.filter(r => this.toThaiDayStr(r.closed_at) === day).map(r => r.id)
+
+        if (opts.includeOpen) {
+            const openRows = db.prepare(`
+                SELECT id FROM pos_shifts
+                WHERE tenant_id = ? AND status = 'OPEN'
+                ORDER BY opened_at ASC, id ASC
+            `).all(tenantId) as { id: string }[]
+            shiftIds.push(...openRows.map(r => r.id))
+        }
+
+        if (!shiftIds.length) return [{ type: 'text', text: opts.emptyText }]
+
+        const appUrl = process.env.APP_URL ?? 'https://erp.phopy.net'
+        const total = shiftIds.length
+        const shown = total > 5 ? shiftIds.slice(-4) : shiftIds
+        const messages: any[] = shown
+            .map(id => {
+                const s = buildShiftSummary(tenantId, id)
+                return s ? flexTemplates.shiftCloseCard({ ...s, webUrl: appUrl }) : null
+            })
+            .filter(Boolean)
+        if (total > 5) messages.push({ type: 'text', text: opts.overflowText(total, appUrl) })
+        return messages
+    }
+
+    private buildSummaryReply(
+        tenantId: string,
+        period: 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้',
+        src: 'user' | 'group' | 'room'
+    ): any | any[] {
+        if (period === 'เดือนนี้') return this.buildPosCard(tenantId, 'เดือนนี้')
+        if (src !== 'user' && !this.shiftToGroups(tenantId)) return this.buildPosCard(tenantId, period)
+
+        const today = thaiToday()
+        const day = period === 'เมื่อวาน' ? addDaysStr(today, -1) : today
+        const includeOpen = period === 'วันนี้'
+        return this.buildShiftSummaryMessages(tenantId, day, {
+            includeOpen,
+            emptyText: period === 'เมื่อวาน' ? 'เมื่อวานไม่มีกะที่ปิดครับ' : 'วันนี้ยังไม่มีกะที่เปิดหรือปิดครับ',
+            overflowText: (n, appUrl) => `${period}มีทั้งหมด ${n} กะ (แสดง 4 กะล่าสุด) · ดูทั้งหมดในเว็บ ${appUrl}`,
+        })
     }
 
     private buildPosCard(tenantId: string, period: 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้') {
@@ -911,11 +973,12 @@ class LineBotService {
                 type: 'text',
                 text: [
                     '📋 คำสั่ง Master',
-                    '/สรุป หรือ /pos [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — ยอดขาย POS',
+                    '/สรุป [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — สรุปกะ (ปิดกะ + กะที่เปิดอยู่) · เดือนนี้ดูยอด POS',
+                    '/pos [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — ยอดขาย POS',
                     '/รายได้ [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — รายได้ตามบัญชี + POS',
                     '/บริษัท — ดูรหัส tenant ทุกบริษัท (แชทส่วนตัว)',
                     '/บริษัท tenant <รหัส> — สลับบริษัทที่ดูอยู่',
-                    '/ผูก pos tenant <รหัส> — ผูกกลุ่ม ให้ทุกคนในกลุ่มพิมพ์ /สรุป ดูยอด POS ได้ (ในกลุ่ม)',
+                    '/ผูก pos tenant <รหัส> — ผูกกลุ่ม ให้ทุกคนในกลุ่มพิมพ์ /สรุป ดูสรุปกะ/ยอด POS ได้ (ในกลุ่ม)',
                     '/เลิกผูก pos — เลิกผูกกลุ่มนี้ (ในกลุ่ม)',
                     '/สินค้า <ชื่อ> — คงเหลือ + ประวัติซื้อ-ขาย (แชทส่วนตัว)',
                     '/อนุมัติ · /อนุมัติ <เลข> · /ไม่อนุมัติ <เลข> <เหตุผล> — คำขอ HR ภายใน 30 นาที (แชทส่วนตัว)',
@@ -925,14 +988,15 @@ class LineBotService {
             return true
         }
 
-        const posMatch = text.match(/^\/(?:pos|สรุป)(?:\s+([\s\S]*))?$/i)
-        const revMatch = !posMatch ? text.match(/^\/รายได้(?:\s+([\s\S]*))?$/) : null
-        if (posMatch || revMatch) {
-            const isPos = !!posMatch
-            const cmd = isPos ? '/pos' : '/รายได้'
-            const rest = ((posMatch ?? revMatch)![1] ?? '').trim()
+        const sumMatch = text.match(/^\/สรุป(?:\s+([\s\S]*))?$/)
+        const posMatch = !sumMatch ? text.match(/^\/pos(?:\s+([\s\S]*))?$/i) : null
+        const revMatch = !sumMatch && !posMatch ? text.match(/^\/รายได้(?:\s+([\s\S]*))?$/) : null
+        if (sumMatch || posMatch || revMatch) {
+            const isPosLike = !!(sumMatch || posMatch)
+            const cmd = sumMatch ? '/สรุป' : posMatch ? '/pos' : '/รายได้'
+            const rest = ((sumMatch ?? posMatch ?? revMatch)![1] ?? '').trim()
             const pm = rest.match(/^(วันนี้|เมื่อวาน|เดือนนี้)(?:\s+([\s\S]*))?$/)
-            const period = (pm ? pm[1] : (isPos ? 'วันนี้' : 'เดือนนี้')) as 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้'
+            const period = (pm ? pm[1] : (isPosLike ? 'วันนี้' : 'เดือนนี้')) as 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้'
             const q = (pm ? (pm[2] ?? '') : rest).trim()
             const cmdPrefix = pm ? `${cmd} ${period}` : cmd
 
@@ -950,7 +1014,9 @@ class LineBotService {
                 targetId = picked.tenant_id
             }
 
-            if (isPos) {
+            if (sumMatch) {
+                await client.replyMessage(replyToken, this.buildSummaryReply(targetId, period, src))
+            } else if (posMatch) {
                 await client.replyMessage(replyToken, this.buildPosCard(targetId, period))
             } else {
                 const today = thaiToday()
@@ -1005,7 +1071,7 @@ class LineBotService {
                 `✅ ผูกกลุ่มนี้กับ ${picked.name || picked.tenant_id} แล้ว`,
                 `🏷️ tenant ${picked.tenant_id}`,
                 ...(movedFrom ? [`↪️ ย้ายมาจาก: ${movedFrom}`] : []),
-                '💬 ทุกคนในกลุ่มพิมพ์ /สรุป ดูยอด POS ของบริษัทนี้ได้ (ไม่กินโควตา)',
+                '💬 ทุกคนในกลุ่มพิมพ์ /สรุป ดูสรุปกะของบริษัทนี้ได้ (ไม่กินโควตา · ต้องเปิดสิทธิ์สรุปปิดกะในกลุ่มที่ตั้งค่า ไม่งั้นแสดงยอด POS)',
                 '🕘 สรุปผู้บริหาร 09:00 ส่งเข้าแชทส่วนตัวของคุณ ไม่ส่งเข้ากลุ่ม',
             ]
             await client.replyMessage(replyToken, { type: 'text', text: lines.join('\n') })
@@ -1767,6 +1833,7 @@ class LineBotService {
                 quantity: hist.item.quantity,
                 unit: hist.item.unit,
                 lines: hist.lines,
+                recipeIngredients: hist.recipeIngredients,
             }))
         }
 
@@ -1868,23 +1935,11 @@ class LineBotService {
             await client.replyMessage(replyToken, text('🔒 สรุปปิดกะดูได้เฉพาะหัวหน้าและผู้ดูแล'))
             return
         }
-        const appUrl = process.env.APP_URL ?? 'https://erp.phopy.net'
-        const card = (id: string) => {
-            const s = buildShiftSummary(tenantId, id)
-            return s ? flexTemplates.shiftCloseCard({ ...s, webUrl: appUrl }) : null
-        }
-        // ponytail: อ่านล่าสุด 200 กะแล้วกรองวันในโค้ด (วันไทยแปลงด้วย thaiDateStr เหมือน buildShiftSummary)
-        const rows = (getDb().prepare(`SELECT id, closed_at FROM pos_shifts WHERE tenant_id = ? AND status = 'CLOSED' AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 200`)
-            .all(tenantId) as { id: string; closed_at: string }[]).reverse()
-        const today = thaiDateStr()
-        const todays = rows.filter(r => thaiDateStr(r.closed_at) === today)
-        if (!todays.length) {
-            await client.replyMessage(replyToken, text('วันนี้ยังไม่มีกะที่ปิดครับ'))
-            return
-        }
-        const shown = todays.length > 5 ? todays.slice(-4) : todays
-        const messages: any[] = shown.map(r => card(r.id)).filter(Boolean)
-        if (todays.length > 5) messages.push(text(`วันนี้ปิดไปแล้ว ${todays.length} กะ · ดูทั้งหมดในเว็บ ${appUrl}`))
+        const messages = this.buildShiftSummaryMessages(tenantId, thaiToday(), {
+            includeOpen: false,
+            emptyText: 'วันนี้ยังไม่มีกะที่ปิดครับ',
+            overflowText: (n, appUrl) => `วันนี้ปิดไปแล้ว ${n} กะ · ดูทั้งหมดในเว็บ ${appUrl}`,
+        })
         await client.replyMessage(replyToken, messages)
     }
 
@@ -2202,7 +2257,7 @@ class LineBotService {
                 const sum = text.match(/^\/สรุป(?:\s+(วันนี้|เมื่อวาน|เดือนนี้))?$/)
                 if (sum && src !== 'user' && tenantId && getDb().prepare('SELECT 1 FROM line_group_mappings WHERE group_id = ? AND tenant_id = ? AND is_active = 1 AND pos_daily = 1')
                     .get(event.source.groupId ?? event.source.roomId, tenantId)) {
-                    await client.replyMessage(event.replyToken, this.buildPosCard(tenantId, (sum[1] ?? 'วันนี้') as 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้'))
+                    await client.replyMessage(event.replyToken, this.buildSummaryReply(tenantId, (sum[1] ?? 'วันนี้') as 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้', src))
                     return
                 }
             }

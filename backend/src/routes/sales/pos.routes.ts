@@ -7,7 +7,7 @@ import { ACC } from '../../config/accountCodes'
 import { postJournal, getOrCreateAccount, JournalError } from '../../services/accounting.service'
 import { cancelPosBill } from '../../services/posBillCancel.service'
 import { gateOrCreate, recordAutoAction } from '../../services/approvalGate.service'
-import { buildShiftSummary } from '../../services/posShiftSummary.service'
+import { buildShiftSummary, getShiftCashMovementTotals, getShiftSalesSummary, calcShiftExpectedCash } from '../../services/posShiftSummary.service'
 import posStockService from '../../services/pos-stock.service'
 import { buildShiftCloseJournal } from '../../services/posShiftRepair.service'
 import { lineBotService } from '../../services/line-bot.service'
@@ -44,17 +44,6 @@ function postSimpleJournal(
   return entryId
 }
 
-// Sum PAID_OUT/CASH_IN drawer movements recorded during a shift.
-function getShiftCashMovementTotals(tenantId: string, shiftId: string): { cashIn: number; paidOut: number } {
-  const row = db.prepare(`
-    SELECT
-      COALESCE(SUM(CASE WHEN type = 'CASH_IN' THEN amount ELSE 0 END), 0) as cash_in,
-      COALESCE(SUM(CASE WHEN type = 'PAID_OUT' THEN amount ELSE 0 END), 0) as paid_out
-    FROM pos_shift_cash_movements WHERE tenant_id = ? AND shift_id = ?
-  `).get(tenantId, shiftId) as any
-  return { cashIn: row?.cash_in || 0, paidOut: row?.paid_out || 0 }
-}
-
 /**
  * เงินออกจากลิ้นชักที่ยังไม่มีบิล — Dr 1182 เงินจ่ายจาก POS รอจับคู่บิล / Cr เงินสด
  * ยอดค้างใน 1182 จะถูกปิดตอนบันทึกจ่ายเงินผู้ขายด้วยวิธี "เงินจาก POS" (paySupplier, POS_CASH)
@@ -74,30 +63,6 @@ function recordPosPayoutPending(
   postSimpleJournal(tenantId, userId, thaiDateStr(), 'POS_CASH_MOVEMENT', movementId,
     `${label} กะ ${shift.shift_number} - ${reason}`, pendingAccId, getOrCreateAccount(tenantId, ACC.CASH), amount)
   return movementId
-}
-
-// Sales inside a shift: prefer bills tagged with this shift_id (set at bill
-// creation once a shift is open); fall back to the old opened_at time-range
-// match for bills created before the shift_id column existed.
-// ยอดเงินสด/โอนรวมยอดต่อบิลก่อน (subquery) — เดิม LEFT JOIN pos_payments ตรง ๆ บิลที่มี payment 2 แถว
-// ถูกนับยอดบิลซ้ำ 2 เท่า · แบ่งยอดบิลตามสัดส่วนที่จ่ายแต่ละช่องทาง (CASH = เงินสด, อื่น ๆ = ธนาคาร เหมือนเดิม)
-// แถวซ้ำ/จ่ายแยกหลายช่องทางจึงรวมได้ไม่เกินยอดบิล · บิลไม่มี payment เลย = ไม่เข้าทั้งสองฝั่ง (ผู้ปิดกะเตือนเอง)
-function getShiftSalesSummary(tenantId: string, shift: { id: string; opened_at: string }) {
-  return db.prepare(`
-    SELECT
-      COUNT(*) as bill_count,
-      COALESCE(SUM(x.total_amount), 0) as total_revenue,
-      COALESCE(SUM(CASE WHEN x.paid > 0 THEN x.total_amount * x.cash_paid / x.paid ELSE 0 END), 0) as cash_revenue,
-      COALESCE(SUM(CASE WHEN x.paid > 0 THEN x.total_amount * (x.paid - x.cash_paid) / x.paid ELSE 0 END), 0) as bank_revenue
-    FROM (
-      SELECT b.total_amount,
-        (SELECT SUM(p.amount) FROM pos_payments p WHERE p.bill_id = b.id) as paid,
-        (SELECT SUM(CASE WHEN p.payment_method = 'CASH' THEN p.amount ELSE 0 END) FROM pos_payments p WHERE p.bill_id = b.id) as cash_paid
-      FROM pos_running_bills b
-      WHERE b.tenant_id = ? AND b.status = 'PAID'
-        AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at >= ?))
-    ) x
-  `).get(tenantId, shift.id, shift.opened_at) as any
 }
 
 // ============================================
@@ -699,7 +664,7 @@ router.post('/pos-shifts/:id/close', (req: Request, res: Response) => {
         console.warn(`⚠️ ปิดกะ ${shift.shift_number}: ยอดบิล ${unclassified.toFixed(2)} บาทไม่มีรายการรับชำระ (pos_payments) — ถูกนับเป็นเงินสด`)
       }
 
-      expectedCash = r2((shift.opening_cash || 0) + (sales.cash_revenue || 0) + movements.cashIn - movements.paidOut)
+      expectedCash = calcShiftExpectedCash(shift.opening_cash || 0, sales.cash_revenue || 0, movements.cashIn, movements.paidOut)
       cashDifference = r2(closing_cash_counted - expectedCash)
 
       // รวบรวม notes: ถ้ามีรายการค่าใช้จ่าย ให้บันทึกลง notes ของกะด้วยเพื่อใช้อ้างอิงในรายงาน

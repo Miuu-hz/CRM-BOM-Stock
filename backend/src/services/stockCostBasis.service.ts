@@ -193,11 +193,174 @@ export interface ItemHistoryRow {
   price: number | null
 }
 
+export interface RecipeIngredientPrice {
+  stockItemId: string
+  name: string
+  sku: string
+  date: string | null
+  unit: string | null
+  price: number | null
+}
+
 export interface ItemHistory {
   item: { id: string; sku: string; name: string; quantity: number; unit: string } | null
   buys: ItemHistoryRow[]
   sells: ItemHistoryRow[]
   lines: ItemHistoryRow[]
+  recipeIngredients?: RecipeIngredientPrice[]
+}
+
+// แปลงวันที่/timestamp เป็นวันไทย YYYY-MM-DD (SQLite CURRENT_TIMESTAMP เป็น UTC แบบไม่มี T/Z)
+function toThaiDay(v: string | null | undefined): string {
+  const s = String(v ?? '').trim()
+  if (!s) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s
+  const ms = Date.parse(iso)
+  return Number.isFinite(ms) ? new Date(ms + 7 * 3600_000).toISOString().slice(0, 10) : s.slice(0, 10)
+}
+
+function queryItemBuys(tenantId: string, stockItemId: string, limit: number): ItemHistoryRow[] {
+  const buyRaw = db.prepare(`
+    SELECT gr.receipt_date AS date, gr.gr_number AS doc, s.name AS party,
+           gri.accepted_qty AS qty, poi.unit AS unit, poi.unit_price AS price
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.id = gri.goods_receipt_id
+      LEFT JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
+      LEFT JOIN suppliers s ON s.id = gr.supplier_id
+     WHERE COALESCE(NULLIF(gri.stock_item_id, ''), gri.material_id) = ?
+       AND gr.tenant_id = ?
+       AND gr.status = 'CONFIRMED'
+     ORDER BY gr.receipt_date DESC, gr.gr_number DESC
+     LIMIT ?
+  `).all(stockItemId, tenantId, limit) as any[]
+
+  return buyRaw.map(r => ({
+    side: 'buy',
+    kind: 'gr',
+    date: toThaiDay(r.date),
+    doc: r.doc,
+    party: r.party ?? null,
+    qty: Number(r.qty) || 0,
+    unit: r.unit ?? null,
+    price: r.price === null || r.price === undefined ? null : Number(r.price),
+  }))
+}
+
+function activeBomOf(tenantId: string, productId: string): string | null {
+  const row = db.prepare(`
+    SELECT id FROM boms
+     WHERE tenant_id = ? AND product_id = ? AND status = 'ACTIVE'
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1
+  `).get(tenantId, productId) as { id: string } | undefined
+  return row?.id ?? null
+}
+
+function resolveRecipeBomId(tenantId: string, stockItemId: string): string | null {
+  const menuBom = db.prepare(`
+    SELECT b.id
+      FROM pos_menu_configs pmc
+      JOIN boms b ON b.id = pmc.bom_id AND b.tenant_id = pmc.tenant_id
+     WHERE pmc.tenant_id = ? AND pmc.product_id = ?
+       AND pmc.bom_id IS NOT NULL AND pmc.bom_id != ''
+     LIMIT 1
+  `).get(tenantId, stockItemId) as { id: string } | undefined
+  if (menuBom?.id) return menuBom.id
+  return activeBomOf(tenantId, stockItemId)
+}
+
+function getRecipeIngredientsWithLatestPrice(tenantId: string, stockItemId: string): RecipeIngredientPrice[] {
+  const rootBomId = resolveRecipeBomId(tenantId, stockItemId)
+  if (!rootBomId) return []
+
+  const MAX_BOM_DEPTH = 4
+  const seenItems = new Set<string>()
+  const out: RecipeIngredientPrice[] = []
+  const buyCache = new Map<string, ItemHistoryRow | null>()
+
+  const latestBuy = (id: string): ItemHistoryRow | null => {
+    if (!buyCache.has(id)) {
+      buyCache.set(id, queryItemBuys(tenantId, id, 1)[0] ?? null)
+    }
+    return buyCache.get(id)!
+  }
+
+  const pushItem = (id: string, name: string, sku: string) => {
+    if (!id || seenItems.has(id)) return
+    seenItems.add(id)
+    const b = latestBuy(id)
+    out.push({
+      stockItemId: id,
+      name,
+      sku,
+      date: b ? b.date : null,
+      unit: b ? b.unit : null,
+      price: b ? b.price : null,
+    })
+  }
+
+  const itemsStmt = db.prepare(`
+    SELECT bi.item_type, bi.material_id, bi.child_bom_id,
+           si.name AS mat_name, si.sku AS mat_sku,
+           cb.id AS cb_valid_id, cb.product_id AS cb_product_id,
+           csi.name AS cb_prod_name, csi.sku AS cb_prod_sku
+      FROM bom_items bi
+      LEFT JOIN stock_items si ON si.id = bi.material_id AND si.tenant_id = bi.tenant_id
+      LEFT JOIN boms cb ON cb.id = bi.child_bom_id AND cb.tenant_id = bi.tenant_id
+      LEFT JOIN stock_items csi ON csi.id = cb.product_id AND csi.tenant_id = cb.tenant_id
+     WHERE bi.bom_id = ? AND bi.tenant_id = ?
+     ORDER BY bi.sort_order ASC, bi.id ASC
+  `)
+
+  const walk = (bomId: string, depth: number, path: Set<string>): boolean => {
+    if (path.has(bomId)) return false
+    const nextPath = new Set(path)
+    nextPath.add(bomId)
+
+    const rows = itemsStmt.all(bomId, tenantId) as any[]
+    let added = false
+
+    for (const row of rows) {
+      if (row.item_type === 'CHILD_BOM' && row.cb_valid_id) {
+        if (depth < MAX_BOM_DEPTH && !nextPath.has(row.cb_valid_id)) {
+          const subAdded = walk(row.cb_valid_id, depth + 1, nextPath)
+          if (subAdded) {
+            added = true
+          } else if (row.cb_product_id && row.cb_prod_name) {
+            pushItem(row.cb_product_id, row.cb_prod_name, row.cb_prod_sku ?? '')
+            added = true
+          }
+        } else if (!nextPath.has(row.cb_valid_id) && row.cb_product_id && row.cb_prod_name) {
+          pushItem(row.cb_product_id, row.cb_prod_name, row.cb_prod_sku ?? '')
+          added = true
+        }
+      } else if (row.material_id && row.mat_name) {
+        if (latestBuy(row.material_id)) {
+          pushItem(row.material_id, row.mat_name, row.mat_sku ?? '')
+          added = true
+        } else {
+          const subBomId = depth < MAX_BOM_DEPTH ? activeBomOf(tenantId, row.material_id) : null
+          if (subBomId && !nextPath.has(subBomId)) {
+            const subAdded = walk(subBomId, depth + 1, nextPath)
+            if (subAdded) {
+              added = true
+            } else {
+              pushItem(row.material_id, row.mat_name, row.mat_sku ?? '')
+              added = true
+            }
+          } else {
+            pushItem(row.material_id, row.mat_name, row.mat_sku ?? '')
+            added = true
+          }
+        }
+      }
+    }
+    return added
+  }
+
+  walk(rootBomId, 0, new Set())
+  return out
 }
 
 /** ประวัติซื้อ-ขายของสินค้า 1 ตัว (อ่านอย่างเดียว) — ใช้กับคำสั่ง /สินค้า ใน LINE */
@@ -217,41 +380,8 @@ export function getItemHistory(tenantId: string, stockItemId: string): ItemHisto
     unit: (itemRow.unit ?? '') as string,
   }
 
-  // แปลงวันที่/timestamp เป็นวันไทย YYYY-MM-DD (SQLite CURRENT_TIMESTAMP เป็น UTC แบบไม่มี T/Z)
-  const toThaiDay = (v: string | null | undefined): string => {
-    const s = String(v ?? '').trim()
-    if (!s) return ''
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-    const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s
-    const ms = Date.parse(iso)
-    return Number.isFinite(ms) ? new Date(ms + 7 * 3600_000).toISOString().slice(0, 10) : s.slice(0, 10)
-  }
-
   // ฝั่งซื้อ: ใช้ gr.receipt_date (วันรับจริงต่างจากวัน movement ในข้อมูลจริง) และไม่ตัดแถวที่ไม่มี stock_qty ทิ้ง
-  const buyRaw = db.prepare(`
-    SELECT gr.receipt_date AS date, gr.gr_number AS doc, s.name AS party,
-           gri.accepted_qty AS qty, poi.unit AS unit, poi.unit_price AS price
-      FROM goods_receipt_items gri
-      JOIN goods_receipts gr ON gr.id = gri.goods_receipt_id
-      LEFT JOIN purchase_order_items poi ON poi.id = gri.purchase_order_item_id
-      LEFT JOIN suppliers s ON s.id = gr.supplier_id
-     WHERE COALESCE(NULLIF(gri.stock_item_id, ''), gri.material_id) = ?
-       AND gr.tenant_id = ?
-       AND gr.status = 'CONFIRMED'
-     ORDER BY gr.receipt_date DESC, gr.gr_number DESC
-     LIMIT 10
-  `).all(stockItemId, tenantId) as any[]
-
-  const buys: ItemHistoryRow[] = buyRaw.map(r => ({
-    side: 'buy',
-    kind: 'gr',
-    date: toThaiDay(r.date),
-    doc: r.doc,
-    party: r.party ?? null,
-    qty: Number(r.qty) || 0,
-    unit: r.unit ?? null,
-    price: r.price === null || r.price === undefined ? null : Number(r.price),
-  }))
+  const buys = queryItemBuys(tenantId, stockItemId, 10)
 
   // ฝั่งขาย (ใบสั่งขาย): ไม่เอาใบที่ร่างหรือยกเลิก
   const soRaw = db.prepare(`
@@ -347,5 +477,7 @@ export function getItemHistory(tenantId: string, stockItemId: string): ItemHisto
   const lines = [...buys.slice(0, buyTake), ...sells.slice(0, sellTake)]
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  return { item, buys, sells, lines }
+  const recipeIngredients = buys.length === 0 ? getRecipeIngredientsWithLatestPrice(tenantId, stockItemId) : []
+
+  return { item, buys, sells, lines, ...(recipeIngredients.length ? { recipeIngredients } : {}) }
 }

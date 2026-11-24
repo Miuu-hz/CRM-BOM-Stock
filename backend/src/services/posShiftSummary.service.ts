@@ -9,16 +9,18 @@ import { getLoyaltySettings } from './loyaltySettings'
 export interface ShiftSummary {
   shiftNumber: string
   shopName: string
+  status?: 'OPEN' | 'CLOSED'
   openedAt: string
-  closedAt: string
+  closedAt: string | null
+  openedByName?: string
   closedByName: string
   billCount: number
   totalRevenue: number
   cashRevenue: number
   bankRevenue: number
   expectedCash: number
-  countedCash: number
-  difference: number
+  countedCash: number | null
+  difference: number | null
   topSales: { name: string; qty: number; amount: number }[]
   buys: { total: number; top: { label: string; sub: string; amount: number }[] }
   alerts: { voids: number; itemVoids: number; discountTotal: number }
@@ -27,13 +29,61 @@ export interface ShiftSummary {
 
 const r2 = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100
 
+// Sum PAID_OUT/CASH_IN drawer movements recorded during a shift.
+export function getShiftCashMovementTotals(tenantId: string, shiftId: string): { cashIn: number; paidOut: number } {
+  const row = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'CASH_IN' THEN amount ELSE 0 END), 0) as cash_in,
+      COALESCE(SUM(CASE WHEN type = 'PAID_OUT' THEN amount ELSE 0 END), 0) as paid_out
+    FROM pos_shift_cash_movements WHERE tenant_id = ? AND shift_id = ?
+  `).get(tenantId, shiftId) as any
+  return { cashIn: row?.cash_in || 0, paidOut: row?.paid_out || 0 }
+}
+
+// Sales inside a shift: prefer bills tagged with this shift_id (set at bill
+// creation once a shift is open); fall back to the old opened_at time-range
+// match for bills created before the shift_id column existed.
+// ยอดเงินสด/โอนรวมยอดต่อบิลก่อน (subquery) — เดิม LEFT JOIN pos_payments ตรง ๆ บิลที่มี payment 2 แถว
+// ถูกนับยอดบิลซ้ำ 2 เท่า · แบ่งยอดบิลตามสัดส่วนที่จ่ายแต่ละช่องทาง (CASH = เงินสด, อื่น ๆ = ธนาคาร เหมือนเดิม)
+// แถวซ้ำ/จ่ายแยกหลายช่องทางจึงรวมได้ไม่เกินยอดบิล · บิลไม่มี payment เลย = ไม่เข้าทั้งสองฝั่ง (ผู้ปิดกะเตือนเอง)
+export function getShiftSalesSummary(tenantId: string, shift: { id: string; opened_at: string }): {
+  bill_count: number
+  total_revenue: number
+  cash_revenue: number
+  bank_revenue: number
+} {
+  return db.prepare(`
+    SELECT
+      COUNT(*) as bill_count,
+      COALESCE(SUM(x.total_amount), 0) as total_revenue,
+      COALESCE(SUM(CASE WHEN x.paid > 0 THEN x.total_amount * x.cash_paid / x.paid ELSE 0 END), 0) as cash_revenue,
+      COALESCE(SUM(CASE WHEN x.paid > 0 THEN x.total_amount * (x.paid - x.cash_paid) / x.paid ELSE 0 END), 0) as bank_revenue
+    FROM (
+      SELECT b.total_amount,
+        (SELECT SUM(p.amount) FROM pos_payments p WHERE p.bill_id = b.id) as paid,
+        (SELECT SUM(CASE WHEN p.payment_method = 'CASH' THEN p.amount ELSE 0 END) FROM pos_payments p WHERE p.bill_id = b.id) as cash_paid
+      FROM pos_running_bills b
+      WHERE b.tenant_id = ? AND b.status = 'PAID'
+        AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at >= ?))
+    ) x
+  `).get(tenantId, shift.id, shift.opened_at) as any
+}
+
+export function calcShiftExpectedCash(openingCash: number, cashRevenue: number, cashIn: number, paidOut: number): number {
+  return r2((Number(openingCash) || 0) + (Number(cashRevenue) || 0) + (Number(cashIn) || 0) - (Number(paidOut) || 0))
+}
+
 export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSummary | null {
   const s = db.prepare(`
-    SELECT s.*, u.name AS closed_by_name FROM pos_shifts s
-    LEFT JOIN users u ON u.id = s.closed_by
-    WHERE s.id = ? AND s.tenant_id = ? AND s.status = 'CLOSED'
+    SELECT s.*, uc.name AS closed_by_name, uo.name AS opened_by_name
+    FROM pos_shifts s
+    LEFT JOIN users uc ON uc.id = s.closed_by
+    LEFT JOIN users uo ON uo.id = s.opened_by
+    WHERE s.id = ? AND s.tenant_id = ? AND s.status IN ('CLOSED', 'OPEN')
   `).get(shiftId, tenantId) as any
   if (!s) return null
+  const isOpen = s.status === 'OPEN'
+  const endAt: string = isOpen ? new Date().toISOString() : s.closed_at
   const shop = db.prepare('SELECT name FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
 
   const topSales = (db.prepare(`
@@ -45,7 +95,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
 
   // ฝั่งซื้อ = ใบรับของที่รับในช่วงวันของกะ + ใบสั่งซื้อที่อนุมัติระหว่างกะ (ที่ยังไม่มีใบรับของในรายการ) + เงินออกลิ้นชัก
   // ponytail: มูลค่าใบรับของ = จำนวนรับ × ราคาในใบสั่งซื้อ ไม่รวม VAT/ส่วนลดท้ายบิล — เป็นตัวเลขแจ้งเตือน ไม่ใช่ตัวเลขบัญชี
-  const fromDate = thaiDateStr(s.opened_at), toDate = thaiDateStr(s.closed_at)
+  const fromDate = thaiDateStr(s.opened_at), toDate = thaiDateStr(endAt)
   const grs = db.prepare(`
     SELECT gr.gr_number, gr.purchase_order_id, sp.name AS supplier,
       COALESCE(SUM(gri.received_qty * poi.unit_price), 0) AS amount
@@ -61,7 +111,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     SELECT po.id, po.po_number, po.total_amount AS amount, sp.name AS supplier FROM purchase_orders po
     LEFT JOIN suppliers sp ON sp.id = po.supplier_id
     WHERE po.tenant_id = ? AND po.approved_at BETWEEN ? AND ?
-  `).all(tenantId, s.opened_at, s.closed_at) as any[]).filter(p => !receivedPo.has(p.id))
+  `).all(tenantId, s.opened_at, endAt) as any[]).filter(p => !receivedPo.has(p.id))
   const paidOut = db.prepare(`
     SELECT reason, amount FROM pos_shift_cash_movements WHERE tenant_id = ? AND shift_id = ? AND type = 'PAID_OUT'
   `).all(tenantId, shiftId) as any[]
@@ -76,7 +126,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     SELECT module_type, status, amount FROM approval_requests
     WHERE tenant_id = ? AND created_at BETWEEN ? AND ?
       AND module_type IN ('pos_void', 'pos_item_void', 'pos_discount') AND status IN ('AUTO', 'APPROVED', 'EXECUTED')
-  `).all(tenantId, s.opened_at, s.closed_at) as any[]
+  `).all(tenantId, s.opened_at, endAt) as any[]
 
   // ส่วนลดรวม = ส่วนลดบนบิล (คอลัมน์เดียวที่ครบทุกใบ) หักส่วนที่เป็นการแลกแต้มเป็นบาท (ไม่ใช่ส่วนลดที่แคชเชียร์ให้)
   // แต้มที่แลกที่เคาน์เตอร์ = REDEEM ทั้งหมดของบิล − แต้มของแถมที่ใช้ (ของแถมไม่ได้ลดเป็นบาท) · บาท = floor(แต้ม/อัตรา) เหมือนตอนจ่าย
@@ -91,7 +141,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     FROM pos_running_bills b
     WHERE b.tenant_id = ? AND b.status = 'PAID' AND b.discount_amount > 0
       AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at BETWEEN ? AND ?))
-  `).all(tenantId, shiftId, s.opened_at, s.closed_at) as any[]
+  `).all(tenantId, shiftId, s.opened_at, endAt) as any[]
   const itemOverrideDiscount = (db.prepare(`
     SELECT COALESCE(SUM((bi.original_price - bi.unit_price) * bi.quantity), 0) AS amt
     FROM pos_bill_items bi
@@ -99,7 +149,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
     WHERE b.tenant_id = ? AND b.status = 'PAID'
       AND bi.original_price IS NOT NULL AND bi.original_price > bi.unit_price
       AND (b.shift_id = ? OR (b.shift_id IS NULL AND b.closed_at BETWEEN ? AND ?))
-  `).get(tenantId, shiftId, s.opened_at, s.closed_at) as any)?.amt || 0
+  `).get(tenantId, shiftId, s.opened_at, endAt) as any)?.amt || 0
   const discountTotal = discountBills.reduce((t, b) =>
     t + Math.max(0, b.discount - Math.floor(Math.max(0, b.counter_points) / redeemRate)), 0) + itemOverrideDiscount
 
@@ -119,7 +169,7 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
         )
       )
     ORDER BY b.discount_amount DESC
-  `).all(tenantId, shiftId, s.opened_at, s.closed_at) as any[]
+  `).all(tenantId, shiftId, s.opened_at, endAt) as any[]
 
   const tagMap = new Map<string, { tag: string; count: number; discountAmount: number; salesAmount: number }>()
   for (const b of deliveryBills) {
@@ -138,19 +188,26 @@ export function buildShiftSummary(tenantId: string, shiftId: string): ShiftSumma
   }
   const deliveryDiscounts = Array.from(tagMap.values()).sort((a, b) => b.salesAmount - a.salesAmount)
 
+  const liveSales = isOpen ? getShiftSalesSummary(tenantId, s) : null
+  const liveMovements = isOpen ? getShiftCashMovementTotals(tenantId, shiftId) : null
+
   return {
     shiftNumber: s.shift_number,
     shopName: shop?.name || '',
+    status: isOpen ? 'OPEN' : 'CLOSED',
     openedAt: s.opened_at,
-    closedAt: s.closed_at,
-    closedByName: s.closed_by_name || '',
-    billCount: s.bill_count || 0,
-    totalRevenue: r2(s.total_revenue),
-    cashRevenue: r2(s.cash_revenue),
-    bankRevenue: r2(s.bank_revenue),
-    expectedCash: r2(s.expected_cash),
-    countedCash: r2(s.closing_cash_counted),
-    difference: r2(s.cash_difference),
+    closedAt: isOpen ? null : s.closed_at,
+    openedByName: s.opened_by_name || '',
+    closedByName: isOpen ? '' : (s.closed_by_name || ''),
+    billCount: isOpen ? (liveSales!.bill_count || 0) : (s.bill_count || 0),
+    totalRevenue: isOpen ? r2(liveSales!.total_revenue) : r2(s.total_revenue),
+    cashRevenue: isOpen ? r2(liveSales!.cash_revenue) : r2(s.cash_revenue),
+    bankRevenue: isOpen ? r2(liveSales!.bank_revenue) : r2(s.bank_revenue),
+    expectedCash: isOpen
+      ? calcShiftExpectedCash(s.opening_cash || 0, liveSales!.cash_revenue || 0, liveMovements!.cashIn, liveMovements!.paidOut)
+      : r2(s.expected_cash),
+    countedCash: isOpen ? null : r2(s.closing_cash_counted),
+    difference: isOpen ? null : r2(s.cash_difference),
     topSales,
     buys: { total: r2(buyRows.reduce((t, b) => t + b.amount, 0)), top: buyRows },
     alerts: {
