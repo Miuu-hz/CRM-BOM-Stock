@@ -248,14 +248,6 @@ class LineBotService {
                 inner.getGroupMemberProfile(groupId, userId),
             getRoomMemberProfile: (roomId: string, userId: string) =>
                 inner.getRoomMemberProfile(roomId, userId),
-            getGroupMembersCount: async (groupId: string): Promise<number> => {
-                const r = await (inner.getGroupMemberCount ? inner.getGroupMemberCount(groupId) : inner.getGroupMembersCount(groupId))
-                return Number(r?.count)
-            },
-            getRoomMembersCount: async (roomId: string): Promise<number> => {
-                const r = await (inner.getRoomMemberCount ? inner.getRoomMemberCount(roomId) : inner.getRoomMembersCount(roomId))
-                return Number(r?.count)
-            },
             getMessageContent: async (messageId: string): Promise<Buffer> => {
                 const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
                     headers: { Authorization: `Bearer ${config.channel_access_token}` },
@@ -433,13 +425,10 @@ class LineBotService {
         return Math.max(0, BULK_PUSH_CAP() - (row?.n ?? 0))
     }
 
-    /** จอง n ข้อความจากเพดาน push รายเดือนของบริษัท (อะตอมมิก, ไม่เกินเพดานแม้ insert แรก) — false = เต็มแล้ว */
-    private claimPush(tenantId: string, n = 1): boolean {
-        const cap = BULK_PUSH_CAP()
-        if (!(n > 0) || n > cap) return false
-        return getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, ?)
-            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + ? WHERE n + ? <= ?`)
-            .run(tenantId, thaiToday().slice(0, 7), n, n, n, cap).changes > 0
+    /** จอง 1 ข้อความจากเพดาน push รายเดือนของบริษัท (อะตอมมิก) — false = เต็มแล้ว */
+    private claimPush(tenantId: string): boolean {
+        return getDb().prepare(`INSERT INTO line_push_counts (tenant_id, month, n) VALUES (?, ?, 1)
+            ON CONFLICT(tenant_id, month) DO UPDATE SET n = n + 1 WHERE n < ?`).run(tenantId, thaiToday().slice(0, 7), BULK_PUSH_CAP()).changes > 0
     }
 
     public async pushToUser(tenantId: string, userId: string, message: any): Promise<boolean> {
@@ -538,14 +527,12 @@ class LineBotService {
         return cfg?.line_shift_expense_groups === 1
     }
 
-    // ── สรุปผู้บริหาร + POS กลุ่ม 09:00 (Exec Dashboard Digest) ─────────────
+    // ── สรุปผู้บริหาร 09:00 (Exec Dashboard Digest) ─────────────────────────
     public async sendExecDigests(today: string) {
         const tenants = (getDb().prepare(`
             SELECT DISTINCT tenant_id FROM company_settings WHERE tenant_id IS NOT NULL AND tenant_id != ''
             UNION
             SELECT DISTINCT tenant_id FROM line_user_mappings WHERE tenant_id IS NOT NULL AND tenant_id != ''
-            UNION
-            SELECT DISTINCT tenant_id FROM line_group_mappings WHERE is_active = 1 AND pos_daily = 1 AND tenant_id IS NOT NULL AND tenant_id != ''
         `).all() as any[]).map(r => r.tenant_id as string)
 
         const yesterday = addDaysStr(today, -1)
@@ -555,92 +542,34 @@ class LineBotService {
                 const tenantClient = this.getClient(tenantId)
                 if (!tenantClient) continue
 
-                // 1. สรุปผู้บริหารรายคน
-                try {
-                    const recipients = new Set<string>([
-                        ...this.adminLineUsers(tenantId).map(u => u.line_user_id),
-                        ...this.masterSubscribers(tenantId, 'daily'),
-                    ])
-                    if (recipients.size > 0) {
-                        const digest = buildExecDigest(tenantId, yesterday, today)
-                        const empty = digest.sales === 0 && digest.income === 0 && digest.purchases === 0 && digest.withdrawals === 0 && (!digest.deliveries || digest.deliveries.length === 0)
-                        if (!empty) {
-                            const card = flexTemplates.execDigestCard({
-                                ...digest,
-                                company: companyName(tenantId),
-                                logoUrl: companyLogoUrl(tenantId),
-                            })
-                            // วันละครั้งต่อบริษัท — cron ซ้ำ/รีสตาร์ทตอน 9 โมงต้องไม่ส่งซ้ำ (claim แบบ sync ก่อน await แรก)
-                            if (getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(`exec_digest:${tenantId}:${today}`).changes) {
-                                for (const lineUserId of recipients) {
-                                    if (!this.claimPush(tenantId)) {
-                                        console.warn(`sendExecDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)
-                                        break
-                                    }
-                                    try {
-                                        await tenantClient.pushMessage(lineUserId, card)
-                                    } catch (err) {
-                                        console.error(`sendExecDigests push failed → ${lineUserId}:`, err)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (err: any) {
-                    console.error(`[sendExecDigests] private digest ${tenantId} failed:`, err?.message ?? err)
+                const recipients = new Set<string>([
+                    ...this.adminLineUsers(tenantId).map(u => u.line_user_id),
+                    ...this.masterSubscribers(tenantId, 'daily'),
+                ])
+                if (recipients.size === 0) continue
+
+                const digest = buildExecDigest(tenantId, yesterday, today)
+                if (digest.sales === 0 && digest.income === 0 && digest.purchases === 0 && digest.withdrawals === 0 && (!digest.deliveries || digest.deliveries.length === 0)) {
+                    continue
                 }
 
-                // 2. สรุป POS เมื่อวานเข้ากลุ่มที่เปิด pos_daily=1 (รันแม้ไม่มีผู้รับรายคนหรือ exec digest ว่าง)
-                const groups = getDb().prepare(
-                    'SELECT group_id FROM line_group_mappings WHERE tenant_id = ? AND is_active = 1 AND pos_daily = 1'
-                ).all(tenantId) as { group_id: string }[]
-                if (groups.length === 0) continue
+                const card = flexTemplates.execDigestCard({
+                    ...digest,
+                    company: companyName(tenantId),
+                    logoUrl: companyLogoUrl(tenantId),
+                })
 
-                const { s: pos, card: posCard } = this.buildPosCard(tenantId, 'เมื่อวาน', today)
-                if (pos.bills === 0 && pos.cancelled.bills === 0) continue
-
-                const capKey = `pos_group_cap:${tenantId}:${today.slice(0, 7)}`
-                const label = companyName(tenantId) || tenantId
-                for (const g of groups) {
+                // วันละครั้งต่อบริษัท — cron ซ้ำ/รีสตาร์ทตอน 9 โมงต้องไม่ส่งซ้ำ (claim แบบ sync ก่อน await แรก)
+                if (!getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(`exec_digest:${tenantId}:${today}`).changes) continue
+                for (const lineUserId of recipients) {
+                    if (!this.claimPush(tenantId)) {
+                        console.warn(`sendExecDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)
+                        break
+                    }
                     try {
-                        // จอง dedupe แบบ sync ก่อน await แรก — พังหรือโควตาไม่พอก็ไม่ยิงซ้ำในวันเดียวกัน
-                        const claimed = getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))")
-                            .run(`pos_group:${tenantId}:${g.group_id}:${today}`).changes > 0
-                        if (!claimed) continue
-
-                        const n = await this.groupMemberCount(tenantClient, g.group_id, String(g.group_id).startsWith('R'))
-                        if (n === null) {
-                            console.warn(`[sendExecDigests] skip group ${g.group_id} (${tenantId}): member count unknown`)
-                            continue
-                        }
-
-                        if (tenantClient.getMessageQuota && tenantClient.getMessageQuotaConsumption) {
-                            let oaBlocked = false
-                            try {
-                                const quota = await tenantClient.getMessageQuota()
-                                if (quota?.type === 'limited') {
-                                    const used = Number((await tenantClient.getMessageQuotaConsumption())?.totalUsage) || 0
-                                    if (used + n > Number(quota.value)) {
-                                        oaBlocked = true
-                                        console.warn(`[sendExecDigests] OA quota skip ${g.group_id} (${tenantId}): ${used}+${n}>${quota.value}`)
-                                        await this.alertMastersOnce(capKey, `⚠️ หยุดส่งสรุป POS เข้ากลุ่มของ ${label}: โควตา LINE OA ไม่พอ (ใช้ไป ${used}/${quota.value}, กลุ่มใช้ ${n} ข้อความ)`)
-                                    }
-                                }
-                            } catch (err) {
-                                console.error(`[sendExecDigests] OA quota check failed for ${g.group_id}:`, err)
-                            }
-                            if (oaBlocked) continue
-                        }
-
-                        if (!this.claimPush(tenantId, n)) {
-                            console.warn(`[sendExecDigests] company cap skip ${g.group_id} (${tenantId}): need ${n}`)
-                            await this.alertMastersOnce(capKey, `⚠️ หยุดส่งสรุป POS เข้ากลุ่มของ ${label}: เกินเพดานข้อความเดือนนี้ (เหลือ ${this.pushQuotaLeft(tenantId)}/${BULK_PUSH_CAP()}, กลุ่มใช้ ${n} ข้อความ)`)
-                            continue
-                        }
-
-                        await tenantClient.pushMessage(g.group_id, posCard)
+                        await tenantClient.pushMessage(lineUserId, card)
                     } catch (err) {
-                        console.error(`[sendExecDigests] group POS push failed → ${g.group_id} (${tenantId}):`, err)
+                        console.error(`sendExecDigests push failed → ${lineUserId}:`, err)
                     }
                 }
             } catch (err: any) {
@@ -829,7 +758,7 @@ class LineBotService {
                 this.saveGroup(row.tenant_id, groupId)
                 db.prepare('DELETE FROM line_link_tokens WHERE id = ?').run(row.id)
             })()
-            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · แจ้งเตือน POS รายวัน ให้ Master พิมพ์ /ผูก pos tenant <รหัส>`
+            text = `✅ ผูกกลุ่มนี้กับ ${companyName(row.tenant_id)} แล้ว\nดูสรุปปิดกะได้ในกลุ่มนี้ · ถ้าจะให้กลุ่มพิมพ์ /สรุป ดูยอด POS ให้ Master พิมพ์ /ผูก pos tenant <รหัส>`
         }
         await client.replyMessage(replyToken, { type: 'text', text })
     }
@@ -851,32 +780,20 @@ class LineBotService {
         ).run(tenantId, groupId)
     }
 
-    private async groupMemberCount(client: any, groupId: string, isRoom: boolean): Promise<number | null> {
-        try {
-            const fn = isRoom ? client.getRoomMembersCount : client.getGroupMembersCount
-            if (!fn) return null
-            const res = await fn(groupId)
-            const n = typeof res === 'number' ? res : Number(res?.count)
-            return Number.isFinite(n) && n > 0 ? n : null
-        } catch {
-            return null
-        }
-    }
-
-    private buildPosCard(tenantId: string, period: 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้', today = thaiToday()) {
+    private buildPosCard(tenantId: string, period: 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้') {
+        const today = thaiToday()
         const from = period === 'เมื่อวาน' ? addDaysStr(today, -1) : period === 'เดือนนี้' ? `${today.slice(0, 7)}-01` : today
         const to = period === 'เมื่อวาน' ? from : today
         const s = posSales(tenantId, from, to)
         const lwDate = period === 'เดือนนี้' ? null : addDaysStr(from, -7)
         const last = lwDate ? posSales(tenantId, lwDate, lwDate) : null
-        const card = flexTemplates.dailySalesCard({
+        return flexTemplates.dailySalesCard({
             company: companyName(tenantId), logoUrl: companyLogoUrl(tenantId),
             date: from === to ? from : `${from}..${to}`, period,
             revenue: s.revenue, bills: s.bills, avgBill: s.avgBill,
             discount: s.discount, byMethod: s.byMethod, cancelled: s.cancelled,
             lastWeek: last && last.bills > 0 ? last.revenue : null,
         })
-        return { s, card }
     }
 
     /** หาบริษัทสดจาก company_settings: "tenant <รหัส>" หรือรหัสตรงเป๊ะ → ตัวเดียวแน่นอน · นอกนั้นค้นชื่อ/รหัสบางส่วน (escape %/_) — ไม่ได้ตัวเดียวตอบกลับเองแล้วคืน null
@@ -948,11 +865,11 @@ class LineBotService {
                 type: 'text',
                 text: [
                     '📋 คำสั่ง Master',
-                    '/pos [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — ยอดขาย POS',
+                    '/สรุป หรือ /pos [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — ยอดขาย POS',
                     '/รายได้ [วันนี้|เมื่อวาน|เดือนนี้] [tenant <รหัส> หรือชื่อ] — รายได้ตามบัญชี + POS',
                     '/บริษัท — ดูรหัส tenant ทุกบริษัท (แชทส่วนตัว)',
                     '/บริษัท tenant <รหัส> — สลับบริษัทที่ดูอยู่',
-                    '/ผูก pos tenant <รหัส> — ผูกกลุ่มรับสรุป POS 09:00 (ในกลุ่ม)',
+                    '/ผูก pos tenant <รหัส> — ผูกกลุ่ม ให้ทุกคนในกลุ่มพิมพ์ /สรุป ดูยอด POS ได้ (ในกลุ่ม)',
                     '/เลิกผูก pos — เลิกผูกกลุ่มนี้ (ในกลุ่ม)',
                     '/คำสั่ง — แสดงคำสั่งทั้งหมด',
                 ].join('\n'),
@@ -960,7 +877,7 @@ class LineBotService {
             return true
         }
 
-        const posMatch = text.match(/^\/pos(?:\s+([\s\S]*))?$/i)
+        const posMatch = text.match(/^\/(?:pos|สรุป)(?:\s+([\s\S]*))?$/i)
         const revMatch = !posMatch ? text.match(/^\/รายได้(?:\s+([\s\S]*))?$/) : null
         if (posMatch || revMatch) {
             const isPos = !!posMatch
@@ -986,7 +903,7 @@ class LineBotService {
             }
 
             if (isPos) {
-                await client.replyMessage(replyToken, this.buildPosCard(targetId, period).card)
+                await client.replyMessage(replyToken, this.buildPosCard(targetId, period))
             } else {
                 const today = thaiToday()
                 const from = period === 'เมื่อวาน' ? addDaysStr(today, -1) : period === 'เดือนนี้' ? `${today.slice(0, 7)}-01` : today
@@ -1036,24 +953,13 @@ class LineBotService {
                 db.prepare("INSERT OR IGNORE INTO line_master_notify (line_user_id, tenant_id, kind) VALUES (?, ?, 'daily')").run(userId, picked.tenant_id)
             })()
 
-            const members = await this.groupMemberCount(client, groupId, src === 'room')
-            const cap = BULK_PUSH_CAP()
-            const left = this.pushQuotaLeft(picked.tenant_id)
             const lines = [
                 `✅ ผูกกลุ่มนี้กับ ${picked.name || picked.tenant_id} แล้ว`,
                 `🏷️ tenant ${picked.tenant_id}`,
                 ...(movedFrom ? [`↪️ ย้ายมาจาก: ${movedFrom}`] : []),
-                '🕘 ส่งสรุป POS ทุกวัน 09:00 น.',
+                '💬 ทุกคนในกลุ่มพิมพ์ /สรุป ดูยอด POS ของบริษัทนี้ได้ (ไม่กินโควตา)',
+                '🕘 สรุปผู้บริหาร 09:00 ส่งเข้าแชทส่วนตัวของคุณ ไม่ส่งเข้ากลุ่ม',
             ]
-            if (members !== null) {
-                const est = members * 30
-                lines.push(`👥 สมาชิก ${members} คน → ประมาณ ${est} ข้อความ/เดือน`)
-                lines.push(`📊 โควตาบริษัทเหลือ ${left}/${cap} ข้อความเดือนนี้`)
-                if (est > cap) lines.push(`⚠️ ประมาณ ${est} ข้อความ/เดือน เกินเพดานบริษัท (${cap}/เดือน)`)
-            } else {
-                lines.push('👥 ไม่ทราบจำนวนสมาชิกในกลุ่ม')
-                lines.push(`📊 โควตาบริษัทเหลือ ${left}/${cap} ข้อความเดือนนี้`)
-            }
             await client.replyMessage(replyToken, { type: 'text', text: lines.join('\n') })
             return true
         }
@@ -1068,7 +974,7 @@ class LineBotService {
             getDb().prepare('UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE group_id = ?').run(groupId)
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: '✅ เลิกผูกกลุ่มนี้แล้ว (หยุดส่งสรุป POS รายวัน)\nหากต้องการปิดสรุปผู้บริหารส่วนตัว ให้พิมพ์ "แจ้งเตือน" ในแชทส่วนตัว',
+                text: '✅ เลิกผูกกลุ่มนี้แล้ว (พิมพ์ /สรุป ในกลุ่มไม่ได้แล้ว)\nหากต้องการปิดสรุปผู้บริหารส่วนตัว ให้พิมพ์ "แจ้งเตือน" ในแชทส่วนตัว',
             })
             return true
         }
@@ -1769,6 +1675,13 @@ class LineBotService {
             if (text.startsWith('/')) {
                 const ml = event.source?.userId ? this.floatingLink(event.source.userId) : undefined
                 if (ml && !ml.demo_role && await this.handleMasterCommand(tenantId, src, event, text, ml, client)) return
+                // กลุ่มที่ Master ผูกด้วย /ผูก pos: ทุกคนในกลุ่มดูยอด POS ของบริษัทที่ผูกได้ด้วย reply (ฟรี) · ระบุบริษัทเองไม่ได้
+                const sum = text.match(/^\/สรุป(?:\s+(วันนี้|เมื่อวาน|เดือนนี้))?$/)
+                if (sum && src !== 'user' && tenantId && getDb().prepare('SELECT 1 FROM line_group_mappings WHERE group_id = ? AND tenant_id = ? AND is_active = 1 AND pos_daily = 1')
+                    .get(event.source.groupId ?? event.source.roomId, tenantId)) {
+                    await client.replyMessage(event.replyToken, this.buildPosCard(tenantId, (sum[1] ?? 'วันนี้') as 'วันนี้' | 'เมื่อวาน' | 'เดือนนี้'))
+                    return
+                }
             }
             // คนชินพิมพ์ /demo /help แบบแอปแชทอื่น — ตัด / นำหน้าทิ้ง ไม่งั้นหลุดไป AI fallback
             const lower = text.toLowerCase().replace(/^\//, '')

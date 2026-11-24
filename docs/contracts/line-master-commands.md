@@ -86,3 +86,10 @@ work order creates no group push · daily group push: once per day, cost = membe
 - `tenant <id>` (exact, with or without the `tenant_` prefix) works in /pos, /รายได้, /บริษัท and /ผูก pos. Partial names are still a search for reading,
   but /ผูก pos binds only on an exact tenant id: a name search answers with buttons that send `/ผูก pos tenant <id>`.
 - All buttons send the tenant id (two companies may share a name). `/บริษัท` in private chat lists the ids; in a group it never does.
+
+## 9. No push into groups (owner, 2026-11-24; replaces the group push in sections 2-4)
+LINE counts a push to a group once per member, so nothing is pushed into groups any more.
+- 09:00: the exec digest goes to private chats only (linked admins + Masters with 'daily'; binding a group turns it on for that Master). Cap per company unchanged.
+- `/สรุป [วันนี้|เมื่อวาน|เดือนนี้]` = free reply. In a group bound with `/ผูก pos` (pos_daily = 1) ANY member may type it and gets the POS card of the
+  bound company only, never another company, never income/profit. Other groups and strangers: silence. For the Master it is an alias of `/pos`.
+- Member counts, OA-quota checks and the cap alert of section 4 are removed. Column name pos_daily kept (already deployed).

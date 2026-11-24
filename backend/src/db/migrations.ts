@@ -817,7 +817,7 @@ export function runMigrations(db: any): void {
     }
   } catch (e) { console.error('line_group_mappings migration error:', e) }
 
-  // กลุ่มที่ผูกกับบริษัทรับสรุป POS รายวันเฉพาะเมื่อ Master เปิดด้วย /ผูก pos (ผูกด้วยรหัส 6 หลัก = 0)
+  // pos_daily = 1: Master ผูกด้วย /ผูก pos → คนในกลุ่มพิมพ์ /สรุป ดูยอด POS ได้ (ผูกด้วยรหัส 6 หลัก = 0) · ไม่มีการ push เข้ากลุ่มแล้ว ชื่อคอลัมน์ตามที่ขึ้นระบบไปก่อน
   try {
     const grpCols = (db.prepare('PRAGMA table_info(line_group_mappings)').all() as any[]).map((c: any) => c.name)
     if (grpCols.length && !grpCols.includes('pos_daily')) db.exec('ALTER TABLE line_group_mappings ADD COLUMN pos_daily INTEGER NOT NULL DEFAULT 0')

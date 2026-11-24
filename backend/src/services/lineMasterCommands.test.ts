@@ -8,7 +8,6 @@ import { thaiToday, addDaysStr } from './phopyBoard.service'
 
 const MASTER_EMAIL = 'm@cmd.test'
 const prevMaster = process.env.MASTER_BB_USERNAME
-const prevCap = process.env.LINE_BULK_PUSH_CAP
 
 const tenants: string[] = []
 const lines: string[] = []
@@ -20,9 +19,6 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks()
-    if (prevCap === undefined) delete process.env.LINE_BULK_PUSH_CAP
-    else process.env.LINE_BULK_PUSH_CAP = prevCap
-
     for (const g of groups.splice(0)) {
         db.prepare('DELETE FROM line_group_mappings WHERE group_id = ?').run(g)
         db.prepare('DELETE FROM line_master_alerts WHERE key LIKE ?').run(`%${g}%`)
@@ -49,30 +45,10 @@ afterAll(() => {
     else process.env.MASTER_BB_USERNAME = prevMaster
 })
 
-function rig(opts: {
-    memberCount?: number | (() => Promise<number>)
-    quota?: { type: string; value?: number }
-    used?: number
-} = {}) {
+function rig() {
     const replies: any[] = []
     const push = vi.fn(async (_to: string, _m: any) => {})
-    const getGroupMembersCount = vi.fn(async (_gid: string) => {
-        if (typeof opts.memberCount === 'function') return opts.memberCount()
-        if (opts.memberCount !== undefined) return opts.memberCount
-        return 5
-    })
-    const getRoomMembersCount = vi.fn(async (rid: string) => getGroupMembersCount(rid))
-    const client: any = {
-        token: 't',
-        replyMessage: async (_t: string, m: any) => { replies.push(m) },
-        pushMessage: push,
-        getGroupMembersCount,
-        getRoomMembersCount,
-    }
-    if (opts.quota) {
-        client.getMessageQuota = vi.fn(async () => opts.quota)
-        client.getMessageQuotaConsumption = vi.fn(async () => ({ totalUsage: opts.used ?? 0 }))
-    }
+    const client: any = { token: 't', replyMessage: async (_t: string, m: any) => { replies.push(m) }, pushMessage: push }
     vi.spyOn(lineBotService as any, 'getClient').mockReturnValue(client)
     const syncSpy = vi.spyOn(richMenus, 'syncUser').mockResolvedValue()
 
@@ -84,7 +60,7 @@ function rig(opts: {
     }
     const say = (uid: string, text: string) => send({ type: 'user', userId: uid }, text)
     const sayInGroup = (gid: string, uid: string, text: string) => send({ type: 'group', groupId: gid, userId: uid }, text)
-    return { replies, push, syncSpy, getGroupMembersCount, say, sayInGroup, client }
+    return { push, syncSpy, say, sayInGroup }
 }
 
 function company(name: string, fixedTenantId?: string) {
@@ -149,12 +125,12 @@ function insertRevenueJournal(tenantId: string, amount: number, date: string) {
         .run(generateId(), tenantId, jeId, acc.id, amount)
 }
 
-describe('LINE Master commands + daily POS group summary', () => {
+describe('LINE Master commands + /สรุป ในกลุ่ม', () => {
     it('1. non-master, demo Master และ as_member Master เงียบในกลุ่มทุกคำสั่ง', async () => {
         const { sayInGroup } = rig()
         const A = company('ร้านเอ-' + generateId().slice(0, 4))
         const gid = newGroup()
-        const cmds = ['/pos', '/รายได้', `/บริษัท ${A.name}`, `/ผูก pos tenant ${A.tenantId}`, '/เลิกผูก pos', '/คำสั่ง']
+        const cmds = ['/สรุป', '/pos', '/รายได้', `/บริษัท ${A.name}`, `/ผูก pos tenant ${A.tenantId}`, '/เลิกผูก pos', '/คำสั่ง']
 
         // คนทั่วไปที่ไม่ได้ลงทะเบียน + พนักงาน ADMIN ในบริษัท
         const stranger = 'U' + generateId(); lines.push(stranger)
@@ -276,8 +252,7 @@ describe('LINE Master commands + daily POS group summary', () => {
     })
 
     it('6. /ผูก pos (ขณะดูบริษัทอื่น), ย้ายกลุ่ม, /เลิกผูก pos, และปฏิเสธในแชทส่วนตัว', async () => {
-        process.env.LINE_BULK_PUSH_CAP = '100'
-        const { say, sayInGroup } = rig({ memberCount: 5 })
+        const { say, sayInGroup } = rig()
         const A = company('ร้านผูกเอ-' + generateId().slice(0, 4))
         const B = company('ร้านผูกบี-' + generateId().slice(0, 4))
         const uid = master(A.tenantId) // กำลังดู A อยู่
@@ -287,12 +262,12 @@ describe('LINE Master commands + daily POS group summary', () => {
         expect(JSON.stringify(await say(uid, `/ผูก pos tenant ${B.tenantId}`))).toContain('ใช้ได้ในกลุ่มเท่านั้น')
         expect(JSON.stringify(await say(uid, '/เลิกผูก pos'))).toContain('ใช้ได้ในกลุ่มเท่านั้น')
 
-        // ผูกกลุ่มกับ B ทั้งที่ Master ดู A อยู่ (สมาชิก 5 → 150 > cap 100 → มีคำเตือน)
+        // ผูกกลุ่มกับ B ทั้งที่ Master ดู A อยู่
         const bindOut = JSON.stringify(await sayInGroup(gid, uid, `/ผูกpos tenant ${B.tenantId}`))
         expect(bindOut).toContain(B.name)
         expect(bindOut).toContain('09:00')
-        expect(bindOut).toContain('150')
-        expect(bindOut).toContain('⚠️')
+        expect(bindOut).toContain('/สรุป')
+        expect(bindOut).toContain('ไม่ส่งเข้ากลุ่ม')
 
         const rowB = db.prepare('SELECT is_active, pos_daily FROM line_group_mappings WHERE tenant_id = ? AND group_id = ?').get(B.tenantId, gid) as any
         expect(rowB).toEqual({ is_active: 1, pos_daily: 1 })
@@ -315,19 +290,6 @@ describe('LINE Master commands + daily POS group summary', () => {
             .toEqual({ is_active: 0, pos_daily: 0 })
         expect(db.prepare(`SELECT 1 FROM line_master_notify WHERE line_user_id = ? AND tenant_id = ? AND kind = 'daily'`).get(uid, A.tenantId))
             .toBeTruthy()
-    })
-
-    it('7. /ผูก pos เมื่อดึงจำนวนสมาชิกไม่สำเร็จ ยังผูกได้และแจ้งว่าไม่ทราบจำนวน', async () => {
-        const { sayInGroup } = rig({ memberCount: async () => { throw new Error('network') } })
-        const A = company('ร้านนับไม่ได้-' + generateId().slice(0, 4))
-        const uid = master(A.tenantId)
-        const gid = newGroup()
-
-        const out = JSON.stringify(await sayInGroup(gid, uid, `/ผูก pos tenant ${A.tenantId}`))
-        expect(out).toContain(A.name)
-        expect(out).toContain('ไม่ทราบจำนวนสมาชิก')
-        expect(db.prepare('SELECT is_active, pos_daily FROM line_group_mappings WHERE tenant_id = ? AND group_id = ?').get(A.tenantId, gid))
-            .toEqual({ is_active: 1, pos_daily: 1 })
     })
 
     it('8. /บริษัท 0/1/หลายบริษัท (ชื่อตรงเป๊ะชนะ LIKE) + escape % และ _', async () => {
@@ -425,88 +387,54 @@ describe('LINE Master commands + daily POS group summary', () => {
         expect(help).toContain('คำสั่ง Master')
     })
 
-    it('10. sendExecDigests กลุ่ม POS: วันละครั้ง, คิดโควตาตามสมาชิก, กลุ่มรหัส 6 หลักไม่ได้, วันว่างข้าม, เกินเพดานเตือน Master ครั้งเดียว', async () => {
-        process.env.LINE_BULK_PUSH_CAP = '10'
+    it('10. 09:00 ไม่ push เข้ากลุ่มเลย · Master ที่ผูกกลุ่มได้สรุปส่วนตัวคนเดียว โควตาหัก 1', async () => {
+        const { push, sayInGroup } = rig()
         const today = thaiToday()
-        const yesterday = addDaysStr(today, -1)
-
-        // ร้าน A: มีกลุ่ม pos_daily=1 (สมาชิก 4) + กลุ่มผูกด้วยรหัส 6 หลัก (pos_daily=0) ไม่มีผู้รับรายคน
-        const A = company('ร้านส่งกลุ่มเอ-' + generateId().slice(0, 4))
-        const gidDaily = newGroup()
-        const gidCode = newGroup()
-        const mUid = master(A.tenantId)
-        insertPosBill(A.tenantId, 2500, yesterday)
-        db.prepare('INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily) VALUES (?, ?, ?, 1, 1)').run(generateId(), A.tenantId, gidDaily)
-        db.prepare('INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily) VALUES (?, ?, ?, 1, 0)').run(generateId(), A.tenantId, gidCode)
-
-        // ร้าน B: ไม่มีบิลเมื่อวานเลย → ข้าม
-        const B = company('ร้านวันว่าง-' + generateId().slice(0, 4))
-        const gidEmpty = newGroup()
-        db.prepare('INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily) VALUES (?, ?, ?, 1, 1)').run(generateId(), B.tenantId, gidEmpty)
-
-        // ร้าน C: สมาชิก 12 > cap 10 (insert แรกต้องไม่ทะลุ cap) → ข้าม + เตือน Master ครั้งเดียว
-        const C = company('ร้านเกินเพดาน-' + generateId().slice(0, 4))
-        const gidOver1 = newGroup()
-        const gidOver2 = newGroup()
-        insertPosBill(C.tenantId, 900, yesterday)
-        db.prepare('INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily) VALUES (?, ?, ?, 1, 1)').run(generateId(), C.tenantId, gidOver1)
-        db.prepare('INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily) VALUES (?, ?, ?, 1, 1)').run(generateId(), C.tenantId, gidOver2)
-
-        const { push, getGroupMembersCount, sayInGroup } = rig()
-        getGroupMembersCount.mockImplementation(async (gid: string) => (gid === gidOver1 || gid === gidOver2) ? 12 : 4)
+        const A = company('ร้านส่วนตัว-' + generateId().slice(0, 4))
+        insertPosBill(A.tenantId, 2500, addDaysStr(today, -1))
+        const uid = master(A.tenantId), gid = newGroup()
+        await sayInGroup(gid, uid, `/ผูก pos tenant ${A.tenantId}`)
+        expect(push).not.toHaveBeenCalled()
 
         await lineBotService.sendExecDigests(today)
-
-        const targets = push.mock.calls.map((c: any[]) => c[0])
-        expect(targets.filter(t => t === gidDaily)).toHaveLength(1)
-        expect(targets).not.toContain(gidCode)
-        expect(targets).not.toContain(gidEmpty)
-        expect(targets).not.toContain(gidOver1)
-        expect(targets).not.toContain(gidOver2)
-
-        // โควตา A หัก 4 (ตามจำนวนสมาชิก) · โควตา C ไม่ถูกหัก (insert แรกเกิน cap ต้องปฏิเสธ)
-        const cntA = db.prepare('SELECT n FROM line_push_counts WHERE tenant_id = ? AND month = ?').get(A.tenantId, today.slice(0, 7)) as any
-        expect(cntA?.n).toBe(4)
-        const cntC = db.prepare('SELECT n FROM line_push_counts WHERE tenant_id = ? AND month = ?').get(C.tenantId, today.slice(0, 7)) as any
-        expect(cntC).toBeUndefined()
-
-        // Master ได้รับข้อความเตือนเกินเพดานของร้าน C แค่ครั้งเดียว (แม้มี 2 กลุ่มที่โดนปฏิเสธ)
-        const alertsToMaster = push.mock.calls.filter((c: any[]) => c[0] === mUid && String(c[1]?.text ?? '').includes(C.name))
-        expect(alertsToMaster).toHaveLength(1)
-
-        // เรียกซ้ำวันเดียวกัน → ไม่ส่งซ้ำ
-        push.mockClear()
-        await lineBotService.sendExecDigests(today)
-        expect(push.mock.calls.filter((c: any[]) => c[0] === gidDaily)).toHaveLength(0)
-
-        // leave รีเซ็ต pos_daily=0 และผูกใหม่ด้วยรหัส 6 หลักต้องไม่คืนชีพ pos_daily=1
-        await lineBotService.handleEvent(A.tenantId, { type: 'leave', source: { type: 'group', groupId: gidDaily } })
-        expect(db.prepare('SELECT is_active, pos_daily FROM line_group_mappings WHERE tenant_id = ? AND group_id = ?').get(A.tenantId, gidDaily))
-            .toEqual({ is_active: 0, pos_daily: 0 })
-
-        const adminId = member(A.tenantId, 'U_adm_' + generateId(), 'ADMIN')
-        const tok = lineBotService.generateLinkToken(A.tenantId, adminId)
-        const linkReplies = await sayInGroup(gidDaily, 'U_adm_x', tok)
-        expect(db.prepare('SELECT is_active, pos_daily FROM line_group_mappings WHERE tenant_id = ? AND group_id = ?').get(A.tenantId, gidDaily))
-            .toEqual({ is_active: 1, pos_daily: 0 })
-        expect(linkReplies[0]?.text).toContain(`✅ ผูกกลุ่มนี้กับ ${A.name} แล้ว`)
-        expect(linkReplies[0]?.text).toContain('/ผูก pos')
+        expect(push.mock.calls.filter((c: any[]) => JSON.stringify(c[1]).includes(A.name)).map((c: any[]) => c[0])).toEqual([uid])
+        expect(push.mock.calls.map((c: any[]) => c[0])).not.toContain(gid)
+        expect((db.prepare('SELECT n FROM line_push_counts WHERE tenant_id = ? AND month = ?').get(A.tenantId, today.slice(0, 7)) as any).n).toBe(1)
     })
 
-    it('11. sendExecDigests ข้ามกลุ่มเมื่อโควตา LINE OA (limited) ไม่พอ และเตือน Master ครั้งเดียว', async () => {
+    it('11. /สรุป ในกลุ่มที่ผูกด้วย /ผูก pos: ทุกคนได้ยอดของบริษัทกลุ่มนั้นเท่านั้น · นอกนั้นเงียบ', async () => {
+        const { push, say, sayInGroup } = rig()
         const today = thaiToday()
-        const yesterday = addDaysStr(today, -1)
-        const A = company('ร้านโควตาOA-' + generateId().slice(0, 4))
-        const gid = newGroup()
-        const mUid = master(A.tenantId)
-        insertPosBill(A.tenantId, 1500, yesterday)
-        db.prepare('INSERT INTO line_group_mappings (id, tenant_id, group_id, is_active, pos_daily) VALUES (?, ?, ?, 1, 1)').run(generateId(), A.tenantId, gid)
+        const A = company('ร้านสรุปเอ-' + generateId().slice(0, 4)), B = company('ร้านสรุปบี-' + generateId().slice(0, 4))
+        insertPosBill(A.tenantId, 2500, today); insertPosBill(A.tenantId, 777, addDaysStr(today, -1)); insertPosBill(B.tenantId, 8888, today)
+        const uid = master(B.tenantId), gid = newGroup() // Master ดู B อยู่
+        const stranger = 'U' + generateId(); lines.push(stranger)
 
-        const { push } = rig({ memberCount: 6, quota: { type: 'limited', value: 300 }, used: 296 })
-        await lineBotService.sendExecDigests(today)
+        expect(await sayInGroup(gid, stranger, '/สรุป')).toHaveLength(0) // ยังไม่ผูก
+        await sayInGroup(gid, uid, `/ผูก pos tenant ${A.tenantId}`)
 
-        expect(push.mock.calls.map((c: any[]) => c[0])).not.toContain(gid)
-        const alerts = push.mock.calls.filter((c: any[]) => c[0] === mUid && String(c[1]?.text ?? '').includes(A.name))
-        expect(alerts).toHaveLength(1)
+        for (const u of [stranger, uid, master(A.tenantId, { demoRole: 'USER' })]) {
+            const out = JSON.stringify(await sayInGroup(gid, u, '/สรุป'))
+            expect(out).toContain('2,500')
+            expect(out).toContain(A.name)
+            expect(out).not.toContain('8,888')
+        }
+        const yest = JSON.stringify(await sayInGroup(gid, stranger, '/สรุป เมื่อวาน'))
+        expect(yest).toContain('777')
+        expect(yest).not.toContain('2,500')
+
+        // คนทั่วไประบุบริษัท/ใช้คำสั่ง Master/ทักส่วนตัวไม่ได้
+        for (const t of [`/สรุป tenant ${B.tenantId}`, `/สรุป ${B.name}`, '/pos', '/รายได้', '/เลิกผูก pos']) expect(await sayInGroup(gid, stranger, t), t).toHaveLength(0)
+        expect(JSON.stringify(await say(stranger, '/สรุป'))).not.toContain('2,500')
+
+        // ออกจากกลุ่มแล้วผูกใหม่ด้วยรหัส 6 หลัก → คนทั่วไปใช้ /สรุป ไม่ได้ (pos_daily ไม่คืนชีพ) · Master ยังได้
+        await lineBotService.handleEvent(A.tenantId, { type: 'leave', source: { type: 'group', groupId: gid } })
+        expect(await sayInGroup(gid, stranger, '/สรุป')).toHaveLength(0)
+        const tok = lineBotService.generateLinkToken(A.tenantId, member(A.tenantId, 'U_adm_' + generateId(), 'ADMIN'))
+        const linkReplies = await sayInGroup(gid, 'U_adm_x', tok)
+        expect(linkReplies[0]?.text).toContain(`✅ ผูกกลุ่มนี้กับ ${A.name} แล้ว`)
+        expect(await sayInGroup(gid, stranger, '/สรุป')).toHaveLength(0)
+        expect(JSON.stringify(await sayInGroup(gid, uid, '/สรุป'))).toContain('2,500')
+        expect(push).not.toHaveBeenCalled()
     })
 })
