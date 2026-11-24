@@ -37,6 +37,8 @@ import Payroll from './pages/HR/Payroll'
 import HrSettings from './pages/HR/HrSettings'
 import Leave from './pages/HR/Leave'
 import MyHr from './pages/HR/MyHr'
+import MyTrips from './pages/HR/MyTrips'
+import CarTrips from './pages/HR/CarTrips'
 import CheckinKiosk from './pages/HR/CheckinKiosk'
 import Training from './pages/HR/Training'
 import Advances from './pages/HR/Advances'
@@ -108,7 +110,7 @@ function AppContent() {
   if ((user as any).scope === 'hr_self') {
     return (
       <div className="min-h-screen bg-[var(--bg)] p-3">
-        <MyHr />
+        {location.pathname === '/hr/me/trips' ? <MyTrips /> : <MyHr />}
       </div>
     )
   }
@@ -165,9 +167,11 @@ function AppContent() {
           <Route path="/hr/documents" element={<Guard path="/hr/documents"><Documents /></Guard>} />
           <Route path="/hr/discipline" element={<Guard path="/hr/discipline"><Discipline /></Guard>} />
           <Route path="/hr/recruit" element={<Guard path="/hr/recruit"><Recruit /></Guard>} />
+          <Route path="/hr/trips" element={<Guard path="/hr/trips"><CarTrips /></Guard>} />
         </Route>
         <Route path="/hr/payroll/:id/print" element={<Guard path="/hr/payroll"><PayslipPrint /></Guard>} />
         <Route path="/hr/me" element={<Guard path="/hr/me"><MyHr /></Guard>} />
+        <Route path="/hr/me/trips" element={<Guard path="/hr/me/trips"><MyTrips /></Guard>} />
         <Route path="/hr/kiosk" element={<Guard path="/hr/kiosk"><CheckinKiosk /></Guard>} />
         <Route path="/hr/documents/print" element={<Guard path="/hr/documents"><DocumentPrint /></Guard>} />
 

@@ -18,6 +18,7 @@ import {
   GraduationCap,
   ArrowLeftRight,
   Camera,
+  Car,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrService, {
@@ -953,6 +954,26 @@ export default function MyHr() {
         <p className="text-xs text-center text-[var(--fg-3)]">
           ระบบเก็บตำแหน่งเฉพาะตอนกดบันทึกเวลา
         </p>
+      </div>
+
+      {/* ใช้งานรถยนต์ Card */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 sm:p-6 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]">
+            <Car className="w-4 h-4 text-phopy-indigo" />
+            <span>ใช้งานรถยนต์</span>
+          </div>
+        </div>
+        <p className="text-xs text-[var(--fg-3)]">
+          บันทึกเริ่มทริป แวะจุด จบทริป และดูประวัติการใช้รถ
+        </p>
+        <a
+          href="/hr/me/trips"
+          className="phopy-btn-primary w-full inline-flex items-center justify-center gap-2 text-sm no-underline hover:no-underline !text-white"
+        >
+          <Car className="w-4 h-4" />
+          <span>เปิดหน้าบันทึกการใช้งานรถยนต์</span>
+        </a>
       </div>
 
       {/* สแกนหน้าเข้างาน Card */}

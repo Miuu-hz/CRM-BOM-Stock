@@ -13,7 +13,7 @@ export const HR_GROUPS: { tKey: string; tabs: { path: string; tKey: string }[] }
   ] },
   { tKey: 'sidebar.hrTime', tabs: [
     { path: '/hr/attendance', tKey: 'sidebar.attendance' }, { path: '/hr/roster', tKey: 'sidebar.roster' },
-    { path: '/hr/leave', tKey: 'sidebar.leave' },
+    { path: '/hr/leave', tKey: 'sidebar.leave' }, { path: '/hr/trips', tKey: 'sidebar.hrTrips' },
   ] },
   { tKey: 'sidebar.payroll', tabs: [
     { path: '/hr/payroll', tKey: 'sidebar.payrollRuns' }, { path: '/hr/advances', tKey: 'sidebar.advances' },

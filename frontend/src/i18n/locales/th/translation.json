@@ -101,7 +101,8 @@
     "hrPeople": "พนักงาน",
     "hrTime": "เวลาทำงาน",
     "payrollRuns": "รอบเงินเดือน",
-    "onOffboard": "เช็กลิสต์เข้า-ออก"
+    "onOffboard": "เช็กลิสต์เข้า-ออก",
+    "hrTrips": "ใช้งานรถยนต์"
   },
   "dashboard": {
     "title": "ภาพรวมธุรกิจ",

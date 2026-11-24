@@ -178,6 +178,7 @@ import kanbanSsoRoutes from './routes/kanban-sso.routes'
 import cookieParser from 'cookie-parser'
 import { startBackupScheduler } from './services/backup.scheduler'
 import { startHrExpiryScheduler } from './services/hrExpiry.scheduler'
+import { startCarTripExpiryScheduler } from './services/hr/carTrip.service'
 
 
 import qcRoutes from './routes/qc.routes'
@@ -199,6 +200,7 @@ import hrDisciplineRoutes from './routes/hr.discipline.routes'
 import hrRecruitRoutes from './routes/hr.recruit.routes'
 import hrLineInviteRoutes from './routes/hr.lineInvite.routes'
 import hrFaceRoutes from './routes/hr.face.routes'
+import hrTripRoutes from './routes/hr.trip.routes'
 import hrRecruitPublicRoutes from './routes/hr.recruit.public.routes'
 
 
@@ -679,6 +681,7 @@ app.use('/api/hr', hrDisciplineRoutes)
 app.use('/api/hr', hrRecruitRoutes)
 app.use('/api/hr', hrLineInviteRoutes)
 app.use('/api/hr', hrFaceRoutes)
+app.use('/api/hr', hrTripRoutes)
 
 
 app.use('/api/mcp-settings', mcpSettingsRoutes)
@@ -804,6 +807,7 @@ app.listen(PORT, () => {
 
   startBackupScheduler()
   startHrExpiryScheduler()
+  startCarTripExpiryScheduler()
 
 
 })

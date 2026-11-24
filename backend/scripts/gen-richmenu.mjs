@@ -1,4 +1,4 @@
-// สร้างรูปริชเมนู exec/manager/staff (2500×1686, 4×2) — guest.png ไม่แตะ
+// สร้างรูปริชเมนู exec/manager/staff (2500×1686, 4×2) และ staff_car (2500×843, 4×1) — guest.png ไม่แตะ
 // รัน: mkdir /tmp/rm && cd /tmp/rm && npm i fontkit sharp lucide-static   (ไม่อยู่ใน package.json ของ repo)
 //      cd /tmp/rm && node <repo>/backend/scripts/gen-richmenu.mjs <repo>/backend
 // ลำดับ/ชื่อปุ่มต้องตรงกับ MENUS ใน src/services/line-richmenu.service.ts
@@ -19,8 +19,9 @@ const MENUS = {
         ['Phopy Board', 'เปิดภาพรวมในเว็บ', 'layout-dashboard', 'blue'], ['ออเดอร์', 'ใบสั่งขายล่าสุด', 'shopping-bag', 'green'], ['ของฉัน', 'เช็คอิน · ลา · สลิป', 'user-round', 'green'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray']],
     manager: [['รออนุมัติ', 'คำขอที่ค้างอยู่', 'clipboard-check'], ['สต็อกต่ำ', 'ต่ำกว่าจุดสั่งซื้อ', 'triangle-alert', 'red'], ['เช็คสต็อก', 'พิมพ์ชื่อสินค้า', 'search', 'blue'], ['งานผลิต', 'กำลังผลิตอยู่', 'clipboard-list', 'blue'],
         ['ออเดอร์', 'ใบสั่งขายล่าสุด', 'shopping-bag', 'green'], ['ของฉัน', 'เช็คอิน · ลา · สลิป', 'user-round', 'amber'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray'], ['เปิด ERP', 'erp.phopy.net', 'monitor', 'gray']],
-    staff: [['เช็คอิน', 'ลงเวลาเข้างาน', 'log-in'], ['ขอลา', 'ยื่นใบลา', 'calendar-x', 'amber'], ['สลิป', 'สลิปเงินเดือน', 'receipt', 'green'], ['ตารางกะ', 'กะงานของฉัน', 'calendar-days', 'blue'],
-        ['ขอเบิก', 'เบิกเงินล่วงหน้า', 'hand-coins', 'amber'], ['เช็คสต็อก', 'พิมพ์ชื่อสินค้า', 'search', 'blue'], ['งานผลิต', 'กำลังผลิตอยู่', 'clipboard-list', 'blue'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray']],
+    staff: [['เช็คอิน', 'ลงเวลาเข้างาน', 'log-in'], ['ขอลา', 'ยื่นใบลา', 'calendar-x', 'amber'], ['ตารางกะ', 'กะงานของฉัน', 'calendar-days', 'blue'], ['ขอเบิก', 'เบิกเงินล่วงหน้า', 'hand-coins', 'amber'],
+        ['งานของฉัน', 'ระบบจัดการงาน', 'briefcase', 'blue'], ['ใช้งานรถยนต์', 'เริ่ม/จบทริป · แวะจุด', 'car', 'green'], ['ของฉัน', 'สลิป · เอกสาร · ข้อมูล', 'user-round', 'green'], ['บัญชีของฉัน', 'บริษัท · ตำแหน่ง', 'circle-user-round', 'gray']],
+    staff_car: [['เริ่ม/จบทริป', 'บันทึกไมล์ · GPS', 'car'], ['แวะจุด', 'ปักพิกัดจุดแวะ', 'map-pin', 'amber'], ['ประวัติทริป', 'รายการเดินทางของฉัน', 'history', 'blue'], ['กลับเมนูหลัก', 'เมนูพนักงาน', 'arrow-left', 'gray']],
 }
 
 // ข้อความ → <path> (fontkit จัดสระ/วรรณยุกต์ตาม GPOS); กึ่งกลางที่ cx, baseline y, หด font ถ้ากว้างเกิน maxW
@@ -51,8 +52,9 @@ ${text(sub, reg, 40, cx, y0 + 655, first ? '#DDE1FB' : '#6B6355', W - 70)}`
 }
 
 for (const [k, btns] of Object.entries(MENUS)) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2500" height="1686"><defs><filter id="sh" x="-5%" y="-5%" width="110%" height="115%"><feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#6B5A30" flood-opacity=".16"/></filter></defs>
-<rect width="2500" height="1686" fill="#F5EFE2"/>${btns.map(card).join('\n')}</svg>`
+    const rows = Math.ceil(btns.length / 4), height = 843 * rows
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2500" height="${height}"><defs><filter id="sh" x="-5%" y="-5%" width="110%" height="115%"><feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#6B5A30" flood-opacity=".16"/></filter></defs>
+<rect width="2500" height="${height}" fill="#F5EFE2"/>${btns.map(card).join('\n')}</svg>`
     const out = path.join(backend, 'assets/line-richmenu', k + '.png')
     await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toFile(out)
     console.log(out, fs.statSync(out).size)

@@ -89,7 +89,7 @@ import { flexTemplates, IN_CHAT_APPROVAL, APPROVAL_MODULES } from './line-flex-t
 import { getSubscription } from './subscription.service'
 import { handleDecision } from '../routes/approval.routes' // วนกันกับ approval.routes แต่ใช้ตอนเรียกเท่านั้น
 import { detectIntent } from './llm.service'
-import { richMenus, menuKeyForRole, effectiveRole, MENUS, MenuKey } from './line-richmenu.service'
+import { richMenus, menuKeyForRole, effectiveRole, MENUS, MenuKey, getMyTasksUrl } from './line-richmenu.service'
 import { posSales, ledgerRevenue, ledgerCogs, ledgerOpex, thaiToday, addDaysStr } from './phopyBoard.service'
 import { canApprove } from './approvalGate.service'
 import { getLowStockItems } from '../routes/dashboard.routes'
@@ -735,14 +735,15 @@ class LineBotService {
     }
 
     /** ลิงก์ใช้ครั้งเดียวเข้าหน้า "ของฉัน" (แลกเป็น token scope hr_self ที่ POST /api/auth/line-login) */
-    public createLoginLink(tenantId: string, userId: string): string {
+    public createLoginLink(tenantId: string, userId: string, target?: 'trips' | 'trips_stop' | 'trips_history'): string {
         const db = getDb()
         const token = crypto.randomBytes(32).toString('hex')
         const now = new Date()
         db.prepare('DELETE FROM line_login_tokens WHERE expires_at < ?').run(now.toISOString())
         db.prepare('INSERT INTO line_login_tokens (token_hash, tenant_id, user_id, expires_at) VALUES (?, ?, ?, ?)')
             .run(crypto.createHash('sha256').update(token).digest('hex'), tenantId, userId, new Date(now.getTime() + 5 * 60 * 1000).toISOString())
-        return `${process.env.APP_URL ?? 'https://erp.phopy.net'}/line-login?t=${token}`
+        const base = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/line-login?t=${token}`
+        return target ? `${base}&to=${target}` : base
     }
 
     /** รหัส 6 หลักไม่ผูกกับร้าน (OA กลาง) — ร้านมาจากเจ้าของรหัสเอง */
@@ -2371,9 +2372,18 @@ class LineBotService {
                 return
             }
 
-            // ── self-service: เปิดหน้า "ของฉัน" ด้วยลิงก์ใช้ครั้งเดียว — เฉพาะแชทส่วนตัว (ลิงก์ในกลุ่ม = ใครกดก็เข้าได้) ──
+            // ── self-service & รถยนต์: เปิดหน้า "ของฉัน" ด้วยลิงก์ใช้ครั้งเดียว — เฉพาะแชทส่วนตัว (ลิงก์ในกลุ่ม = ใครกดก็เข้าได้) ──
             const selfCmd = ['ของฉัน', 'เช็คอิน', 'ขอลา', 'ขอเบิก', 'สลิป', 'ตารางกะ', 'แลกกะ']
-            if (me && selfCmd.includes(text)) {
+            const tripTargets: Record<string, { target: 'trips' | 'trips_stop' | 'trips_history'; label: string; desc: string }> = {
+                'เริ่ม/จบทริป': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
+                'เริ่มทริป': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
+                'จบทริป': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
+                'ใช้งานรถยนต์': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
+                'แวะจุด': { target: 'trips_stop', label: 'บันทึกจุดแวะ', desc: 'แวะจุดระหว่างทริป' },
+                'ประวัติทริป': { target: 'trips_history', label: 'ดูประวัติทริป', desc: 'ประวัติการใช้งานรถยนต์' },
+            }
+            const tripCfg = tripTargets[text]
+            if (me && (selfCmd.includes(text) || tripCfg)) {
                 if (src !== 'user') {
                     await client.replyMessage(event.replyToken, { type: 'text', text: `🔒 "${text}" ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ` })
                     return
@@ -2387,10 +2397,28 @@ class LineBotService {
                     type: 'template', altText: `${text} · ${companyName(tenantId)}`,
                     template: {
                         type: 'buttons', title: (companyName(tenantId) || 'Phopy ERP').slice(0, 40),
-                        text: 'เช็คอิน ขอลา ขอเบิก สลิป ตารางกะ แลกกะ\nลิงก์ใช้ได้ครั้งเดียว ภายใน 5 นาที',
-                        actions: [{ type: 'uri', label: 'เปิดหน้าของฉัน', uri: this.createLoginLink(tenantId, me.user_id) }],
+                        text: `${tripCfg ? tripCfg.desc : 'เช็คอิน ขอลา ขอเบิก สลิป ตารางกะ แลกกะ'}\nลิงก์ใช้ได้ครั้งเดียว ภายใน 5 นาที`,
+                        actions: [{ type: 'uri', label: tripCfg ? tripCfg.label : 'เปิดหน้าของฉัน', uri: this.createLoginLink(tenantId, me.user_id, tripCfg?.target) }],
                     },
                 })
+                return
+            }
+
+            // ── งานของฉัน (ลิงก์ภายนอกผ่าน MY_TASKS_URL) ──
+            if (me && text === 'งานของฉัน') {
+                const myTasksUrl = getMyTasksUrl()
+                await client.replyMessage(event.replyToken, myTasksUrl
+                    ? {
+                        type: 'template',
+                        altText: 'งานของฉัน',
+                        template: {
+                            type: 'buttons',
+                            title: 'งานของฉัน',
+                            text: 'เปิดระบบงานภายนอก',
+                            actions: [{ type: 'uri', label: 'เปิดงานของฉัน', uri: myTasksUrl }],
+                        },
+                    }
+                    : { type: 'text', text: 'ระบบงานของฉันยังไม่เปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ' })
                 return
             }
 
@@ -2536,6 +2564,7 @@ class LineBotService {
         if (event.type === 'postback' && event.postback.data) {
             const params = new URLSearchParams(event.postback.data)
             const action = params.get('action')
+            if (action === 'richmenu_switch') return
             const id     = params.get('id')
             const db     = getDb()
 

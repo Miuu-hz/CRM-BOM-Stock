@@ -21,13 +21,13 @@ describe('HrTabs', () => {
     const paths = HR_GROUPS.flatMap(g => g.tabs.map(t => t.path))
     expect(new Set(paths).size).toBe(paths.length)
     expect(paths.sort()).toEqual(['/hr/advances', '/hr/assets', '/hr/attendance', '/hr/discipline', '/hr/documents', '/hr/employees',
-      '/hr/leave', '/hr/lifecycle', '/hr/org', '/hr/payroll', '/hr/recruit', '/hr/roster', '/hr/settings', '/hr/training'])
+      '/hr/leave', '/hr/lifecycle', '/hr/org', '/hr/payroll', '/hr/recruit', '/hr/roster', '/hr/settings', '/hr/training', '/hr/trips'])
   })
 
-  it('อยู่หน้าตารางกะ → เห็นแท็บของกลุ่มเวลาทำงาน 3 แท็บ และแท็บตารางกะ active', () => {
+  it('อยู่หน้าตารางกะ → เห็นแท็บของกลุ่มเวลาทำงาน 4 แท็บ และแท็บตารางกะ active', () => {
     at('/hr/roster')
     const links = screen.getAllByRole('link')
-    expect(links.map(l => l.getAttribute('href'))).toEqual(['/hr/attendance', '/hr/roster', '/hr/leave'])
+    expect(links.map(l => l.getAttribute('href'))).toEqual(['/hr/attendance', '/hr/roster', '/hr/leave', '/hr/trips'])
     expect(links[1].className).toContain('border-[var(--primary)]')
     expect(screen.getByText('page')).toBeTruthy()
   })

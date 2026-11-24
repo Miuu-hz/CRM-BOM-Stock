@@ -134,7 +134,8 @@
     "hrPeople": "People",
     "hrTime": "Time",
     "payrollRuns": "Payroll runs",
-    "onOffboard": "On/offboarding"
+    "onOffboard": "On/offboarding",
+    "hrTrips": "Car Trips"
   },
   "dashboard": {
     "title": "Executive Dashboard",

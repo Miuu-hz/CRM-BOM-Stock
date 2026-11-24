@@ -1,0 +1,1376 @@
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import express from 'express'
+import request from 'supertest'
+import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
+import db from '../db/sqlite'
+import { generateId } from '../utils/id'
+import { authenticate } from '../middleware/auth.middleware'
+import { subscriptionGate } from '../middleware/subscription.middleware'
+import authRoutes from './auth.routes'
+import hrTripRoutes from './hr.trip.routes'
+import { closeExpiredTrips } from '../services/hr/carTrip.service'
+import {
+  TRIP_CONSENT_VERSION,
+  TRIP_MAX_OPEN_MS,
+  validateCoords,
+  validateOdometer,
+  computeTripFlags,
+} from '../services/hr/carTripFlags'
+import { createTestUser } from '../test/testAuth'
+
+function buildApp() {
+  const app = express()
+  app.use(express.json({ limit: '1mb' }))
+  app.use('/api/auth', authRoutes)
+  app.use('/api/hr', authenticate, subscriptionGate('hr'), hrTripRoutes)
+  return app
+}
+
+const tenants: string[] = []
+const origApiKey = process.env.GOOGLE_ROUTES_API_KEY
+const origTimeoutMs = process.env.GOOGLE_ROUTES_TIMEOUT_MS
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  if (origApiKey === undefined) delete process.env.GOOGLE_ROUTES_API_KEY
+  else process.env.GOOGLE_ROUTES_API_KEY = origApiKey
+  if (origTimeoutMs === undefined) delete process.env.GOOGLE_ROUTES_TIMEOUT_MS
+  else process.env.GOOGLE_ROUTES_TIMEOUT_MS = origTimeoutMs
+
+  for (const t of tenants.splice(0)) {
+    db.prepare('DELETE FROM hr_car_trip_stops WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM hr_car_trips WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM hr_trip_consents WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM hr_vehicles WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM line_login_tokens WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM employees WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM tenant_subscriptions WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM users WHERE tenant_id = ?').run(t)
+  }
+})
+
+function newAdmin() {
+  const u = createTestUser({ role: 'ADMIN' })
+  tenants.push(u.tenantId)
+  return u
+}
+
+function createUserWithPerms(params: {
+  tenantId: string
+  role?: 'ADMIN' | 'USER'
+  customPermissions?: Record<string, boolean>
+}) {
+  const userId = generateId()
+  const email = `user-${userId}@example.com`
+  const role = params.role ?? 'USER'
+  db.prepare(
+    `INSERT INTO users (id, email, password, name, role, tenant_id, status, custom_permissions)
+     VALUES (?, ?, 'x', 'Test User', ?, ?, 'active', ?)`
+  ).run(
+    userId,
+    email,
+    role,
+    params.tenantId,
+    params.customPermissions ? JSON.stringify(params.customPermissions) : null
+  )
+  const token = jwt.sign(
+    { userId, email, role, tenantId: params.tenantId },
+    process.env.JWT_SECRET!,
+    { expiresIn: '1h' }
+  )
+  return { userId, email, role, tenantId: params.tenantId, token }
+}
+
+function insertEmployee(params: {
+  tenantId: string
+  code: string
+  firstName: string
+  lastName?: string
+  userId?: string | null
+  status?: 'ACTIVE' | 'RESIGNED' | 'TERMINATED'
+}) {
+  const id = generateId()
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO employees (
+       id, tenant_id, code, first_name, last_name, employment_type, base_wage,
+       start_date, status, user_id, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, 'MONTHLY', 18000, '2026-01-01', ?, ?, ?, ?)`
+  ).run(
+    id,
+    params.tenantId,
+    params.code,
+    params.firstName,
+    params.lastName ?? null,
+    params.status ?? 'ACTIVE',
+    params.userId ?? null,
+    now,
+    now
+  )
+  return id
+}
+
+function insertVehicle(
+  tenantId: string,
+  plateNo: string,
+  label: string | null = null,
+  isActive = 1
+) {
+  const id = generateId()
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO hr_vehicles (id, tenant_id, plate_no, label, is_active, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`
+  ).run(id, tenantId, plateNo, label, isActive, now, now)
+  return id
+}
+
+function acceptConsent(app: express.Express, token: string) {
+  return request(app)
+    .post('/api/hr/me/trips/consent')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ consent: true, version: TRIP_CONSENT_VERSION })
+}
+
+describe('carTripFlags unit checks', () => {
+  it('validates coordinates and odometer strictly', () => {
+    expect(validateCoords({ lat: 95, lng: 100.5 }).ok).toBe(false)
+    expect(validateCoords({ lat: 13.7, lng: -200 }).ok).toBe(false)
+    expect(validateCoords({ lat: 0, lng: 0 }).ok).toBe(false)
+    expect(validateCoords({ lat: 'abc', lng: 100.5 }).ok).toBe(false)
+    expect(validateCoords({ lat: true as any, lng: 100.5 }).ok).toBe(false)
+    expect(validateCoords({ lat: 13.75, lng: 100.5, accuracy_m: -5 }).ok).toBe(false)
+    expect(validateCoords({ lat: 13.75, lng: 100.5, accuracy_m: 20 })).toEqual({
+      ok: true,
+      lat: 13.75,
+      lng: 100.5,
+      accuracy_m: 20,
+    })
+
+    expect(validateOdometer(-1).ok).toBe(false)
+    expect(validateOdometer('abc').ok).toBe(false)
+    expect(validateOdometer(true as any).ok).toBe(false)
+    expect(validateOdometer(10_000_000).ok).toBe(false)
+    expect(validateOdometer(12345.6)).toEqual({ ok: true, value: 12345.6 })
+  })
+
+  it('computes all 4 anomaly flags at exact boundary thresholds', () => {
+    // ODOMETER_MISMATCH boundaries
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: 12,
+        mapDistanceKm: 10,
+        durationSec: 600,
+        mapDurationSec: 600,
+        accuracies: [20, 20],
+      })
+    ).toEqual([])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: 12.1,
+        mapDistanceKm: 10,
+        durationSec: 600,
+        mapDurationSec: 600,
+        accuracies: [20, 20],
+      })
+    ).toEqual(['ODOMETER_MISMATCH'])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: 7.9,
+        mapDistanceKm: 10,
+        durationSec: 600,
+        mapDurationSec: 600,
+        accuracies: [20, 20],
+      })
+    ).toEqual(['ODOMETER_MISMATCH'])
+
+    // DURATION_EXCESSIVE boundaries
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: 10,
+        mapDistanceKm: 10,
+        durationSec: 3600,
+        mapDurationSec: 1800,
+        accuracies: [15],
+      })
+    ).toEqual([])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: 10,
+        mapDistanceKm: 10,
+        durationSec: 3660,
+        mapDurationSec: 1800,
+        accuracies: [15],
+      })
+    ).toEqual(['DURATION_EXCESSIVE'])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: 10,
+        mapDistanceKm: 10,
+        durationSec: 1200,
+        mapDurationSec: 300,
+        accuracies: [15],
+      })
+    ).toEqual([])
+
+    // ODOMETER_ROLLBACK boundaries
+    expect(
+      computeTripFlags({
+        carType: 'COMPANY',
+        startOdometer: 999,
+        prevVehicleEndOdometer: 1000,
+        odometerKm: null,
+        mapDistanceKm: null,
+        durationSec: null,
+        mapDurationSec: null,
+        accuracies: [10],
+      })
+    ).toEqual(['ODOMETER_ROLLBACK'])
+
+    expect(
+      computeTripFlags({
+        carType: 'COMPANY',
+        startOdometer: 1000,
+        prevVehicleEndOdometer: 1000,
+        odometerKm: null,
+        mapDistanceKm: null,
+        durationSec: null,
+        mapDurationSec: null,
+        accuracies: [10],
+      })
+    ).toEqual([])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 500,
+        prevVehicleEndOdometer: 1000,
+        odometerKm: null,
+        mapDistanceKm: null,
+        durationSec: null,
+        mapDurationSec: null,
+        accuracies: [10],
+      })
+    ).toEqual([])
+
+    // POOR_GPS boundaries
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: null,
+        mapDistanceKm: null,
+        durationSec: null,
+        mapDurationSec: null,
+        accuracies: [150, 50],
+      })
+    ).toEqual([])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: null,
+        mapDistanceKm: null,
+        durationSec: null,
+        mapDurationSec: null,
+        accuracies: [20, 151],
+      })
+    ).toEqual(['POOR_GPS'])
+
+    expect(
+      computeTripFlags({
+        carType: 'PRIVATE',
+        startOdometer: 100,
+        prevVehicleEndOdometer: null,
+        odometerKm: null,
+        mapDistanceKm: null,
+        durationSec: null,
+        mapDurationSec: null,
+        accuracies: [20, null],
+      })
+    ).toEqual(['POOR_GPS'])
+  })
+})
+
+describe('HR Car Trips REST API', () => {
+  const app = buildApp()
+
+  it('PDPA consent gate: blocks start/stops/end until accepted, rejects consent:false', async () => {
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    const empId = insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'EMP-001',
+      firstName: 'สมชาย',
+      userId: empUser.userId,
+    })
+
+    const badConsent = await request(app)
+      .post('/api/hr/me/trips/consent')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ consent: false })
+    expect(badConsent.status).toBe(400)
+
+    const startWithout = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'กข 1234',
+        start_odometer: 1000,
+        lat: 13.7563,
+        lng: 100.5018,
+        accuracy_m: 12,
+      })
+    expect(startWithout.status).toBe(403)
+    expect(startWithout.body.code).toBe('CONSENT_REQUIRED')
+    const countAfterReject = (
+      db
+        .prepare('SELECT COUNT(*) c FROM hr_car_trips WHERE tenant_id = ?')
+        .get(admin.tenantId) as any
+    ).c
+    expect(countAfterReject).toBe(0)
+
+    const stopWithout = await request(app)
+      .post('/api/hr/me/trips/nonexistent/stops')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ lat: 13.75, lng: 100.5, accuracy_m: 10 })
+    expect(stopWithout.status).toBe(403)
+    expect(stopWithout.body.code).toBe('CONSENT_REQUIRED')
+
+    const endWithout = await request(app)
+      .post('/api/hr/me/trips/nonexistent/end')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 1010, lat: 13.75, lng: 100.5, accuracy_m: 10 })
+    expect(endWithout.status).toBe(403)
+    expect(endWithout.body.code).toBe('CONSENT_REQUIRED')
+
+    const okConsent = await acceptConsent(app, empUser.token)
+    expect(okConsent.status).toBe(200)
+    expect(okConsent.body.data.accepted).toBe(true)
+    expect(okConsent.body.data.version).toBe('1.0')
+
+    const consentRow = db
+      .prepare(
+        'SELECT employee_id, user_id, consent_version, accepted_at FROM hr_trip_consents WHERE tenant_id = ? AND employee_id = ?'
+      )
+      .get(admin.tenantId, empId) as any
+    expect(consentRow).toMatchObject({
+      employee_id: empId,
+      user_id: empUser.userId,
+      consent_version: '1.0',
+    })
+    expect(consentRow.accepted_at).toBeTruthy()
+
+    const startOk = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'กข 1234',
+        start_odometer: 1000,
+        lat: 13.7563,
+        lng: 100.5018,
+        accuracy_m: 12,
+      })
+    expect(startOk.status).toBe(201)
+    expect(startOk.body.data.status).toBe('OPEN')
+    expect(startOk.body.data.flags).toBeUndefined()
+  })
+
+  it('replay start, concurrent start race, and unique index block second OPEN trip', async () => {
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    const empId = insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'EMP-002',
+      firstName: 'วิชัย',
+      userId: empUser.userId,
+    })
+    await acceptConsent(app, empUser.token)
+
+    const payload = {
+      car_type: 'PRIVATE',
+      plate_no: 'ขค 9999',
+      start_odometer: 5000,
+      lat: 13.75,
+      lng: 100.5,
+      accuracy_m: 10,
+    }
+
+    // Sequential double start
+    const r1 = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send(payload)
+    expect(r1.status).toBe(201)
+
+    const r2 = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send(payload)
+    expect(r2.status).toBe(409)
+
+    // Direct DB insert of second OPEN trip for same employee is blocked by uq_hr_car_trips_open_emp
+    expect(() => {
+      const now = new Date().toISOString()
+      db.prepare(
+        `INSERT INTO hr_car_trips (
+           id, tenant_id, employee_id, car_type, plate_no, status, started_at,
+           start_odometer, start_lat, start_lng, created_at, updated_at
+         ) VALUES (?, ?, ?, 'PRIVATE', 'XX', 'OPEN', ?, 1, 13.7, 100.5, ?, ?)`
+      ).run(generateId(), admin.tenantId, empId, now, now, now)
+    }).toThrow(/UNIQUE/)
+
+    // Concurrent race on a second employee
+    const empUser2 = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'EMP-003',
+      firstName: 'สมหญิง',
+      userId: empUser2.userId,
+    })
+    await acceptConsent(app, empUser2.token)
+
+    const [c1, c2] = await Promise.all([
+      request(app)
+        .post('/api/hr/me/trips/start')
+        .set('Authorization', `Bearer ${empUser2.token}`)
+        .send(payload),
+      request(app)
+        .post('/api/hr/me/trips/start')
+        .set('Authorization', `Bearer ${empUser2.token}`)
+        .send(payload),
+    ])
+    const statuses = [c1.status, c2.status].sort()
+    expect(statuses).toEqual([201, 409])
+  })
+
+  it('replay end & concurrent end race call Google Routes at most once', async () => {
+    delete process.env.GOOGLE_ROUTES_API_KEY
+    process.env.GOOGLE_ROUTES_API_KEY = 'secret-test-key'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'EMP-004',
+      firstName: 'มานะ',
+      userId: empUser.userId,
+    })
+    await acceptConsent(app, empUser.token)
+
+    const startRes = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'กก 1111',
+        start_odometer: 100,
+        lat: 13.75,
+        lng: 100.5,
+        accuracy_m: 15,
+      })
+    const tripId = startRes.body.data.id
+
+    // Concurrent end race
+    const [e1, e2] = await Promise.all([
+      request(app)
+        .post(`/api/hr/me/trips/${tripId}/end`)
+        .set('Authorization', `Bearer ${empUser.token}`)
+        .send({ end_odometer: 110, lat: 13.8, lng: 100.6, accuracy_m: 20 }),
+      request(app)
+        .post(`/api/hr/me/trips/${tripId}/end`)
+        .set('Authorization', `Bearer ${empUser.token}`)
+        .send({ end_odometer: 110, lat: 13.8, lng: 100.6, accuracy_m: 20 }),
+    ])
+    expect([e1.status, e2.status].sort()).toEqual([200, 409])
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Replay end again
+    const e3 = await request(app)
+      .post(`/api/hr/me/trips/${tripId}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 110, lat: 13.8, lng: 100.6, accuracy_m: 20 })
+    expect(e3.status).toBe(409)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('tenant isolation & employee isolation & omission of manager-only fields on /me/*', async () => {
+    delete process.env.GOOGLE_ROUTES_API_KEY
+    const adminA = newAdmin()
+    const adminB = newAdmin()
+
+    const vehA = insertVehicle(adminA.tenantId, 'กท 1001', 'รถตู้ A')
+
+    const userA1 = createUserWithPerms({ tenantId: adminA.tenantId })
+    insertEmployee({
+      tenantId: adminA.tenantId,
+      code: 'A-1',
+      firstName: 'เอก',
+      userId: userA1.userId,
+    })
+    const userA2 = createUserWithPerms({ tenantId: adminA.tenantId })
+    insertEmployee({
+      tenantId: adminA.tenantId,
+      code: 'A-2',
+      firstName: 'โท',
+      userId: userA2.userId,
+    })
+
+    const userB1 = createUserWithPerms({ tenantId: adminB.tenantId })
+    insertEmployee({
+      tenantId: adminB.tenantId,
+      code: 'B-1',
+      firstName: 'บี',
+      userId: userB1.userId,
+    })
+
+    await acceptConsent(app, userA1.token)
+    await acceptConsent(app, userA2.token)
+    await acceptConsent(app, userB1.token)
+
+    // Employee B cannot start with Tenant A's vehicle
+    const crossVehStart = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${userB1.token}`)
+      .send({
+        car_type: 'COMPANY',
+        vehicle_id: vehA,
+        start_odometer: 100,
+        lat: 13.75,
+        lng: 100.5,
+        accuracy_m: 10,
+      })
+    expect([400, 404]).toContain(crossVehStart.status)
+
+    // Employee A1 starts a trip with poor accuracy (so flags exist in DB)
+    const startA = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${userA1.token}`)
+      .send({
+        car_type: 'COMPANY',
+        vehicle_id: vehA,
+        start_odometer: 100,
+        lat: 13.75,
+        lng: 100.5,
+        accuracy_m: 500,
+      })
+    expect(startA.status).toBe(201)
+    expect(startA.body.data.flags).toBeUndefined()
+    expect(startA.body.data.route_error).toBeUndefined()
+    expect(startA.body.data.prev_vehicle_end_odometer).toBeUndefined()
+
+    const tripAId = startA.body.data.id
+
+    // Employee A2 cannot add stop or end A1's trip
+    const stopA2 = await request(app)
+      .post(`/api/hr/me/trips/${tripAId}/stops`)
+      .set('Authorization', `Bearer ${userA2.token}`)
+      .send({ lat: 13.76, lng: 100.51, accuracy_m: 10 })
+    expect(stopA2.status).toBe(404)
+
+    const endA2 = await request(app)
+      .post(`/api/hr/me/trips/${tripAId}/end`)
+      .set('Authorization', `Bearer ${userA2.token}`)
+      .send({ end_odometer: 120, lat: 13.77, lng: 100.52, accuracy_m: 10 })
+    expect(endA2.status).toBe(404)
+
+    // Employee A2's history excludes A1's trip
+    const histA2 = await request(app)
+      .get('/api/hr/me/trips')
+      .set('Authorization', `Bearer ${userA2.token}`)
+    expect(histA2.status).toBe(200)
+    expect(histA2.body.data).toEqual([])
+
+    // Employee A1's history omits manager-only fields
+    const histA1 = await request(app)
+      .get('/api/hr/me/trips')
+      .set('Authorization', `Bearer ${userA1.token}`)
+    expect(histA1.status).toBe(200)
+    expect(histA1.body.data).toHaveLength(1)
+    expect(histA1.body.data[0].flags).toBeUndefined()
+    expect(histA1.body.data[0].route_error).toBeUndefined()
+    expect(histA1.body.data[0].prev_vehicle_end_odometer).toBeUndefined()
+
+    // Tenant B manager cannot see A's trip or retry/update A's records
+    const listB = await request(app)
+      .get('/api/hr/trips')
+      .set('Authorization', `Bearer ${adminB.token}`)
+    expect(listB.status).toBe(200)
+    expect(listB.body.data).toEqual([])
+
+    const retryB = await request(app)
+      .post(`/api/hr/trips/${tripAId}/retry-route`)
+      .set('Authorization', `Bearer ${adminB.token}`)
+    expect(retryB.status).toBe(404)
+
+    const updateVehB = await request(app)
+      .put(`/api/hr/vehicles/${vehA}`)
+      .set('Authorization', `Bearer ${adminB.token}`)
+      .send({ label: 'hacked' })
+    expect(updateVehB.status).toBe(404)
+  })
+
+  it('enforces permissions, blocks DELETE, rejects unlinked/resigned employees', async () => {
+    const admin = newAdmin()
+    const plainUser = createUserWithPerms({ tenantId: admin.tenantId })
+    const hrReadUser = createUserWithPerms({
+      tenantId: admin.tenantId,
+      customPermissions: { 'hr:read': true },
+    })
+
+    // Unlinked user on /me/trips* -> 404
+    expect(
+      (
+        await request(app)
+          .get('/api/hr/me/trips/status')
+          .set('Authorization', `Bearer ${plainUser.token}`)
+      ).status
+    ).toBe(404)
+
+    // Plain user without HR perms -> 403 on manager routes
+    expect(
+      (
+        await request(app)
+          .get('/api/hr/trips')
+          .set('Authorization', `Bearer ${plainUser.token}`)
+      ).status
+    ).toBe(403)
+    expect(
+      (
+        await request(app)
+          .get('/api/hr/vehicles')
+          .set('Authorization', `Bearer ${plainUser.token}`)
+      ).status
+    ).toBe(403)
+    expect(
+      (
+        await request(app)
+          .post('/api/hr/trips/any/retry-route')
+          .set('Authorization', `Bearer ${plainUser.token}`)
+      ).status
+    ).toBe(403)
+
+    // HR read-only can GET, cannot POST/PUT
+    expect(
+      (
+        await request(app)
+          .get('/api/hr/trips')
+          .set('Authorization', `Bearer ${hrReadUser.token}`)
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await request(app)
+          .get('/api/hr/vehicles')
+          .set('Authorization', `Bearer ${hrReadUser.token}`)
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await request(app)
+          .post('/api/hr/vehicles')
+          .set('Authorization', `Bearer ${hrReadUser.token}`)
+          .send({ plate_no: 'กก 123' })
+      ).status
+    ).toBe(403)
+    expect(
+      (
+        await request(app)
+          .post('/api/hr/trips/any/retry-route')
+          .set('Authorization', `Bearer ${hrReadUser.token}`)
+      ).status
+    ).toBe(403)
+
+    // No DELETE endpoint for trips
+    const delRes = await request(app)
+      .delete('/api/hr/trips/any-id')
+      .set('Authorization', `Bearer ${admin.token}`)
+    expect(delRes.status).toBe(404)
+
+    // RESIGNED employee on /me/trips* -> 404
+    const resignedUser = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'RES-1',
+      firstName: 'ลาออก',
+      userId: resignedUser.userId,
+      status: 'RESIGNED',
+    })
+    expect(
+      (
+        await request(app)
+          .get('/api/hr/me/trips/status')
+          .set('Authorization', `Bearer ${resignedUser.token}`)
+      ).status
+    ).toBe(404)
+  })
+
+  it('closes trips open >12h lazily (persisting on 409) and via sweep, leaving <12h OPEN', async () => {
+    const admin = newAdmin()
+    const u1 = createUserWithPerms({ tenantId: admin.tenantId })
+    const emp1 = insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'EXP-1',
+      firstName: 'หมดเวลา',
+      userId: u1.userId,
+    })
+    const u2 = createUserWithPerms({ tenantId: admin.tenantId })
+    const emp2 = insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'ACT-2',
+      firstName: 'ยังไม่หมด',
+      userId: u2.userId,
+    })
+    const u3 = createUserWithPerms({ tenantId: admin.tenantId })
+    const emp3 = insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'EXP-3',
+      firstName: 'หยุดเกิน',
+      userId: u3.userId,
+    })
+
+    await acceptConsent(app, u1.token)
+    await acceptConsent(app, u2.token)
+    await acceptConsent(app, u3.token)
+
+    const nowMs = Date.now()
+    const expiredStartedAt = new Date(nowMs - TRIP_MAX_OPEN_MS - 5 * 60_000).toISOString()
+    const activeStartedAt = new Date(nowMs - TRIP_MAX_OPEN_MS + 5 * 60_000).toISOString()
+
+    const trip1 = generateId()
+    const trip2 = generateId()
+    const trip3 = generateId()
+    const trip4 = generateId()
+
+    for (const [id, empId, startedAt] of [
+      [trip1, emp1, expiredStartedAt],
+      [trip2, emp2, activeStartedAt],
+      [trip3, emp3, expiredStartedAt],
+    ] as const) {
+      db.prepare(
+        `INSERT INTO hr_car_trips (
+           id, tenant_id, employee_id, car_type, plate_no, status, started_at,
+           start_odometer, start_lat, start_lng, start_accuracy_m, route_status,
+           flags_json, created_at, updated_at
+         ) VALUES (?, ?, ?, 'PRIVATE', 'กก 100', 'OPEN', ?, 100, 13.75, 100.5, 10, 'NONE', '[]', ?, ?)`
+      ).run(id, admin.tenantId, empId, startedAt, startedAt, startedAt)
+    }
+
+    // 1. /status lazily closes trip1
+    const st1 = await request(app)
+      .get('/api/hr/me/trips/status')
+      .set('Authorization', `Bearer ${u1.token}`)
+    expect(st1.status).toBe(200)
+    expect(st1.body.data.open_trip).toBeNull()
+    const row1 = db
+      .prepare('SELECT status, odometer_km, map_distance_km, route_status, close_reason FROM hr_car_trips WHERE id = ?')
+      .get(trip1) as any
+    expect(row1).toEqual({
+      status: 'INCOMPLETE',
+      odometer_km: null,
+      map_distance_km: null,
+      route_status: 'SKIPPED',
+      close_reason: 'EXPIRED_12H',
+    })
+
+    // 2. /stops on expired trip3 returns 409 AND persists INCOMPLETE (not rolled back!)
+    const stopExpired = await request(app)
+      .post(`/api/hr/me/trips/${trip3}/stops`)
+      .set('Authorization', `Bearer ${u3.token}`)
+      .send({ lat: 13.76, lng: 100.51, accuracy_m: 10 })
+    expect(stopExpired.status).toBe(409)
+    const row3AfterStop = db
+      .prepare('SELECT status, close_reason FROM hr_car_trips WHERE id = ?')
+      .get(trip3) as any
+    expect(row3AfterStop).toEqual({
+      status: 'INCOMPLETE',
+      close_reason: 'EXPIRED_12H',
+    })
+
+    // 3. Seed trip4 expired for emp3, then call /end -> returns 409 AND persists INCOMPLETE
+    db.prepare(
+      `INSERT INTO hr_car_trips (
+         id, tenant_id, employee_id, car_type, plate_no, status, started_at,
+         start_odometer, start_lat, start_lng, start_accuracy_m, route_status,
+         flags_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'PRIVATE', 'กก 100', 'OPEN', ?, 100, 13.75, 100.5, 10, 'NONE', '[]', ?, ?)`
+    ).run(trip4, admin.tenantId, emp3, expiredStartedAt, expiredStartedAt, expiredStartedAt)
+
+    const endExpired = await request(app)
+      .post(`/api/hr/me/trips/${trip4}/end`)
+      .set('Authorization', `Bearer ${u3.token}`)
+      .send({ end_odometer: 120, lat: 13.8, lng: 100.6, accuracy_m: 10 })
+    expect(endExpired.status).toBe(409)
+    const row4AfterEnd = db
+      .prepare('SELECT status, close_reason FROM hr_car_trips WHERE id = ?')
+      .get(trip4) as any
+    expect(row4AfterEnd).toEqual({
+      status: 'INCOMPLETE',
+      close_reason: 'EXPIRED_12H',
+    })
+
+    // 4. /start when expired row exists closes it & opens a new trip
+    db.prepare(
+      `INSERT INTO hr_car_trips (
+         id, tenant_id, employee_id, car_type, plate_no, status, started_at,
+         start_odometer, start_lat, start_lng, start_accuracy_m, route_status,
+         flags_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'PRIVATE', 'กก 100', 'OPEN', ?, 100, 13.75, 100.5, 10, 'NONE', '[]', ?, ?)`
+    ).run(generateId(), admin.tenantId, emp1, expiredStartedAt, expiredStartedAt, expiredStartedAt)
+
+    const newStart = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${u1.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'กก 100',
+        start_odometer: 150,
+        lat: 13.75,
+        lng: 100.5,
+        accuracy_m: 10,
+      })
+    expect(newStart.status).toBe(201)
+
+    // 5. closeExpiredTrips() leaves trip2 (11h55m) OPEN
+    const swept = closeExpiredTrips({ tenantId: admin.tenantId, nowMs })
+    expect(swept).toBe(0)
+    const row2 = db
+      .prepare('SELECT status FROM hr_car_trips WHERE id = ?')
+      .get(trip2) as any
+    expect(row2.status).toBe('OPEN')
+  })
+
+  it('Google Routes: no API key skips fetch; HTTP 500/empty never logs secrets/coords; retry succeeds', async () => {
+    delete process.env.GOOGLE_ROUTES_API_KEY
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'G-1',
+      firstName: 'กูเกิล',
+      userId: empUser.userId,
+    })
+    await acceptConsent(app, empUser.token)
+
+    // Trip 1 without API key
+    const s1 = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'ขข 2222',
+        start_odometer: 200,
+        lat: 13.756311,
+        lng: 100.501822,
+        accuracy_m: 10,
+      })
+    const trip1Id = s1.body.data.id
+
+    const e1 = await request(app)
+      .post(`/api/hr/me/trips/${trip1Id}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        end_odometer: 215,
+        lat: 13.811111,
+        lng: 100.555555,
+        accuracy_m: 10,
+      })
+    expect(e1.status).toBe(200)
+    expect(e1.body.data.status).toBe('COMPLETED')
+    expect(e1.body.data.route_status).toBe('UNAVAILABLE')
+    expect(e1.body.data.map_distance_km).toBeNull()
+    expect(e1.body.data.odometer_km).toBe(15)
+    expect(fetchSpy).toHaveBeenCalledTimes(0)
+
+    const retryNoKey = await request(app)
+      .post(`/api/hr/trips/${trip1Id}/retry-route`)
+      .set('Authorization', `Bearer ${admin.token}`)
+    expect(retryNoKey.status).toBe(503)
+    expect(fetchSpy).toHaveBeenCalledTimes(0)
+
+    // Trip 2 with API key but HTTP 500 + check zero secret/coord logging
+    const secretKey = 'SUPER_SECRET_ROUTES_KEY_XYZ'
+    process.env.GOOGLE_ROUTES_API_KEY = secretKey
+    const logSpy = vi.spyOn(console, 'log')
+    const errSpy = vi.spyOn(console, 'error')
+    const warnSpy = vi.spyOn(console, 'warn')
+
+    fetchSpy.mockResolvedValueOnce(new Response('bad gateway', { status: 500 }))
+
+    const s2 = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'ขข 2222',
+        start_odometer: 300,
+        lat: 13.712345,
+        lng: 100.543219,
+        accuracy_m: 10,
+      })
+    const trip2Id = s2.body.data.id
+
+    const e2 = await request(app)
+      .post(`/api/hr/me/trips/${trip2Id}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        end_odometer: 315,
+        lat: 13.865432,
+        lng: 100.598765,
+        accuracy_m: 10,
+      })
+    expect(e2.status).toBe(200)
+    expect(e2.body.data.status).toBe('COMPLETED')
+    expect(e2.body.data.route_status).toBe('FAILED')
+    expect(e2.body.data.map_distance_km).toBeNull()
+
+    const dbErrRow = db
+      .prepare('SELECT route_error FROM hr_car_trips WHERE id = ?')
+      .get(trip2Id) as any
+    expect(dbErrRow.route_error).toBe('HTTP_500')
+
+    const allLogs = [
+      ...logSpy.mock.calls,
+      ...errSpy.mock.calls,
+      ...warnSpy.mock.calls,
+    ]
+      .flat()
+      .map(String)
+      .join(' ')
+    expect(allLogs).not.toContain(secretKey)
+    expect(allLogs).not.toContain('13.712345')
+    expect(allLogs).not.toContain('100.543219')
+    expect(allLogs).not.toContain('13.865432')
+
+    // Manager retries trip2 with mocked 200 -> updates route_status='OK' & recomputes flags
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+    const retryOk = await request(app)
+      .post(`/api/hr/trips/${trip2Id}/retry-route`)
+      .set('Authorization', `Bearer ${admin.token}`)
+    expect(retryOk.status).toBe(200)
+    expect(retryOk.body.data.route_status).toBe('OK')
+    expect(retryOk.body.data.map_distance_km).toBe(10)
+    expect(retryOk.body.data.map_duration_sec).toBe(600)
+    expect(retryOk.body.data.flags).toContain('ODOMETER_MISMATCH')
+
+    // Second retry when already OK -> 409
+    const retryAgain = await request(app)
+      .post(`/api/hr/trips/${trip2Id}/retry-route`)
+      .set('Authorization', `Bearer ${admin.token}`)
+    expect(retryAgain.status).toBe(409)
+  })
+
+  it('Google Routes: timeout aborts cleanly & valid call sends X-Goog-FieldMask + ordered intermediates', async () => {
+    process.env.GOOGLE_ROUTES_API_KEY = 'valid-key-123'
+    process.env.GOOGLE_ROUTES_TIMEOUT_MS = '30'
+
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'G-2',
+      firstName: 'เส้นทาง',
+      userId: empUser.userId,
+    })
+    await acceptConsent(app, empUser.token)
+
+    // Hanging fetch -> abort -> TIMEOUT
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const err = new Error('The operation was aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+    )
+
+    const s1 = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'งง 4444',
+        start_odometer: 100,
+        lat: 13.7,
+        lng: 100.5,
+        accuracy_m: 10,
+      })
+    const trip1Id = s1.body.data.id
+
+    const e1 = await request(app)
+      .post(`/api/hr/me/trips/${trip1Id}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 105, lat: 13.8, lng: 100.6, accuracy_m: 10 })
+    expect(e1.status).toBe(200)
+    expect(e1.body.data.route_status).toBe('FAILED')
+    const errRow = db
+      .prepare('SELECT route_error FROM hr_car_trips WHERE id = ?')
+      .get(trip1Id) as any
+    expect(errRow.route_error).toBe('TIMEOUT')
+
+    // Valid call with 2 stops: verify URL, FieldMask, Api-Key, intermediates order, and route_map_url
+    process.env.GOOGLE_ROUTES_TIMEOUT_MS = '5000'
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ routes: [{ distanceMeters: 25400, duration: '1500s' }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+
+    const s2 = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'งง 4444',
+        start_odometer: 200,
+        lat: 13.71,
+        lng: 100.51,
+        accuracy_m: 10,
+      })
+    const trip2Id = s2.body.data.id
+
+    await request(app)
+      .post(`/api/hr/me/trips/${trip2Id}/stops`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ lat: 13.72, lng: 100.52, accuracy_m: 10, note: 'จุด 1' })
+    await request(app)
+      .post(`/api/hr/me/trips/${trip2Id}/stops`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ lat: 13.73, lng: 100.53, accuracy_m: 10, note: 'จุด 2' })
+
+    const e2 = await request(app)
+      .post(`/api/hr/me/trips/${trip2Id}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 225, lat: 13.79, lng: 100.59, accuracy_m: 10 })
+    expect(e2.status).toBe(200)
+    expect(e2.body.data.route_status).toBe('OK')
+    expect(e2.body.data.map_distance_km).toBe(25.4)
+    expect(e2.body.data.map_duration_sec).toBe(1500)
+    expect(e2.body.data.route_map_url).toContain('waypoints=13.72,100.52%7C13.73,100.53')
+    expect(e2.body.data.route_map_url).not.toContain('|')
+
+    const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1]
+    expect(lastCall[0]).toBe('https://routes.googleapis.com/directions/v2:computeRoutes')
+    const reqInit = lastCall[1] as RequestInit
+    expect((reqInit.headers as Record<string, string>)['X-Goog-FieldMask']).toBe(
+      'routes.distanceMeters,routes.duration'
+    )
+    expect((reqInit.headers as Record<string, string>)['X-Goog-Api-Key']).toBe(
+      'valid-key-123'
+    )
+    const sentBody = JSON.parse(reqInit.body as string)
+    expect(sentBody.intermediates).toEqual([
+      { location: { latLng: { latitude: 13.72, longitude: 100.52 } } },
+      { location: { latLng: { latitude: 13.73, longitude: 100.53 } } },
+    ])
+  })
+
+  it('rejects invalid coords/odometer, end < start, and enforces 10-stop limit', async () => {
+    delete process.env.GOOGLE_ROUTES_API_KEY
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'LIM-1',
+      firstName: 'จุดแวะ',
+      userId: empUser.userId,
+    })
+    await acceptConsent(app, empUser.token)
+
+    for (const badBody of [
+      { car_type: 'PRIVATE', plate_no: 'ก 1', start_odometer: 100, lat: 95, lng: 100 },
+      { car_type: 'PRIVATE', plate_no: 'ก 1', start_odometer: 100, lat: 13.7, lng: -200 },
+      { car_type: 'PRIVATE', plate_no: 'ก 1', start_odometer: 100, lat: 0, lng: 0 },
+      { car_type: 'PRIVATE', plate_no: 'ก 1', start_odometer: 100, lat: 'abc', lng: 100 },
+      { car_type: 'PRIVATE', plate_no: 'ก 1', start_odometer: 100, lat: 13.7, lng: 100, accuracy_m: -5 },
+      { car_type: 'PRIVATE', plate_no: 'ก 1', start_odometer: -10, lat: 13.7, lng: 100 },
+    ]) {
+      const r = await request(app)
+        .post('/api/hr/me/trips/start')
+        .set('Authorization', `Bearer ${empUser.token}`)
+        .send(badBody)
+      expect(r.status).toBe(400)
+    }
+
+    const startRes = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'ก 1',
+        start_odometer: 500,
+        lat: 13.75,
+        lng: 100.5,
+        accuracy_m: 10,
+      })
+    expect(startRes.status).toBe(201)
+    const tripId = startRes.body.data.id
+
+    // Add 10 stops -> 201
+    for (let i = 1; i <= 10; i++) {
+      const stopRes = await request(app)
+        .post(`/api/hr/me/trips/${tripId}/stops`)
+        .set('Authorization', `Bearer ${empUser.token}`)
+        .send({ lat: 13.75 + i * 0.001, lng: 100.5, accuracy_m: 10 })
+      expect(stopRes.status).toBe(201)
+      expect(stopRes.body.data.stops).toHaveLength(i)
+    }
+
+    // 11th stop -> 409
+    const stop11 = await request(app)
+      .post(`/api/hr/me/trips/${tripId}/stops`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ lat: 13.77, lng: 100.5, accuracy_m: 10 })
+    expect(stop11.status).toBe(409)
+
+    // end_odometer < start_odometer -> 400
+    const badEnd = await request(app)
+      .post(`/api/hr/me/trips/${tripId}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 499, lat: 13.8, lng: 100.6, accuracy_m: 10 })
+    expect(badEnd.status).toBe(400)
+  })
+
+  it('vehicles CRUD + manager trip flags (ODOMETER_ROLLBACK, POOR_GPS, ODOMETER_MISMATCH)', async () => {
+    process.env.GOOGLE_ROUTES_API_KEY = 'key-for-flags'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+    )
+
+    const admin = newAdmin()
+    const authAdmin = { Authorization: `Bearer ${admin.token}` }
+
+    const vCreate = await request(app)
+      .post('/api/hr/vehicles')
+      .set(authAdmin)
+      .send({ plate_no: 'ฮฮ 8888', label: 'กระบะ 1', notes: 'ดีเซล' })
+    expect(vCreate.status).toBe(201)
+    const vehId = vCreate.body.data.id
+
+    const vDup = await request(app)
+      .post('/api/hr/vehicles')
+      .set(authAdmin)
+      .send({ plate_no: 'ฮฮ 8888' })
+    expect(vDup.status).toBe(409)
+
+    const empUser = createUserWithPerms({ tenantId: admin.tenantId })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'DRV-1',
+      firstName: 'คนขับ',
+      userId: empUser.userId,
+    })
+    await acceptConsent(app, empUser.token)
+
+    // Trip 1 ends at 1000
+    const t1Start = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'COMPANY',
+        vehicle_id: vehId,
+        start_odometer: 990,
+        lat: 13.7,
+        lng: 100.5,
+        accuracy_m: 10,
+      })
+    await request(app)
+      .post(`/api/hr/me/trips/${t1Start.body.data.id}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 1000, lat: 13.8, lng: 100.6, accuracy_m: 10 })
+
+    // Verify last_end_odometer on GET /api/hr/vehicles
+    const vList1 = await request(app).get('/api/hr/vehicles').set(authAdmin)
+    expect(vList1.status).toBe(200)
+    expect(vList1.body.data[0].last_end_odometer).toBe(1000)
+
+    // Trip 2 starts at 950 (< 1000 -> ODOMETER_ROLLBACK) with accuracy_m 200 (POOR_GPS)
+    // and ends at 965 (15km vs 10km -> ODOMETER_MISMATCH)
+    const t2Start = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'COMPANY',
+        vehicle_id: vehId,
+        start_odometer: 950,
+        lat: 13.7,
+        lng: 100.5,
+        accuracy_m: 200,
+      })
+    const t2End = await request(app)
+      .post(`/api/hr/me/trips/${t2Start.body.data.id}/end`)
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({ end_odometer: 965, lat: 13.8, lng: 100.6, accuracy_m: 10 })
+    expect(t2End.status).toBe(200)
+    expect(t2End.body.data.route_status).toBe('OK')
+    expect(t2End.body.data.map_distance_km).toBe(10)
+
+    const flaggedList = await request(app)
+      .get('/api/hr/trips?flagged=1')
+      .set(authAdmin)
+    expect(flaggedList.status).toBe(200)
+    expect(flaggedList.body.data).toHaveLength(1)
+    expect(flaggedList.body.data[0].flags).toEqual(
+      expect.arrayContaining([
+        'ODOMETER_ROLLBACK',
+        'POOR_GPS',
+        'ODOMETER_MISMATCH',
+      ])
+    )
+    expect(flaggedList.body.data[0].prev_vehicle_end_odometer).toBe(1000)
+
+    // Deactivate vehicle -> hidden from /me/vehicles and rejected on /me/trips/start
+    const vDeact = await request(app)
+      .put(`/api/hr/vehicles/${vehId}`)
+      .set(authAdmin)
+      .send({ is_active: false })
+    expect(vDeact.status).toBe(200)
+    expect(vDeact.body.data.is_active).toBe(false)
+
+    const myVehs = await request(app)
+      .get('/api/hr/me/vehicles')
+      .set('Authorization', `Bearer ${empUser.token}`)
+    expect(myVehs.status).toBe(200)
+    expect(myVehs.body.data).toEqual([])
+
+    const startDeact = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set('Authorization', `Bearer ${empUser.token}`)
+      .send({
+        car_type: 'COMPANY',
+        vehicle_id: vehId,
+        start_odometer: 1000,
+        lat: 13.7,
+        lng: 100.5,
+        accuracy_m: 10,
+      })
+    expect(startDeact.status).toBe(400)
+  })
+
+  it('hr_self token minted via POST /api/auth/line-login + subscriptionGate(hr) integration', async () => {
+    delete process.env.GOOGLE_ROUTES_API_KEY
+    const admin = newAdmin()
+    const empUser = createUserWithPerms({
+      tenantId: admin.tenantId,
+      role: 'ADMIN',
+      customPermissions: { 'hr:write': true },
+    })
+    insertEmployee({
+      tenantId: admin.tenantId,
+      code: 'LINE-1',
+      firstName: 'ไลน์',
+      userId: empUser.userId,
+    })
+    db.prepare(
+      `INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+       VALUES (?, ?, ?, ?, 'ADMIN')`
+    ).run(generateId(), admin.tenantId, empUser.userId, 'U' + generateId())
+
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString()
+    db.prepare(
+      `INSERT INTO line_login_tokens (token_hash, tenant_id, user_id, expires_at)
+       VALUES (?, ?, ?, ?)`
+    ).run(tokenHash, admin.tenantId, empUser.userId, expiresAt)
+
+    const loginRes = await request(app)
+      .post('/api/auth/line-login')
+      .send({ token: rawToken })
+    expect(loginRes.status).toBe(200)
+    expect(loginRes.body.data.user.scope).toBe('hr_self')
+    const hrSelfToken = loginRes.body.data.token
+    const authSelf = { Authorization: `Bearer ${hrSelfToken}` }
+
+    // Self endpoints succeed
+    const cRes = await request(app)
+      .post('/api/hr/me/trips/consent')
+      .set(authSelf)
+      .send({ consent: true, version: '1.0' })
+    expect(cRes.status).toBe(200)
+
+    const sRes = await request(app)
+      .post('/api/hr/me/trips/start')
+      .set(authSelf)
+      .send({
+        car_type: 'PRIVATE',
+        plate_no: 'ลน 999',
+        start_odometer: 100,
+        lat: 13.75,
+        lng: 100.5,
+        accuracy_m: 15,
+      })
+    expect(sRes.status).toBe(201)
+    const tripId = sRes.body.data.id
+
+    const stopRes = await request(app)
+      .post(`/api/hr/me/trips/${tripId}/stops`)
+      .set(authSelf)
+      .send({ lat: 13.76, lng: 100.51, accuracy_m: 15, note: 'ลูกค้า' })
+    expect(stopRes.status).toBe(201)
+
+    const endRes = await request(app)
+      .post(`/api/hr/me/trips/${tripId}/end`)
+      .set(authSelf)
+      .send({ end_odometer: 112, lat: 13.77, lng: 100.52, accuracy_m: 15 })
+    expect(endRes.status).toBe(200)
+
+    // Manager endpoints blocked with 403 even though underlying user is ADMIN
+    const mgrTrips = await request(app).get('/api/hr/trips').set(authSelf)
+    expect(mgrTrips.status).toBe(403)
+    const mgrVeh = await request(app)
+      .post('/api/hr/vehicles')
+      .set(authSelf)
+      .send({ plate_no: 'xx 123' })
+    expect(mgrVeh.status).toBe(403)
+  })
+})

@@ -3718,6 +3718,94 @@ export function runMonthCloseMigrations(db: any): void {
       console.log('✅ Migration: online_return_events.journal_entry_id added')
     }
   } catch (e) { console.error('⚠️ online_return_events.journal_entry_id migration error:', e) }
+
+  // ── HR Car Trips (LINE Staff Car Trips & Company Vehicles) ──
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS hr_vehicles (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        plate_no TEXT NOT NULL,
+        label TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(tenant_id, plate_no)
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_vehicles_tenant ON hr_vehicles(tenant_id, is_active);
+
+      CREATE TABLE IF NOT EXISTS hr_trip_consents (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        consent_version TEXT NOT NULL,
+        accepted_at TEXT NOT NULL,
+        UNIQUE(tenant_id, employee_id, consent_version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_trip_consents_emp ON hr_trip_consents(tenant_id, employee_id);
+
+      CREATE TABLE IF NOT EXISTS hr_car_trips (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        vehicle_id TEXT NULL,
+        car_type TEXT NOT NULL CHECK (car_type IN ('COMPANY', 'PRIVATE')),
+        plate_no TEXT NOT NULL,
+        vehicle_label TEXT,
+        purpose TEXT,
+        status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'COMPLETED', 'INCOMPLETE')),
+        started_at TEXT NOT NULL,
+        start_odometer REAL NOT NULL,
+        start_lat REAL NOT NULL,
+        start_lng REAL NOT NULL,
+        start_accuracy_m REAL,
+        prev_vehicle_end_odometer REAL,
+        ended_at TEXT,
+        end_odometer REAL,
+        end_lat REAL,
+        end_lng REAL,
+        end_accuracy_m REAL,
+        odometer_km REAL,
+        duration_sec INTEGER,
+        map_distance_m INTEGER,
+        map_distance_km REAL,
+        map_duration_sec INTEGER,
+        route_status TEXT NOT NULL DEFAULT 'NONE' CHECK (route_status IN ('NONE', 'PENDING', 'OK', 'FAILED', 'UNAVAILABLE', 'SKIPPED')),
+        route_error TEXT,
+        route_fetched_at TEXT,
+        flags_json TEXT NOT NULL DEFAULT '[]',
+        close_reason TEXT,
+        auto_closed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_hr_car_trips_open_emp
+        ON hr_car_trips(tenant_id, employee_id) WHERE status = 'OPEN';
+      CREATE INDEX IF NOT EXISTS idx_hr_car_trips_tenant_started
+        ON hr_car_trips(tenant_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_hr_car_trips_emp
+        ON hr_car_trips(tenant_id, employee_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_hr_car_trips_vehicle
+        ON hr_car_trips(tenant_id, vehicle_id, status, ended_at DESC);
+
+      CREATE TABLE IF NOT EXISTS hr_car_trip_stops (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        trip_id TEXT NOT NULL REFERENCES hr_car_trips(id),
+        seq INTEGER NOT NULL,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        accuracy_m REAL,
+        note TEXT,
+        recorded_at TEXT NOT NULL,
+        UNIQUE(trip_id, seq)
+      );
+      CREATE INDEX IF NOT EXISTS idx_hr_car_trip_stops_trip ON hr_car_trip_stops(tenant_id, trip_id, seq);
+    `)
+    console.log('✅ Migration: hr_vehicles / hr_trip_consents / hr_car_trips / hr_car_trip_stops ready')
+  } catch (e) { console.error('⚠️ HR Car Trips migration error:', e) }
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */
