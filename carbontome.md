@@ -2224,3 +2224,15 @@ tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · G
 - เมนู POS (`pos_menu_configs.product_id`) ไม่เคยมีบรรทัดขาย → ดึงจากบิล PAID รวมต่อวันไทย+ราคา, ไม่นับการตัดสต็อกตัวเองซ้ำ · การ์ดบอกเมื่อไม่มีใบรับซื้อ
 - ตรวจ: tsc, backend 1640 เทสต์, Goldfish line-gf4 (รอบ 3) และ line-gf5 = LGTM
 - rollback: `backups/pre-line-possales-2026-11-24.db.gz` + `/scratch/pre-line-possales-dist/` + `git reset --hard 9633fdb`
+
+---
+
+## 📅 Session Log — 24 พ.ย. 2026 (สั่งผลิตจากใบขายตามแผนก + ผูกพนักงาน HR กับบัญชี ERP)
+
+- `POST /sales-orders/:id/produce-shortfall`: ผู้มีสิทธิ์ `production:write` (USER แผนก PRODUCTION) สั่งผลิตจากใบขายได้จนปิดงาน (`TransitionActor.canComplete`) · ปิด/ยกเลิกใบสั่งผลิตโดยตรงยังใช้ `WO_PRIVILEGED_ROLES` เดิม
+- หน้าแก้ไขพนักงาน HR มีช่อง "บัญชีผู้ใช้ ERP ที่ผูก" — เปลี่ยน `employees.user_id` ได้เฉพาะ ADMIN/MASTER · ย้ายออกจากบัญชี `line_only`: LINE ตามไป (ปลายทางมี LINE อยู่แล้วคงของเดิม), ลบโทเคน, ปิดบัญชีเดิม · เขียนใน transaction เดียว
+- เชิญ LINE เจอบัญชี ERP ชื่อ/อีเมลเดียวกันที่ยังไม่ผูก = 409 `ERP_ACCOUNT_EXISTS` (`new_account: true` = คนละคน) · ออกรหัสให้บัญชี role สูงกว่าตัวเองไม่ได้
+- `GET /users` ไม่แสดงบัญชี `line_only` ที่ปิดแล้ว และเพิ่ม `line_only`, `employee_code`
+- ตรวจ: tsc, เทสต์ backend/frontend ชุดเต็ม, รีวิวปิดท้าย Neon High = LGTM · ยังไม่ได้ลองบนหน้าจอจริง
+- ค้าง: EMP-001 (tenant_msqy2xbn) เจ้าของจะผูกเองในหน้า HR · offboard ยังไม่ลบ `line_link_tokens`/`line_login_tokens` ของบัญชี line_only
+- rollback: `backups/pre-staff-link-2026-11-24.db.gz` + `/scratch/pre-staff-link-dist/` + `git reset --hard 50d1764`
