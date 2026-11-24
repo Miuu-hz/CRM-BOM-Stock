@@ -2219,3 +2219,8 @@ tsc ผ่าน · backend 1615 / frontend 421 เทสต์ผ่าน · G
 - `/สินค้า <ชื่อ>` = ค้นใกล้เคียง ~80% + ประวัติซื้อ/ขาย 10 บรรทัด (วันที่ซื้อจาก receipt_date + ราคา) · MASTER/ADMIN/IT/จัดซื้อ/ขาย/คลัง/ผลิต · หลายตัว = ปุ่มเลือก · POS ไม่มีราคาต่อวัตถุดิบ
 - ตรวจ: tsc, backend 1639 เทสต์ · เจ้าของสั่งขึ้นก่อน Goldfish (line-gf4) เสร็จ · ยังไม่ได้ลองบน LINE จริง
 - rollback: `backups/pre-line-hr-product-2026-11-24.db.gz` + `/scratch/pre-line-hr-product-dist/` + `git reset --hard 6ec6369`
+
+### รอบ 3.1 (24 พ.ย. 2026) — `/สินค้า` แสดงบิล POS พร้อมราคา
+- เมนู POS (`pos_menu_configs.product_id`) ไม่เคยมีบรรทัดขาย → ดึงจากบิล PAID รวมต่อวันไทย+ราคา, ไม่นับการตัดสต็อกตัวเองซ้ำ · การ์ดบอกเมื่อไม่มีใบรับซื้อ
+- ตรวจ: tsc, backend 1640 เทสต์, Goldfish line-gf4 (รอบ 3) และ line-gf5 = LGTM
+- rollback: `backups/pre-line-possales-2026-11-24.db.gz` + `/scratch/pre-line-possales-dist/` + `git reset --hard 9633fdb`
