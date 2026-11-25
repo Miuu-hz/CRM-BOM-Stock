@@ -182,7 +182,8 @@ router.get('/adjustments', async (req: Request, res: Response) => {
 
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const q = req.query.tenantId // MASTER แก้ใบสั่งงานข้ามร้าน (role อื่นใช้ร้านตัวเองเสมอ)
+    const tenantId = req.user?.role === 'MASTER' && typeof q === 'string' && q && q !== 'all' ? q : req.user!.tenantId
 
     // sellable=1 (Sales/POS menu product picker) → only items a sale/menu may point at
     // (FINISHED/WIP/SERVICE, isSellableItem's own rule — SELLABLE_CATEGORIES is the one

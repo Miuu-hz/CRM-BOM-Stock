@@ -78,6 +78,8 @@ function WorkOrders() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState<WorkOrder | null>(null)
   const [editing, setEditing] = useState<WorkOrder | null>(null)
+  // คลิกสองใบเร็ว ๆ — คำตอบของใบเก่าที่มาช้าต้องทิ้ง ไม่เปิดซ้อน
+  const openReq = useRef(0)
 
   useEffect(() => { loadData() }, [])
 
@@ -118,22 +120,25 @@ function WorkOrders() {
   }
 
   const handleViewDetail = async (wo: WorkOrder) => {
+    const req = ++openReq.current
     try {
       const detail = await workOrderService.getById(wo.id)
-      setShowDetailModal(detail)
+      if (req === openReq.current) setShowDetailModal(detail)
     } catch (err: any) {
-      toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
+      if (req === openReq.current) toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
     }
   }
 
   const handleEdit = async (id: string) => {
+    const req = ++openReq.current
     try {
       const detail = await workOrderService.getById(id)
+      if (req !== openReq.current) return
       setShowDetailModal(null)
       setEditing(detail)
       setShowCreateModal(true)
     } catch (err: any) {
-      toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
+      if (req === openReq.current) toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
     }
   }
 
@@ -167,7 +172,7 @@ function WorkOrders() {
           <p className="text-[var(--fg-3)]">{t('workOrders.subtitle')}</p>
         </div>
         <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          onClick={() => setShowCreateModal(true)} className="phopy-btn-primary flex items-center gap-2">
+          onClick={() => { openReq.current++; setShowCreateModal(true) }} className="phopy-btn-primary flex items-center gap-2">
           <Plus className="w-5 h-5" /> {t('workOrders.createWorkOrder')}
         </motion.button>
       </div>
@@ -381,12 +386,15 @@ function CreateWOModal({ open, editing, onClose, onSave }: {
   const [creatingPR, setCreatingPR] = useState(false)
   // ตอบกลับช้ากว่าคำขอใหม่ต้องทิ้ง — พิมพ์จำนวน 1→10→100 เร็ว ๆ คำตอบของ 10 เคยมาทับของ 100 ได้
   const bomReq = useRef(0)
+  // MASTER แก้ใบของร้านอื่น ต้องดึงคลัง/BOM ของร้านนั้น (backend เมินค่านี้ถ้าไม่ใช่ MASTER)
+  const tenantId = editing?.tenant_id
 
   useEffect(() => {
     if (!open) return
-    api.get('/bom').then(res => setBoms(res.data?.data || [])).catch(() => {})
-    api.get('/stock').then(res => setStockItems(res.data?.data || [])).catch(() => toast.error(t('workOrders.create.stockLoadFailed')))
-  }, [open])
+    const scope = { params: { tenantId } }
+    api.get('/bom', scope).then(res => setBoms(res.data?.data || [])).catch(() => {})
+    api.get('/stock', scope).then(res => setStockItems(res.data?.data || [])).catch(() => toast.error(t('workOrders.create.stockLoadFailed')))
+  }, [open, tenantId])
 
   useEffect(() => {
     bomReq.current++
@@ -448,19 +456,19 @@ function CreateWOModal({ open, editing, onClose, onSave }: {
     let stale = false
     setStockChecking(true)
     const timer = setTimeout(() => {
-      workOrderService.checkMaterials(materials)
+      workOrderService.checkMaterials(materials, tenantId)
         .then(r => { if (!stale) setChecks(r) })
         .catch(() => { if (!stale) setChecks([]) })
         .finally(() => { if (!stale) setStockChecking(false) })
     }, 350)
     return () => { stale = true; clearTimeout(timer) }
-  }, [open, materials])
+  }, [open, materials, tenantId])
 
   const loadBomMaterials = async (bomId: string, qty: number, u: string) => {
     const req = ++bomReq.current
     setBomLoading(true)
     try {
-      const mats = await workOrderService.bomMaterials(bomId, qty, u)
+      const mats = await workOrderService.bomMaterials(bomId, qty, u, tenantId)
       if (req !== bomReq.current) return
       setMaterials(mats)
       setMaterialsTouched(false)

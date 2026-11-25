@@ -20,6 +20,12 @@ describe('พิมพ์ใบสั่งผลิต', () => {
     expect(data).toMatchObject({ woQty: 100, refNumber: 'SO-9', buyer: { name: 'ทีมเย็บ' }, docNumber: 'WO-001' })
   })
 
+  it('CSS ในหน้าพิมพ์ไม่ถูก escape (ฟอนต์/ตัวเลือก > ยังทำงาน)', () => {
+    const html = renderToStaticMarkup(createElement(UnifiedBillTemplate as any, { config: BILL_CONFIGS.WORK_ORDER, data, size: 'A4' }))
+    expect(html).toContain("font-family: 'Sarabun'")
+    expect(html).toContain('.bill-closing > .bill-footer')
+  })
+
   it('ใบพิมพ์ใช้คำของใบสั่งผลิต ไม่ใช้ช่องเซ็น/หมายเหตุของบิลขาย', () => {
     const html = renderToStaticMarkup(createElement(UnifiedBillTemplate as any, {
       config: BILL_CONFIGS.WORK_ORDER, data, size: 'A5', showPrintButton: false,

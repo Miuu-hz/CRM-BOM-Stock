@@ -26,10 +26,16 @@ function tenantOf(req: Request): string {
   return row?.tenant_id || req.user!.tenantId
 }
 
+/** MASTER แก้ใบของร้านอื่น → ระบุร้านด้วย ?tenantId= (role อื่นถูกเมิน ใช้ร้านตัวเองเสมอ) */
+function scopedTenant(req: Request): string {
+  const q = req.query.tenantId
+  return req.user?.role === 'MASTER' && typeof q === 'string' && q && q !== 'all' ? q : req.user!.tenantId
+}
+
 // วัตถุดิบตาม BOM สำหรับจำนวนผลิต + สถานะสต็อก
 router.get('/bom-materials/:bomId', (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const tenantId = scopedTenant(req)
     const lines = bomMaterials(tenantId, req.params.bomId, Number(req.query.quantity), req.query.unit ? String(req.query.unit) : null)
     res.json({ success: true, data: lines })
   } catch (error) {
@@ -41,7 +47,7 @@ router.get('/bom-materials/:bomId', (req: Request, res: Response) => {
 router.post('/check-materials', (req: Request, res: Response) => {
   try {
     const lines = Array.isArray(req.body?.materials) ? req.body.materials.slice(0, 500) : []
-    res.json({ success: true, data: checkMaterialStock(req.user!.tenantId, lines) })
+    res.json({ success: true, data: checkMaterialStock(scopedTenant(req), lines) })
   } catch (error) {
     sendError(res, error, 'Failed to check materials')
   }

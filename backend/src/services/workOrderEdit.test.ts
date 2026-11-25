@@ -127,6 +127,18 @@ describe('ใบสั่งงาน: สต็อก / BOM / สินค้�
     expect((db.prepare('SELECT unit_cost FROM stock_items WHERE id = ?').get(fg) as any).unit_cost).toBe(50)
   })
 
+  it('?tenantId= ใช้ได้เฉพาะ MASTER', async () => {
+    const t = newTenant()
+    const mat = stock(t)
+    const call = async (role: any) => {
+      const u = createTestUser({ role })
+      const r = await request(app).post(`/api/work-orders/check-materials?tenantId=${t}`).set('Authorization', `Bearer ${u.token}`)
+        .send({ materials: [{ materialId: mat, requiredQty: 1, unit: 'kg' }] })
+      return r.body.data[0].stockStatus
+    }
+    expect([await call('MASTER'), await call('ADMIN')]).toEqual(['ok', 'unknown'])
+  })
+
   it('REST: รายละเอียดมีสถานะสต็อก, bom-materials/check-materials/แก้/ลบ ใช้งานได้', async () => {
     const user = createTestUser({ role: 'ADMIN' })
     const H = { Authorization: `Bearer ${user.token}` }

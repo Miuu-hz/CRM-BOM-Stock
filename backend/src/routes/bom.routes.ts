@@ -289,7 +289,8 @@ router.get('/stats', async (req: Request, res: Response) => {
 // Get all BOMs (flat list)
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.user!.tenantId
+    const q = req.query.tenantId // MASTER แก้ใบสั่งงานข้ามร้าน (role อื่นใช้ร้านตัวเองเสมอ)
+    const tenantId = req.user?.role === 'MASTER' && typeof q === 'string' && q && q !== 'all' ? q : req.user!.tenantId
     
     const boms = db.prepare(`
       SELECT b.*, p.name as product_name, p.sku as product_code, p.unit as product_unit, p.base_unit as product_base_unit,

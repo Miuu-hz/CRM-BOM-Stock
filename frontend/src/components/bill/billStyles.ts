@@ -565,7 +565,7 @@ export const BILL_CSS = `
    ══════════════════════════════════════════════════════════════════════ */
 .bill-a5 .bill-head-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
 .bill-a5 .bill-meta-col  { grid-column: 1 / -1; }
-.bill-a5 .bill-items-table { font-size: 10.5px; }
+.bill-a5 .bill-items-table { font-size: 9.5px; }
 .wo-summary-card p { margin: 0 0 4px; }
 .unified-bill-paper:has(.wo-materials-table) .signature-box p,
 .unified-bill-paper:has(.wo-materials-table) .bill-footer-info p { margin: 0; }
@@ -608,7 +608,8 @@ export const BILL_CSS = `
 .bill-a5 .wo-col-issued { width: 46px; }
 .bill-a5 .wo-col-check { width: 40px; }
 .bill-a5 .bill-items-table th,
-.bill-a5 .bill-items-table td { padding: 5px 6px; }
+.bill-a5 .bill-items-table td { padding: 5px 3px; width: auto; min-width: 0; }
+.bill-a5 .bill-items-table th:first-child { width: 30%; }
 .bill-a5 .bill-summary-section,
 .bill-a5 .bill-pay-section { gap: 10px; }
 

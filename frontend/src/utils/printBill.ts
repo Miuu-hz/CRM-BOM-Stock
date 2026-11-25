@@ -330,13 +330,16 @@ export async function printBill(type: PrintDocType, input: any, format: PrintFor
   if (!w) { alert('กรุณาอนุญาต pop-up เพื่อพิมพ์เอกสาร'); return }
   w.document.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>พิมพ์เอกสาร</title></head><body style="font-family:sans-serif;color:#888;padding:24px">กำลังเตรียมเอกสาร…</body></html>')
 
-  let data: any
   try {
-    data = await input
+    await renderAndPrint(w, type, await input, format)
   } catch (e) {
-    w.close()
+    w.close()   // พังตรงไหนก็ไม่ทิ้งหน้าต่าง "กำลังเตรียมเอกสาร…" ค้างไว้
     throw e
   }
+}
+
+async function renderAndPrint(w: Window, type: PrintDocType, data: any, format: PrintFormat) {
+  if (!data) throw new Error('ไม่พบข้อมูลเอกสารที่จะพิมพ์')
   const billType = resolveBillType(type, data)
   const [, refs] = await Promise.all([loadSettings(), chainRefs(type, data)])
   const s: any = settingsCache || {}
@@ -379,10 +382,12 @@ export async function printBill(type: PrintDocType, input: any, format: PrintFor
   // รอฟอนต์/จัดหน้าทุกขนาด — A4 เคยข้ามขั้นนี้ บนมือถือ print() ทำงานก่อนหน้าวาดเสร็จ ได้ PDF หน้าเปล่า
   await waitForLayout(w)
   if (w.closed) return
+  // วัดความสูงหลังฟอนต์มาครบเท่านั้น (ทุกขนาด) แต่ไม่รอเกิน 3 วิ เผื่อเน็ตร้านเข้า Google Fonts ไม่ได้
+  await Promise.race([w.document.fonts?.ready, new Promise(r => setTimeout(r, 3000))])
+  if (w.closed) return
   if (format === 'thermal') fitThermalPage(w.document)
   else {
-    // A4/A5: แบ่งหน้าเองให้ทุกแผ่นมีหัวกระดาษ + ลายเซ็นไม่หล่นไปอยู่หน้าเปล่า — วัดหลังฟอนต์มาครบเท่านั้น
-    await w.document.fonts?.ready
+    // A4/A5: แบ่งหน้าเองให้ทุกแผ่นมีหัวกระดาษ + ลายเซ็นไม่หล่นไปอยู่หน้าเปล่า
     try { paginateBill(w.document) } catch (e) { console.error('paginateBill failed — พิมพ์แบบเดิม', e) }
   }
   w.print()

@@ -2,6 +2,7 @@ import api from './api'
 
 export interface WorkOrder {
   id: string
+  tenant_id?: string
   wo_number: string
   bom_id: string | null
   /** สินค้าในคลังที่ผลิต (ใช้เมื่อไม่มี BOM) */
@@ -96,13 +97,13 @@ const workOrderService = {
     return res.data?.data
   },
 
-  async bomMaterials(bomId: string, quantity: number, unit?: string): Promise<MaterialDraft[]> {
-    const res = await api.get(`/work-orders/bom-materials/${bomId}`, { params: { quantity, unit: unit || undefined } })
+  async bomMaterials(bomId: string, quantity: number, unit?: string, tenantId?: string): Promise<MaterialDraft[]> {
+    const res = await api.get(`/work-orders/bom-materials/${bomId}`, { params: { quantity, unit: unit || undefined, tenantId } })
     return res.data?.data || []
   },
 
-  async checkMaterials(materials: MaterialDraft[]): Promise<MaterialCheck[]> {
-    const res = await api.post('/work-orders/check-materials', { materials })
+  async checkMaterials(materials: MaterialDraft[], tenantId?: string): Promise<MaterialCheck[]> {
+    const res = await api.post('/work-orders/check-materials', { materials }, { params: { tenantId } })
     return res.data?.data || []
   },
 

@@ -215,7 +215,9 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
 
     return (
       <div className="unified-bill-container">
-        <style>{BILL_CSS}</style>
+        {/* ต้องใส่แบบ html ดิบ — ใส่เป็น children แล้ว renderToStaticMarkup จะ escape ลูกศรกับเครื่องหมายคำพูด
+            กฎและฟอนต์ในหน้าพิมพ์ตายเงียบ (BILL_CSS เป็นค่าคงที่ ไม่มีข้อมูลผู้ใช้) */}
+        <style dangerouslySetInnerHTML={{ __html: BILL_CSS }} />
 
         {showPrintButton && (
           <div className="bill-toolbar no-print">
