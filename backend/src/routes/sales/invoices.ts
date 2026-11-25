@@ -7,7 +7,7 @@ import { recordAutoAction } from '../../services/approvalGate.service'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../../utils/receiptToken'
 import { createInvoiceFromSO, SalesBillingError } from '../../services/salesBilling.service'
 import { canHandleBilling } from '../../services/rbac.service'
-import { creditNoteCreditableRemaining } from './creditNotes'
+import { creditNoteCreditableRemaining, computeInvoiceItemsCreditable } from './creditNotes'
 
 // Additive multi-currency columns. Guarded so it only runs once per fresh DB, same
 // pattern as tax.routes.ts's wht_form column.
@@ -68,7 +68,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Invoice not found' })
     }
 
-    const items = db.prepare(`
+    const rawItems = db.prepare(`
       -- ห้ามใช้ p.name as product_name เฉย ๆ: ชื่อคอลัมน์ซ้ำกับ ii.* แล้วตัวหลังทับตัวหน้า
       -- = เอา null ไปทับชื่อสินค้าจริงในแถว (invoice_items ไม่มีคอลัมน์อื่นให้ fallback)
       SELECT ii.*, COALESCE(si.name, ii.product_name) as product_name, si.sku as product_code
@@ -76,6 +76,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       LEFT JOIN stock_items si ON ii.stock_item_id = si.id AND si.tenant_id = ii.tenant_id
       WHERE ii.invoice_id = ? AND ii.tenant_id = ?
     `).all(req.params.id, tenantId)
+
+    const items = computeInvoiceItemsCreditable(tenantId, invoice, rawItems)
 
     const receipts = db.prepare(`
       SELECT r.* FROM receipts r WHERE r.invoice_id = ? AND r.tenant_id = ? ORDER BY r.created_at DESC

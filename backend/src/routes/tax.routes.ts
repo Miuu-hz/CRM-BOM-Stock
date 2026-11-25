@@ -3,6 +3,8 @@ import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { calcWhtBase } from '../utils/wht'
+import { isVatRegistered } from '../services/accounting.service'
+import { thaiDateStr } from '../utils/id'
 
 const router = Router()
 router.use(authenticate)
@@ -191,6 +193,157 @@ function syncVatOutputFromSalesInvoices(tenantId: string) {
   }
 }
 
+// ใบลดหนี้ที่ออกแล้ว (ISSUED/APPLIED) ของใบแจ้งหนี้ที่ไม่ได้มาจาก POS → แถว VAT_OUTPUT ติดลบในงวดของ credit_date
+// ใบที่ถูกยกเลิก (CANCELLED): ถ้างวดเดิมยัง OPEN ให้ลบแถวออก ถ้างวดเดิมยื่น/ปิดแล้ว (status != 'OPEN') ให้ลงแถวปรับเพิ่มเป็นบวกในงวดวันนี้
+// เฉพาะกิจการที่จดทะเบียน VAT เท่านั้น (ข้อ 4e)
+function syncVatOutputFromCreditNotes(tenantId: string) {
+  if (!isVatRegistered(tenantId)) return
+
+  const rows = db.prepare(
+    `SELECT cn.id, cn.cn_number, cn.credit_date, cn.subtotal, cn.tax_amount, cn.total_amount, cn.tax_rate,
+            cn.customer_id, c.name as customer_name, c.tax_id as customer_tax_id
+     FROM credit_notes cn
+     JOIN invoices i ON cn.invoice_id = i.id AND i.tenant_id = cn.tenant_id
+     LEFT JOIN customers c ON cn.customer_id = c.id AND c.tenant_id = cn.tenant_id
+     WHERE cn.tenant_id = ? AND cn.status IN ('ISSUED', 'APPLIED') AND cn.tax_amount > 0 AND i.pos_bill_id IS NULL`
+  ).all(tenantId) as any[]
+
+  for (const cn of rows) {
+    const docDate = toYMD(cn.credit_date)
+    const periodId = ensurePeriod(tenantId, docDate)
+    if (!periodId || transactionExists(tenantId, 'CREDIT_NOTE', cn.id)) continue
+
+    db.prepare(
+      `INSERT INTO tax_transactions (
+         id, tenant_id, period_id, transaction_type, source_type, source_id, document_number, document_date,
+         partner_id, partner_name, partner_tax_id, description, base_amount, tax_amount, total_amount, tax_rate, is_deductible
+       ) VALUES (?, ?, ?, 'VAT_OUTPUT', 'CREDIT_NOTE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+    ).run(
+      generateId(), tenantId, periodId, cn.id, cn.cn_number, docDate,
+      cn.customer_id ?? null,
+      cn.customer_name || 'ลูกค้า',
+      cn.customer_tax_id ?? null,
+      `ลดหนี้ภาษีขายจากใบลดหนี้ ${cn.cn_number}`,
+      -Math.abs(Number(cn.subtotal) || 0),
+      -Math.abs(Number(cn.tax_amount) || 0),
+      -Math.abs(Number(cn.total_amount) || 0),
+      cn.tax_rate || 7
+    )
+  }
+
+  // จัดการใบลดหนี้ที่ถูกยกเลิกไปแล้วแต่เคยซิงค์เข้า tax_transactions ไว้ก่อนหน้า
+  const cancelledTxns = db.prepare(
+    `SELECT t.*, p.status AS period_status, cn.cn_number
+     FROM tax_transactions t
+     JOIN credit_notes cn ON cn.id = t.source_id AND cn.tenant_id = t.tenant_id
+     LEFT JOIN tax_periods p ON p.id = t.period_id AND p.tenant_id = t.tenant_id
+     WHERE t.tenant_id = ? AND t.source_type = 'CREDIT_NOTE' AND cn.status = 'CANCELLED'`
+  ).all(tenantId) as any[]
+
+  const today = thaiDateStr()
+  for (const tx of cancelledTxns) {
+    if (!tx.period_status || tx.period_status === 'OPEN') {
+      db.prepare('DELETE FROM tax_transactions WHERE id = ? AND tenant_id = ?').run(tx.id, tenantId)
+      continue
+    }
+    if (transactionExists(tenantId, 'CREDIT_NOTE_CANCEL', tx.source_id)) continue
+    const todayPeriodId = ensurePeriod(tenantId, today)
+    if (!todayPeriodId) continue
+    db.prepare(
+      `INSERT INTO tax_transactions (
+         id, tenant_id, period_id, transaction_type, source_type, source_id, document_number, document_date,
+         partner_id, partner_name, partner_tax_id, description, base_amount, tax_amount, total_amount, tax_rate, is_deductible
+       ) VALUES (?, ?, ?, 'VAT_OUTPUT', 'CREDIT_NOTE_CANCEL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+    ).run(
+      generateId(), tenantId, todayPeriodId, tx.source_id, tx.document_number, today,
+      tx.partner_id, tx.partner_name, tx.partner_tax_id,
+      `ปรับเพิ่มภาษีขาย ยกเลิกใบลดหนี้ ${tx.cn_number} (งวดเดิมยื่นแล้ว)`,
+      Math.abs(Number(tx.base_amount) || 0),
+      Math.abs(Number(tx.tax_amount) || 0),
+      Math.abs(Number(tx.total_amount) || 0),
+      tx.tax_rate || 7
+    )
+  }
+}
+
+// ภาษีซื้อจากการรับซื้อคืนสินค้าจากลูกค้าที่จด VAT (customer_buybacks, POSTED เท่านั้น, is_deductible = 1)
+// การยกเลิกใช้กติกาเดียวกับใบลดหนี้: งวดยัง OPEN ลบออก / งวดยื่นหรือปิดแล้วลงแถวกลับรายการติดลบวันนี้ (ข้อ 4e)
+function syncVatInputFromCustomerBuybacks(tenantId: string) {
+  if (!isVatRegistered(tenantId)) return
+  const tableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='customer_buybacks'"
+  ).get()
+  if (!tableExists) return
+
+  const rows = db.prepare(
+    `SELECT bb.id, bb.bb_number, bb.buyback_date, bb.tax_invoice_number, bb.tax_invoice_date,
+            bb.subtotal, bb.tax_amount, bb.total_amount, bb.tax_rate,
+            bb.customer_id, c.name as customer_name, c.tax_id as customer_tax_id
+     FROM customer_buybacks bb
+     LEFT JOIN customers c ON bb.customer_id = c.id AND c.tenant_id = bb.tenant_id
+     WHERE bb.tenant_id = ? AND bb.status = 'POSTED' AND bb.seller_vat = 1 AND bb.tax_amount > 0`
+  ).all(tenantId) as any[]
+
+  for (const bb of rows) {
+    const docDate = toYMD(bb.tax_invoice_date) || toYMD(bb.buyback_date)
+    const periodId = ensurePeriod(tenantId, docDate)
+    if (!periodId || transactionExists(tenantId, 'CUSTOMER_BUYBACK', bb.id)) continue
+
+    const docNumber = bb.tax_invoice_number || bb.bb_number
+    db.prepare(
+      `INSERT INTO tax_transactions (
+         id, tenant_id, period_id, transaction_type, source_type, source_id, document_number, document_date,
+         partner_id, partner_name, partner_tax_id, description, base_amount, tax_amount, total_amount, tax_rate,
+         is_deductible, tax_invoice_number, tax_invoice_date
+       ) VALUES (?, ?, ?, 'VAT_INPUT', 'CUSTOMER_BUYBACK', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    ).run(
+      generateId(), tenantId, periodId, bb.id, docNumber, docDate,
+      bb.customer_id ?? null,
+      bb.customer_name || 'ลูกค้า',
+      bb.customer_tax_id ?? null,
+      `ภาษีซื้อจากใบรับซื้อคืน ${bb.bb_number}`,
+      bb.subtotal ?? 0, bb.tax_amount ?? 0, bb.total_amount ?? 0, bb.tax_rate || 7,
+      bb.tax_invoice_number ?? null, toYMD(bb.tax_invoice_date)
+    )
+  }
+
+  // จัดการใบรับซื้อคืนที่ถูกยกเลิกไปแล้วหลังเคยซิงค์เข้า tax_transactions
+  const cancelledTxns = db.prepare(
+    `SELECT t.*, p.status AS period_status, bb.bb_number
+     FROM tax_transactions t
+     JOIN customer_buybacks bb ON bb.id = t.source_id AND bb.tenant_id = t.tenant_id
+     LEFT JOIN tax_periods p ON p.id = t.period_id AND p.tenant_id = t.tenant_id
+     WHERE t.tenant_id = ? AND t.source_type = 'CUSTOMER_BUYBACK' AND bb.status = 'CANCELLED'`
+  ).all(tenantId) as any[]
+
+  const today = thaiDateStr()
+  for (const tx of cancelledTxns) {
+    if (!tx.period_status || tx.period_status === 'OPEN') {
+      db.prepare('DELETE FROM tax_transactions WHERE id = ? AND tenant_id = ?').run(tx.id, tenantId)
+      continue
+    }
+    if (transactionExists(tenantId, 'CUSTOMER_BUYBACK_CANCEL', tx.source_id)) continue
+    const todayPeriodId = ensurePeriod(tenantId, today)
+    if (!todayPeriodId) continue
+    db.prepare(
+      `INSERT INTO tax_transactions (
+         id, tenant_id, period_id, transaction_type, source_type, source_id, document_number, document_date,
+         partner_id, partner_name, partner_tax_id, description, base_amount, tax_amount, total_amount, tax_rate,
+         is_deductible, tax_invoice_number, tax_invoice_date
+       ) VALUES (?, ?, ?, 'VAT_INPUT', 'CUSTOMER_BUYBACK_CANCEL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    ).run(
+      generateId(), tenantId, todayPeriodId, tx.source_id, tx.document_number, today,
+      tx.partner_id, tx.partner_name, tx.partner_tax_id,
+      `ปรับลดภาษีซื้อ ยกเลิกใบรับซื้อคืน ${tx.bb_number} (งวดเดิมยื่นแล้ว)`,
+      -Math.abs(Number(tx.base_amount) || 0),
+      -Math.abs(Number(tx.tax_amount) || 0),
+      -Math.abs(Number(tx.total_amount) || 0),
+      tx.tax_rate || 7,
+      tx.tax_invoice_number ?? null, tx.tax_invoice_date ?? null
+    )
+  }
+}
+
 export function syncWhtFromSupplierPayments(tenantId: string) {
   const tableExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='supplier_payments'"
@@ -276,8 +429,10 @@ function syncWhtReceivedFromCustomerWht(tenantId: string) {
 
 function syncTaxData(tenantId: string) {
   syncVatInputFromPurchaseInvoices(tenantId)
+  syncVatInputFromCustomerBuybacks(tenantId)
   syncVatOutputFromPosBills(tenantId)
   syncVatOutputFromSalesInvoices(tenantId)
+  syncVatOutputFromCreditNotes(tenantId)
   syncWhtFromSupplierPayments(tenantId)
   syncWhtReceivedFromCustomerWht(tenantId)
   const payrollPeriods = db

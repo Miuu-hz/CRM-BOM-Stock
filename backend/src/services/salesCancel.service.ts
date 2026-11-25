@@ -126,6 +126,15 @@ export function cancelSalesOrderNow(tenantId: string, soId: string) {
 export function assertInvoiceCancellable(tenantId: string, inv: any) {
   if (!inv) throw new SalesCancelError(404, 'Invoice not found')
   if (inv.status === 'CANCELLED') throw new SalesCancelError(409, `ใบแจ้งหนี้ ${inv.invoice_number} ถูกยกเลิกไปแล้ว`)
+  const offset = db.prepare(`
+    SELECT o.offset_number FROM customer_offset_lines ol
+    JOIN customer_offsets o ON o.id = ol.offset_id AND o.tenant_id = ol.tenant_id
+    WHERE ol.tenant_id = ? AND ol.invoice_id = ? AND o.status = 'POSTED'
+    LIMIT 1
+  `).get(tenantId, inv.id) as { offset_number: string } | undefined
+  if (offset) {
+    throw new SalesCancelError(409, `ใบแจ้งหนี้ ${inv.invoice_number} มีใบหักกลบหนี้ ${offset.offset_number} อยู่ — ยกเลิกใบหักกลบหนี้ก่อน`)
+  }
   if (inv.status === 'PAID' && inv.pos_bill_id == null) {
     throw new SalesCancelError(409, `ใบแจ้งหนี้ ${inv.invoice_number} ชำระครบแล้ว ยกเลิกไม่ได้ — ยกเลิกใบเสร็จรับเงินก่อน`)
   }

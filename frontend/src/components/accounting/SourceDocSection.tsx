@@ -39,6 +39,9 @@ export const KIND_LABEL: Record<string, string> = {
   PURCHASE_ORDER: 'ใบสั่งซื้อ',
   SALES_ORDER: 'ใบสั่งขาย',
   CREDIT_NOTE: 'ใบลดหนี้',
+  CUSTOMER_BUYBACK: 'ใบรับซื้อคืนสินค้า',
+  CUSTOMER_OFFSET: 'ใบหักกลบลบหนี้',
+  CUSTOMER_OFFSET_CANCEL: 'ยกเลิกใบหักกลบลบหนี้',
 }
 
 const fmt = (n: number) =>

@@ -62,4 +62,6 @@ export const DOC_NUMBER_TABLES: [string, string][] = [
   ['SUBCONTRACT', 'wo_subcontracts'],
   ['SUBCON_ISSUE', 'subcon_material_issues'],
   ['SUBCON_RECEIPT', 'subcon_receipts'],
+  ['CUSTOMER_BUYBACK', 'customer_buybacks'],
+  ['CUSTOMER_OFFSET', 'customer_offsets'],
 ]

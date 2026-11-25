@@ -150,6 +150,125 @@ export const COLLECTION_ROLES = new Set(['ADMIN', 'MANAGER', 'POWERUSER', 'MASTE
 export const canManageCollections = (role?: string | null): boolean =>
   !!role && COLLECTION_ROLES.has(role.toUpperCase())
 
+/** สิทธิ์จัดการเครดิตลูกค้า / รับซื้อคืน / หักกลบ — ตรงกับ backend (ADMIN, MANAGER, MASTER, OWNER) */
+export const CREDIT_ROLES = new Set(['ADMIN', 'MANAGER', 'MASTER', 'OWNER'])
+export const canManageCustomerCredits = (role?: string | null): boolean =>
+  !!role && CREDIT_ROLES.has(role.toUpperCase())
+
+/** เหตุผลการออกใบลดหนี้ตามกฎหมาย (ม.82/10) */
+export const CN_REASON_CODES = [
+  { value: 'DEFECTIVE', label: 'สินค้าชำรุด/บกพร่อง' },
+  { value: 'NOT_AS_AGREED', label: 'ไม่ตรงตามที่ตกลง/ตัวอย่าง' },
+  { value: 'AGREED_RETURN', label: 'คืนตามข้อตกลงทางการค้า' },
+  { value: 'PRICE_ERROR', label: 'คำนวณราคาสูงกว่าความจริง' },
+  { value: 'SHORT_DELIVERY', label: 'ส่งขาดจำนวน' },
+  { value: 'OTHER_LEGAL', label: 'เหตุอื่นตาม ม.82/10' },
+] as const
+
+export function cnReasonLabel(code?: string | null): string {
+  if (!code) return ''
+  return CN_REASON_CODES.find(r => r.value === code)?.label || ''
+}
+
+export interface CustomerCredit {
+  id: string
+  customer_id: string
+  source_type: 'BUYBACK' | 'CREDIT_NOTE'
+  source_id: string
+  source_number: string
+  amount: number
+  balance: number
+  created_at: string
+}
+
+export interface CustomerBuyback {
+  id: string
+  bb_number: string
+  customer_id: string
+  buyback_date: string
+  seller_vat: number | boolean
+  tax_invoice_number?: string | null
+  tax_invoice_date?: string | null
+  subtotal: number
+  tax_rate: number
+  tax_amount: number
+  total_amount: number
+  status: 'POSTED' | 'CANCELLED'
+  approved_by?: string | null
+  seller_id_doc?: string | null
+  notes?: string | null
+  created_by?: string | null
+  created_at: string
+}
+
+export interface CustomerOffsetLine {
+  id?: string
+  offset_id?: string
+  invoice_id: string
+  invoice_number?: string
+  amount: number
+}
+
+export interface CustomerOffset {
+  id: string
+  offset_number: string
+  customer_id: string
+  offset_date: string
+  credit_id: string
+  source_type?: 'BUYBACK' | 'CREDIT_NOTE'
+  source_number?: string
+  kind: 'APPLY' | 'REFUND'
+  total_amount: number
+  payment_method?: string | null
+  bank_account_id?: string | null
+  status: 'POSTED' | 'CANCELLED'
+  notes?: string | null
+  cancelled_reason?: string | null
+  created_by?: string | null
+  created_at: string
+  lines?: CustomerOffsetLine[]
+}
+
+export interface OpenInvoice {
+  id: string
+  invoice_number: string
+  invoice_date: string
+  due_date?: string | null
+  total_amount: number
+  balance_amount: number
+  paid_amount?: number
+  status: string
+  payment_status: string
+}
+
+export interface CustomerCreditsOverview {
+  credits: CustomerCredit[]
+  offsets: CustomerOffset[]
+  buybacks: CustomerBuyback[]
+  openInvoices: OpenInvoice[]
+}
+
+export interface CreateBuybackPayload {
+  customerId: string
+  date: string
+  sellerVat: boolean
+  taxInvoiceNumber?: string
+  taxInvoiceDate?: string
+  taxRate?: number
+  vatInclusive?: boolean
+  approvedBy?: string
+  sellerIdDoc?: string
+  notes?: string
+  items: Array<{
+    stockItemId: string
+    quantity: number
+    unit: string
+    unitPrice: number
+    condition: 'GOOD' | 'DAMAGED'
+  }>
+  applyTo?: Array<{ invoiceId: string; amount: number }>
+}
+
 export interface ProductionPlanItem {
   soItemId: string
   stockItemId: string
@@ -344,13 +463,74 @@ const salesService = {
 
   // Credit Notes
   createCreditNote: async (payload: {
-    invoiceId: string; reason: string; creditDate?: string
+    invoiceId: string; reasonCode: string; reason: string; creditDate?: string
     /** โหมด "ลดราคา": ยอดลดหนี้ (ฐานเดียวกับราคาบนใบแจ้งหนี้) */
     amount?: number
     /** ระบุเมื่อโหมด "รับคืนสินค้า" เท่านั้น — ไม่ส่ง = โหมด "ลดราคา/ส่วนลด" (ไม่แตะสต็อก) */
     items?: { invoiceItemId: string; productId?: string; quantity: number; unitPrice: number; reason?: string }[]
   }) => {
     const { data } = await api.post('/sales/credit-notes', payload)
+    return data
+  },
+
+  // Customer Credits, Buy-backs & Offsets
+  getCustomerCredits: async (customerId: string, all = false): Promise<CustomerCreditsOverview> => {
+    const { data } = await api.get('/sales/customer-credits', {
+      params: { customerId, ...(all ? { all: 1 } : {}) },
+    })
+    const payload = data?.data ?? data ?? {}
+    return {
+      credits: Array.isArray(payload.credits) ? payload.credits : [],
+      offsets: Array.isArray(payload.offsets) ? payload.offsets : [],
+      buybacks: Array.isArray(payload.buybacks) ? payload.buybacks : [],
+      openInvoices: Array.isArray(payload.openInvoices) ? payload.openInvoices : [],
+    }
+  },
+
+  createBuyback: async (payload: CreateBuybackPayload) => {
+    const { data } = await api.post('/sales/buybacks', payload)
+    return data
+  },
+
+  getBuyback: async (id: string) => {
+    const { data } = await api.get(`/sales/buybacks/${encodeURIComponent(id)}`)
+    return data?.data ?? data
+  },
+
+  cancelBuyback: async (id: string, reason: string) => {
+    const { data } = await api.post(`/sales/buybacks/${encodeURIComponent(id)}/cancel`, { reason })
+    return data
+  },
+
+  applyCustomerOffset: async (payload: {
+    creditId: string
+    date: string
+    lines: Array<{ invoiceId: string; amount: number }>
+    notes?: string
+  }) => {
+    const { data } = await api.post('/sales/customer-credits/offsets', payload)
+    return data
+  },
+
+  refundCustomerCredit: async (payload: {
+    creditId: string
+    date: string
+    amount: number
+    paymentMethod: string
+    bankAccountId?: string
+    notes?: string
+  }) => {
+    const { data } = await api.post('/sales/customer-credits/refunds', payload)
+    return data
+  },
+
+  getCustomerOffset: async (id: string) => {
+    const { data } = await api.get(`/sales/customer-credits/offsets/${encodeURIComponent(id)}`)
+    return data?.data ?? data
+  },
+
+  cancelCustomerOffset: async (id: string, reason: string) => {
+    const { data } = await api.post(`/sales/customer-credits/offsets/${encodeURIComponent(id)}/cancel`, { reason })
     return data
   },
 }

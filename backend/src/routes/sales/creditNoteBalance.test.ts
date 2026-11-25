@@ -31,7 +31,7 @@ const balance = (id: string) => (db.prepare('SELECT balance_amount FROM invoices
 
 async function createCn(token: string, invoiceId: string) {
   const res = await request(app).post('/api/sales/credit-notes').set('Authorization', `Bearer ${token}`)
-    .send({ invoiceId, reason: 'ลดราคา', amount: 100 })
+    .send({ invoiceId, reason: 'ลดราคา', reasonCode: 'PRICE_ERROR', amount: 100 })
   expect(res.status, JSON.stringify(res.body)).toBe(201)
   return res.body.data.id as string
 }
@@ -120,7 +120,7 @@ describe('ใบลดหนี้รวมต้องไม่เกินม�
     const { invoiceId } = seed(t) // total_amount 1070
     const seqBefore = cnSeq(t)
     const res = await request(app).post('/api/sales/credit-notes').set('Authorization', `Bearer ${token}`)
-      .send({ invoiceId, reason: 'ลดราคา', amount: 1050 }) // total ~1123.5 > 1070
+      .send({ invoiceId, reason: 'ลดราคา', reasonCode: 'PRICE_ERROR', amount: 1050 }) // total ~1123.5 > 1070
     expect(res.status, JSON.stringify(res.body)).toBe(400)
     expect(cnSeq(t), 'ถูกปฏิเสธ ต้องไม่กันเลขไป').toBe(seqBefore)
   })
@@ -129,10 +129,10 @@ describe('ใบลดหนี้รวมต้องไม่เกินม�
     const { tenantId: t, token } = createTestUser()
     const { invoiceId } = seed(t) // total_amount 1070
     const first = await request(app).post('/api/sales/credit-notes').set('Authorization', `Bearer ${token}`)
-      .send({ invoiceId, reason: 'ลดราคา', amount: 950 }) // total 1016.5, เหลือให้ลดอีก 53.5
+      .send({ invoiceId, reason: 'ลดราคา', reasonCode: 'PRICE_ERROR', amount: 950 }) // total 1016.5, เหลือให้ลดอีก 53.5
     expect(first.status, JSON.stringify(first.body)).toBe(201)
     const second = await request(app).post('/api/sales/credit-notes').set('Authorization', `Bearer ${token}`)
-      .send({ invoiceId, reason: 'ลดราคา', amount: 100 }) // total 107 > 53.5 ที่เหลือ
+      .send({ invoiceId, reason: 'ลดราคา', reasonCode: 'PRICE_ERROR', amount: 100 }) // total 107 > 53.5 ที่เหลือ
     expect(second.status, JSON.stringify(second.body)).toBe(400)
   })
 
@@ -151,7 +151,7 @@ describe('ใบลดหนี้รวมต้องไม่เกินม�
     const { tenantId: t, token } = createTestUser()
     const { invoiceId, customerId } = seed(t) // total_amount 1070
     const res1 = await request(app).post('/api/sales/credit-notes').set('Authorization', `Bearer ${token}`)
-      .send({ invoiceId, reason: 'ลดราคา', amount: 900 }) // total 963, เหลือให้ลดได้อีก 107 ณ ตอนสร้าง
+      .send({ invoiceId, reason: 'ลดราคา', reasonCode: 'PRICE_ERROR', amount: 900 }) // total 963, เหลือให้ลดได้อีก 107 ณ ตอนสร้าง
     expect(res1.status, JSON.stringify(res1.body)).toBe(201)
     const cnId = res1.body.data.id as string
     // จำลองอีกคำขอแซงเข้ามาระหว่างที่ cnId ยังเป็น DRAFT (แทรกตรง DB แทนการยิง POST ซ้อนจริง)

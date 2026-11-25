@@ -29,6 +29,8 @@ const DOC_TYPES: { value: string; label: string; defaultPrefix: string; group: s
   { value: 'INVOICE',          label: 'ใบแจ้งหนี้ขาย (INV)',   defaultPrefix: 'INV', group: 'ขาย' },
   { value: 'RECEIPT',          label: 'ใบเสร็จ (RC)',          defaultPrefix: 'RC',  group: 'ขาย' },
   { value: 'CREDIT_NOTE',      label: 'ใบลดหนี้ (CN)',        defaultPrefix: 'CN',  group: 'ขาย' },
+  { value: 'CUSTOMER_BUYBACK', label: 'ใบรับซื้อคืนสินค้า (BB)', defaultPrefix: 'BB',  group: 'ขาย' },
+  { value: 'CUSTOMER_OFFSET',  label: 'ใบหักกลบลบหนี้ (OF)',   defaultPrefix: 'OF',  group: 'ขาย' },
   { value: 'POS_BILL',         label: 'บิล POS',              defaultPrefix: 'POS', group: 'POS' },
   { value: 'POS_SHIFT',        label: 'กะขาย POS',           defaultPrefix: 'SHIFT', group: 'POS' },
   { value: 'POS_DAILY_SALES',  label: 'สรุปยอดขาย POS รายวัน', defaultPrefix: 'POSSUM', group: 'POS' },

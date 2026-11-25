@@ -17,10 +17,11 @@ import { BILL_CONFIGS } from '../components/bill/BillContext'
 import type { BillType, BillData, BillItem, BillParty } from '../components/bill/BillContext'
 import api from '../services/api'
 import { getCachedCompanySettings } from '../services/companySettings.service'
+import { cnReasonLabel } from '../services/sales.service'
 import { paginateBill } from './billPaginate'
 
 export type PrintDocType =
-  | 'qt' | 'so' | 'inv' | 'rc' | 'cn'
+  | 'qt' | 'so' | 'inv' | 'rc' | 'cn' | 'bb' | 'of'
   | 'pr' | 'po' | 'gr' | 'pi' | 'payment' | 'return'
   | 'pos' | 'wo' | 'do'
 export type PrintFormat = 'a4' | 'a5' | 'thermal'
@@ -46,6 +47,8 @@ const DOCS: Record<PrintDocType, DocSpec> = {
   inv:     { bill: 'INVOICE',          number: ['invoice_number'],   date: ['invoice_date'],   ref: ['so_number'],        due: ['due_date'],      party: 'customer' },
   rc:      { bill: 'RECEIPT',          number: ['receipt_number'],   date: ['receipt_date'],   ref: ['invoice_number', 'so_number'], party: 'customer' },
   cn:      { bill: 'CREDIT_NOTE',      number: ['cn_number'],        date: ['credit_date'],    ref: ['invoice_number'],   party: 'customer' },
+  bb:      { bill: 'CUSTOMER_BUYBACK', number: ['bb_number'],        date: ['buyback_date'],   ref: ['tax_invoice_number'], party: 'customer' },
+  of:      { bill: 'CUSTOMER_OFFSET',  number: ['offset_number'],    date: ['offset_date'],    ref: ['source_number', 'credit_source_number'], party: 'customer' },
   pr:      { bill: 'PURCHASE_REQUEST', number: ['pr_number'],        date: ['request_date'],   due: ['required_date'],    party: 'none' },
   po:      { bill: 'PURCHASE',         number: ['po_number'],        date: ['order_date'],     ref: ['linked_pr_number'], due: ['expected_date'], party: 'supplier' },
   gr:      { bill: 'GOODS_RECEIPT',    number: ['gr_number'],        date: ['receipt_date'],   ref: ['po_number'],        party: 'supplier' },
@@ -163,9 +166,46 @@ function toWoItems(raw: any[]): BillItem[] {
   }))
 }
 
+function toOffsetItems(d: any): BillItem[] {
+  if (d?.kind === 'REFUND' || (!Array.isArray(d?.lines) && !Array.isArray(d?.items))) {
+    const amt = n(d?.total_amount ?? d?.amount)
+    return [{
+      id: 'refund-1',
+      no: 1,
+      name: `จ่ายคืนเงินเครดิต (${d?.payment_method || 'CASH'})`,
+      quantity: 1,
+      unit: 'รายการ',
+      price: amt,
+      discount: 0,
+      vat: 0,
+      total: amt,
+    }]
+  }
+  const lines = Array.isArray(d.lines) ? d.lines : (d.items || [])
+  return lines.map((ln: any, i: number) => {
+    const amt = n(ln.amount ?? ln.total_price ?? ln.total)
+    return {
+      id: String(ln.id ?? i),
+      no: i + 1,
+      name: `หักกลบใบแจ้งหนี้ ${ln.invoice_number || ln.invoice_id || '-'}`,
+      description: ln.invoice_date ? `วันที่บิล ${ln.invoice_date}` : undefined,
+      quantity: 1,
+      unit: 'ใบ',
+      price: amt,
+      discount: 0,
+      vat: 0,
+      total: amt,
+    }
+  })
+}
+
 export function toBillData(type: PrintDocType, d: any): BillData {
   const spec = DOCS[type]
-  const items = type === 'wo' ? toWoItems(d.materials) : toItems(d.items)
+  const items = type === 'wo'
+    ? toWoItems(d.materials)
+    : type === 'of'
+      ? toOffsetItems(d)
+      : toItems(d.items)
   // ค่าบริการ/ค่าขนส่งไม่มีแถวของตัวเองในเทมเพลต ถ้าไม่ดันเข้ามาเป็นรายการ
   // ใบจะพิมพ์ออกมา subtotal + VAT − ส่วนลด ไม่เท่า total (ใบกำกับที่ออกจาก ERP ใส่เป็นรายการอยู่แล้ว)
   const serviceAmt = n(d.service_charge_amount)
@@ -180,13 +220,25 @@ export function toBillData(type: PrintDocType, d: any): BillData {
   const subtotal = (d.subtotal !== undefined ? n(d.subtotal) : 0) + serviceAmt + extraAmt
     || items.reduce((s, x) => s + x.total, 0)
   const total = n(d.total_amount ?? d.net_amount ?? d.amount ?? subtotal)
+  const cnReasonCodeText = cnReasonLabel(d.reason_code)
+  const cnCombinedReason = [cnReasonCodeText, d.reason].filter(Boolean).join(' — ')
+  const refDate = type === 'cn'
+    ? (pick(d, ['original_invoice_date', 'invoice_date']) || undefined)
+    : type === 'bb'
+      ? (pick(d, ['tax_invoice_date']) || undefined)
+      : undefined
+  const srcType = d.credit_source_type ?? d.source_type
+  const creditSourceText = type === 'of'
+    ? [srcType === 'BUYBACK' ? 'รับซื้อคืน' : srcType === 'CREDIT_NOTE' ? 'ใบลดหนี้' : '', pick(d, spec.ref)].filter(Boolean).join(' ')
+    : pick(d, spec.ref)
   return {
     id: String(d.id ?? ''),
     docNumber: pick(d, spec.number) || '-',
     // ใบเสร็จหน้าร้านไม่มีฟิลด์วันที่ติดมากับบิล (ช่อง "วันที่" เลยพิมพ์ออกมาเป็น "-")
     // เจ้าของยืนยันว่าใช้ "เวลาที่กดพิมพ์" ได้ ไม่ต้องเป็นเวลาที่ออกเลขบิล
     docDate: pick(d, spec.date) || (type === 'pos' ? new Date().toISOString() : ''),
-    refNumber: pick(d, spec.ref) || undefined,
+    refNumber: creditSourceText || undefined,
+    refDate,
     dueDate: pick(d, spec.due) || undefined,
     paymentDueDate: (type === 'qt' || type === 'so') ? (pick(d, ['due_date']) || undefined) : undefined,
     seller: sellerOf(d),
@@ -225,6 +277,19 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     receiptQrCode: safeImage(d.receipt_qr) || undefined,
     createdBy: String(d.created_by || d.requester_name || d.received_by || ''),
     createdAt: String(d.created_at || ''),
+    approvedBy: d.approved_by ? String(d.approved_by) : undefined,
+    sellerIdDoc: d.seller_id_doc ? String(d.seller_id_doc) : undefined,
+    ...(type === 'cn' && {
+      cnSummary: {
+        originalInvoiceNumber: d.invoice_number || undefined,
+        originalInvoiceDate: d.original_invoice_date || d.invoice_date || undefined,
+        originalValue: d.original_value != null ? n(d.original_value) : undefined,
+        correctValue: d.correct_value != null ? n(d.correct_value) : undefined,
+        difference: d.difference != null ? n(d.difference) : (d.subtotal != null ? n(d.subtotal) : undefined),
+        vat: d.vat != null ? n(d.vat) : (d.tax_amount != null ? n(d.tax_amount) : undefined),
+        reasonLabel: cnCombinedReason || undefined,
+      },
+    }),
   }
 }
 

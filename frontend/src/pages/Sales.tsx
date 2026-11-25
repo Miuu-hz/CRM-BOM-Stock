@@ -5,7 +5,7 @@ import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, Alert
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
-import salesService, { canManageCollections, type Customer, type Product } from '../services/sales.service'
+import salesService, { canManageCollections, CN_REASON_CODES, cnReasonLabel, type Customer, type Product } from '../services/sales.service'
 import { printBill } from '../utils/printBill'
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
@@ -127,6 +127,12 @@ interface CreditNote {
   credit_date: string
   total_amount: number
   reason: string
+  reason_code?: string
+  original_invoice_date?: string
+  original_value?: number
+  correct_value?: number
+  difference?: number
+  vat?: number
   status: string
 }
 
@@ -4572,6 +4578,8 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
   useModalClose(onClose)
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceId, setInvoiceId] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState<string | null>(null)
+  const [reasonCode, setReasonCode] = useState('')
   const [reason, setReason] = useState('')
   const [creditDate, setCreditDate] = useState(todayStr())
   const [saving, setSaving] = useState(false)
@@ -4604,6 +4612,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
     let alive = true
     setReturnLines([])
     setCreditableRemaining(null)
+    setInvoiceDate(null)
     if (!invoiceId) return
     if (mode !== 'RETURN') {
       setLoadingLines(false)
@@ -4611,6 +4620,7 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
         if (!alive) return
         setInvVat({ rate: Number(r.data?.tax_rate ?? 7), inclusive: r.data?.vat_inclusive === 1 })
         setCreditableRemaining(r.data?.creditable_remaining != null ? Number(r.data.creditable_remaining) : null)
+        setInvoiceDate(r.data?.invoice_date || null)
       }).catch(() => {})
       return () => { alive = false }
     }
@@ -4619,21 +4629,36 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
       if (!alive) return
       setInvVat({ rate: Number(r.data?.tax_rate ?? 7), inclusive: r.data?.vat_inclusive === 1 })
       setCreditableRemaining(r.data?.creditable_remaining != null ? Number(r.data.creditable_remaining) : null)
+      setInvoiceDate(r.data?.invoice_date || null)
       const items = (r.data?.items || []) as any[]
-      setReturnLines(items.map(it => ({
-        invoiceItemId: it.id,
-        productId: it.product_id || undefined,
-        productName: it.product_name || t('sales.common.itemNumberPrefix'),
-        productCode: it.product_code,
-        maxQty: Number(it.quantity) || 0,
-        // ราคาสุทธิหลังส่วนลดรายการ — unit_price ดิบทำให้ลดหนี้เกินยอดที่ขายจริง
-        unitPrice: Math.round(((Number(it.total_price) || 0) / (Number(it.quantity) || 1)) * 10000) / 10000,
-        checked: false,
-        qty: Number(it.quantity) || 0,
-      })))
+      setReturnLines(items.map(it => {
+        const qty = it.creditable_qty != null ? Number(it.creditable_qty) : (Number(it.quantity) || 0)
+        // ราคาสุทธิหลังส่วนลดรายการ + ปันส่วนส่วนลดท้ายบิล — ใช้ creditable_unit_price จาก backend ก่อน
+        const price = it.creditable_unit_price != null
+          ? Number(it.creditable_unit_price)
+          : Math.round(((Number(it.total_price) || 0) / (Number(it.quantity) || 1)) * 10000) / 10000
+        return {
+          invoiceItemId: it.id,
+          productId: it.product_id || undefined,
+          productName: it.product_name || t('sales.common.itemNumberPrefix'),
+          productCode: it.product_code,
+          maxQty: Math.max(0, qty),
+          unitPrice: price,
+          checked: false,
+          qty: Math.max(0, qty),
+        }
+      }))
     }).catch(() => { if (alive) setReturnLines([]) }).finally(() => { if (alive) setLoadingLines(false) })
     return () => { alive = false }
   }, [mode, invoiceId])
+
+  const daysSinceInvoice = useMemo(() => {
+    if (!invoiceDate || !creditDate) return null
+    const invMs = Date.parse(String(invoiceDate).slice(0, 10))
+    const cnMs = Date.parse(String(creditDate).slice(0, 10))
+    if (!Number.isFinite(invMs) || !Number.isFinite(cnMs)) return null
+    return Math.floor((cnMs - invMs) / 86400000)
+  }, [invoiceDate, creditDate])
 
   const toggleLine = (idx: number) => {
     setReturnLines(lines => lines.map((l, i) => i === idx ? { ...l, checked: !l.checked } : l))
@@ -4666,20 +4691,27 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
 
   const handleSave = async () => {
     if (!invoiceId) { toast.error(t('sales.validation.selectInvoice')); return }
+    if (!reasonCode) { toast.error(t('sales.validation.creditReasonCode', { defaultValue: 'กรุณาเลือกเหตุผลตามกฎหมาย (ม.82/10)' })); return }
     if (!reason.trim()) { toast.error(t('sales.validation.creditReason')); return }
     if (mode === 'RETURN' && selectedLines.length === 0) { toast.error(t('sales.creditNoteModal.selectReturnItems')); return }
     if (mode === 'DISCOUNT' && !(discountValue > 0)) { toast.error(t('sales.validation.amountRequired')); return }
     if (exceedsRemaining) { toast.error(t('sales.creditNoteModal.exceedsRemaining')); return }
     setSaving(true)
     try {
-      await salesService.createCreditNote({
-        invoiceId, reason, creditDate,
+      const res = await salesService.createCreditNote({
+        invoiceId, reasonCode, reason, creditDate,
         amount: mode === 'DISCOUNT' ? discountValue : undefined,
         items: mode === 'RETURN'
           ? selectedLines.map(l => ({ invoiceItemId: l.invoiceItemId, productId: l.productId, quantity: l.qty, unitPrice: l.unitPrice }))
           : undefined,
       })
       toast.success(t('sales.toast.creditNoteCreated'))
+      const warnings = res?.warnings ?? res?.data?.warnings
+      if (Array.isArray(warnings)) {
+        for (const w of warnings) {
+          toast(w, { icon: <AlertTriangle className="w-5 h-5 text-warning" />, duration: 6000 })
+        }
+      }
       onSaved()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || t('sales.toast.creditNoteCreateFailed'))
@@ -4729,6 +4761,20 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
                 </option>
               ))}
             </select>
+            <p className="text-xs text-[var(--fg-4)] mt-1">
+              {t('sales.creditNoteModal.buybackHint', { defaultValue: 'หาใบเดิมไม่เจอ? ใช้รับซื้อคืนใน CRM' })}
+            </p>
+            {daysSinceInvoice !== null && daysSinceInvoice > 90 && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-[var(--warning-soft)] border border-warning/30 px-3 py-2 text-xs text-warning">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  {t('sales.creditNoteModal.oldInvoiceWarning', {
+                    days: daysSinceInvoice,
+                    defaultValue: `ใบแจ้งหนี้เดิมออกมาแล้ว ${daysSinceInvoice} วัน — การคืนควรอยู่ในเวลาอันสมควร`,
+                  })}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Return-mode item picker — mirrors the invoice items table style used in
@@ -4751,14 +4797,18 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
                   {returnLines.map((l, i) => (
                     <div key={l.invoiceItemId} className={`grid grid-cols-2 gap-2 sm:grid-cols-12 sm:gap-0 px-3 py-2.5 text-sm items-center ${i % 2 === 0 ? '' : 'bg-[var(--surface-2)]/40'} border-b border-[var(--border)]/30 last:border-0`}>
                       <div className="col-span-2 sm:col-span-1">
-                        <button type="button" onClick={() => toggleLine(i)}
-                          className={`w-5 h-5 rounded border flex items-center justify-center ${l.checked ? 'bg-warning border-warning text-white' : 'border-[var(--border)] text-transparent'}`}>
+                        <button type="button" disabled={l.maxQty <= 0} onClick={() => toggleLine(i)}
+                          className={`w-5 h-5 rounded border flex items-center justify-center disabled:opacity-40 ${l.checked ? 'bg-warning border-warning text-white' : 'border-[var(--border)] text-transparent'}`}>
                           <Check className="w-3.5 h-3.5" />
                         </button>
                       </div>
                       <div className="col-span-2 sm:col-span-5">
                         <p className="text-[var(--fg-1)] font-medium">{l.productName}</p>
-                        <p className="text-xs text-[var(--fg-4)]">{t('sales.creditNoteModal.soldQty')}: {l.maxQty}</p>
+                        <p className="text-xs text-[var(--fg-4)]">
+                          {l.maxQty <= 0
+                            ? t('sales.creditNoteModal.fullyReturned', { defaultValue: 'คืนครบแล้ว' })
+                            : `${t('sales.creditNoteModal.soldQty')}: ${l.maxQty} · ${fmt(l.unitPrice)}`}
+                        </p>
                       </div>
                       <div className="col-span-1 sm:col-span-3 flex sm:justify-center">
                         <input type="number" min={0} max={l.maxQty} step="any" disabled={!l.checked}
@@ -4793,6 +4843,21 @@ function CreateCreditNoteModal({ onClose, onSaved }: { onClose: () => void; onSa
             <label className="text-xs text-[var(--fg-4)] mb-1.5 block">{t('sales.creditNoteModal.dateLabel')}</label>
             <input type="date" value={creditDate} onChange={e => setCreditDate(e.target.value)}
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo" />
+          </div>
+
+          <div>
+            <label className="text-xs text-[var(--fg-4)] mb-1.5 block">
+              {t('sales.creditNoteModal.reasonCodeLabel', { defaultValue: 'เหตุผลตามกฎหมาย (ม.82/10) *' })}
+            </label>
+            <select value={reasonCode} onChange={e => setReasonCode(e.target.value)}
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-[var(--fg-1)] text-sm focus:outline-none focus:border-phopy-indigo">
+              <option value="">{t('sales.creditNoteModal.selectReasonCode', { defaultValue: '-- เลือกเหตุผลตามกฎหมาย --' })}</option>
+              {CN_REASON_CODES.map(rc => (
+                <option key={rc.value} value={rc.value}>
+                  {t(`sales.creditNoteReasonCodes.${rc.value}`, { defaultValue: rc.label })}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -4845,8 +4910,14 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
     try {
       const { data } = await api.put(`/sales/credit-notes/${creditNote.id}/status`, { status: 'ISSUED' })
       toast.success(t('sales.toast.creditNoteIssued'))
-      // ลูกค้าจ่ายไปแล้วบางส่วน/ทั้งหมด → ใบลดหนี้นี้เกินยอดค้างที่เหลือ กลายเป็นเงินที่ต้องคืน/เป็นเครดิตให้ลูกค้า
-      if (data?.refundDue > 0) toast(t('sales.toast.creditNoteRefundDue', { amount: fmt(data.refundDue) }), { icon: <AlertTriangle className="w-5 h-5 text-warning" />, duration: 6000 })
+      // ลูกค้าจ่ายไปแล้วบางส่วน/ทั้งหมด → ใบลดหนี้นี้เกินยอดค้างที่เหลือ กลายเป็นเครดิตให้ลูกค้าใช้หักบิลอื่นได้ที่ CRM
+      const refundDue = Number(data?.refundDue ?? data?.data?.refundDue ?? 0)
+      if (refundDue > 0) {
+        toast(t('sales.toast.creditNoteExcessCredit', {
+          amount: fmt(refundDue),
+          defaultValue: `เครดิตคงเหลือ ${fmt(refundDue)} ใช้หักบิลอื่นได้ที่ CRM`,
+        }), { icon: <AlertTriangle className="w-5 h-5 text-warning" />, duration: 7000 })
+      }
       onRefresh()
       onClose()
     } catch (err: any) {
@@ -4963,6 +5034,10 @@ function CreditNoteDetailModal({ creditNote, onClose, onRefresh, companyName }: 
                 label: t('sales.common.customerName'),
                 value: creditNote.customer_name || '-',
               },
+              ...(creditNote.reason_code ? [{
+                label: t('sales.creditNoteDetail.reasonCode', { defaultValue: 'เหตุผลตามกฎหมาย' }),
+                value: cnReasonLabel(creditNote.reason_code) || creditNote.reason_code,
+              }] : []),
             ]}
           />
         </DocSection>

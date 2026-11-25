@@ -1512,6 +1512,7 @@
       "creditNoteIssued": "ออกใบลดหนี้สำเร็จ",
       "creditNoteIssueFailed": "ออกใบลดหนี้ไม่สำเร็จ",
       "creditNoteRefundDue": "ลูกค้าจ่ายเงินไปแล้ว ต้องคืนเงิน/เป็นเครดิตให้ลูกค้า ฿{{amount}}",
+      "creditNoteExcessCredit": "เครดิตคงเหลือ {{amount}} ใช้หักบิลอื่นได้ที่ CRM",
       "uploadSuccess": "อัปโหลดไฟล์สำเร็จ",
       "uploadFailed": "อัปโหลดไฟล์ไม่สำเร็จ",
       "deleteSuccess": "ลบไฟล์สำเร็จ",
@@ -1755,6 +1756,7 @@
       "selectCustomer": "กรุณาเลือกลูกค้า",
       "addItem": "กรุณาเพิ่มอย่างน้อย 1 รายการ",
       "selectInvoice": "กรุณาเลือกใบแจ้งหนี้",
+      "creditReasonCode": "กรุณาเลือกเหตุผลตามกฎหมาย (ม.82/10)",
       "creditReason": "กรุณาระบุเหตุผลการลดหนี้",
       "amountRequired": "กรุณาระบุจำนวนเงิน",
       "fileTooLarge": "ไฟล์ใหญ่เกิน 10MB",
@@ -1921,7 +1923,20 @@
       "selectReturnItems": "กรุณาเลือกสินค้าที่รับคืนอย่างน้อย 1 รายการ",
       "remainingHint": "ลดได้อีกไม่เกิน ฿{{amount}}",
       "exceedsRemaining": "ยอดลดหนี้เกินมูลค่าใบแจ้งหนี้ที่เหลือ",
-      "discountAmountLabel": "ยอดลดหนี้"
+      "discountAmountLabel": "ยอดลดหนี้",
+      "reasonCodeLabel": "เหตุผลตามกฎหมาย (ม.82/10) *",
+      "selectReasonCode": "-- เลือกเหตุผลตามกฎหมาย --",
+      "buybackHint": "หาใบเดิมไม่เจอ? ใช้รับซื้อคืนใน CRM",
+      "oldInvoiceWarning": "ใบแจ้งหนี้เดิมออกมาแล้ว {{days}} วัน — การคืนควรอยู่ในเวลาอันสมควร",
+      "fullyReturned": "คืนครบแล้ว"
+    },
+    "creditNoteReasonCodes": {
+      "DEFECTIVE": "สินค้าชำรุด/บกพร่อง",
+      "NOT_AS_AGREED": "ไม่ตรงตามที่ตกลง/ตัวอย่าง",
+      "AGREED_RETURN": "คืนตามข้อตกลงทางการค้า",
+      "PRICE_ERROR": "คำนวณราคาสูงกว่าความจริง",
+      "SHORT_DELIVERY": "ส่งขาดจำนวน",
+      "OTHER_LEGAL": "เหตุอื่นตาม ม.82/10"
     },
     "creditNoteStatus": {
       "draft": "ร่าง",
@@ -1932,7 +1947,8 @@
     "creditNoteDetail": {
       "invoiceRef": "อ้างอิงใบแจ้งหนี้",
       "issuedDate": "วันที่ออก",
-      "amount": "ยอดลดหนี้"
+      "amount": "ยอดลดหนี้",
+      "reasonCode": "เหตุผลตามกฎหมาย"
     },
     "backorderStatus": {
       "pending": "รอดำเนินการ",
@@ -2079,6 +2095,7 @@
         "proposals": "ใบเสนอราคา",
         "activities": "ติดตาม",
         "collections": "ตามบิล",
+        "credits": "เครดิต/ซื้อคืน",
         "loyalty": "แต้มสะสม"
       },
       "contactInfo": "ข้อมูลติดต่อ",
@@ -2257,6 +2274,28 @@
       "leadSourcePlaceholder": "เลือกช่องทาง",
       "campaign": "แคมเปญ",
       "campaignPlaceholder": "ชื่อแคมเปญ (ถ้ามี)"
+    },
+    "creditsTab": {
+      "totalBalance": "ยอดเครดิตคงเหลือของลูกค้า",
+      "creditsTitle": "เครดิตคงเหลือแยกตามเอกสาร",
+      "buybacksTitle": "ประวัติใบรับซื้อคืนสินค้า",
+      "offsetsTitle": "ประวัติการหักกลบ / จ่ายเงินคืน",
+      "actions": {
+        "buyback": "รับซื้อคืน",
+        "offset": "หักบิล",
+        "refund": "จ่ายเงินคืน"
+      },
+      "toast": {
+        "loadFailed": "โหลดข้อมูลเครดิตไม่สำเร็จ",
+        "buybackCreated": "บันทึกรับซื้อคืนสำเร็จ",
+        "buybackCreateFailed": "บันทึกรับซื้อคืนไม่สำเร็จ",
+        "buybackCancelled": "ยกเลิกใบรับซื้อคืนแล้ว",
+        "offsetCreated": "หักกลบบิลสำเร็จ",
+        "offsetFailed": "หักกลบบิลไม่สำเร็จ",
+        "offsetCancelled": "ยกเลิกใบหักกลบแล้ว",
+        "refundCreated": "บันทึกจ่ายเงินคืนสำเร็จ",
+        "refundFailed": "บันทึกจ่ายเงินคืนไม่สำเร็จ"
+      }
     },
     "suppliers": {
       "stats": {

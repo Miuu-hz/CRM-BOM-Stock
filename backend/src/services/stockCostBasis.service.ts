@@ -57,6 +57,17 @@ const SOURCE_SQL = `
    ORDER BY gr.receipt_date DESC, gr.gr_number DESC
 `
 
+const BUYBACK_SOURCE_SQL = `
+  SELECT c.name AS supplier, bb.bb_number AS doc, bb.buyback_date AS date,
+         bbi.quantity AS qty, bbi.unit AS unit, bbi.unit_price AS unitPrice,
+         bbi.base_qty AS baseQty, bbi.cost_value AS costValue, bbi.product_name AS name
+    FROM customer_buyback_items bbi
+    JOIN customer_buybacks bb ON bb.id = bbi.buyback_id AND bb.tenant_id = bbi.tenant_id
+    LEFT JOIN customers c ON c.id = bb.customer_id AND c.tenant_id = bb.tenant_id
+   WHERE bbi.stock_item_id = ? AND bbi.tenant_id = ? AND bb.status = 'POSTED' AND bbi.condition = 'GOOD'
+   ORDER BY bb.buyback_date DESC, bb.bb_number DESC
+`
+
 export function getCostBasis(tenantId: string, stockItemId: string): CostBasis {
   const item = db.prepare('SELECT unit_cost, base_unit, unit FROM stock_items WHERE id = ? AND tenant_id = ?')
     .get(stockItemId, tenantId) as any
@@ -93,6 +104,34 @@ export function getCostBasis(tenantId: string, stockItemId: string): CostBasis {
       value: (Number(r.qty) || 0) * (Number(r.unitPrice) || 0),
       name: r.name ?? null,
     })
+  }
+
+  let bbRows: any[] = []
+  try {
+    bbRows = db.prepare(BUYBACK_SOURCE_SQL).all(stockItemId, tenantId) as any[]
+  } catch { /* table may not exist in isolated raw tests before migration */ }
+
+  for (const r of bbRows) {
+    const baseQty = Number(r.baseQty) || 0
+    if (baseQty <= 0) {
+      skipped++
+      continue
+    }
+    sources.push({
+      supplier: r.supplier ?? null,
+      doc: r.doc,
+      date: r.date,
+      qty: Number(r.qty) || 0,
+      unit: r.unit ?? null,
+      unitPrice: Number(r.unitPrice) || 0,
+      baseQty,
+      value: Number(r.costValue) || 0,
+      name: r.name ?? null,
+    })
+  }
+
+  if (bbRows.length > 0) {
+    sources.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.doc).localeCompare(String(a.doc)))
   }
 
   const totalBaseQty = sources.reduce((t, r) => t + r.baseQty, 0)

@@ -603,6 +603,7 @@ export function applySchema(db: any): void {
       customer_id TEXT NOT NULL,
       credit_date TEXT DEFAULT CURRENT_TIMESTAMP,
       reason TEXT NOT NULL,
+      reason_code TEXT,
       subtotal REAL DEFAULT 0,
       tax_rate REAL DEFAULT 7,
       tax_amount REAL DEFAULT 0,
@@ -1800,6 +1801,96 @@ export function applySchema(db: any): void {
     CREATE INDEX IF NOT EXISTS idx_wht_cert_tenant ON wht_certificates(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_wht_cert_txn ON wht_certificates(tax_transaction_id);
     CREATE INDEX IF NOT EXISTS idx_wht_cert_issue ON wht_certificates(tenant_id, issue_date);
+
+    -- ==================== CUSTOMER BUYBACKS & CREDITS & OFFSETS ====================
+    CREATE TABLE IF NOT EXISTS customer_buybacks (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      bb_number TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      buyback_date TEXT NOT NULL,
+      seller_vat INTEGER DEFAULT 0,
+      tax_invoice_number TEXT,
+      tax_invoice_date TEXT,
+      subtotal REAL DEFAULT 0,
+      tax_rate REAL DEFAULT 0,
+      tax_amount REAL DEFAULT 0,
+      total_amount REAL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'POSTED',
+      approved_by TEXT,
+      seller_id_doc TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, bb_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_buybacks_cust ON customer_buybacks(tenant_id, customer_id);
+
+    CREATE TABLE IF NOT EXISTS customer_buyback_items (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      buyback_id TEXT NOT NULL,
+      stock_item_id TEXT NOT NULL,
+      product_name TEXT,
+      quantity REAL DEFAULT 0,
+      unit TEXT,
+      unit_price REAL DEFAULT 0,
+      total_price REAL DEFAULT 0,
+      condition TEXT NOT NULL DEFAULT 'GOOD',
+      base_qty REAL DEFAULT 0,
+      cost_value REAL DEFAULT 0,
+      FOREIGN KEY (buyback_id) REFERENCES customer_buybacks(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_buyback_items_bb ON customer_buyback_items(tenant_id, buyback_id);
+    CREATE INDEX IF NOT EXISTS idx_customer_buyback_items_stock ON customer_buyback_items(tenant_id, stock_item_id);
+
+    CREATE TABLE IF NOT EXISTS customer_credits (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      source_number TEXT,
+      amount REAL DEFAULT 0,
+      balance REAL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, source_type, source_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_credits_cust ON customer_credits(tenant_id, customer_id);
+
+    CREATE TABLE IF NOT EXISTS customer_offsets (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      offset_number TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      offset_date TEXT NOT NULL,
+      credit_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      total_amount REAL DEFAULT 0,
+      payment_method TEXT,
+      bank_account_id TEXT,
+      status TEXT NOT NULL DEFAULT 'POSTED',
+      notes TEXT,
+      created_by TEXT,
+      cancelled_reason TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, offset_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_offsets_cust ON customer_offsets(tenant_id, customer_id);
+    CREATE INDEX IF NOT EXISTS idx_customer_offsets_credit ON customer_offsets(tenant_id, credit_id);
+
+    CREATE TABLE IF NOT EXISTS customer_offset_lines (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      offset_id TEXT NOT NULL,
+      invoice_id TEXT NOT NULL,
+      amount REAL DEFAULT 0,
+      FOREIGN KEY (offset_id) REFERENCES customer_offsets(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_offset_lines_offset ON customer_offset_lines(tenant_id, offset_id);
+    CREATE INDEX IF NOT EXISTS idx_customer_offset_lines_inv ON customer_offset_lines(tenant_id, invoice_id);
 
   `)
 }

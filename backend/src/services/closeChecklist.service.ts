@@ -445,8 +445,16 @@ function checkSubledgerMatch(tenantId: string, end: string): CheckItem {
   const apId = accountIdOf(tenantId, ACC.AP)
   const arGl = arId ? postedBalance(tenantId, arId, end) : 0
   const apGl = apId ? r2(-postedBalance(tenantId, apId, end)) : 0
+  let buybackCreditBal = 0
+  try {
+    const bbRow = db.prepare(
+      `SELECT COALESCE(SUM(cc.balance), 0) AS s FROM customer_credits cc JOIN customer_buybacks bb ON bb.id = cc.source_id AND bb.tenant_id = cc.tenant_id
+       WHERE cc.tenant_id = ? AND cc.source_type = 'BUYBACK' AND cc.balance > 0 AND bb.buyback_date <= ?`
+    ).get(tenantId, end) as { s: number } | undefined
+    buybackCreditBal = r2(bbRow?.s || 0)
+  } catch { /* customer_credits may not exist in older isolated test DBs */ }
   const arDoc = r2(arAging(tenantId, end).totals.outstanding)
-  const apDoc = r2(apAging(tenantId, end).totals.outstanding)
+  const apDoc = r2(apAging(tenantId, end).totals.outstanding + buybackCreditBal)
 
   if (Math.abs(arGl) <= ZERO && Math.abs(arDoc) <= ZERO && Math.abs(apGl) <= ZERO && Math.abs(apDoc) <= ZERO) {
     return {

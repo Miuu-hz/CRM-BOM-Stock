@@ -197,9 +197,10 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
     const themeColor = settings?.brandColor || config.themeColor
     const showBank = config.fields.showBankInfo && settings?.showBankInfo !== false
     const showQr = config.fields.showQRCode && settings?.showPaymentQr !== false
-    // ช่องเซ็น/หมายเหตุท้ายบิลที่ตั้งไว้เป็นของเอกสารซื้อขาย ใบสั่งผลิตเป็นเอกสารภายใน ใช้ช่องเซ็นฝ่ายผลิตของตัวเอง
+    // ช่องเซ็น/หมายเหตุท้ายบิลที่ตั้งไว้เป็นของเอกสารซื้อขาย ใบสั่งผลิต/ใบรับซื้อคืน/ใบหักกลบใช้ช่องเซ็นเฉพาะของตัวเอง
     const isWO = config.type === 'WORK_ORDER'
-    const signatureSlots = !isWO && settings?.signatureSlots?.length ? settings.signatureSlots : config.defaultSignatureSlots
+    const useOwnSignatures = isWO || config.type === 'CUSTOMER_BUYBACK' || config.type === 'CUSTOMER_OFFSET'
+    const signatureSlots = !useOwnSignatures && settings?.signatureSlots?.length ? settings.signatureSlots : config.defaultSignatureSlots
     const footerNote = isWO ? undefined : settings?.footerNote
     const woUnit = data.woUnit ? unitLabel(data.woUnit) : 'หน่วย'
     const woPct = isWO && data.woQty ? Math.round(((data.woCompletedQty ?? 0) / data.woQty) * 100) : 0
@@ -345,6 +346,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   <div className="bill-status-badge" data-status={data.status}>
                     {data.status === 'DRAFT' && 'ร่าง'}
                     {data.status === 'CONFIRMED' && 'ยืนยันแล้ว'}
+                    {data.status === 'POSTED' && 'ยืนยันแล้ว'}
                     {data.status === 'COMPLETED' && 'เสร็จสิ้น'}
                     {data.status === 'CANCELLED' && 'ยกเลิก'}
                     {data.status === 'PLANNED' && 'วางแผนแล้ว'}
@@ -396,6 +398,9 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   )}
                   {config.fields.showRefNumber && data.refNumber && (
                     <div className="meta-row"><span className="k">{config.labels.refNumber}</span><span className="v">{data.refNumber}</span></div>
+                  )}
+                  {data.refDate && (
+                    <div className="meta-row"><span className="k">วันที่เอกสารอ้างอิง</span><span className="v">{formatThaiDate(data.refDate)}</span></div>
                   )}
                   {config.fields.showPaymentTerms && data.paymentTerms && (
                     <>
@@ -680,6 +685,44 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                       </div>
                     </div>
                   </section>
+
+                  {/* รายละเอียดใบลดหนี้ตาม ป.80/2542 */}
+                  {config.type === 'CREDIT_NOTE' && data.cnSummary && (
+                    <section className="bill-notes" style={{ marginTop: 12 }}>
+                      <div className="bill-section-heading">รายละเอียดการลดหนี้ (ตาม ป.80/2542)</div>
+                      <div className="summary-line">
+                        <span className="lbl">อ้างอิงใบกำกับภาษี/ใบแจ้งหนี้เดิม</span>
+                        <span>
+                          {data.cnSummary.originalInvoiceNumber || data.refNumber || '-'}
+                          {data.cnSummary.originalInvoiceDate ? ` (ลงวันที่ ${formatThaiDate(data.cnSummary.originalInvoiceDate)})` : ''}
+                        </span>
+                      </div>
+                      {data.cnSummary.originalValue != null && (
+                        <div className="summary-line"><span className="lbl">มูลค่าตามใบกำกับภาษีเดิม</span><span>{formatCurrency(data.cnSummary.originalValue)} บาท</span></div>
+                      )}
+                      {data.cnSummary.correctValue != null && (
+                        <div className="summary-line"><span className="lbl">มูลค่าที่ถูกต้อง</span><span>{formatCurrency(data.cnSummary.correctValue)} บาท</span></div>
+                      )}
+                      {data.cnSummary.difference != null && (
+                        <div className="summary-line"><span className="lbl">ผลต่าง</span><span>{formatCurrency(data.cnSummary.difference)} บาท</span></div>
+                      )}
+                      {data.cnSummary.vat != null && (
+                        <div className="summary-line"><span className="lbl">ภาษีมูลค่าเพิ่ม</span><span>{formatCurrency(data.cnSummary.vat)} บาท</span></div>
+                      )}
+                      {data.cnSummary.reasonLabel && (
+                        <div className="summary-line"><span className="lbl">เหตุผล</span><span>{data.cnSummary.reasonLabel}</span></div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* หลักฐานผู้รับเงิน / ผู้อนุมัติสำหรับใบรับซื้อคืน */}
+                  {config.type === 'CUSTOMER_BUYBACK' && (data.approvedBy || data.sellerIdDoc) && (
+                    <section className="bill-notes" style={{ marginTop: 12 }}>
+                      <div className="bill-section-heading">ข้อมูลผู้รับเงินและการอนุมัติ</div>
+                      {data.approvedBy && <div className="summary-line"><span className="lbl">ผู้อนุมัติ</span><span>{data.approvedBy}</span></div>}
+                      {data.sellerIdDoc && <div className="summary-line"><span className="lbl">หลักฐานประจำตัวผู้รับเงิน</span><span>{data.sellerIdDoc}</span></div>}
+                    </section>
+                  )}
 
                   {/* กล่องข้อมูลการชำระเงิน + QR — ใต้ยอดรวม ก่อนหมายเหตุ */}
                   {(showBank || showQr) && (

@@ -26,6 +26,8 @@ import posRouter from './pos.routes'
 import summaryRouter from './summary.routes'
 import badgeCountsRouter from './badgeCounts.routes'
 import collectionsRouter from './collections.routes'
+import customerCreditsRouter from './customerCredits.routes'
+import buybacksRouter from './buybacks.routes'
 
 const router = Router()
 
@@ -39,6 +41,8 @@ router.use('/invoices', invoicesRouter)
 router.use('/credit-notes', creditNotesRouter)
 router.use('/receipts', receiptsRouter)
 router.use('/quotation-templates', templatesRouter)
+router.use('/customer-credits', customerCreditsRouter)
+router.use('/buybacks', buybacksRouter)
 router.use('/', posRouter)
 router.use('/summary', summaryRouter)
 router.use('/collections', collectionsRouter)

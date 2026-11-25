@@ -10,7 +10,8 @@ import {
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
-import salesService, { canManageCollections, type CollectionItem, type FollowChannel } from '../services/sales.service'
+import salesService, { canManageCollections, canManageCustomerCredits, type CollectionItem, type FollowChannel } from '../services/sales.service'
+import CustomerCreditsTab from '../components/sales/CustomerCreditsTab'
 import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'
@@ -153,6 +154,7 @@ function CRM() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const canCollections = canManageCollections(user?.role)
+  const canCredits = canManageCustomerCredits(user?.role)
   const location = useLocation()
   const navigate = useNavigate()
   const [mainTab, setMainTab] = useState<'customers' | 'suppliers'>('customers')
@@ -165,7 +167,7 @@ function CRM() {
   const [insights, setInsights] = useState<CustomerInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'loyalty'
+    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'credits' | 'loyalty'
   >('overview')
   const [showModal, setShowModal] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -191,10 +193,16 @@ function CRM() {
     const tabParam = params.get('tab')
     setMainTab('customers')
     setSelectedCustomerId(customerId)
-    setActiveTab(tabParam === 'collections' && canCollections ? 'collections' : 'overview')
+    setActiveTab(
+      tabParam === 'collections' && canCollections
+        ? 'collections'
+        : tabParam === 'credits' && canCredits
+          ? 'credits'
+          : 'overview',
+    )
     setShowModal(true)
     navigate(location.pathname, { replace: true })
-  }, [location.search, location.pathname, canCollections, navigate])
+  }, [location.search, location.pathname, canCollections, canCredits, navigate])
 
   // เปิดจากผลค้นหาบนหัว: ลูกค้า/ออเดอร์ → modal ลูกค้า, ผู้ขาย → แท็บผู้ขายแล้วเปิดรายละเอียด
   const [openSupplier, setOpenSupplier] = useState<{ id: string } | null>(null)
@@ -710,6 +718,7 @@ function CRM() {
           onCustomerUpdate={(updated) => {
             setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c))
           }}
+          onDataChanged={loadData}
           orderPage={orderPage}
           orderPageNum={orderPageNum}
           orderLimit={orderLimit}
@@ -959,13 +968,14 @@ function CustomerDetailModal({
   onEdit,
   onDelete,
   onCustomerUpdate,
+  onDataChanged,
 }: {
   customer: Customer
   insights: CustomerInsights | null
   insightsLoading: boolean
   activities: ActivityLog[]
-  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'loyalty'
-  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'loyalty') => void
+  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'credits' | 'loyalty'
+  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'credits' | 'loyalty') => void
   onClose: () => void
   onAddActivity: (type: string, note: string) => Promise<void>
   onRefreshActivities: () => Promise<void>
@@ -978,10 +988,12 @@ function CustomerDetailModal({
   onEdit: () => void
   onDelete: () => void
   onCustomerUpdate?: (updated: Customer) => void
+  onDataChanged?: () => void
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const canCollections = canManageCollections(user?.role)
+  const canCredits = canManageCustomerCredits(user?.role)
   useModalClose(onClose)
   const [collections, setCollections] = useState<CollectionItem[]>([])
   const [collectionsLoading, setCollectionsLoading] = useState(false)
@@ -1118,6 +1130,7 @@ function CustomerDetailModal({
     { id: 'proposals',        label: 'ใบเสนอราคา',    icon: FileText },
     { id: 'activities',       label: 'ติดตาม',        icon: Clock },
     ...(canCollections ? [{ id: 'collections', label: t('crm.detail.tabs.collections', { defaultValue: 'ตามบิล' }), icon: CreditCard }] : []),
+    ...(canCredits ? [{ id: 'credits', label: t('crm.detail.tabs.credits', { defaultValue: 'เครดิต/ซื้อคืน' }), icon: RefreshCw }] : []),
     { id: 'loyalty',          label: 'แต้มสะสม',      icon: Star },
   ] as const
 
@@ -1659,6 +1672,16 @@ function CustomerDetailModal({
               loading={collectionsLoading}
               onRefresh={async () => {
                 await Promise.all([fetchCustomerCollections(), onRefreshActivities()])
+              }}
+            />
+          )}
+
+          {canCredits && activeTab === 'credits' && (
+            <CustomerCreditsTab
+              customer={customer}
+              onChanged={() => {
+                fetchCustomerCollections()
+                onDataChanged?.()
               }}
             />
           )}

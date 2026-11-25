@@ -36,7 +36,7 @@ export function getNextDocumentNumber(
 
 const MAX_COLLISION_SKIPS = 1000
 const numberColCache = new Map<string, string | null>()
-const NUMBER_COL_OVERRIDES: Record<string, string> = { journal_entries: 'entry_number', purchase_invoices: 'pi_number' }
+const NUMBER_COL_OVERRIDES: Record<string, string> = { journal_entries: 'entry_number', purchase_invoices: 'pi_number', customer_buybacks: 'bb_number', customer_offsets: 'offset_number' }
 
 /** เลขนี้มีอยู่แล้วในตารางของ docType นั้นไหม (docType ที่ไม่มีตารางใน DOC_NUMBER_TABLES = ไม่เช็ค) */
 function docNumberExists(tenantId: string, docType: string, num: string): boolean {

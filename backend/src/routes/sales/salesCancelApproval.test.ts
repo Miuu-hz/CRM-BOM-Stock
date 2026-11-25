@@ -99,10 +99,10 @@ describe('Task 1 — ใบลดหนี้', () => {
     const { invoiceId } = await confirmedSOWithInvoice(s)
     for (const role of ['USER', 'POWERUSER'] as Role[]) {
       const u = s.user(role)
-      expect((await request(app).post('/api/sales/credit-notes').set(auth(u.token)).send({ invoiceId, reason: 'x', amount: 10 })).status).toBe(403)
+      expect((await request(app).post('/api/sales/credit-notes').set(auth(u.token)).send({ invoiceId, reason: 'x', reasonCode: 'PRICE_ERROR', amount: 10 })).status).toBe(403)
     }
     const mgr = s.user('MANAGER')
-    const ok = await request(app).post('/api/sales/credit-notes').set(auth(mgr.token)).send({ invoiceId, reason: 'x', amount: 10 })
+    const ok = await request(app).post('/api/sales/credit-notes').set(auth(mgr.token)).send({ invoiceId, reason: 'x', reasonCode: 'PRICE_ERROR', amount: 10 })
     expect(ok.status, JSON.stringify(ok.body)).toBe(201)
     const u = s.user('USER')
     expect((await request(app).put(`/api/sales/credit-notes/${ok.body.data.id}/status`).set(auth(u.token)).send({ status: 'ISSUED' })).status).toBe(403)
@@ -112,7 +112,7 @@ describe('Task 1 — ใบลดหนี้', () => {
   it('ราคาต่อหน่วยมาจาก invoice_items ไม่ใช่ body · จำนวน ≤ 0/เกินที่เหลือ/ยอด ≤ 0 → 400', async () => {
     const s = tenant()
     const { invoiceId, invoiceItemId } = await confirmedSOWithInvoice(s)
-    const post = (body: any) => request(app).post('/api/sales/credit-notes').set(auth(s.master.token)).send({ invoiceId, reason: 'คืน', ...body })
+    const post = (body: any) => request(app).post('/api/sales/credit-notes').set(auth(s.master.token)).send({ invoiceId, reason: 'คืน', reasonCode: 'DEFECTIVE', ...body })
     const res = await post({ items: [{ invoiceItemId, quantity: 2, unitPrice: 99999 }] })
     expect(res.status, JSON.stringify(res.body)).toBe(201)
     expect(res.body.data.total_amount, '2 × 100 ตามใบแจ้งหนี้').toBe(200)
@@ -129,14 +129,14 @@ describe('Task 1 — ใบลดหนี้', () => {
     const s = tenant()
     const { invoiceId } = await confirmedSOWithInvoice(s)
     db.prepare("UPDATE invoices SET status = 'CANCELLED' WHERE id = ?").run(invoiceId)
-    expect((await request(app).post('/api/sales/credit-notes').set(auth(s.master.token)).send({ invoiceId, reason: 'x', amount: 10 })).status).toBe(400)
+    expect((await request(app).post('/api/sales/credit-notes').set(auth(s.master.token)).send({ invoiceId, reason: 'x', reasonCode: 'PRICE_ERROR', amount: 10 })).status).toBe(400)
     const billId = generateId()
     db.prepare(`INSERT INTO pos_running_bills (id, tenant_id, bill_number, display_name, status, total_amount)
       VALUES (?, ?, ?, 'บิล', 'PAID', 107)`).run(billId, s.t, 'B-' + billId.slice(0, 6))
     const posInv = generateId()
     db.prepare(`INSERT INTO invoices (id, tenant_id, invoice_number, pos_bill_id, customer_id, total_amount, status)
       VALUES (?, ?, ?, ?, ?, 107, 'PAID')`).run(posInv, s.t, 'INV-POS-' + posInv.slice(0, 6), billId, s.customerId)
-    expect((await request(app).post('/api/sales/credit-notes').set(auth(s.master.token)).send({ invoiceId: posInv, reason: 'x', amount: 10 })).status).toBe(400)
+    expect((await request(app).post('/api/sales/credit-notes').set(auth(s.master.token)).send({ invoiceId: posInv, reason: 'x', reasonCode: 'PRICE_ERROR', amount: 10 })).status).toBe(400)
   })
 
   it('ยกเลิกใบลดหนี้ที่ออกแล้ว: MANAGER → 202 · อนุมัติแล้วกลับ journal + เอาของที่รับคืนออก + คืนยอดค้าง · เห็นงวดภาษีที่ปิด', async () => {
@@ -144,7 +144,7 @@ describe('Task 1 — ใบลดหนี้', () => {
     const { invoiceId, invoiceItemId } = await confirmedSOWithInvoice(s)
     expect(stockQty(s.stockId)).toBe(95)
     const cn = await request(app).post('/api/sales/credit-notes').set(auth(s.master.token))
-      .send({ invoiceId, reason: 'คืน', items: [{ invoiceItemId, quantity: 2 }] })
+      .send({ invoiceId, reason: 'คืน', reasonCode: 'DEFECTIVE', items: [{ invoiceItemId, quantity: 2 }] })
     expect((await request(app).put(`/api/sales/credit-notes/${cn.body.data.id}/status`).set(auth(s.master.token)).send({ status: 'ISSUED' })).status).toBe(200)
     expect(stockQty(s.stockId)).toBe(97)
     const balAfterIssue = (db.prepare('SELECT balance_amount FROM invoices WHERE id = ?').get(invoiceId) as any).balance_amount
@@ -214,14 +214,14 @@ describe('Task 2 — สถานะใบแจ้งหนี้', () => {
     const s = tenant()
     const admin = s.user('ADMIN')
     const a = await confirmedSOWithInvoice(s)
-    const cn = await request(app).post('/api/sales/credit-notes').set(auth(admin.token)).send({ invoiceId: a.invoiceId, reason: 'ลด', amount: 50 })
+    const cn = await request(app).post('/api/sales/credit-notes').set(auth(admin.token)).send({ invoiceId: a.invoiceId, reason: 'ลด', reasonCode: 'PRICE_ERROR', amount: 50 })
     await request(app).put(`/api/sales/credit-notes/${cn.body.data.id}/status`).set(auth(admin.token)).send({ status: 'ISSUED' })
     const blocked = await request(app).put(`/api/invoices/${a.invoiceId}/status`).set(auth(admin.token)).send({ status: 'CANCELLED' })
     expect(blocked.status).toBe(409)
     expect(blocked.body.message).toContain(cn.body.data.cn_number)
 
     const b = await confirmedSOWithInvoice(s, 1)
-    const draftCn = await request(app).post('/api/sales/credit-notes').set(auth(admin.token)).send({ invoiceId: b.invoiceId, reason: 'ลด', amount: 10 })
+    const draftCn = await request(app).post('/api/sales/credit-notes').set(auth(admin.token)).send({ invoiceId: b.invoiceId, reason: 'ลด', reasonCode: 'PRICE_ERROR', amount: 10 })
     expect((await request(app).put(`/api/invoices/${b.invoiceId}/status`).set(auth(admin.token)).send({ status: 'CANCELLED' })).status).toBe(200)
     expect(statusOf('credit_notes', draftCn.body.data.id), 'ใบลดหนี้ DRAFT ถูกยกเลิกตาม').toBe('CANCELLED')
     const auto = db.prepare("SELECT status FROM approval_requests WHERE tenant_id = ? AND module_type = 'sales_cancel' AND reference_id = ?").get(s.t, b.invoiceId) as any

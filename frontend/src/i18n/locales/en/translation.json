@@ -1511,6 +1511,7 @@
       "creditNoteIssued": "Credit note issued",
       "creditNoteIssueFailed": "Failed to issue credit note",
       "creditNoteRefundDue": "Customer already paid — ฿{{amount}} must be refunded or credited back",
+      "creditNoteExcessCredit": "Remaining credit {{amount}} — can be applied to other invoices in CRM",
       "uploadSuccess": "Upload successful",
       "uploadFailed": "Upload failed",
       "deleteSuccess": "File deleted",
@@ -1754,6 +1755,7 @@
       "selectCustomer": "Please select a customer",
       "addItem": "Please add at least one item",
       "selectInvoice": "Please select an invoice",
+      "creditReasonCode": "Please select a legal reason (Sec. 82/10)",
       "creditReason": "Please enter credit note reason",
       "amountRequired": "Please enter amount",
       "fileTooLarge": "File too large (max 10MB)",
@@ -1920,7 +1922,20 @@
       "selectReturnItems": "Please select at least 1 returned item",
       "remainingHint": "Remaining creditable amount: ฿{{amount}}",
       "exceedsRemaining": "Amount exceeds the invoice's remaining creditable value",
-      "discountAmountLabel": "Credit Note Amount"
+      "discountAmountLabel": "Credit Note Amount",
+      "reasonCodeLabel": "Legal reason (Sec. 82/10) *",
+      "selectReasonCode": "-- Select legal reason --",
+      "buybackHint": "Cannot find original invoice? Use Buy-back in CRM",
+      "oldInvoiceWarning": "Original invoice was issued {{days}} days ago — return should be within a reasonable period",
+      "fullyReturned": "Fully returned"
+    },
+    "creditNoteReasonCodes": {
+      "DEFECTIVE": "Defective or damaged goods",
+      "NOT_AS_AGREED": "Not matching agreement or sample",
+      "AGREED_RETURN": "Commercial return agreement",
+      "PRICE_ERROR": "Overcharged price",
+      "SHORT_DELIVERY": "Short delivery",
+      "OTHER_LEGAL": "Other legal reason (Sec. 82/10)"
     },
     "creditNoteStatus": {
       "draft": "Draft",
@@ -1931,7 +1946,8 @@
     "creditNoteDetail": {
       "invoiceRef": "Invoice reference",
       "issuedDate": "Issued date",
-      "amount": "Credit amount"
+      "amount": "Credit amount",
+      "reasonCode": "Legal reason"
     },
     "backorderStatus": {
       "pending": "Pending",
@@ -2078,6 +2094,7 @@
         "proposals": "Quotations",
         "activities": "Activities",
         "collections": "Collections",
+        "credits": "Credits / Buy-back",
         "loyalty": "Loyalty"
       },
       "contactInfo": "Contact Info",
@@ -2256,6 +2273,28 @@
       "leadSourcePlaceholder": "Select channel",
       "campaign": "Campaign",
       "campaignPlaceholder": "Campaign name (optional)"
+    },
+    "creditsTab": {
+      "totalBalance": "Customer Credit Balance",
+      "creditsTitle": "Credit Balances by Document",
+      "buybacksTitle": "Buy-back History",
+      "offsetsTitle": "Offsets & Refunds History",
+      "actions": {
+        "buyback": "Buy-back",
+        "offset": "Apply to Invoice",
+        "refund": "Refund"
+      },
+      "toast": {
+        "loadFailed": "Failed to load customer credits",
+        "buybackCreated": "Buy-back recorded",
+        "buybackCreateFailed": "Failed to record buy-back",
+        "buybackCancelled": "Buy-back cancelled",
+        "offsetCreated": "Credit applied to invoices",
+        "offsetFailed": "Failed to apply credit",
+        "offsetCancelled": "Offset cancelled",
+        "refundCreated": "Refund recorded",
+        "refundFailed": "Failed to record refund"
+      }
     },
     "suppliers": {
       "stats": {

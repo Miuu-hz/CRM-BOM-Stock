@@ -16,6 +16,8 @@ export type BillType =
   // ใบกำกับเต็มรูปที่รับเงินแล้วตอนออก (ออกจากบิล POS) — ใบเดียวเป็นทั้งใบกำกับและใบเสร็จ
   | 'TAX_INVOICE_RECEIPT'
   | 'CREDIT_NOTE'
+  | 'CUSTOMER_BUYBACK'
+  | 'CUSTOMER_OFFSET'
   // ฝั่งซื้อ
   | 'PURCHASE_REQUEST'
   | 'PURCHASE'
@@ -229,6 +231,52 @@ const BASE_CONFIGS: Record<Exclude<BillType, VariantType>, BillConfig> = {
     },
     themeColor: '#DC2626', // red-600
     defaultSignatureSlots: SALES_SIGNATURE_SLOTS,
+  },
+  CUSTOMER_BUYBACK: {
+    type: 'CUSTOMER_BUYBACK',
+    title: { th: 'ใบรับซื้อคืนสินค้า / ใบสำคัญรับเงิน', en: 'BUY-BACK / PAYMENT RECEIPT' },
+    docPrefix: 'BB',
+    fields: {
+      showBuyerCode: true,
+      showBuyerTaxId: true,
+      showRefNumber: true,
+      showDueDate: false,
+      showPaymentTerms: false,
+      showBankInfo: false,
+      showSignatures: true,
+      showQRCode: false,
+    },
+    labels: {
+      buyer: 'ผู้ขายคืน (ลูกค้า)',
+      buyerCode: 'รหัสลูกค้า',
+      docNumber: 'เลขที่ใบรับซื้อคืน',
+      refNumber: 'เอกสารอ้างอิงจากผู้ขาย',
+    },
+    themeColor: '#0F766E', // teal-700
+    defaultSignatureSlots: ['ผู้ขายคืน (ผู้รับเงิน)', 'ผู้จ่ายเงิน', 'ผู้อนุมัติ'],
+  },
+  CUSTOMER_OFFSET: {
+    type: 'CUSTOMER_OFFSET',
+    title: { th: 'ใบหักกลบลบหนี้', en: 'CREDIT OFFSET VOUCHER' },
+    docPrefix: 'OF',
+    fields: {
+      showBuyerCode: true,
+      showBuyerTaxId: true,
+      showRefNumber: true,
+      showDueDate: false,
+      showPaymentTerms: false,
+      showBankInfo: false,
+      showSignatures: true,
+      showQRCode: false,
+    },
+    labels: {
+      buyer: 'ลูกค้า',
+      buyerCode: 'รหัสลูกค้า',
+      docNumber: 'เลขที่ใบหักกลบ',
+      refNumber: 'อ้างอิงแหล่งเครดิต',
+    },
+    themeColor: '#4F46E5', // indigo-600
+    defaultSignatureSlots: ['ผู้รับทราบ (ลูกค้า)', 'ผู้จัดทำ', 'ผู้อนุมัติ'],
   },
 
   // ══════════ ฝั่งซื้อ ══════════
@@ -514,8 +562,8 @@ export interface BillData {
   /** QR ลิงก์ดูใบเสร็จออนไลน์ — แยกจาก qrCode ที่เป็น QR โอนเงินของร้าน */
   receiptQrCode?: string
 
-  // สถานะ (WO เพิ่ม PLANNED | IN_PROGRESS | ON_HOLD)
-  status: 'DRAFT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD'
+  // สถานะ (WO เพิ่ม PLANNED | IN_PROGRESS | ON_HOLD; buyback/offset ใช้ POSTED)
+  status: 'DRAFT' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD' | 'POSTED'
 
   // Work Order specific fields
   woProductName?: string
@@ -532,6 +580,18 @@ export interface BillData {
   createdAt: string
   approvedBy?: string
   approvedAt?: string
+  /** ข้อมูลเพิ่มเติมใบลดหนี้ตาม ป.80/2542 */
+  cnSummary?: {
+    originalInvoiceNumber?: string
+    originalInvoiceDate?: string
+    originalValue?: number
+    correctValue?: number
+    difference?: number
+    vat?: number
+    reasonLabel?: string
+  }
+  /** หลักฐานผู้ขายคืน (กรณีผู้ขายไม่จด VAT) */
+  sellerIdDoc?: string
 }
 
 // Context Interface
