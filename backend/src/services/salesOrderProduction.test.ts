@@ -226,16 +226,16 @@ describe('SO Make-To-Order (ผลิตอัตโนมัติจากใ�
     expect(woInDb.sales_order_id).toBe(soId)
     expect(woInDb.status).toBe('COMPLETED')
 
-    // ตรวจสอบ stock_movements: OUT สำหรับวัตถุดิบที่อ้างถึง WO นี้
+    // ตรวจสอบ stock_movements: OUT สำหรับวัตถุดิบที่อ้างถึง WO นี้ (แบบล็อต)
     const outMovements = db.prepare(
       "SELECT * FROM stock_movements WHERE tenant_id = ? AND reference = ? AND type = 'OUT'"
-    ).all(T, `WO: ${wo.wo_number}`) as any[]
+    ).all(T, `WO: ${wo.wo_number} (${wo.wo_number}-L01)`) as any[]
     expect(outMovements.length).toBeGreaterThanOrEqual(3)
 
-    // ตรวจสอบ stock_movements: IN สำหรับสินค้าสำเร็จรูปที่อ้างถึง WO นี้
+    // ตรวจสอบ stock_movements: IN สำหรับสินค้าสำเร็จรูปที่อ้างถึง WO นี้ (แบบล็อต)
     const inMovements = db.prepare(
       "SELECT * FROM stock_movements WHERE tenant_id = ? AND reference = ? AND type = 'IN'"
-    ).all(T, `WO: ${wo.wo_number}`) as any[]
+    ).all(T, `WO: ${wo.wo_number} (${wo.wo_number}-L01)`) as any[]
     expect(inMovements).toHaveLength(1)
     expect(inMovements[0].stock_item_id).toBe(fg.id)
     expect(inMovements[0].quantity).toBe(2)

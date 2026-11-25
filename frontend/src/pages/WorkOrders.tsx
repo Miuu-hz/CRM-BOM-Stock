@@ -68,6 +68,15 @@ function getPriorityConfig(t: (key: string) => string, priority: string) {
 /** ยังไม่เริ่มผลิต = แก้ไข/ลบได้ (backend เช็คซ้ำ รวมถึงสิทธิ์) */
 const isEditable = (status: string) => status === 'DRAFT' || status === 'PLANNED'
 
+const roundQty = (v: number) => Math.round((Number(v) || 0) * 1e6) / 1e6
+const fmtQty = (v: number) => (Number(v) || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })
+const woProduced = (wo: WorkOrder) => roundQty(wo.produced_qty ?? wo.completed_qty ?? 0)
+const woScrap = (wo: WorkOrder) => roundQty(wo.lot_scrap_qty ?? wo.scrap_qty ?? 0)
+const woRemaining = (wo: WorkOrder) =>
+  wo.remaining_qty !== undefined
+    ? roundQty(wo.remaining_qty)
+    : roundQty(Math.max(0, (Number(wo.quantity) || 0) - woProduced(wo) - woScrap(wo)))
+
 function WorkOrders() {
   const { t } = useTranslation()
   const [orders, setOrders] = useState<WorkOrder[]>([])
@@ -77,6 +86,7 @@ function WorkOrders() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState<WorkOrder | null>(null)
+  const [recordLotWo, setRecordLotWo] = useState<WorkOrder | null>(null)
   const [editing, setEditing] = useState<WorkOrder | null>(null)
   // คลิกสองใบเร็ว ๆ — คำตอบของใบเก่าที่มาช้าต้องทิ้ง ไม่เปิดซ้อน
   const openReq = useRef(0)
@@ -98,10 +108,10 @@ function WorkOrders() {
     }
   }
 
-  const handleStatusChange = async (id: string, status: string) => {
+  const handleStatusChange = async (id: string, status: string, opts?: { closeShort?: boolean }) => {
     if (status === 'CANCELLED' && !confirm(t('workOrders.confirmCancel'))) return
     try {
-      await workOrderService.updateStatus(id, status)
+      await workOrderService.updateStatus(id, status, opts)
       loadData()
     } catch (err: any) {
       toast.error(err.response?.data?.message || t('workOrders.error.updateStatus'))
@@ -232,7 +242,9 @@ function WorkOrders() {
                 filtered.map((wo, i) => {
                   const statusConf = getStatusConfig(t, wo.status)
                   const priorityConf = getPriorityConfig(t, wo.priority)
-                  const progress = wo.quantity > 0 ? Math.round((wo.completed_qty / wo.quantity) * 100) : 0
+                  const produced = woProduced(wo)
+                  const scrap = woScrap(wo)
+                  const progress = wo.quantity > 0 ? Math.min(100, Math.round((produced / wo.quantity) * 100)) : 0
                   const isOverdue = wo.due_date && new Date(wo.due_date) < new Date() && wo.status !== 'COMPLETED' && wo.status !== 'CANCELLED'
 
                   return (
@@ -266,7 +278,18 @@ function WorkOrders() {
                           {statusConf.label}
                         </span>
                       </td>
-                      <td><span className="text-[var(--fg-3)]">{wo.completed_qty}/{wo.quantity} {wo.unit ? unitLabel(wo.unit) : ''}</span></td>
+                      <td>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[var(--fg-3)]">
+                            {fmtQty(produced)}/{fmtQty(wo.quantity)} {wo.unit ? unitLabel(wo.unit) : ''}
+                          </span>
+                          {scrap > 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--danger-soft)] text-danger">
+                              {t('workOrders.lot.scrapShort', { qty: fmtQty(scrap) })}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td>
                         <div className="w-24">
                           <div className="flex justify-between text-xs mb-1">
@@ -306,10 +329,11 @@ function WorkOrders() {
                               <Play className="w-4 h-4" />
                             </button>
                           )}
-                          {wo.status === 'IN_PROGRESS' && (
-                            <button onClick={() => handleStatusChange(wo.id, 'COMPLETED')}
-                              className="p-2 text-[var(--fg-3)] hover:text-success hover:bg-success/10 rounded-lg" title={t('workOrders.actions.markComplete')}>
-                              <CheckCircle className="w-4 h-4" />
+                          {wo.status === 'IN_PROGRESS' && woRemaining(wo) > 0 && (
+                            <button onClick={() => setRecordLotWo(wo)}
+                              className="p-2 text-[var(--fg-3)] hover:text-success hover:bg-success/10 rounded-lg"
+                              title={t('workOrders.lot.recordButton')} aria-label={t('workOrders.lot.recordButton')}>
+                              <PackageCheck className="w-4 h-4" />
                             </button>
                           )}
                           <RowMenu label={t('workOrders.actions.menu')} items={[
@@ -341,7 +365,18 @@ function WorkOrders() {
 
       {/* Detail Modal */}
       <WODetailModal wo={showDetailModal} onClose={() => setShowDetailModal(null)}
-        onStatusChange={handleStatusChange} onPrint={handlePrint} onEdit={handleEdit} onDelete={handleDelete} />
+        onStatusChange={handleStatusChange} onPrint={handlePrint} onEdit={handleEdit} onDelete={handleDelete}
+        onRecordLot={(w) => setRecordLotWo(w)} />
+
+      {/* Record Lot Modal */}
+      {/* เมานต์เฉพาะตอนเปิด — ไม่งั้นค้างบนสุดของ stack ปุ่ม Esc ปิดหน้ารายละเอียดไม่ได้ */}
+      {recordLotWo && <RecordLotModal wo={recordLotWo} onClose={() => setRecordLotWo(null)}
+        onRecorded={(updatedWo) => {
+          loadData()
+          if (showDetailModal && showDetailModal.id === updatedWo.id) {
+            setShowDetailModal(updatedWo)
+          }
+        }} />}
     </motion.div>
   )
 }
@@ -886,9 +921,10 @@ function CreateWOModal({ open, editing, onClose, onSave }: {
   )
 }
 
-function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete }: {
-  wo: WorkOrder | null; onClose: () => void; onStatusChange: (id: string, status: string) => void
+export function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete, onRecordLot }: {
+  wo: WorkOrder | null; onClose: () => void; onStatusChange: (id: string, status: string, opts?: { closeShort?: boolean }) => void
   onPrint: (id: string, format: 'a4' | 'a5') => void; onEdit: (id: string) => void; onDelete: (id: string) => void
+  onRecordLot?: (wo: WorkOrder) => void
 }) {
   const { t } = useTranslation()
   useModalClose(onClose)
@@ -919,12 +955,14 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
   if (!wo) return null
   const statusConf = getStatusConfig(t, wo.status)
   const priorityConf = getPriorityConfig(t, wo.priority)
-  const progress = wo.quantity > 0 ? Math.round((wo.completed_qty / wo.quantity) * 100) : 0
+  const produced = woProduced(wo)
+  const scrap = woScrap(wo)
+  const remaining = woRemaining(wo)
+  const progress = wo.quantity > 0 ? Math.min(100, Math.round((produced / wo.quantity) * 100)) : 0
 
   const nextStatus: Record<string, { label: string; status: string; color: string }> = {
     DRAFT: { label: t('workOrders.detail.planProduction'), status: 'PLANNED', color: 'bg-blue-500 text-white' },
     PLANNED: { label: t('workOrders.detail.startProduction'), status: 'IN_PROGRESS', color: 'bg-yellow-500 text-black' },
-    IN_PROGRESS: { label: t('workOrders.detail.markComplete'), status: 'COMPLETED', color: 'bg-success text-black' },
   }
 
   const next = nextStatus[wo.status]
@@ -996,9 +1034,18 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
 
             {/* Progress */}
             <div className="bg-[var(--surface-2)] p-4 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center mb-2 gap-2 flex-wrap">
                 <span className="text-[var(--fg-3)] text-sm">{t('workOrders.detail.productionProgress')}</span>
-                <span className="text-[var(--fg-2)] font-semibold">{wo.completed_qty} / {wo.quantity} {wo.unit ? unitLabel(wo.unit) : t('workOrders.detail.units')} ({progress}%)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--fg-2)] font-semibold">
+                    {fmtQty(produced)} / {fmtQty(wo.quantity)} {wo.unit ? unitLabel(wo.unit) : t('workOrders.detail.units')} ({progress}%)
+                  </span>
+                  {scrap > 0 && (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-[var(--danger-soft)] text-danger">
+                      {t('workOrders.lot.scrapShort', { qty: fmtQty(scrap) })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="h-3 bg-[var(--bg)] rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${
@@ -1037,7 +1084,7 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
                       <div>
                         <p className="text-[var(--fg-2)]">{mat.material_name || t('workOrders.detail.materialFallback')}</p>
                         <p className="text-[var(--fg-4)] text-xs">
-                          {t('workOrders.detail.issued', { issued: mat.issued_qty, required: mat.required_qty, unit: unitLabel(mat.unit || '') })}{mat.sku ? ` · ${mat.sku}` : ''}
+                          {t('workOrders.detail.issued', { issued: fmtQty(mat.issued_qty), required: fmtQty(mat.required_qty), unit: unitLabel(mat.unit || '') })}{mat.sku ? ` · ${mat.sku}` : ''}
                         </p>
                         {mat.stockStatus === 'short' ? (
                           <p className="text-danger text-xs">{t('workOrders.detail.short', { qty: mat.shortQty?.toLocaleString(), unit: unitLabel(mat.stockUnit || '') })}</p>
@@ -1051,6 +1098,7 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
                       </div>
                       <span className={`px-2 py-1 rounded text-xs ${
                         mat.status === 'ISSUED' ? 'bg-[var(--success-soft)] text-success' :
+                        mat.status === 'PARTIAL' ? 'bg-[var(--info-soft)] text-blue-400' :
                         mat.status === 'PENDING' ? 'bg-[var(--warning-soft)] text-warning' :
                         'bg-[var(--surface-sunken)] text-[var(--fg-3)]'
                       }`}>
@@ -1061,6 +1109,53 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
                 </div>
               ) : (
                 <p className="text-[var(--fg-4)]">{t('workOrders.detail.noMaterialsLinked')}</p>
+              )}
+            </div>
+
+            {/* Lot History */}
+            <div>
+              <h3 className="text-lg font-semibold text-[var(--fg-2)] mb-3 flex items-center gap-2">
+                <PackageCheck className="w-5 h-5 text-[var(--primary)]" />
+                {t('workOrders.lot.historyTitle')}
+              </h3>
+              {wo.lots && wo.lots.length > 0 ? (
+                <div className="overflow-x-auto bg-[var(--surface-2)] rounded-lg p-3">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] text-[var(--fg-4)]">
+                        <th className="text-left py-1.5 pr-3 font-medium">{t('workOrders.lot.colLotNumber')}</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">{t('workOrders.lot.colGood')}</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">{t('workOrders.lot.colScrap')}</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">{t('workOrders.lot.colCost')}</th>
+                        <th className="text-left py-1.5 pr-3 font-medium">{t('workOrders.lot.colDate')}</th>
+                        <th className="text-left py-1.5 font-medium">{t('workOrders.lot.colNotes')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wo.lots.map((lot) => (
+                        <tr key={lot.id} className="border-b border-[var(--border)]/50 last:border-0">
+                          <td className="py-2 pr-3 font-mono text-[var(--fg-1)]">{lot.lot_number}</td>
+                          <td className="py-2 pr-3 text-right font-semibold text-success">
+                            {fmtQty(lot.good_qty)} {wo.unit ? unitLabel(wo.unit) : ''}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-danger">
+                            {lot.scrap_qty > 0 ? `${fmtQty(lot.scrap_qty)} ${wo.unit ? unitLabel(wo.unit) : ''}` : '-'}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-[var(--fg-2)]">
+                            ฿{Number(lot.material_cost || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2 pr-3 text-[var(--fg-3)]">
+                            {lot.created_at ? new Date(lot.created_at).toLocaleString('th-TH') : '-'}
+                            {lot.recorded_by ? <span className="block text-[10px] text-[var(--fg-4)]">{lot.recorded_by}</span> : null}
+                          </td>
+                          <td className="py-2 text-[var(--fg-3)]">{lot.notes || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-[var(--fg-4)] text-sm">{t('workOrders.lot.empty')}</p>
               )}
             </div>
 
@@ -1237,7 +1332,7 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
             )}
 
             {/* Action Buttons */}
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex flex-wrap justify-end gap-3 pt-4">
               {wo.status === 'IN_PROGRESS' && (
                 <button onClick={() => { onStatusChange(wo.id, 'ON_HOLD'); onClose() }}
                   className="px-4 py-2 border border-warning/30 text-warning rounded-lg hover:bg-[var(--warning-soft)] flex items-center gap-2">
@@ -1255,6 +1350,38 @@ function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete 
                   className="px-4 py-2 border border-danger/30 text-danger rounded-lg hover:bg-[var(--danger-soft)]">
                   {t('workOrders.detail.cancelOrder')}
                 </button>
+              )}
+              {wo.status === 'IN_PROGRESS' && remaining > 0 && onRecordLot && (
+                <button type="button" onClick={() => onRecordLot(wo)}
+                  className="phopy-btn-primary px-4 py-2 rounded-lg font-semibold flex items-center gap-2">
+                  <PackageCheck className="w-4 h-4" />
+                  {t('workOrders.lot.recordButton')}
+                </button>
+              )}
+              {wo.status === 'IN_PROGRESS' && (
+                remaining > 0 ? (
+                  <button type="button" onClick={() => {
+                    if (confirm(t('workOrders.lot.confirmCloseShort', {
+                      completed: fmtQty(produced),
+                      scrap: fmtQty(scrap),
+                      quantity: fmtQty(wo.quantity),
+                      remaining: fmtQty(remaining),
+                    }))) {
+                      onStatusChange(wo.id, 'COMPLETED', { closeShort: true })
+                      onClose()
+                    }
+                  }}
+                    className="px-4 py-2 rounded-lg font-semibold border border-success/40 text-success hover:bg-success/10 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    {t('workOrders.lot.closeShortButton')}
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => { onStatusChange(wo.id, 'COMPLETED'); onClose() }}
+                    className="px-4 py-2 rounded-lg font-semibold bg-success text-black flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    {t('workOrders.detail.markComplete')}
+                  </button>
+                )
               )}
               {next && (
                 <button onClick={() => { onStatusChange(wo.id, next.status); onClose() }}
@@ -1844,6 +1971,227 @@ function ReconcileModal({ contract, onClose }: { contract: Subcontract | null; o
           </motion.div>
         </motion.div>
       )}
+    </AnimatePresence>
+  )
+}
+
+export function RecordLotModal({ wo, onClose, onRecorded }: {
+  wo: WorkOrder | null; onClose: () => void; onRecorded: (updatedWo: WorkOrder) => void
+}) {
+  const { t } = useTranslation()
+  useModalClose(onClose)
+  const [detail, setDetail] = useState<WorkOrder | null>(wo)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [goodQty, setGoodQty] = useState('')
+  const [scrapQty, setScrapQty] = useState('0')
+  const [lotNumber, setLotNumber] = useState('')
+  const [notes, setNotes] = useState('')
+  const fetchReq = useRef(0)
+
+  useEffect(() => {
+    if (!wo) {
+      setDetail(null)
+      return
+    }
+    setDetail(wo)
+    setGoodQty('')
+    setScrapQty('0')
+    setLotNumber('')
+    setNotes('')
+    const req = ++fetchReq.current
+    setLoading(true)
+    workOrderService.getById(wo.id)
+      .then((fresh) => {
+        if (req === fetchReq.current && fresh) setDetail(fresh)
+      })
+      .catch((err: any) => {
+        if (req === fetchReq.current) toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
+      })
+      .finally(() => {
+        if (req === fetchReq.current) setLoading(false)
+      })
+  }, [wo?.id])
+
+  if (!wo || !detail) return null
+
+  const produced = woProduced(detail)
+  const scrap = woScrap(detail)
+  const remaining = woRemaining(detail)
+  const unitText = detail.unit ? unitLabel(detail.unit) : t('workOrders.detail.units')
+  const defaultLot = `${detail.wo_number}-L${String((detail.lots?.length || 0) + 1).padStart(2, '0')}`
+
+  const g = roundQty(Number(goodQty || 0))
+  const s = roundQty(Number(scrapQty || 0))
+  const lotTotal = roundQty(g + s)
+  const isLastLot = lotTotal > 0 && lotTotal >= remaining - 1e-6
+
+  const materials = detail.materials || []
+  const allPreIssued = materials.length > 0 && materials.every(m => m.status === 'ISSUED')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!Number.isFinite(g) || !Number.isFinite(s) || g < 0 || s < 0 || lotTotal <= 0) {
+      toast.error(t('workOrders.lot.errorZeroQty'))
+      return
+    }
+    if (lotTotal > remaining + 1e-6) {
+      toast.error(t('workOrders.lot.errorOverRemaining', { remaining: fmtQty(remaining) }))
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await workOrderService.recordLot(detail.id, {
+        goodQty: g,
+        scrapQty: s,
+        lotNumber: lotNumber.trim() || undefined,
+        notes: notes.trim() || undefined,
+      })
+      if (res.autoCompleted) {
+        toast.success(t('workOrders.lot.autoCompletedSuccess', { lotNumber: res.lot.lot_number }))
+      } else if (res.qcBlockedCompletion) {
+        toast.success(t('workOrders.lot.qcBlockedNotice', { lotNumber: res.lot.lot_number }))
+      } else {
+        toast.success(t('workOrders.lot.recordSuccess', { lotNumber: res.lot.lot_number }))
+      }
+      onRecorded(res.workOrder)
+      onClose()
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || t('workOrders.lot.errorRecord'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-[var(--fg-1)]/60 flex items-center justify-center z-[65] p-4" onClick={onClose}>
+        <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+          onClick={(e) => e.stopPropagation()} className="phopy-card w-full max-w-xl max-h-[92vh] flex flex-col">
+          <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
+            <div>
+              <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.lot.modalTitle')}</h2>
+              <p className="text-xs text-[var(--fg-4)] mt-0.5">{detail.wo_number} · {detail.product_name}</p>
+            </div>
+            <button type="button" onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="bg-[var(--surface-2)] rounded-lg p-2.5">
+                <p className="text-[11px] text-[var(--fg-4)]">{t('workOrders.lot.orderedQty')}</p>
+                <p className="text-base font-bold text-[var(--fg-1)]">{fmtQty(detail.quantity)} <span className="text-xs font-normal">{unitText}</span></p>
+              </div>
+              <div className="bg-[var(--surface-2)] rounded-lg p-2.5">
+                <p className="text-[11px] text-[var(--fg-4)]">{t('workOrders.lot.completedGood')}</p>
+                <p className="text-base font-bold text-success">{fmtQty(produced)} <span className="text-xs font-normal">{unitText}</span></p>
+              </div>
+              <div className="bg-[var(--surface-2)] rounded-lg p-2.5">
+                <p className="text-[11px] text-[var(--fg-4)]">{t('workOrders.lot.completedScrap')}</p>
+                <p className="text-base font-bold text-danger">{fmtQty(scrap)} <span className="text-xs font-normal">{unitText}</span></p>
+              </div>
+              <div className="bg-[var(--surface-2)] rounded-lg p-2.5 border border-[var(--primary)]/30">
+                <p className="text-[11px] text-[var(--fg-4)]">{t('workOrders.lot.remainingQty')}</p>
+                <p className="text-base font-bold text-[var(--primary)]">{fmtQty(remaining)} <span className="text-xs font-normal">{unitText}</span></p>
+              </div>
+            </div>
+
+            {/* Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-[var(--fg-4)]">{t('workOrders.lot.goodQtyLabel')}</label>
+                  {remaining > 0 && (
+                    <button type="button" onClick={() => setGoodQty(String(remaining))}
+                      className="text-xs text-[var(--primary)] hover:underline">
+                      {t('workOrders.lot.fillRemaining')}
+                    </button>
+                  )}
+                </div>
+                <input type="number" min="0" max={remaining} step="any" value={goodQty}
+                  onChange={(e) => setGoodQty(e.target.value)}
+                  placeholder="0" className="phopy-input w-full" />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.lot.scrapQtyLabel')}</label>
+                <input type="number" min="0" max={Math.max(0, roundQty(remaining - g))} step="any" value={scrapQty}
+                  onChange={(e) => setScrapQty(e.target.value)}
+                  placeholder="0" className="phopy-input w-full" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.lot.lotNumberLabel')}</label>
+                <input type="text" maxLength={60} value={lotNumber} onChange={(e) => setLotNumber(e.target.value)}
+                  placeholder={t('workOrders.lot.lotNumberPlaceholder', { defaultLot })} className="phopy-input w-full" />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.lot.notesLabel')}</label>
+                <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
+                  placeholder={t('workOrders.lot.notesPlaceholder')} className="phopy-input w-full" />
+              </div>
+            </div>
+
+            {/* Material Usage Preview */}
+            <div>
+              <p className="text-xs font-semibold text-[var(--fg-3)] mb-2 flex items-center gap-2">
+                {t('workOrders.lot.materialPreviewTitle')}
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--primary)]" />}
+              </p>
+              {allPreIssued ? (
+                <div className="p-3 rounded-lg bg-[var(--info-soft)] border border-info/30 text-xs text-blue-400">
+                  {t('workOrders.lot.materialPreIssuedNotice')}
+                </div>
+              ) : materials.length > 0 ? (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {materials.map((m) => {
+                    const req = roundQty(Number(m.required_qty) || 0)
+                    const issued = roundQty(Number(m.issued_qty) || 0)
+                    const matRem = roundQty(Math.max(0, req - issued))
+                    const previewQty = lotTotal <= 0
+                      ? 0
+                      : isLastLot
+                        ? matRem
+                        : roundQty(Math.min(matRem, detail.quantity > 0 ? req * (lotTotal / detail.quantity) : 0))
+                    const mUnit = unitLabel(m.unit || '')
+                    return (
+                      <div key={m.id} className="flex justify-between items-center px-3 py-2 bg-[var(--surface-2)] rounded-lg text-xs">
+                        <div>
+                          <p className="text-[var(--fg-2)] font-medium">{m.material_name}</p>
+                          <p className="text-[var(--fg-4)]">
+                            {t('workOrders.lot.previewIssued', { issued: fmtQty(issued), required: fmtQty(req), unit: mUnit })}
+                          </p>
+                        </div>
+                        <span className="font-semibold text-[var(--primary)]">
+                          {t('workOrders.lot.previewThisLot', { qty: fmtQty(previewQty), unit: mUnit })}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--fg-4)]">{t('workOrders.detail.noMaterialsLinked')}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)]">
+                {t('common.cancel')}
+              </button>
+              <button type="submit" disabled={saving || loading}
+                className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+                {t('workOrders.lot.submitButton')}
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      </motion.div>
     </AnimatePresence>
   )
 }

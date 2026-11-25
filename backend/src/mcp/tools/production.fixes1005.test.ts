@@ -94,6 +94,7 @@ afterEach(() => {
   for (const t of tenants.splice(0)) {
     db.prepare('DELETE FROM qc_inspections WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM stock_movements WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM work_order_lots WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM work_order_materials WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM work_orders WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM boms WHERE tenant_id = ?').run(t)
@@ -114,7 +115,12 @@ describe('MCP update_work_order_status — fixes1005', () => {
     let res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'IN_PROGRESS' }))
     expect(res.success).toBe(true)
     let stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
-    expect(stock.quantity).toBe(80)
+    expect(stock.quantity).toBe(100)
+
+    res = parseOk(await tools['record_work_order_lot']({ wo_id: woId, good_qty: 5 }))
+    expect(res.success).toBe(true)
+    stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
+    expect(stock.quantity).toBe(90)
 
     res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'ON_HOLD' }))
     expect(res.success).toBe(true)
@@ -123,12 +129,21 @@ describe('MCP update_work_order_status — fixes1005', () => {
     expect(res.success).toBe(true)
 
     stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
-    expect(stock.quantity).toBe(80) // ไม่หักซ้ำ
+    expect(stock.quantity).toBe(90) // ไม่หักซ้ำ
 
-    const outCount = db.prepare(
+    let outCount = db.prepare(
       "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'OUT'"
     ).get(t, materialId) as any
     expect(outCount.c).toBe(1)
+
+    res = parseOk(await tools['record_work_order_lot']({ wo_id: woId, good_qty: 5 }))
+    expect(res.success).toBe(true)
+    stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
+    expect(stock.quantity).toBe(80)
+    outCount = db.prepare(
+      "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'OUT'"
+    ).get(t, materialId) as any
+    expect(outCount.c).toBe(2)
   })
 
   it('USER (ไม่มีสิทธิ์) ถูกปฏิเสธ CANCELLED, สถานะไม่เปลี่ยน', async () => {
@@ -167,7 +182,7 @@ describe('MCP update_work_order_status — fixes1005', () => {
     const bomId = seedBom(t, finishedId)
     const woId = seedWO(t, { bomId, quantity: 10, status: 'IN_PROGRESS' })
 
-    let res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'COMPLETED' }))
+    let res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'COMPLETED', close_short: true }))
     expect(res.success).toBe(false)
     expect(res.message).toContain('QC')
 
@@ -175,14 +190,15 @@ describe('MCP update_work_order_status — fixes1005', () => {
     expect(stock.quantity).toBe(0)
 
     seedQcInspection(t, woId, 'PASS', 10)
-    res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'COMPLETED' }))
+    res = parseOk(await tools['record_work_order_lot']({ wo_id: woId, good_qty: 10 }))
     expect(res.success).toBe(true)
+    expect(res.autoCompleted).toBe(true)
 
     stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(finishedId) as any
     expect(stock.quantity).toBe(10)
   })
 
-  it('completed_qty/สต็อกสินค้าสำเร็จรูป = min(requested, SUM(passed_qty))', async () => {
+  it('completed_qty/สต็อกสินค้าสำเร็จรูปตามล็อตที่บันทึกและ close_short', async () => {
     const t = trackTenant('test_mcp_prod_f1005')
     const { server, tools } = fakeServer()
     registerProductionTools(server, t, 'u1', 'ADMIN')
@@ -192,7 +208,10 @@ describe('MCP update_work_order_status — fixes1005', () => {
     seedQcInspection(t, woId, 'PASS', 4)
     seedQcInspection(t, woId, 'PASS', 3)
 
-    const res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'COMPLETED' }))
+    expect(parseOk(await tools['record_work_order_lot']({ wo_id: woId, good_qty: 4 })).success).toBe(true)
+    expect(parseOk(await tools['record_work_order_lot']({ wo_id: woId, good_qty: 3 })).success).toBe(true)
+
+    const res = parseOk(await tools['update_work_order_status']({ wo_id: woId, status: 'COMPLETED', close_short: true }))
     expect(res.success).toBe(true)
 
     const wo = db.prepare('SELECT completed_qty FROM work_orders WHERE id = ?').get(woId) as any

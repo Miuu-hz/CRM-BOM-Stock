@@ -193,8 +193,10 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     ...(type === 'wo' && {
       woProductName: [d.product_name, d.finished_sku && `(${d.finished_sku})`].filter(Boolean).join(' ') || undefined,
       woQty: n(d.quantity),
-      woCompletedQty: n(d.completed_qty),
+      woCompletedQty: n(d.produced_qty ?? d.completed_qty),
+      woScrapQty: n(d.lot_scrap_qty ?? d.scrap_qty),
       woUnit: String(d.unit || ''),
+      woLots: Array.isArray(d.lots) ? d.lots : undefined,
       priority: d.priority,
     }),
     items,

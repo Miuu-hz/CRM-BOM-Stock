@@ -89,6 +89,7 @@ afterEach(() => {
   for (const t of tenants.splice(0)) {
     db.prepare('DELETE FROM qc_inspections WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM stock_movements WHERE tenant_id = ?').run(t)
+    db.prepare('DELETE FROM work_order_lots WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM work_order_materials WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM work_orders WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM boms WHERE tenant_id = ?').run(t)
@@ -98,7 +99,7 @@ afterEach(() => {
   }
 })
 
-describe('fixes1005 REST — PLANNED→IN_PROGRESS เบิกครั้งเดียว, ON_HOLD round-trip ไม่เบิกซ้ำ', () => {
+describe('fixes1005 REST — PLANNED→IN_PROGRESS ไม่ตัดล่วงหน้า, ON_HOLD round-trip ไม่เบิกซ้ำ', () => {
   it('resume จาก ON_HOLD กลับไป IN_PROGRESS ต้องไม่หักสต็อก/ไม่สร้าง OUT ซ้ำ', async () => {
     const user = createTestUser({ role: 'ADMIN' })
     trackTenant(user.tenantId)
@@ -111,7 +112,14 @@ describe('fixes1005 REST — PLANNED→IN_PROGRESS เบิกครั้ง�
     expect(r1.status).toBe(200)
 
     let stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
-    expect(stock.quantity).toBe(80) // 100 - 20
+    expect(stock.quantity).toBe(100) // ยังไม่หักจนกว่าจะบันทึกล็อต
+
+    // บันทึกล็อตแรก 5 ชิ้น → หักวัตถุดิบ 10 kg
+    const l1 = await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${user.token}`).send({ goodQty: 5 })
+    expect(l1.status).toBe(201)
+    stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
+    expect(stock.quantity).toBe(90)
 
     const r2 = await request(app).put(`/api/work-orders/${woId}/status`)
       .set('Authorization', `Bearer ${user.token}`).send({ status: 'ON_HOLD' })
@@ -122,12 +130,23 @@ describe('fixes1005 REST — PLANNED→IN_PROGRESS เบิกครั้ง�
     expect(r3.status).toBe(200)
 
     stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
-    expect(stock.quantity).toBe(80) // ต้องไม่หักซ้ำ ยังคง 80 ไม่ใช่ 60
+    expect(stock.quantity).toBe(90) // ต้องไม่หักซ้ำ ยังคง 90
 
-    const outCount = db.prepare(
+    let outCount = db.prepare(
       "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'OUT'"
     ).get(user.tenantId, materialId) as any
     expect(outCount.c).toBe(1)
+
+    // บันทึกล็อตที่สอง 5 ชิ้น → หักอีก 10 kg รวม 20 kg
+    const l2 = await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${user.token}`).send({ goodQty: 5 })
+    expect(l2.status).toBe(201)
+    stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
+    expect(stock.quantity).toBe(80)
+    outCount = db.prepare(
+      "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'OUT'"
+    ).get(user.tenantId, materialId) as any
+    expect(outCount.c).toBe(2)
   })
 })
 
@@ -182,7 +201,7 @@ describe('fixes1005 REST — QC gate บล็อก COMPLETED เมื่อ�
     const woId = seedWO(admin.tenantId, { bomId, quantity: 10, status: 'IN_PROGRESS' })
 
     const r1 = await request(app).put(`/api/work-orders/${woId}/status`)
-      .set('Authorization', `Bearer ${admin.token}`).send({ status: 'COMPLETED' })
+      .set('Authorization', `Bearer ${admin.token}`).send({ status: 'COMPLETED', closeShort: true })
     expect(r1.status).toBe(400)
     expect(r1.body.message).toContain('QC')
 
@@ -191,17 +210,18 @@ describe('fixes1005 REST — QC gate บล็อก COMPLETED เมื่อ�
 
     seedQcInspection(admin.tenantId, woId, 'PASS', 10)
 
-    const r2 = await request(app).put(`/api/work-orders/${woId}/status`)
-      .set('Authorization', `Bearer ${admin.token}`).send({ status: 'COMPLETED' })
-    expect(r2.status).toBe(200)
+    const r2 = await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${admin.token}`).send({ goodQty: 10 })
+    expect(r2.status).toBe(201)
+    expect(r2.body.data.autoCompleted).toBe(true)
 
     stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(finishedId) as any
     expect(stock.quantity).toBe(10)
   })
 })
 
-describe('fixes1005 REST — completed_qty/สต็อกสินค้าสำเร็จรูป = min(requested, SUM(passed_qty))', () => {
-  it('QC รวมน้อยกว่าที่สั่ง → ปิดงานได้แค่ยอด QC จริง', async () => {
+describe('fixes1005 REST — completed_qty/สต็อกสินค้าสำเร็จรูปจากล็อตและจำกัดไม่เกินที่สั่ง', () => {
+  it('บันทึกล็อตตามยอด QC แล้วปิดงานก่อนครบ → ปิดงานได้แค่ยอดที่ผลิตจริง', async () => {
     const admin = createTestUser({ role: 'ADMIN' })
     trackTenant(admin.tenantId)
     const finishedId = seedFinishedStock(admin.tenantId, 0)
@@ -211,8 +231,13 @@ describe('fixes1005 REST — completed_qty/สต็อกสินค้าส�
     seedQcInspection(admin.tenantId, woId, 'PASS', 4)
     seedQcInspection(admin.tenantId, woId, 'PASS', 3)
 
+    expect((await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${admin.token}`).send({ goodQty: 4 })).status).toBe(201)
+    expect((await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${admin.token}`).send({ goodQty: 3 })).status).toBe(201)
+
     const res = await request(app).put(`/api/work-orders/${woId}/status`)
-      .set('Authorization', `Bearer ${admin.token}`).send({ status: 'COMPLETED' })
+      .set('Authorization', `Bearer ${admin.token}`).send({ status: 'COMPLETED', closeShort: true })
     expect(res.status).toBe(200)
     expect(res.body.data.completed_qty).toBe(7)
 
@@ -220,7 +245,7 @@ describe('fixes1005 REST — completed_qty/สต็อกสินค้าส�
     expect(stock.quantity).toBe(7)
   })
 
-  it('QC รวมเกินที่สั่ง → ครอบไว้ที่ requestedQty', async () => {
+  it('QC รวมเกินที่สั่ง → บันทึกล็อตไม่เกิน wo.quantity (10)', async () => {
     const admin = createTestUser({ role: 'ADMIN' })
     trackTenant(admin.tenantId)
     const finishedId = seedFinishedStock(admin.tenantId, 0)
@@ -230,10 +255,14 @@ describe('fixes1005 REST — completed_qty/สต็อกสินค้าส�
     seedQcInspection(admin.tenantId, woId, 'PASS', 8)
     seedQcInspection(admin.tenantId, woId, 'PASS', 8)
 
-    const res = await request(app).put(`/api/work-orders/${woId}/status`)
-      .set('Authorization', `Bearer ${admin.token}`).send({ status: 'COMPLETED' })
-    expect(res.status).toBe(200)
-    expect(res.body.data.completed_qty).toBe(10)
+    const overRes = await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${admin.token}`).send({ goodQty: 16 })
+    expect(overRes.status).toBe(400)
+
+    const res = await request(app).post(`/api/work-orders/${woId}/lots`)
+      .set('Authorization', `Bearer ${admin.token}`).send({ goodQty: 10 })
+    expect(res.status).toBe(201)
+    expect(res.body.data.workOrder.completed_qty).toBe(10)
 
     const stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(finishedId) as any
     expect(stock.quantity).toBe(10)

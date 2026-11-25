@@ -508,6 +508,57 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                       </tbody>
                     </table>
                   </section>
+
+                  {/* บันทึกการผลิตตามล็อต — ใช้คลาส wo-lots-table เพื่อไม่ให้ paginateBill จับผิดเป็นตารางวัตถุดิบ */}
+                  {((data.woLots?.length ?? 0) > 0 || size !== 'A5') && (
+                    <section className="wo-materials-section wo-lots-section">
+                      <h3 style={{ color: themeColor }}>บันทึกการผลิตตามล็อต (Production Lots)</h3>
+                      <table
+                        className="wo-lots-table"
+                        style={{ width: '100%', borderCollapse: 'collapse', fontSize: size === 'A5' ? '10.5px' : '12px' }}
+                      >
+                        <thead>
+                          <tr style={{ backgroundColor: `${themeColor}18`, borderTop: `1.5px solid ${themeColor}`, borderBottom: `1.5px solid ${themeColor}` }}>
+                            <th style={{ padding: '6px 6px', textAlign: 'center', width: '28px' }}>#</th>
+                            <th style={{ padding: '6px 6px', textAlign: 'left' }}>เลขล็อต</th>
+                            <th style={{ padding: '6px 6px', textAlign: 'left' }}>วันที่/เวลา</th>
+                            <th style={{ padding: '6px 6px', textAlign: 'right' }}>ของดี</th>
+                            <th style={{ padding: '6px 6px', textAlign: 'right' }}>ของเสีย</th>
+                            <th style={{ padding: '6px 6px', textAlign: 'left' }}>ผู้บันทึก</th>
+                            <th style={{ padding: '6px 6px', textAlign: 'left' }}>หมายเหตุ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(data.woLots?.length ?? 0) > 0 ? (
+                            data.woLots!.map((lot, idx) => (
+                              <tr key={lot.id || idx} style={{ borderBottom: '1px solid #aeb4c0' }}>
+                                <td style={{ padding: '5px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                                <td style={{ padding: '5px 6px', fontFamily: 'monospace' }}>{lot.lot_number}</td>
+                                <td style={{ padding: '5px 6px' }}>{lot.created_at ? formatThaiDateTime(lot.created_at) : '-'}</td>
+                                <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 600 }}>{num(lot.good_qty)}</td>
+                                <td style={{ padding: '5px 6px', textAlign: 'right' }}>{num(lot.scrap_qty)}</td>
+                                <td style={{ padding: '5px 6px' }}>{lot.recorded_by || '-'}</td>
+                                <td style={{ padding: '5px 6px' }}>{lot.notes || '-'}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            [1, 2, 3].map((rowNo) => (
+                              <tr key={rowNo} style={{ borderBottom: '1px solid #aeb4c0', height: '24px' }}>
+                                <td style={{ padding: '6px 6px', textAlign: 'center' }}>{rowNo}</td>
+                                <td style={{ padding: '6px 6px' }} />
+                                <td style={{ padding: '6px 6px' }} />
+                                <td style={{ padding: '6px 6px' }} />
+                                <td style={{ padding: '6px 6px' }} />
+                                <td style={{ padding: '6px 6px' }} />
+                                <td style={{ padding: '6px 6px' }} />
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </section>
+                  )}
+
                   {data.notes && (
                     <section className="wo-instructions">
                       <div className="wo-instructions-label">หมายเหตุ / คำสั่งผลิต</div>

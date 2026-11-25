@@ -13,6 +13,9 @@ export interface WorkOrder {
   unit?: string
   completed_qty: number
   scrap_qty: number
+  produced_qty?: number
+  lot_scrap_qty?: number
+  remaining_qty?: number
   status: string
   priority: string
   start_date: string | null
@@ -24,10 +27,39 @@ export interface WorkOrder {
   actual_cost: number
   material_count?: number
   materials?: WorkOrderMaterial[]
+  lots?: WorkOrderLot[]
   inspections?: QCInspectionSummary[]
   sales_order_id?: string | null
   so_number?: string | null
   created_at: string
+}
+
+export interface WorkOrderLot {
+  id: string
+  tenant_id?: string
+  work_order_id: string
+  lot_number: string
+  good_qty: number
+  scrap_qty: number
+  material_cost: number
+  unit_cost: number
+  notes: string
+  recorded_by: string
+  created_at: string
+}
+
+export interface RecordLotPayload {
+  goodQty: number
+  scrapQty?: number
+  lotNumber?: string | null
+  notes?: string | null
+}
+
+export interface RecordLotResult {
+  lot: WorkOrderLot
+  workOrder: WorkOrder
+  autoCompleted: boolean
+  qcBlockedCompletion?: string | null
 }
 
 export interface WorkOrderMaterial {
@@ -117,8 +149,16 @@ const workOrderService = {
     return res.data?.data
   },
 
-  async updateStatus(id: string, status: string): Promise<WorkOrder> {
-    const res = await api.put(`/work-orders/${id}/status`, { status })
+  async updateStatus(id: string, status: string, opts?: { closeShort?: boolean }): Promise<WorkOrder> {
+    const res = await api.put(`/work-orders/${id}/status`, {
+      status,
+      ...(opts?.closeShort ? { closeShort: true } : {}),
+    })
+    return res.data?.data
+  },
+
+  async recordLot(id: string, payload: RecordLotPayload): Promise<RecordLotResult> {
+    const res = await api.post(`/work-orders/${id}/lots`, payload)
     return res.data?.data
   },
 

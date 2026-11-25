@@ -358,6 +358,23 @@ export function applySchema(db: any): void {
       FOREIGN KEY (material_id) REFERENCES stock_items(id)
     );
 
+    CREATE TABLE IF NOT EXISTS work_order_lots (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      work_order_id TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      good_qty REAL NOT NULL DEFAULT 0,
+      scrap_qty REAL NOT NULL DEFAULT 0,
+      material_cost REAL NOT NULL DEFAULT 0,
+      unit_cost REAL NOT NULL DEFAULT 0,
+      notes TEXT DEFAULT '',
+      recorded_by TEXT DEFAULT '',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE,
+      UNIQUE(tenant_id, work_order_id, lot_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wo_lots_wo ON work_order_lots(tenant_id, work_order_id);
+
     -- ==================== SAVED BOMs (Calculator) ====================
 
     -- ==================== SALES MODULE ====================

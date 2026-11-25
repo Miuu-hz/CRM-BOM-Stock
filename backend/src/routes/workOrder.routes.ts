@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
+import { roundQty } from '../utils/qty'
 import {
   createWorkOrder, transitionWorkOrder, updateWorkOrder, deleteWorkOrder, checkMaterialStock, bomMaterials,
-  workOrderProductId, WorkOrderTransitionError,
+  recordWorkOrderLot, getWorkOrderDetail, WorkOrderTransitionError,
 } from '../services/workOrderTransition.service'
 
 const router = Router()
@@ -61,10 +62,13 @@ router.get('/', async (req: Request, res: Response) => {
     const tenantId = (isMaster && queryTenant && queryTenant !== 'all') ? queryTenant : req.user!.tenantId
     const filterAll = isMaster && queryTenant === 'all'
 
-    const orders = filterAll
+    const rawOrders = filterAll
       ? db.prepare(`
           SELECT wo.*, so.so_number,
-            (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count
+            (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count,
+            (SELECT COUNT(*) FROM work_order_lots WHERE work_order_id = wo.id AND tenant_id = wo.tenant_id) as lot_count,
+            COALESCE((SELECT SUM(good_qty) FROM work_order_lots WHERE work_order_id = wo.id AND tenant_id = wo.tenant_id), 0) as lot_good_sum,
+            COALESCE((SELECT SUM(scrap_qty) FROM work_order_lots WHERE work_order_id = wo.id AND tenant_id = wo.tenant_id), 0) as lot_scrap_sum
           FROM work_orders wo
           LEFT JOIN sales_orders so ON wo.sales_order_id = so.id
           ORDER BY
@@ -73,7 +77,10 @@ router.get('/', async (req: Request, res: Response) => {
         `).all()
       : db.prepare(`
           SELECT wo.*, so.so_number,
-            (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count
+            (SELECT COUNT(*) FROM work_order_materials WHERE work_order_id = wo.id) as material_count,
+            (SELECT COUNT(*) FROM work_order_lots WHERE work_order_id = wo.id AND tenant_id = wo.tenant_id) as lot_count,
+            COALESCE((SELECT SUM(good_qty) FROM work_order_lots WHERE work_order_id = wo.id AND tenant_id = wo.tenant_id), 0) as lot_good_sum,
+            COALESCE((SELECT SUM(scrap_qty) FROM work_order_lots WHERE work_order_id = wo.id AND tenant_id = wo.tenant_id), 0) as lot_scrap_sum
           FROM work_orders wo
           LEFT JOIN sales_orders so ON wo.sales_order_id = so.id
           WHERE wo.tenant_id = ?
@@ -81,6 +88,19 @@ router.get('/', async (req: Request, res: Response) => {
             CASE wo.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 WHEN 'LOW' THEN 4 END,
             wo.created_at DESC
         `).all(tenantId)
+
+    const orders = (rawOrders as any[]).map((wo) => {
+      const lotCount = Number(wo.lot_count) || 0
+      const lotGood = roundQty(Number(wo.lot_good_sum) || 0)
+      const lotScrap = roundQty(Number(wo.lot_scrap_sum) || 0)
+      // ใบเก่าที่ปิดงานแบบเดิม (ไม่มีล็อต) ใช้ยอด completed_qty/scrap_qty เดิมและถือว่าเหลือ 0
+      const isLegacyCompleted = wo.status === 'COMPLETED' && lotCount === 0
+      const produced_qty = isLegacyCompleted ? (Number(wo.completed_qty) || 0) : lotGood
+      const lot_scrap_qty = isLegacyCompleted ? (Number(wo.scrap_qty) || 0) : lotScrap
+      const remaining_qty = isLegacyCompleted ? 0 : roundQty(Math.max(0, (Number(wo.quantity) || 0) - lotGood - lotScrap))
+      const { lot_count: _lc, lot_good_sum: _lg, lot_scrap_sum: _ls, ...rest } = wo
+      return { ...rest, produced_qty, lot_scrap_qty, remaining_qty }
+    })
 
     res.json({ success: true, data: orders })
   } catch (error) {
@@ -98,7 +118,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     const filterAll = isMaster && queryTenant === 'all'
 
     // ปรับคำสั่ง SQL ให้นับสถานะใบสั่งผลิตให้ครบทุกตัว (DRAFT, PLANNED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED)
-    // เพื่อให้ totalOrders สอดคล้องกับสถานะจริง
+    // เพื่อให้ totalOrders สอดคล้องกับสถานะจริง และรวมยอดผลิตสะสมของใบที่กำลังผลิตด้วย
     const row = filterAll
       ? db.prepare(`
           SELECT
@@ -109,7 +129,8 @@ router.get('/stats', async (req: Request, res: Response) => {
             SUM(CASE WHEN UPPER(status) = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold,
             SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
             SUM(CASE WHEN UPPER(status) = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled,
-            COALESCE(SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN completed_qty ELSE 0 END), 0) as total_produced
+            COALESCE(SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN completed_qty
+              ELSE (SELECT COALESCE(SUM(l.good_qty), 0) FROM work_order_lots l WHERE l.work_order_id = work_orders.id) END), 0) as total_produced
           FROM work_orders
           WHERE UPPER(status) IN ('DRAFT', 'PLANNED', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED')
         `).get() as any
@@ -122,7 +143,8 @@ router.get('/stats', async (req: Request, res: Response) => {
             SUM(CASE WHEN UPPER(status) = 'ON_HOLD' THEN 1 ELSE 0 END) as on_hold,
             SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
             SUM(CASE WHEN UPPER(status) = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled,
-            COALESCE(SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN completed_qty ELSE 0 END), 0) as total_produced
+            COALESCE(SUM(CASE WHEN UPPER(status) = 'COMPLETED' THEN completed_qty
+              ELSE (SELECT COALESCE(SUM(l.good_qty), 0) FROM work_order_lots l WHERE l.work_order_id = work_orders.id) END), 0) as total_produced
           FROM work_orders
           WHERE tenant_id = ? AND UPPER(status) IN ('DRAFT', 'PLANNED', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED')
         `).get(tenantId) as any
@@ -152,38 +174,12 @@ router.get('/:id', async (req: Request, res: Response) => {
     const isMaster = req.user?.role === 'MASTER'
     const tenantId = req.user!.tenantId
 
-    const wo = (isMaster
-      ? db.prepare(`
-          SELECT wo.*, so.so_number
-          FROM work_orders wo
-          LEFT JOIN sales_orders so ON wo.sales_order_id = so.id
-          WHERE wo.id = ?
-        `).get(req.params.id)
-      : db.prepare(`
-          SELECT wo.*, so.so_number
-          FROM work_orders wo
-          LEFT JOIN sales_orders so ON wo.sales_order_id = so.id
-          WHERE wo.id = ? AND wo.tenant_id = ?
-        `).get(req.params.id, tenantId)) as any
-
-    if (!wo) {
+    const detail = getWorkOrderDetail(tenantId, req.params.id, isMaster)
+    if (!detail) {
       return res.status(404).json({ success: false, message: 'Work order not found' })
     }
 
-    const effectiveTenantId = wo.tenant_id
-    const rows = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id) as any[]
-    // เบิกไปแล้วไม่ต้องเทียบสต็อก — ของออกจากคลังไปแล้ว เทียบซ้ำจะขึ้น "ขาด" ผิด ๆ
-    const pending = rows.filter(m => m.status === 'PENDING')
-    const checks = checkMaterialStock(effectiveTenantId, pending.map(m => ({ materialId: m.material_id, requiredQty: m.required_qty, unit: m.unit })))
-    const byId = new Map(pending.map((m, i) => [m.id, checks[i]]))
-    const materials = rows.map(m => ({ ...m, ...byId.get(m.id) }))
-    const productId = workOrderProductId(effectiveTenantId, wo)
-    const product = productId
-      ? db.prepare('SELECT sku, name FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, effectiveTenantId) as any
-      : null
-    const inspections = db.prepare('SELECT * FROM qc_inspections WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at DESC').all(req.params.id, effectiveTenantId)
-
-    res.json({ success: true, data: { ...wo, finished_sku: product?.sku || null, finished_name: product?.name || null, materials, inspections } })
+    res.json({ success: true, data: detail })
   } catch (error) {
     console.error('Get work order error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch work order' })
@@ -205,12 +201,36 @@ router.post('/', async (req: Request, res: Response) => {
   }
 })
 
-// PUT update work order status (with stock deduction)
+// POST record production lot (partial/full production + proportional material deduction + FG receipt)
+router.post('/:id/lots', async (req: Request, res: Response) => {
+  try {
+    const result = recordWorkOrderLot(
+      req.user!.tenantId,
+      req.params.id,
+      {
+        goodQty: req.body?.goodQty,
+        scrapQty: req.body?.scrapQty,
+        lotNumber: req.body?.lotNumber,
+        notes: req.body?.notes,
+      },
+      {
+        email: req.user?.email || 'system',
+        role: req.user?.role || '',
+        isMaster: req.user?.role === 'MASTER',
+      }
+    )
+    res.status(201).json({ success: true, data: result })
+  } catch (error: any) {
+    sendError(res, error, 'Failed to record work order lot')
+  }
+})
+
+// PUT update work order status
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
     const isMaster = req.user?.role === 'MASTER'
     const tenantId = req.user!.tenantId
-    const { status } = req.body
+    const { status, closeShort } = req.body
 
     const updated = transitionWorkOrder(
       tenantId,
@@ -220,7 +240,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         email: req.user?.email || 'system',
         role: req.user?.role || '',
         isMaster,
-      }
+      },
+      { closeShort: Boolean(closeShort) }
     )
 
     res.json({ success: true, data: updated })

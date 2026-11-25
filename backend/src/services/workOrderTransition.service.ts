@@ -5,8 +5,10 @@ import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from 
 import { roundQty, isPositiveQty } from '../utils/qty'
 import {
   restockCancelledWorkOrderMaterials, workOrderStatusError,
-  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion, settleWorkOrderCost,
+  woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion,
+  isLegacyPreIssuedWo, settleWorkOrderLotCost,
 } from './stockMovement.service'
+import { getCostBasis } from './stockCostBasis.service'
 import { resolveStockItemId, StockItemRefError } from './stockItem.service'
 import { getBomIngredientsRecursive } from './pos-stock.service'
 
@@ -29,6 +31,36 @@ export interface TransitionActor {
 
 export interface TransitionOptions {
   notify?: boolean
+  /** true = ปิดงานตามยอดที่ผลิตจริงแล้ว (Close Short) ไม่ผลิตส่วนที่เหลือ */
+  closeShort?: boolean
+  /** true = ปิดงานครบจำนวนที่เหลือในครั้งเดียว (ใช้เฉพาะ salesOrderProduction.service.ts) */
+  completeAll?: boolean
+}
+
+export interface RecordWorkOrderLotInput {
+  goodQty: number
+  scrapQty?: number
+  lotNumber?: string | null
+  notes?: string | null
+}
+
+export interface RecordWorkOrderLotResult {
+  lot: {
+    id: string
+    tenant_id: string
+    work_order_id: string
+    lot_number: string
+    good_qty: number
+    scrap_qty: number
+    material_cost: number
+    unit_cost: number
+    notes: string
+    recorded_by: string
+    created_at: string
+  }
+  workOrder: any
+  autoCompleted: boolean
+  qcBlockedCompletion?: string | null
 }
 
 export interface CreateWorkOrderInput {
@@ -250,7 +282,8 @@ export function createWorkOrder(
 function getEditableWorkOrder(tenantId: string, woId: string, action: string): any {
   const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(woId, tenantId) as any
   if (!wo) throw new WorkOrderTransitionError(404, 'Work order not found')
-  if (!['DRAFT', 'PLANNED'].includes(wo.status) || woMaterialsIssued(tenantId, wo.wo_number)) {
+  const hasLots = !!db.prepare('SELECT 1 FROM work_order_lots WHERE tenant_id = ? AND work_order_id = ? LIMIT 1').get(tenantId, woId)
+  if (!['DRAFT', 'PLANNED'].includes(wo.status) || woMaterialsIssued(tenantId, wo.wo_number) || hasLots) {
     throw new WorkOrderTransitionError(400, `${action}ได้เฉพาะใบที่ยังไม่เริ่มผลิต — ใบที่เริ่มแล้วให้ใช้ "ยกเลิก" ระบบจะคืนวัตถุดิบเข้าคลังให้`)
   }
   return wo
@@ -303,6 +336,395 @@ export function deleteWorkOrder(tenantId: string, woId: string, actor: Transitio
   })()
 }
 
+function loadWorkOrderForActor(tenantId: string, woId: string, isMaster: boolean): any {
+  return isMaster
+    ? db.prepare('SELECT * FROM work_orders WHERE id = ?').get(woId)
+    : db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(woId, tenantId)
+}
+
+/** ยอดผลิตสะสมและคงเหลือของใบสั่งผลิต คำนวณจาก work_order_lots เท่านั้น (ไม่ใช้ work_orders.completed_qty ที่ QC อาจบวกไว้) */
+export function lotTotals(tenantId: string, woId: string): { good: number; scrap: number; remaining: number } {
+  const wo = db.prepare('SELECT quantity FROM work_orders WHERE id = ? AND tenant_id = ?').get(woId, tenantId) as any
+  if (!wo) return { good: 0, scrap: 0, remaining: 0 }
+  const row = db.prepare(
+    'SELECT COALESCE(SUM(good_qty), 0) AS good, COALESCE(SUM(scrap_qty), 0) AS scrap FROM work_order_lots WHERE tenant_id = ? AND work_order_id = ?'
+  ).get(tenantId, woId) as any
+  const good = roundQty(Number(row?.good) || 0)
+  const scrap = roundQty(Number(row?.scrap) || 0)
+  const remaining = roundQty(Math.max(0, (Number(wo.quantity) || 0) - good - scrap))
+  return { good, scrap, remaining }
+}
+
+/** รายละเอียดใบสั่งผลิตพร้อม materials (เช็คสต็อกส่วนที่ยังไม่เบิก), lots, inspections และยอด produced/remaining */
+export function getWorkOrderDetail(tenantId: string, woId: string, isMaster = false): any | null {
+  const wo = (isMaster
+    ? db.prepare(`
+        SELECT wo.*, so.so_number
+        FROM work_orders wo
+        LEFT JOIN sales_orders so ON wo.sales_order_id = so.id
+        WHERE wo.id = ?
+      `).get(woId)
+    : db.prepare(`
+        SELECT wo.*, so.so_number
+        FROM work_orders wo
+        LEFT JOIN sales_orders so ON wo.sales_order_id = so.id
+        WHERE wo.id = ? AND wo.tenant_id = ?
+      `).get(woId, tenantId)) as any
+  if (!wo) return null
+
+  const effectiveTenantId = wo.tenant_id
+  const rows = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(woId) as any[]
+  // เบิกครบแล้วไม่ต้องเทียบสต็อก — ส่วนที่เหลือ (PENDING/PARTIAL) เทียบเฉพาะยอดที่ยังไม่ได้เบิก
+  const unissued = rows.filter(m => m.status !== 'ISSUED')
+  const checks = checkMaterialStock(effectiveTenantId, unissued.map(m => ({
+    materialId: m.material_id,
+    requiredQty: roundQty(Math.max(0, (Number(m.required_qty) || 0) - (Number(m.issued_qty) || 0))),
+    unit: m.unit,
+  })))
+  const byId = new Map(unissued.map((m, i) => [m.id, checks[i]]))
+  const materials = rows.map(m => ({ ...m, ...byId.get(m.id) }))
+
+  const lots = db.prepare(
+    'SELECT * FROM work_order_lots WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at ASC, rowid ASC'
+  ).all(woId, effectiveTenantId) as any[]
+
+  const isLegacyCompleted = wo.status === 'COMPLETED' && lots.length === 0
+  const totals = lotTotals(effectiveTenantId, woId)
+  const produced_qty = isLegacyCompleted ? (Number(wo.completed_qty) || 0) : totals.good
+  const lot_scrap_qty = isLegacyCompleted ? (Number(wo.scrap_qty) || 0) : totals.scrap
+  const remaining_qty = isLegacyCompleted ? 0 : totals.remaining
+
+  const productId = workOrderProductId(effectiveTenantId, wo)
+  const product = productId
+    ? db.prepare('SELECT sku, name FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, effectiveTenantId) as any
+    : null
+  const inspections = db.prepare('SELECT * FROM qc_inspections WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at DESC')
+    .all(woId, effectiveTenantId)
+
+  return {
+    ...wo,
+    produced_qty,
+    lot_scrap_qty,
+    remaining_qty,
+    finished_sku: product?.sku || null,
+    finished_name: product?.name || null,
+    materials,
+    lots,
+    inspections,
+  }
+}
+
+function validateMaterialConversions(effectiveTenantId: string, materials: any[]): void {
+  for (const m of materials) {
+    if (!m.material_id) continue
+    const stock = db.prepare('SELECT id, unit, base_unit FROM stock_items WHERE id = ? AND tenant_id = ?')
+      .get(m.material_id, effectiveTenantId) as any
+    if (!stock) continue
+    const stockUnit = stock.base_unit || stock.unit
+    if (m.unit && stockUnit && normalizeUnit(m.unit) !== normalizeUnit(stockUnit)) {
+      const converted = convertQuantityBidirectional(Number(m.required_qty) || 1, m.unit, stockUnit, effectiveTenantId, m.material_id)
+      if (!converted) {
+        throw new WorkOrderTransitionError(400, `ไม่พบการแปลงหน่วย ${m.unit} → ${stock.unit} สำหรับ ${m.material_name} กรุณาตั้งค่า Unit Conversion ก่อน`)
+      }
+    }
+  }
+}
+
+function deductLotMaterials(
+  effectiveTenantId: string,
+  wo: any,
+  lotNumber: string,
+  lotTotal: number,
+  isLastLot: boolean,
+  actor: TransitionActor,
+  now: string
+): number {
+  const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(wo.id) as any[]
+  assertMaterialsLinked(effectiveTenantId, materials)
+
+  const negSetting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(effectiveTenantId) as any
+  const allowNegativeStock = !!negSetting && negSetting.allow_negative_stock === 1
+  const movementRef = `WO: ${wo.wo_number} (${lotNumber})`
+  const createdBy = actor.email || 'system'
+  let lotMaterialCost = 0
+
+  for (const m of materials) {
+    if (!m.material_id) continue
+    const alreadyIssued = roundQty(Number(m.issued_qty) || 0)
+    const reqQty = roundQty(Number(m.required_qty) || 0)
+    const remainingMat = roundQty(Math.max(0, reqQty - alreadyIssued))
+    const lotMatQty = isLastLot
+      ? remainingMat
+      : roundQty(Math.min(remainingMat, reqQty * (lotTotal / Number(wo.quantity))))
+    if (lotMatQty <= 0) continue
+
+    const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, effectiveTenantId) as any
+    if (!stock) continue
+
+    const stockUnit = stock.base_unit || stock.unit
+    let deductQty = lotMatQty
+    let movementNotes = `Material issued for work order ${wo.wo_number} (lot: ${lotNumber})`
+
+    if (m.unit && stockUnit && normalizeUnit(m.unit) !== normalizeUnit(stockUnit)) {
+      const converted = convertQuantityBidirectional(lotMatQty, m.unit, stockUnit, effectiveTenantId, m.material_id)
+      if (!converted) {
+        throw new WorkOrderTransitionError(400, `ไม่พบการแปลงหน่วย ${m.unit} → ${stock.unit} สำหรับ ${m.material_name} กรุณาตั้งค่า Unit Conversion ก่อน`)
+      }
+      deductQty = converted.converted
+      movementNotes += ` (converted: ${lotMatQty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit}, factor: ${converted.factor})`
+    }
+
+    const needed = roundQty(Number(deductQty))
+    if (needed > 0) {
+      if (stock.quantity < needed && (stock.sealed_qty ?? 0) > 0) {
+        const unpack = autoUnpackIfNeeded(stock, needed, effectiveTenantId)
+        if (unpack && unpack.unpackedPacks > 0) {
+          const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
+          db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+            .run(unpack.sealed_qty, unpack.quantity, now, stock.id, effectiveTenantId)
+          db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+            VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, ?)`)
+            .run(generateId(), effectiveTenantId, stock.id, gained, stock.display_unit || null, unpack.unpackedPacks, movementRef,
+              `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit} → ${gained} ${stock.unit}`, now, createdBy)
+          stock.quantity = unpack.quantity
+        }
+      }
+
+      if (stock.quantity < needed && !allowNegativeStock) {
+        throw new WorkOrderTransitionError(400, `สต็อกวัตถุดิบไม่เพียงพอสำหรับ ${m.material_name} (ต้องการ ${needed} ${stock.unit} มี ${stock.quantity} ${stock.unit})`)
+      }
+
+      const nextQty = roundQty(Number(stock.quantity) - needed)
+      db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(nextQty, now, stock.id, effectiveTenantId)
+      db.prepare(`
+        INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+        VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?)
+      `).run(generateId(), effectiveTenantId, stock.id, needed, movementRef, movementNotes, now, createdBy)
+
+      const unitCost = getCostBasis(effectiveTenantId, stock.id).weightedAvg || Number(stock.unit_cost || 0)
+      lotMaterialCost += needed * unitCost
+    }
+
+    const newIssued = roundQty(alreadyIssued + lotMatQty)
+    const newMatStatus = newIssued >= reqQty - 1e-6 ? 'ISSUED' : 'PARTIAL'
+    db.prepare('UPDATE work_order_materials SET issued_qty = ?, status = ? WHERE id = ?')
+      .run(newIssued, newMatStatus, m.id)
+  }
+
+  return Math.round(lotMaterialCost * 100) / 100
+}
+
+function computeLegacyLotMaterialCost(
+  effectiveTenantId: string,
+  wo: any,
+  existingLots: any[],
+  lotTotal: number,
+  isLastLot: boolean
+): number {
+  const preIssued = db.prepare(`
+    SELECT stock_item_id, SUM(quantity) as total
+    FROM stock_movements
+    WHERE tenant_id = ? AND type = 'OUT' AND reference = ?
+    GROUP BY stock_item_id
+  `).all(effectiveTenantId, `WO: ${wo.wo_number}`) as { stock_item_id: string; total: number }[]
+
+  let totalPreIssuedCost = 0
+  for (const r of preIssued) {
+    if (!(Number(r.total) > 0)) continue
+    const it = db.prepare('SELECT unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(r.stock_item_id, effectiveTenantId) as any
+    const unitCost = getCostBasis(effectiveTenantId, r.stock_item_id).weightedAvg || Number(it?.unit_cost || 0)
+    totalPreIssuedCost += Number(r.total) * unitCost
+  }
+  totalPreIssuedCost = Math.round(totalPreIssuedCost * 100) / 100
+
+  const alreadySettledCost = existingLots.reduce((s, l) => s + (Number(l.material_cost) || 0), 0)
+  return isLastLot
+    ? Math.max(0, Math.round((totalPreIssuedCost - alreadySettledCost) * 100) / 100)
+    : Math.round(totalPreIssuedCost * (lotTotal / Number(wo.quantity)) * 100) / 100
+}
+
+function receiveLotFinishedGoods(
+  effectiveTenantId: string,
+  wo: any,
+  lotNumber: string,
+  goodQty: number,
+  actor: TransitionActor,
+  now: string
+): { id: string; addQty: number } | null {
+  if (goodQty <= 0) return null
+  const productId = workOrderProductId(effectiveTenantId, wo)
+  const finishedStock = productId
+    ? db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, effectiveTenantId) as any
+    : null
+  if (!finishedStock) return null
+
+  const stockUnit = finishedStock.base_unit || finishedStock.unit
+  const woUnit = wo.unit || stockUnit
+  let addQty = Number(goodQty)
+  let movementUnit: string | null = null
+  let movementQuantity: number | null = null
+
+  if (stockUnit && woUnit && normalizeUnit(woUnit) !== normalizeUnit(stockUnit)) {
+    const converted = convertQuantityBidirectional(addQty, woUnit, stockUnit, effectiveTenantId, finishedStock.id)
+    if (!converted) {
+      throw new WorkOrderTransitionError(400, `ไม่พบการแปลงหน่วย ${woUnit} → ${stockUnit} สำหรับสินค้าสำเร็จรูป "${finishedStock.name}" กรุณาตั้งค่า Unit Conversion ก่อนบันทึกการผลิต`)
+    }
+    movementUnit = woUnit
+    movementQuantity = addQty
+    addQty = converted.converted
+  }
+  addQty = roundQty(addQty)
+
+  const nextQty = roundQty(Number(finishedStock.quantity || 0) + addQty)
+  db.prepare('UPDATE stock_items SET quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+    .run(nextQty, now, finishedStock.id, effectiveTenantId)
+  db.prepare(`
+    INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
+    VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?, ?)
+  `).run(generateId(), effectiveTenantId, finishedStock.id, addQty, movementUnit, movementQuantity,
+    `WO: ${wo.wo_number} (${lotNumber})`, `Finished goods from production lot ${lotNumber}`, now, actor.email || 'system')
+
+  return { id: finishedStock.id, addQty }
+}
+
+/** ทำงานภายใน db.transaction ของผู้เรียก — ใช้ร่วมระหว่าง recordWorkOrderLot และ completeAll */
+function executeRecordWorkOrderLot(
+  effectiveTenantId: string,
+  wo: any,
+  input: RecordWorkOrderLotInput,
+  actor: TransitionActor,
+  now: string
+): { lot: RecordWorkOrderLotResult['lot']; autoCompleted: boolean; qcBlockedCompletion: string | null } {
+  if (wo.status !== 'IN_PROGRESS') {
+    throw new WorkOrderTransitionError(400, 'บันทึกการผลิตได้เฉพาะใบสั่งผลิตที่อยู่ในสถานะกำลังผลิต (IN_PROGRESS)')
+  }
+
+  const rawGood = Number(input.goodQty ?? 0)
+  const rawScrap = Number(input.scrapQty ?? 0)
+  if (!Number.isFinite(rawGood) || !Number.isFinite(rawScrap) || rawGood < 0 || rawScrap < 0) {
+    throw new WorkOrderTransitionError(400, 'จำนวนของดีและของเสียต้องไม่ติดลบ')
+  }
+  const goodQty = roundQty(rawGood)
+  const scrapQty = roundQty(rawScrap)
+  const lotTotal = roundQty(goodQty + scrapQty)
+  if (lotTotal <= 0) {
+    throw new WorkOrderTransitionError(400, 'จำนวนของดีหรือของเสียรวมกันต้องมากกว่า 0')
+  }
+
+  const totals = lotTotals(effectiveTenantId, wo.id)
+  const prevCompleted = totals.good
+  const prevScrap = totals.scrap
+  const prevDone = roundQty(prevCompleted + prevScrap)
+  const remainingQty = totals.remaining
+  if (lotTotal > remainingQty + 1e-6) {
+    throw new WorkOrderTransitionError(400, `จำนวนผลิตรวมของเสีย (${lotTotal}) เกินจำนวนคงเหลือที่ต้องผลิต (${remainingQty})`)
+  }
+
+  const existingLots = db.prepare(
+    'SELECT lot_number, material_cost FROM work_order_lots WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at ASC, rowid ASC'
+  ).all(wo.id, effectiveTenantId) as { lot_number: string; material_cost: number }[]
+
+  const rawLotNo = input.lotNumber != null ? String(input.lotNumber).trim() : ''
+  let lotNumber = rawLotNo
+  if (lotNumber) {
+    if (lotNumber.length > 60) {
+      throw new WorkOrderTransitionError(400, 'เลขล็อตยาวเกิน 60 ตัวอักษร')
+    }
+  } else {
+    let k = existingLots.length + 1
+    while (existingLots.some(l => l.lot_number === `${wo.wo_number}-L${String(k).padStart(2, '0')}`)) {
+      k++
+    }
+    lotNumber = `${wo.wo_number}-L${String(k).padStart(2, '0')}`
+  }
+
+  if (existingLots.some(l => l.lot_number === lotNumber)) {
+    throw new WorkOrderTransitionError(400, `เลขล็อต "${lotNumber}" ซ้ำในใบสั่งผลิตนี้`)
+  }
+
+  const isLastLot = roundQty(prevDone + lotTotal) >= roundQty(Number(wo.quantity)) - 1e-6
+  const legacyPreIssued = isLegacyPreIssuedWo(effectiveTenantId, wo.wo_number)
+
+  const lotMaterialCost = legacyPreIssued
+    ? computeLegacyLotMaterialCost(effectiveTenantId, wo, existingLots, lotTotal, isLastLot)
+    : deductLotMaterials(effectiveTenantId, wo, lotNumber, lotTotal, isLastLot, actor, now)
+
+  const finished = receiveLotFinishedGoods(effectiveTenantId, wo, lotNumber, goodQty, actor, now)
+  settleWorkOrderLotCost(effectiveTenantId, actor.email || 'system', { id: wo.id, wo_number: wo.wo_number }, lotNumber, lotMaterialCost, finished)
+
+  const lotUnitCost = goodQty > 0 ? Math.round((lotMaterialCost / goodQty) * 10000) / 10000 : 0
+  const lotId = generateId()
+  const lotNotes = input.notes != null ? String(input.notes) : ''
+  const recordedBy = actor.email || 'system'
+
+  db.prepare(`
+    INSERT INTO work_order_lots (id, tenant_id, work_order_id, lot_number, good_qty, scrap_qty, material_cost, unit_cost, notes, recorded_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(lotId, effectiveTenantId, wo.id, lotNumber, goodQty, scrapQty, lotMaterialCost, lotUnitCost, lotNotes, recordedBy, now)
+
+  const newCompleted = roundQty(prevCompleted + goodQty)
+  const newScrap = roundQty(prevScrap + scrapQty)
+
+  let autoCompleted = false
+  let qcBlockedCompletion: string | null = null
+  if (isLastLot) {
+    const qcResult = resolveWorkOrderCompletion(effectiveTenantId, wo.id, newCompleted)
+    if (qcResult.error) {
+      qcBlockedCompletion = qcResult.error
+      db.prepare('UPDATE work_orders SET completed_qty = ?, scrap_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(newCompleted, newScrap, now, wo.id, effectiveTenantId)
+    } else {
+      autoCompleted = true
+      db.prepare('UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = ?, scrap_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run('COMPLETED', now, newCompleted, newScrap, now, wo.id, effectiveTenantId)
+    }
+  } else {
+    db.prepare('UPDATE work_orders SET completed_qty = ?, scrap_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(newCompleted, newScrap, now, wo.id, effectiveTenantId)
+  }
+
+  const lot = db.prepare('SELECT * FROM work_order_lots WHERE id = ?').get(lotId) as RecordWorkOrderLotResult['lot']
+  return { lot, autoCompleted, qcBlockedCompletion }
+}
+
+/** บันทึกการผลิตตามล็อต — ตัดวัตถุดิบตามสัดส่วน รับสินค้าสำเร็จรูป และปิดใบสั่งผลิตอัตโนมัติเมื่อครบ */
+export function recordWorkOrderLot(
+  tenantId: string,
+  woId: string,
+  input: RecordWorkOrderLotInput,
+  actor: TransitionActor,
+  opts?: { notify?: boolean }
+): RecordWorkOrderLotResult {
+  const wo = loadWorkOrderForActor(tenantId, woId, actor.isMaster)
+  if (!wo) {
+    throw new WorkOrderTransitionError(404, 'Work order not found')
+  }
+  const effectiveTenantId = (actor.isMaster && wo.tenant_id) ? wo.tenant_id : tenantId
+  const now = new Date().toISOString()
+
+  let txResult: { lot: RecordWorkOrderLotResult['lot']; autoCompleted: boolean; qcBlockedCompletion: string | null }
+  const run = db.transaction(() => executeRecordWorkOrderLot(effectiveTenantId, wo, input, actor, now))
+  try {
+    txResult = run()
+  } catch (err: any) {
+    if (err instanceof WorkOrderTransitionError) throw err
+    throw new WorkOrderTransitionError(400, err?.message || 'บันทึกการผลิตไม่สำเร็จ')
+  }
+
+  const workOrder = getWorkOrderDetail(effectiveTenantId, woId)
+  if (txResult.autoCompleted && opts?.notify !== false && workOrder) {
+    lineBotService.notifyWorkOrderStatusChanged(effectiveTenantId, workOrder).catch(e => console.error('LINE Bot status change error:', e))
+  }
+
+  return {
+    lot: txResult.lot,
+    workOrder,
+    autoCompleted: txResult.autoCompleted,
+    qcBlockedCompletion: txResult.qcBlockedCompletion,
+  }
+}
+
 export function transitionWorkOrder(
   tenantId: string,
   woId: string,
@@ -315,18 +737,11 @@ export function transitionWorkOrder(
     throw new WorkOrderTransitionError(400, 'Invalid status')
   }
 
-  let effectiveTenantId = tenantId
-  const wo = (actor.isMaster
-    ? db.prepare('SELECT * FROM work_orders WHERE id = ?').get(woId)
-    : db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(woId, tenantId)) as any
-
+  const wo = loadWorkOrderForActor(tenantId, woId, actor.isMaster)
   if (!wo) {
     throw new WorkOrderTransitionError(404, 'Work order not found')
   }
-
-  if (actor.isMaster && wo.tenant_id) {
-    effectiveTenantId = wo.tenant_id
-  }
+  const effectiveTenantId = (actor.isMaster && wo.tenant_id) ? wo.tenant_id : tenantId
 
   const seqError = workOrderStatusError(wo.status, toStatus)
   if (seqError) {
@@ -340,122 +755,58 @@ export function transitionWorkOrder(
   const now = new Date().toISOString()
   const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(woId) as any[]
 
-  if (toStatus === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS' && woMaterialsIssued(effectiveTenantId, wo.wo_number)) {
-    db.prepare('UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-      .run(toStatus, now, woId, effectiveTenantId)
-  } else if (toStatus === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
+  if (toStatus === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
     assertMaterialsLinked(effectiveTenantId, materials)
-    const negSetting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(effectiveTenantId) as any
-    const allowNegativeStock = !!negSetting && negSetting.allow_negative_stock === 1
-
-    const deductStock = db.transaction(() => {
-      db.prepare('UPDATE work_orders SET status = ?, start_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-        .run(toStatus, now, now, woId, effectiveTenantId)
-
-      for (const m of materials) {
-        if (m.material_id) {
-          const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, effectiveTenantId) as any
-          if (!stock) continue
-
-          let deductQty = m.required_qty
-          let movementNotes = 'Material issued for work order'
-
-          if (m.unit && m.unit !== stock.unit) {
-            const converted = convertQuantityBidirectional(Number(m.required_qty), m.unit, stock.unit, effectiveTenantId, m.material_id)
-            if (!converted) {
-              throw new WorkOrderTransitionError(400, `ไม่พบการแปลงหน่วย ${m.unit} → ${stock.unit} สำหรับ ${m.material_name} กรุณาตั้งค่า Unit Conversion ก่อน`)
-            }
-            deductQty = converted.converted
-            movementNotes = `Material issued for work order (converted: ${m.required_qty} ${m.unit} → ${converted.converted.toFixed(4)} ${stock.unit}, factor: ${converted.factor})`
-          }
-
-          const needed = roundQty(Number(deductQty))
-          if (stock.quantity < needed && (stock.sealed_qty ?? 0) > 0) {
-            const unpack = autoUnpackIfNeeded(stock, needed, effectiveTenantId)
-            if (unpack && unpack.unpackedPacks > 0) {
-              const gained = roundQty(unpack.unpackedPacks * unpack.packFactor)
-              db.prepare('UPDATE stock_items SET sealed_qty = ?, quantity = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-                .run(unpack.sealed_qty, unpack.quantity, now, stock.id, effectiveTenantId)
-              db.prepare(`INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-                VALUES (?, ?, ?, 'UNPACK', ?, ?, ?, ?, ?, ?, 'system')`)
-                .run(generateId(), effectiveTenantId, stock.id, gained, stock.display_unit || null, unpack.unpackedPacks, `WO: ${wo.wo_number}`,
-                  `แกะอัตโนมัติ ${unpack.unpackedPacks} ${stock.display_unit} → ${gained} ${stock.unit}`, now)
-              stock.quantity = unpack.quantity
-            }
-          }
-
-          if (stock.quantity < needed && !allowNegativeStock) {
-            throw new WorkOrderTransitionError(400, `Insufficient stock for ${m.material_name}. Need ${needed} ${stock.unit}, have ${stock.quantity}`)
-          }
-
-          db.prepare('UPDATE stock_items SET quantity = quantity - ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-            .run(needed, now, stock.id, effectiveTenantId)
-
-          db.prepare(`
-            INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
-            VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, 'system')
-          `).run(generateId(), effectiveTenantId, stock.id, needed, `WO: ${wo.wo_number}`, movementNotes, now)
-
-          db.prepare("UPDATE work_order_materials SET issued_qty = ?, status = 'ISSUED' WHERE id = ?")
-            .run(m.required_qty, m.id)
-        }
-      }
-    })
-
-    try {
-      deductStock()
-    } catch (err: any) {
-      if (err instanceof WorkOrderTransitionError) throw err
-      throw new WorkOrderTransitionError(400, err?.message || 'เบิกวัตถุดิบไม่สำเร็จ')
-    }
+    validateMaterialConversions(effectiveTenantId, materials)
+    db.prepare('UPDATE work_orders SET status = ?, start_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(toStatus, wo.status === 'ON_HOLD' ? (wo.start_date || now) : now, now, woId, effectiveTenantId)
   } else if (toStatus === 'COMPLETED' && wo.status !== 'COMPLETED') {
-    const qcResult = resolveWorkOrderCompletion(effectiveTenantId, woId, wo.quantity)
-    if (qcResult.error) {
-      throw new WorkOrderTransitionError(400, qcResult.error)
-    }
-    const finalCompletedQty = qcResult.completedQty
+    const totals = lotTotals(effectiveTenantId, woId)
+    const lotCountRow = db.prepare('SELECT COUNT(*) as c FROM work_order_lots WHERE tenant_id = ? AND work_order_id = ?')
+      .get(effectiveTenantId, woId) as any
+    const lotCount = Number(lotCountRow?.c) || 0
 
-    const completeTransaction = db.transaction(() => {
-      db.prepare('UPDATE work_orders SET status = ?, completed_date = ?, completed_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-        .run(toStatus, now, finalCompletedQty, now, woId, effectiveTenantId)
-
-      let finished: { id: string; addQty: number } | null = null
-      const productId = workOrderProductId(effectiveTenantId, wo)
-      const finishedStock = productId ? db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, effectiveTenantId) as any : null
-      if (finishedStock) {
-        const stockUnit = finishedStock.base_unit || finishedStock.unit
-        const woUnit = wo.unit || stockUnit
-
-        let addQty = Number(finalCompletedQty)
-        let movementUnit: string | null = null
-        let movementQuantity: number | null = null
-        if (stockUnit && woUnit && normalizeUnit(woUnit) !== normalizeUnit(stockUnit)) {
-          const converted = convertQuantityBidirectional(addQty, woUnit, stockUnit, effectiveTenantId, finishedStock.id)
-          if (!converted) {
-            throw new WorkOrderTransitionError(400, `ไม่พบการแปลงหน่วย ${woUnit} → ${stockUnit} สำหรับสินค้าสำเร็จรูป "${finishedStock.name}" กรุณาตั้งค่า Unit Conversion ก่อนปิดใบสั่งงาน`)
-          }
-          movementUnit = woUnit
-          movementQuantity = addQty
-          addQty = converted.converted
-        }
-        addQty = roundQty(addQty)
-
-        db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
-          .run(addQty, now, finishedStock.id, effectiveTenantId)
-        db.prepare(`
-          INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, movement_unit, movement_quantity, reference, notes, created_at, created_by)
-          VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?, 'system')
-        `).run(generateId(), effectiveTenantId, finishedStock.id, addQty, movementUnit, movementQuantity, `WO: ${wo.wo_number}`, 'Finished goods from production', now)
-        finished = { id: finishedStock.id, addQty }
+    if (opts?.completeAll && totals.remaining > 0) {
+      const qcResult = resolveWorkOrderCompletion(effectiveTenantId, woId, totals.remaining)
+      if (qcResult.error) {
+        throw new WorkOrderTransitionError(400, qcResult.error)
       }
-      settleWorkOrderCost(effectiveTenantId, actor.email || 'system', { id: woId, wo_number: wo.wo_number }, finished)
-    })
+      const goodQty = roundQty(qcResult.completedQty)
+      const scrapQty = roundQty(Math.max(0, totals.remaining - goodQty))
+      const runCompleteAll = db.transaction(() => {
+        executeRecordWorkOrderLot(effectiveTenantId, wo, { goodQty, scrapQty, notes: 'ผลิตครบทั้งใบสั่งผลิต' }, actor, now)
+      })
+      try {
+        runCompleteAll()
+      } catch (err: any) {
+        if (err instanceof WorkOrderTransitionError) throw err
+        throw new WorkOrderTransitionError(400, err?.message || 'ปิดงานผลิตไม่สำเร็จ')
+      }
+    } else if (totals.remaining > 0 && !opts?.closeShort) {
+      throw new WorkOrderTransitionError(400, `ยังผลิตไม่ครบ (เหลือ ${totals.remaining}) — บันทึกการผลิตเป็นล็อต หรือเลือก "ปิดงานก่อนครบ"`)
+    } else {
+      const companySettings = db.prepare('SELECT qc_gate_enabled FROM company_settings WHERE tenant_id = ?').get(effectiveTenantId) as any
+      if (Number(companySettings?.qc_gate_enabled) === 1 && (totals.good > 0 || lotCount === 0)) {
+        const passCount = db.prepare("SELECT COUNT(*) as c FROM qc_inspections WHERE tenant_id = ? AND work_order_id = ? AND status = 'PASS'")
+          .get(effectiveTenantId, woId) as any
+        if (!passCount || passCount.c === 0) {
+          throw new WorkOrderTransitionError(400, 'ต้องผ่านการตรวจ QC ก่อนปิดใบสั่งงาน')
+        }
+      }
 
-    try {
-      completeTransaction()
-    } catch (err: any) {
-      if (err instanceof WorkOrderTransitionError) throw err
-      throw new WorkOrderTransitionError(400, err?.message || 'ปิดงานผลิตไม่สำเร็จ')
+      const closeTx = db.transaction(() => {
+        db.prepare('UPDATE work_orders SET status = ?, completed_date = COALESCE(completed_date, ?), completed_qty = ?, scrap_qty = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+          .run(toStatus, now, totals.good, totals.scrap, now, woId, effectiveTenantId)
+        if (opts?.closeShort && isLegacyPreIssuedWo(effectiveTenantId, wo.wo_number)) {
+          restockCancelledWorkOrderMaterials(effectiveTenantId, actor.email || 'system', { id: woId, wo_number: wo.wo_number })
+        }
+      })
+      try {
+        closeTx()
+      } catch (err: any) {
+        if (err instanceof WorkOrderTransitionError) throw err
+        throw new WorkOrderTransitionError(400, err?.message || 'ปิดงานผลิตไม่สำเร็จ')
+      }
     }
   } else if (toStatus === 'CANCELLED') {
     if (wo.status === 'COMPLETED') {
@@ -464,7 +815,7 @@ export function transitionWorkOrder(
     const cancelTransaction = db.transaction(() => {
       db.prepare('UPDATE work_orders SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(toStatus, now, woId, effectiveTenantId)
-      restockCancelledWorkOrderMaterials(effectiveTenantId, 'system', { id: woId, wo_number: wo.wo_number })
+      restockCancelledWorkOrderMaterials(effectiveTenantId, actor.email || 'system', { id: woId, wo_number: wo.wo_number })
     })
 
     try {

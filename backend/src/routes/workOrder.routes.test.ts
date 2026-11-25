@@ -54,14 +54,23 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
     const woId = seedWO(user.tenantId)
     seedWOMaterial(user.tenantId, woId, materialId, 20)
 
-    // เริ่มผลิต: ตัดสต็อก 20 kg
+    // เริ่มผลิต: ยังไม่ตัดสต็อกจนกว่าจะบันทึกล็อต
     const r1 = await request(app).put(`/api/work-orders/${woId}/status`)
       .set('Authorization', `Bearer ${user.token}`)
       .send({ status: 'IN_PROGRESS' })
     expect(r1.status).toBe(200)
 
     let stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(materialId) as any
-    expect(stock.quantity).toBe(80) // 100 - 20
+    expect(stock.quantity).toBe(100)
+
+    // จำลองใบสั่งผลิตแบบเดิมที่เบิกวัตถุดิบเต็มจำนวนไว้ล่วงหน้า (legacy pre-issued)
+    const woRow = db.prepare('SELECT wo_number FROM work_orders WHERE id = ?').get(woId) as any
+    db.prepare('UPDATE stock_items SET quantity = quantity - 20 WHERE id = ?').run(materialId)
+    db.prepare(`
+      INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
+      VALUES (?, ?, ?, 'OUT', 20, ?, 'Legacy pre-issue', ?, 'system')
+    `).run(generateId(), user.tenantId, materialId, `WO: ${woRow.wo_number}`, new Date().toISOString())
+    db.prepare("UPDATE work_order_materials SET issued_qty = 20, status = 'ISSUED' WHERE work_order_id = ?").run(woId)
 
     // ยกเลิก: ต้องคืน 20 kg กลับมาเป็น 100
     const r2 = await request(app).put(`/api/work-orders/${woId}/status`)
@@ -74,7 +83,7 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
 
     const restockMovements = db.prepare(
       "SELECT * FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'IN' AND reference = ?"
-    ).all(user.tenantId, materialId, `WO-CANCEL: ${db.prepare('SELECT wo_number FROM work_orders WHERE id = ?').get(woId).wo_number}`) as any[]
+    ).all(user.tenantId, materialId, `WO-CANCEL: ${woRow.wo_number}`) as any[]
     expect(restockMovements.length).toBe(1)
 
     // ยิงยกเลิกซ้ำ: ของต้องไม่งอกเพิ่ม (ยังคง 100 ไม่ใช่ 120)
@@ -102,16 +111,16 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
     `).run(bomId, user.tenantId, finishedId)
 
     const woId = seedWO(user.tenantId, { bomId })
-    // ต้องเดินตามลำดับสถานะ (PLANNED -> IN_PROGRESS -> COMPLETED) เหมือนปุ่มในหน้าเว็บ
-    // ไม่มีวัตถุดิบผูกไว้ ขั้น IN_PROGRESS จึงไม่ตัดอะไร (ไม่กระทบผลของเทสต์นี้)
+    // ต้องเดินตามลำดับสถานะ (PLANNED -> IN_PROGRESS) แล้วบันทึกล็อตครบ 10 ชิ้น (auto-complete)
     await request(app).put(`/api/work-orders/${woId}/status`)
       .set('Authorization', `Bearer ${user.token}`)
       .send({ status: 'IN_PROGRESS' })
 
-    const r1 = await request(app).put(`/api/work-orders/${woId}/status`)
+    const r1 = await request(app).post(`/api/work-orders/${woId}/lots`)
       .set('Authorization', `Bearer ${user.token}`)
-      .send({ status: 'COMPLETED' })
-    expect(r1.status).toBe(200)
+      .send({ goodQty: 10 })
+    expect(r1.status).toBe(201)
+    expect(r1.body.data.autoCompleted).toBe(true)
 
     let stock = db.prepare('SELECT quantity FROM stock_items WHERE id = ?').get(finishedId) as any
     expect(stock.quantity).toBe(10) // wo.quantity
@@ -126,7 +135,7 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
     expect(stock.quantity).toBe(10) // ยังคง 10 ไม่ใช่ 20
 
     const inMovements = db.prepare(
-      "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'IN' AND notes = 'Finished goods from production'"
+      "SELECT COUNT(*) as c FROM stock_movements WHERE tenant_id = ? AND stock_item_id = ? AND type = 'IN' AND notes LIKE 'Finished goods from production%'"
     ).get(user.tenantId, finishedId) as any
     expect(inMovements.c).toBe(1)
   })
@@ -176,9 +185,11 @@ describe('PUT /work-orders/:id/status — คืนวัตถุดิบต�
 })
 
 // เดิมเบิกวัตถุดิบไปผลิตแล้วมูลค่าไม่ตามไปไหนเลย: สินค้าสำเร็จรูปต้นทุน 0 / ไม่มีของออกมาก็ไม่เป็นค่าใช้จ่าย
-describe('PUT /work-orders/:id/status COMPLETED — ต้นทุนวัตถุดิบตามไปที่สินค้าสำเร็จรูป', () => {
+describe('POST /work-orders/:id/lots — ต้นทุนวัตถุดิบตามไปที่สินค้าสำเร็จรูป', () => {
   const put = (token: string, woId: string, status: string) =>
     request(app).put(`/api/work-orders/${woId}/status`).set('Authorization', `Bearer ${token}`).send({ status })
+  const recordLot = (token: string, woId: string, goodQty: number) =>
+    request(app).post(`/api/work-orders/${woId}/lots`).set('Authorization', `Bearer ${token}`).send({ goodQty })
 
   it('วัตถุดิบ 20 kg × 5 บาท ผลิตได้ 10 ชิ้น → สินค้าสำเร็จรูปต้นทุน 10 บาท/ชิ้น ไม่มี journal', async () => {
     const user = createTestUser({ role: 'MASTER' })
@@ -192,7 +203,7 @@ describe('PUT /work-orders/:id/status COMPLETED — ต้นทุนวัต�
     seedWOMaterial(user.tenantId, woId, materialId, 20)
 
     expect((await put(user.token, woId, 'IN_PROGRESS')).status).toBe(200)
-    expect((await put(user.token, woId, 'COMPLETED')).status).toBe(200)
+    expect((await recordLot(user.token, woId, 10)).status).toBe(201)
 
     const fg = db.prepare('SELECT quantity, unit_cost FROM stock_items WHERE id = ?').get(finishedId) as any
     expect(fg.quantity).toBe(10)
@@ -209,7 +220,7 @@ describe('PUT /work-orders/:id/status COMPLETED — ต้นทุนวัต�
     seedWOMaterial(user.tenantId, woId, materialId, 20)
 
     expect((await put(user.token, woId, 'IN_PROGRESS')).status).toBe(200)
-    expect((await put(user.token, woId, 'COMPLETED')).status).toBe(200)
+    expect((await recordLot(user.token, woId, 10)).status).toBe(201)
 
     const je = db.prepare("SELECT * FROM journal_entries WHERE tenant_id = ? AND reference_type = 'WO_MATERIAL'").get(user.tenantId) as any
     expect(je.total_debit).toBeCloseTo(100, 6)

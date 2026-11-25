@@ -362,7 +362,7 @@ export function produceForSalesOrder(
 
       transitionWorkOrder(tenantId, wo.id, 'PLANNED', actor, { notify: false })
       transitionWorkOrder(tenantId, wo.id, 'IN_PROGRESS', actor, { notify: false })
-      const completed = transitionWorkOrder(tenantId, wo.id, 'COMPLETED', actor, { notify: false })
+      const completed = transitionWorkOrder(tenantId, wo.id, 'COMPLETED', actor, { notify: false, completeAll: true })
 
       createdWorkOrders.push({
         id: completed.id,

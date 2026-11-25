@@ -155,14 +155,18 @@ router.post('/inspections/:id/complete', (req: Request, res: Response) => {
     db.prepare("UPDATE qc_inspections SET results = ?, notes = ?, status = ?, passed_qty = ?, rejected_qty = ?, completed_at = datetime('now') WHERE id = ? AND tenant_id = ?")
       .run(JSON.stringify(results), notes || '', status, passed_qty, rejected_qty, req.params.id, tid)
 
-    // ถ้ามี work_order_id: อัปเดต work_orders แบบสะสม (cap completed_qty ไม่ให้เกิน quantity ของ WO)
+    // ถ้ามี work_order_id: อัปเดต work_orders แบบสะสมเฉพาะ WO ที่ยังไม่ได้ใช้ระบบล็อต (ถ้ามีล็อตแล้ว lot เป็นแหล่งความจริงของยอดผลิต)
     if (inspection.work_order_id) {
       const wo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(inspection.work_order_id, tid) as any
       if (wo) {
-        const newCompleted = Math.min(wo.quantity, (wo.completed_qty || 0) + passed_qty)
-        const newScrap = (wo.scrap_qty || 0) + rejected_qty
-        db.prepare("UPDATE work_orders SET completed_qty = ?, scrap_qty = ?, updated_at = datetime('now') WHERE id = ? AND tenant_id = ?")
-          .run(newCompleted, newScrap, wo.id, tid)
+        const hasLots = !!db.prepare('SELECT 1 FROM work_order_lots WHERE tenant_id = ? AND work_order_id = ? LIMIT 1')
+          .get(tid, wo.id)
+        if (!hasLots) {
+          const newCompleted = Math.min(wo.quantity, (wo.completed_qty || 0) + passed_qty)
+          const newScrap = (wo.scrap_qty || 0) + rejected_qty
+          db.prepare("UPDATE work_orders SET completed_qty = ?, scrap_qty = ?, updated_at = datetime('now') WHERE id = ? AND tenant_id = ?")
+            .run(newCompleted, newScrap, wo.id, tid)
+        }
       }
     }
   })

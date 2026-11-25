@@ -7,7 +7,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import workOrderRouter from '../routes/workOrder.routes'
 import { createTestUser } from '../test/testAuth'
 import {
-  createWorkOrder, updateWorkOrder, deleteWorkOrder, transitionWorkOrder, checkMaterialStock, bomMaterials,
+  createWorkOrder, updateWorkOrder, deleteWorkOrder, transitionWorkOrder, recordWorkOrderLot, checkMaterialStock, bomMaterials,
 } from './workOrderTransition.service'
 
 const app = express()
@@ -51,6 +51,8 @@ describe('ใบสั่งงาน: วัตถุดิบต้องผ�
     const mat = stock(t)
     updateWorkOrder(t, id, { materials: [{ materialId: mat, requiredQty: 2, unit: 'kg' }] })
     transitionWorkOrder(t, id, 'IN_PROGRESS', ACTOR, { notify: false })
+    expect(qtyOf(mat)).toBe(10)
+    recordWorkOrderLot(t, id, { goodQty: 1 }, ACTOR, { notify: false })
     expect(qtyOf(mat)).toBe(8)
   })
 })
@@ -122,7 +124,8 @@ describe('ใบสั่งงาน: สต็อก / BOM / สินค้�
     const mat = stock(t)
     const wo = createWorkOrder(t, { productId: fg, productName: 'หมอน', quantity: 4, materials: [{ materialId: mat, requiredQty: 2, unit: 'kg' }] }, { notify: false })
     expect(wo.unit).toBe('pcs')
-    for (const s of ['PLANNED', 'IN_PROGRESS', 'COMPLETED']) transitionWorkOrder(t, wo.id, s, ACTOR, { notify: false })
+    for (const s of ['PLANNED', 'IN_PROGRESS']) transitionWorkOrder(t, wo.id, s, ACTOR, { notify: false })
+    recordWorkOrderLot(t, wo.id, { goodQty: 4 }, ACTOR, { notify: false })
     expect(qtyOf(fg)).toBe(4)
     expect((db.prepare('SELECT unit_cost FROM stock_items WHERE id = ?').get(fg) as any).unit_cost).toBe(50)
   })

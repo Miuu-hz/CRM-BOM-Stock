@@ -22,7 +22,7 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - purchase_billing: create_purchase_invoice(...), edit_purchase_invoice(...), pay_supplier(...), complete_purchase_bill(...)
 - stock: record_stock_movement(...), manage_unit_conversion(...), check_unit_issues(...), get_stock_movements(...), set_product_image(...)
 - sales: create_quotation(...), get_sales_orders(...)
-- production_bom: create_bom(...), explode_bom(...), create_work_order(...), update_work_order_status(...)
+- production_bom: create_bom(...), explode_bom(...), create_work_order(...), update_work_order_status(...), record_work_order_lot(...)
 - finance: get_ar_aging(...), get_ap_aging(...), get_financial_summary(...), get_trial_balance(...), get_ledger(...)
 - crm: get_customer_insights(...), get_quotations(...), get_lead_source_performance(...)
 - marketing: list_marketing_shops(...)
@@ -141,14 +141,15 @@ export const GUIDE_TOPICS: Record<string, string> = {
 - create_bom(...): create draft bill of materials (BOM) with raw material items.
 - explode_bom(...): calculate flattened multi-level raw material requirements by multiplier.
 - create_work_order(...): create draft work order (WO) referencing a product and BOM.
-- update_work_order_status(...): change WO status (PLANNED, IN_PROGRESS, COMPLETED, CANCELLED).
+- update_work_order_status(...): change WO status (PLANNED, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED); pass close_short=true to close short with partial lots.
+- record_work_order_lot(...): record good/scrap output per production lot while IN_PROGRESS; deducts proportional materials, receives finished goods, and auto-completes when quantity is reached.
 (b) Call-order recipes:
-- Production lifecycle: search(...) (find product and materials) -> create_bom(...) -> create_work_order(...) -> update_work_order_status(...) (PLANNED) -> update_work_order_status(...) (IN_PROGRESS) -> update_work_order_status(...) (COMPLETED).
+- Production lifecycle: search(...) (find product and materials) -> create_bom(...) -> create_work_order(...) -> update_work_order_status(...) (PLANNED) -> update_work_order_status(...) (IN_PROGRESS) -> record_work_order_lot(...) (repeat per lot until COMPLETED, or update_work_order_status(..., status="COMPLETED", close_short=true)).
 - Material planning: search(...) (find BOM) -> explode_bom(...) with multiplier to verify inventory before ordering.
 (c) Server guards & Thai errors:
 - Status sequence: must follow DRAFT -> PLANNED -> IN_PROGRESS -> COMPLETED; jumping states is rejected ("ไม่สามารถเปลี่ยนสถานะจาก ... เป็น ... ได้").
-- Material deduction: setting IN_PROGRESS auto-deducts materials and rejects on stock shortage ("สต็อกไม่พอสำหรับ ...") or missing conversion ("ไม่พบการแปลงหน่วย ...").
-- QC gate on completion: if QC gate is active, closing requires a passed inspection ("ต้องผ่านการตรวจ QC ก่อนปิดใบสั่งงาน"). Missing finished unit conversion blocks completion.
+- Start & lot deduction: setting IN_PROGRESS validates linked materials and unit conversions without deducting upfront; record_work_order_lot(...) deducts proportional materials and rejects on stock shortage ("สต็อกวัตถุดิบไม่เพียงพอสำหรับ ...") or over-production ("เกินจำนวนคงเหลือที่ต้องผลิต").
+- QC gate & close: if QC gate is active, closing requires a passed inspection ("ต้องผ่านการตรวจ QC ก่อนปิดใบสั่งงาน"). Closing without reaching quantity requires close_short=true.
 - Role permissions: closing or cancelling requires manager role ("ไม่มีสิทธิ์ยกเลิก/ปิดใบสั่งผลิต — ต้องเป็น ADMIN/MANAGER/MASTER/POWERUSER").
 (d) Pitfalls & fixes:
 - Skipping PLANNED state: always advance DRAFT to PLANNED before calling IN_PROGRESS in update_work_order_status(...).

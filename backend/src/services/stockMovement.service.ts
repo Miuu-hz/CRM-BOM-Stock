@@ -445,15 +445,18 @@ export function woMaterialsRestocked(tenantId: string, woNumber: string): boolea
     .get(tenantId, `WO-CANCEL: ${woNumber}`)
 }
 
+/** ใบสั่งผลิตแบบเดิมที่เบิกวัตถุดิบเต็มจำนวนไว้ล่วงหน้าด้วย reference 'WO: <wo_number>' (ไม่มีต่อท้ายเลขล็อต) */
+export function isLegacyPreIssuedWo(tenantId: string, woNumberOrId: string, maybeWoNumber?: string): boolean {
+  const woNumber = maybeWoNumber ?? woNumberOrId
+  if (!woNumber) return false
+  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND reference = ? LIMIT 1")
+    .get(tenantId, `WO: ${woNumber}`)
+}
+
 /**
- * คืนวัตถุดิบที่เบิกไปแล้วเข้าสต็อกตอนยกเลิก WO — ยกออกมาให้ workOrder.routes.ts
- * และ mcp/tools/production.ts เรียกร่วมกัน (เดิมทั้งคู่ตัดสต็อกตอน IN_PROGRESS
- * แต่ไม่มีใครคืนตอน CANCELLED เลย ของหายถาวร)
- *
- * อ่านจำนวนที่ต้องคืนจาก stock_movements (type='OUT', reference=`WO: <wo_number>`)
- * แทนที่จะใช้ work_order_materials.issued_qty ตรงๆ เพราะ issued_qty เก็บเป็นหน่วย
- * ของ WO material เอง ซึ่งอาจคนละหน่วยกับ stock_items ถ้ามีการแปลงหน่วยตอนเบิก —
- * ส่วน stock_movements.quantity คือจำนวนจริงที่ถูกตัดออกจากสต็อกเป็นหน่วยฐานเสมอ
+ * คืนวัตถุดิบที่เบิกไปแล้วเข้าสต็อกตอนยกเลิกหรือปิดสั้น WO
+ * - WO แบบล็อต: ตัดเฉพาะส่วนที่ผลิตจริงไปแล้ว จึงไม่ต้องคืนวัตถุดิบเข้าคลัง
+ * - WO แบบเดิม (pre-issued เต็มจำนวน): คืนเฉพาะสัดส่วนที่ยังไม่ได้ผลิตตามยอดรวมใน work_order_lots
  */
 export function restockCancelledWorkOrderMaterials(
   tenantId: string,
@@ -461,6 +464,7 @@ export function restockCancelledWorkOrderMaterials(
   wo: { id: string; wo_number: string }
 ): void {
   if (woMaterialsRestocked(tenantId, wo.wo_number)) return
+  if (!isLegacyPreIssuedWo(tenantId, wo.wo_number)) return
 
   const issued = db.prepare(`
     SELECT stock_item_id, SUM(quantity) as total
@@ -471,10 +475,19 @@ export function restockCancelledWorkOrderMaterials(
 
   if (issued.length === 0) return
 
+  const woRow = db.prepare('SELECT quantity FROM work_orders WHERE id = ? AND tenant_id = ?').get(wo.id, tenantId) as any
+  const lotRow = db.prepare('SELECT COALESCE(SUM(good_qty + scrap_qty), 0) as produced FROM work_order_lots WHERE tenant_id = ? AND work_order_id = ?')
+    .get(tenantId, wo.id) as any
+  const woQty = Number(woRow?.quantity) || 0
+  const producedQty = roundQty(Number(lotRow?.produced) || 0)
+  const consumedRatio = woQty > 0 ? Math.min(1, producedQty / woQty) : 0
+  const returnRatio = Math.max(0, 1 - consumedRatio)
+  if (returnRatio <= 0) return
+
   const now = new Date().toISOString()
   const restock = db.transaction(() => {
     for (const row of issued) {
-      const qty = roundQty(Number(row.total))
+      const qty = roundQty(Number(row.total) * returnRatio)
       if (qty <= 0) continue
       db.prepare('UPDATE stock_items SET quantity = quantity + ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
         .run(qty, now, row.stock_item_id, tenantId)
@@ -482,73 +495,75 @@ export function restockCancelledWorkOrderMaterials(
         INSERT INTO stock_movements (id, tenant_id, stock_item_id, type, quantity, reference, notes, created_at, created_by)
         VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?)
       `).run(generateId(), tenantId, row.stock_item_id, qty, `WO-CANCEL: ${wo.wo_number}`, 'Material returned from cancelled work order', now, createdBy)
-      db.prepare("UPDATE work_order_materials SET issued_qty = 0, status = 'PENDING' WHERE work_order_id = ? AND material_id = ?")
-        .run(wo.id, row.stock_item_id)
+      const woMats = db.prepare('SELECT id, required_qty FROM work_order_materials WHERE work_order_id = ? AND material_id = ?')
+        .all(wo.id, row.stock_item_id) as { id: string; required_qty: number }[]
+      for (const m of woMats) {
+        const keptQty = roundQty((Number(m.required_qty) || 0) * consumedRatio)
+        const newStatus = keptQty > 0 ? 'PARTIAL' : 'PENDING'
+        db.prepare('UPDATE work_order_materials SET issued_qty = ?, status = ? WHERE id = ?')
+          .run(keptQty, newStatus, m.id)
+      }
     }
   })
   restock()
 }
 
-/**
- * ปิดใบสั่งผลิตแล้วต้นทุนวัตถุดิบต้องไปอยู่ที่ไหนสักที่ — เดิมเบิกวัตถุดิบออก (OUT) แล้วรับสินค้า
- * สำเร็จรูปเข้า (IN) โดยไม่มีมูลค่าตามไปเลย: สินค้าสำเร็จรูปต้นทุน 0 ขายไปก็ไม่มีต้นทุนขาย
- * และถ้าไม่มีสินค้าออกมา วัตถุดิบหายจากคลังแต่ไม่เป็นค่าใช้จ่าย กำไรเกินจริงทั้งสองกรณี
- *
- * วัตถุดิบและสินค้าสำเร็จรูปอยู่บัญชีเดียวกัน (1107) การเบิกไปผลิตจึงเป็นการย้ายมูลค่าภายในบัญชี
- * ไม่ต้องมี journal — แค่ยก unit_cost ของสินค้าสำเร็จรูปให้รับต้นทุนวัตถุดิบ (ถัวเฉลี่ยกับของเดิม)
- * ไม่มีสินค้าออกมา (ไม่ผูก BOM/ผลิตได้ 0) = วัตถุดิบถูกใช้ทิ้ง → Dr 5102 / Cr 1107
- * มูลค่าวัตถุดิบ = ยอดเบิกสุทธิ (หักที่คืน) × ทุนเฉลี่ยถ่วงน้ำหนักชุดเดียวกับปรับสต็อก
- * ต้องเรียกในทรานแซกชันเดียวกับการรับสินค้าสำเร็จรูป หลังบวกจำนวนเข้าสต็อกแล้ว
- */
-export function settleWorkOrderCost(
+function applyWorkOrderCostToInventoryOrExpense(
   tenantId: string,
   createdBy: string,
-  wo: { id: string; wo_number: string },
-  finished: { id: string; addQty: number } | null
+  woId: string,
+  materialCost: number,
+  finished: { id: string; addQty: number } | null,
+  expenseDesc: string
 ): number {
-  const net = db.prepare(`
-    SELECT stock_item_id,
-           SUM(CASE WHEN type = 'OUT' AND reference = ? THEN quantity ELSE 0 END)
-         - SUM(CASE WHEN type = 'IN'  AND reference = ? THEN quantity ELSE 0 END) AS qty
-      FROM stock_movements
-     WHERE tenant_id = ? AND reference IN (?, ?)
-     GROUP BY stock_item_id
-  `).all(`WO: ${wo.wo_number}`, `WO-CANCEL: ${wo.wo_number}`, tenantId, `WO: ${wo.wo_number}`, `WO-CANCEL: ${wo.wo_number}`) as { stock_item_id: string; qty: number }[]
-
-  let materialCost = 0
-  for (const r of net) {
-    // แถว IN ของสินค้าสำเร็จรูปเองก็อ้าง "WO: x" — ไม่ใช่วัตถุดิบ ข้าม
-    if (finished && r.stock_item_id === finished.id) continue
-    if (!(Number(r.qty) > 0)) continue
-    const it = db.prepare('SELECT unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(r.stock_item_id, tenantId) as any
-    const cost = getCostBasis(tenantId, r.stock_item_id).weightedAvg || Number(it?.unit_cost || 0)
-    materialCost += Number(r.qty) * cost
-  }
-  materialCost = Math.round(materialCost * 100) / 100
-  if (materialCost <= 0) return 0
+  const cost = Math.round((Number(materialCost) || 0) * 100) / 100
+  if (cost <= 0) return 0
 
   if (finished && finished.addQty > 0) {
     const fg = db.prepare('SELECT quantity, unit_cost FROM stock_items WHERE id = ? AND tenant_id = ?').get(finished.id, tenantId) as any
     const newQty = Number(fg?.quantity || 0)                       // บวกของที่เพิ่งผลิตเข้าไปแล้ว
     const oldQty = Math.max(0, newQty - finished.addQty)
-    const unitCost = (oldQty * Number(fg?.unit_cost || 0) + materialCost) / (oldQty + finished.addQty)
+    const unitCost = (oldQty * Number(fg?.unit_cost || 0) + cost) / (oldQty + finished.addQty)
     db.prepare('UPDATE stock_items SET unit_cost = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
       .run(unitCost, new Date().toISOString(), finished.id, tenantId)
-    return materialCost
+    return cost
   }
 
   const now = new Date().toISOString()
   const entryId = generateId()
   const jvNumber = formatDocumentNumber('JV', tenantId, 'JOURNAL', new Date().getFullYear(), 5, now)
-  const desc = `วัตถุดิบใช้ไปในการผลิต ${wo.wo_number} (ไม่มีสินค้าสำเร็จรูปเข้าคลัง)`
   db.prepare(`INSERT INTO journal_entries (id, tenant_id, entry_number, date, reference_type, reference_id, description, total_debit, total_credit, is_auto_generated, is_posted, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'WO_MATERIAL', ?, ?, ?, ?, 1, 1, ?, ?, ?)`)
-    .run(entryId, tenantId, jvNumber, now.substring(0, 10), wo.id, desc, materialCost, materialCost, createdBy, now, now)
+    .run(entryId, tenantId, jvNumber, now.substring(0, 10), woId, expenseDesc, cost, cost, createdBy, now, now)
   db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, 1, ?, ?, 0)`)
-    .run(generateId(), tenantId, entryId, getOrCreateAccount(tenantId, ACC.COGS_RAW_MATERIAL), desc, materialCost)
+    .run(generateId(), tenantId, entryId, getOrCreateAccount(tenantId, ACC.COGS_RAW_MATERIAL), expenseDesc, cost)
   db.prepare(`INSERT INTO journal_lines (id, tenant_id, journal_entry_id, account_id, line_number, description, debit, credit) VALUES (?, ?, ?, ?, 2, ?, 0, ?)`)
-    .run(generateId(), tenantId, entryId, getOrCreateAccount(tenantId, ACC.RAW_MATERIAL), desc, materialCost)
-  return materialCost
+    .run(generateId(), tenantId, entryId, getOrCreateAccount(tenantId, ACC.RAW_MATERIAL), expenseDesc, cost)
+  return cost
+}
+
+/** ตัดมูลค่าวัตถุดิบของล็อตเข้าต้นทุนสินค้าสำเร็จรูป หรือลงบัญชี 5102 ถ้าไม่มีของดีเข้าคลัง พร้อมบวก actual_cost */
+export function settleWorkOrderLotCost(
+  tenantId: string,
+  createdBy: string,
+  wo: { id: string; wo_number: string },
+  lotNumber: string,
+  lotMaterialCost: number,
+  finished: { id: string; addQty: number } | null
+): number {
+  const settled = applyWorkOrderCostToInventoryOrExpense(
+    tenantId,
+    createdBy,
+    wo.id,
+    lotMaterialCost,
+    finished,
+    `วัตถุดิบใช้ไปในการผลิต ${wo.wo_number} ล็อต ${lotNumber} (ไม่มีสินค้าสำเร็จรูปเข้าคลัง)`
+  )
+  if (settled > 0) {
+    db.prepare('UPDATE work_orders SET actual_cost = ROUND(COALESCE(actual_cost, 0) + ?, 2), updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(settled, new Date().toISOString(), wo.id, tenantId)
+  }
+  return settled
 }
 
 /**
@@ -561,14 +576,11 @@ export function settleWorkOrderCost(
 export const WO_PRIVILEGED_ROLES = ['ADMIN', 'MANAGER', 'MASTER', 'POWERUSER']
 
 /**
- * หลักฐานว่า WO นี้เบิกวัตถุดิบไปแล้วหรือยัง (มี stock_movements type='OUT' อ้างอิง WO
- * นี้) — ใช้แทนการเดาจาก wo.status เพื่อกันเบิกซ้ำตอน resume ON_HOLD -> IN_PROGRESS
- * (เดิมเช็คแค่ wo.status !== 'IN_PROGRESS' ซึ่งเป็นจริงตอน ON_HOLD ด้วย ทำให้เบิกซ้ำ)
- * เหมือน woMaterialsRestocked() ด้านบนที่กันคืนซ้ำด้วยหลักฐานใน stock_movements เช่นกัน
+ * หลักฐานว่า WO นี้เบิกวัตถุดิบไปแล้วหรือยัง (ทั้งแบบเดิม 'WO: <no>' และแบบล็อต 'WO: <no> (<lot>)')
  */
 export function woMaterialsIssued(tenantId: string, woNumber: string): boolean {
-  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND reference = ? LIMIT 1")
-    .get(tenantId, `WO: ${woNumber}`)
+  return !!db.prepare("SELECT 1 FROM stock_movements WHERE tenant_id = ? AND type = 'OUT' AND (reference = ? OR reference LIKE ?) LIMIT 1")
+    .get(tenantId, `WO: ${woNumber}`, `WO: ${woNumber} (%`)
 }
 
 /**

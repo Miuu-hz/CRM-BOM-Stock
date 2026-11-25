@@ -455,6 +455,17 @@ export interface BillParty {
   email?: string
 }
 
+export interface BillWorkOrderLot {
+  id: string
+  lot_number: string
+  good_qty: number
+  scrap_qty: number
+  material_cost?: number
+  notes?: string
+  recorded_by?: string
+  created_at?: string
+}
+
 export interface BillData {
   id: string
   docNumber: string
@@ -508,7 +519,9 @@ export interface BillData {
   woProductName?: string
   woQty?: number
   woCompletedQty?: number
+  woScrapQty?: number
   woUnit?: string
+  woLots?: BillWorkOrderLot[]
   priority?: 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW'
   assignedTo?: string
 
