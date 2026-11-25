@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import { normalizeUnit, convertQuantityBidirectional } from '../../services/unitConversion.service'
 import { ok, matchStockItem as matchStock, bindingRow, StockMatch } from './shared'
 import { findNonSellableLine, notSellableMessage } from '../../routes/sales/shared'
-import { formatDocumentNumber } from '../../utils/id'
+import { formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
 import { calcDocTotals } from '../../utils/vat'
 import { tenantVatInclusive } from '../../utils/vatSettings'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
@@ -83,12 +83,24 @@ export function registerSalesTools(server: IMcpServer, tenantId: string): void {
       items: z.array(itemSchema).min(1).describe('รายการสินค้าที่เสนอราคา'),
       customer_hint: z.string().optional().describe('ชื่อลูกค้า — ถ้าไม่พบจะสร้างลูกค้าใหม่ให้ ถ้าไม่ระบุใช้ "ลูกค้าทั่วไป"'),
       expiry_date: z.string().optional().describe('วันหมดอายุใบเสนอราคา (YYYY-MM-DD)'),
+      due_date: z.string().optional().describe('วันครบกำหนดชำระ (YYYY-MM-DD)'),
       tax_rate: z.number().min(0).max(30).optional().describe('อัตราภาษี % (default: 0)'),
       discount_amount: z.number().min(0).optional().describe('ส่วนลดท้ายบิล (บาท)'),
       notes: z.string().optional().describe('หมายเหตุ'),
     },
     async (args) => {
-      const { items, customer_hint, expiry_date, tax_rate = 0, discount_amount = 0, notes } = args
+      const { items, customer_hint, expiry_date, due_date, tax_rate = 0, discount_amount = 0, notes } = args
+
+      let parsedDueDate: string | null | undefined
+      try {
+        parsedDueDate = parseDueDate(due_date)
+      } catch (err) {
+        if (err instanceof DueDateError) {
+          return ok({ success: false, code: 'INVALID_DUE_DATE', message: err.message })
+        }
+        throw err
+      }
+
       const now = new Date().toISOString()
       const { customer, created } = resolveCustomer(tenantId, customer_hint)
 
@@ -154,10 +166,10 @@ export function registerSalesTools(server: IMcpServer, tenantId: string): void {
         // ออกเลขในทรานแซกชันเดียวกับการ insert — ถ้าล้มเหลวตัวนับต้องย้อนกลับไปด้วย ไม่เสียเลขเปล่าๆ
         qtNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
         db.prepare(`
-          INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
+          INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date, due_date,
             subtotal, discount_amount, tax_rate, tax_amount, total_amount, vat_inclusive, status, notes, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
-        `).run(id, tenantId, qtNumber, customer.id, now, expiry_date ?? null,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+        `).run(id, tenantId, qtNumber, customer.id, now, expiry_date ?? null, parsedDueDate ?? null,
           subtotal, discount_amount, tax_rate, taxAmount, totalAmount, inclusive ? 1 : 0, notes ?? '', now, now)
 
         const ins = db.prepare(`

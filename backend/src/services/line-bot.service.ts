@@ -99,6 +99,7 @@ import { buildShiftSummary } from './posShiftSummary.service'
 import { buildExecDigest } from './execDigest.service'
 import { getItemHistory } from './stockCostBasis.service'
 import { normName, aliasEnabled } from './stockItem.service'
+import { collectionItems, summarizeCollections } from './collections.service'
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน', GUEST: 'ยังไม่ผูกบัญชี' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -646,6 +647,72 @@ class LineBotService {
                 }
             } catch (err: any) {
                 console.error(`[sendExecDigests] tenant ${tenantId} failed:`, err.message)
+            }
+        }
+    }
+
+    // ── แจ้งเตือนติดตามบิล 09:00 (พนักงานเท่านั้น ไม่ส่งให้ลูกค้า) ─────────────
+    public async sendCollectionDigests(today = thaiDateStr()) {
+        const tenants = (getDb().prepare(`
+            SELECT DISTINCT tenant_id FROM company_settings WHERE tenant_id IS NOT NULL AND tenant_id != ''
+            UNION
+            SELECT DISTINCT tenant_id FROM line_user_mappings WHERE tenant_id IS NOT NULL AND tenant_id != ''
+        `).all() as any[]).map(r => r.tenant_id as string)
+
+        const triggerDays = new Set([3, 0, -1, -7, -15, -30])
+        const fmtAmt = (n: number) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const statusLabel = (d: number, appt: boolean) =>
+            appt ? (d < 0 ? `เลยวันนัดตาม ${-d} วัน` : d === 0 ? 'นัดตามวันนี้' : `นัดตามอีก ${d} วัน`)
+            : d < 0 ? `เกินกำหนด ${Math.abs(d)} วัน` : d === 0 ? 'ครบกำหนดวันนี้' : `อีก ${d} วัน`
+
+        for (const tenantId of tenants) {
+            try {
+                const sub = getSubscription(tenantId)
+                if (sub.status === 'EXPIRED' || sub.status === 'CANCELLED') continue
+
+                const tenantClient = this.getClient(tenantId)
+                if (!tenantClient) continue
+
+                const recipients = new Set<string>(this.adminLineUsers(tenantId).map(u => u.line_user_id))
+                if (recipients.size === 0) continue
+
+                // กันโควตาไว้ให้การ์ดอนุมัติ/ปิดกะ — เหลือน้อยให้ดูที่กระดิ่งแทน
+                if (this.pushQuotaLeft(tenantId) < 40) continue
+
+                const allItems = collectionItems(tenantId, { today })
+                const triggered = allItems.filter(it => it.days_left !== null && triggerDays.has(it.days_left))
+                if (triggered.length === 0) continue
+
+                // วันละครั้งต่อบริษัท — claim แบบ sync ก่อน await แรก
+                if (!getDb().prepare("INSERT OR IGNORE INTO line_master_alerts (key, sent_at) VALUES (?, datetime('now'))").run(`ar_due:${tenantId}:${today}`).changes) continue
+
+                const lines = triggered.slice(0, 15).map(it =>
+                    `• ${it.number} · ${it.customer_name || '-'} · ฿${fmtAmt(it.amount)} · ${statusLabel(it.days_left!, !!it.next_follow_date)}`
+                )
+                const more = triggered.length - 15
+                const overdue = summarizeCollections(allItems.filter(it => it.kind !== 'QUOTATION')).overdue
+                const text = [
+                    `แจ้งเตือนติดตามบิล · ${companyName(tenantId) || tenantId}`,
+                    ...lines,
+                    ...(more > 0 ? [`… และอีก ${more} รายการ`] : []),
+                    `รวมเกินกำหนดทั้งหมด ${overdue.count} รายการ ฿${fmtAmt(overdue.amount)}`,
+                    'ดูทั้งหมดที่ เมนูกระดิ่ง / CRM > ตามบิล',
+                ].join('\n')
+                const msg = { type: 'text', text }
+
+                for (const lineUserId of recipients) {
+                    if (!this.claimPush(tenantId)) {
+                        console.warn(`sendCollectionDigests: โควตา push ของ ${tenantId} เดือนนี้เต็มแล้ว`)
+                        break
+                    }
+                    try {
+                        await tenantClient.pushMessage(lineUserId, msg)
+                    } catch (err) {
+                        console.error(`sendCollectionDigests push failed → ${lineUserId}:`, err)
+                    }
+                }
+            } catch (err: any) {
+                console.error(`[sendCollectionDigests] tenant ${tenantId} failed:`, err.message)
             }
         }
     }

@@ -199,6 +199,12 @@
     "notifications": "การแจ้งเตือน",
     "allNotifications": "ทั้งหมด",
     "noNotifications": "ยังไม่มีการแจ้งเตือน",
+    "collectionsTitle": "ติดตามบิล / ครบกำหนด",
+    "collectionsCount": "{{count}} รายการ",
+    "collectionsOverdue": "เกิน {{days}} วัน",
+    "collectionsDueToday": "ครบวันนี้",
+    "collectionsDueSoon": "อีก {{days}} วัน",
+    "collectionsEmpty": "ไม่มีรายการต้องติดตามในช่วงนี้",
     "cashier": "ระบบขายหน้าร้าน",
     "darkTheme": "เปลี่ยนเป็นธีมมืด",
     "lightTheme": "เปลี่ยนเป็นธีมสว่าง",
@@ -1519,7 +1525,9 @@
       "invoiceCancelFailed": "ไม่สามารถยกเลิกใบแจ้งหนี้ได้",
       "receiptVoided": "ยกเลิกใบเสร็จรับเงินแล้ว",
       "receiptVoidFailed": "ไม่สามารถยกเลิกใบเสร็จรับเงินได้",
-      "loadProductsFailed": "โหลดรายการสินค้าไม่สำเร็จ"
+      "loadProductsFailed": "โหลดรายการสินค้าไม่สำเร็จ",
+      "dueDateUpdated": "อัปเดตวันครบกำหนดชำระแล้ว",
+      "dueDateUpdateFailed": "อัปเดตวันครบกำหนดชำระไม่สำเร็จ"
     },
     "error": {
       "loadQuotations": "ไม่สามารถดึงข้อมูลใบเสนอราคาได้",
@@ -1610,6 +1618,8 @@
       "orderDate": "วันสั่ง",
       "deliveryDate": "วันส่ง",
       "dueDate": "ครบกำหนด",
+      "dueDatePayment": "ครบกำหนดชำระ",
+      "editDueDate": "แก้ไขวันครบกำหนดชำระ",
       "status": "สถานะ",
       "payment": "ชำระ",
       "deliveryStatus": "สถานะจัดส่ง",
@@ -2068,6 +2078,7 @@
         "recommendations": "แนะนำสินค้า",
         "proposals": "ใบเสนอราคา",
         "activities": "ติดตาม",
+        "collections": "ตามบิล",
         "loyalty": "แต้มสะสม"
       },
       "contactInfo": "ข้อมูลติดต่อ",
@@ -2150,7 +2161,27 @@
       "noRecordsType": "ไม่มีบันทึกประเภท \"{{type}}\"",
       "viewAll": "ดูทั้งหมด",
       "noRecords": "ยังไม่มีบันทึกการติดตาม",
-      "startRecording": "คลิก \"เพิ่มบันทึก\" เพื่อเริ่มบันทึกการติดตามลูกค้า"
+      "startRecording": "คลิก \"เพิ่มบันทึก\" เพื่อเริ่มบันทึกการติดตามลูกค้า",
+      "docRef": "เอกสาร",
+      "nextFollow": "นัดติดตามถัดไป"
+    },
+    "collectionsTab": {
+      "title": "ติดตามบิล / นัดชำระ",
+      "empty": "ไม่มีเอกสารค้างติดตาม",
+      "dueDate": "ครบกำหนดชำระ",
+      "nextFollowDate": "นัดติดตามถัดไป",
+      "noDueDate": "ไม่ระบุวันครบกำหนด",
+      "lastFollow": "ติดตามล่าสุด",
+      "channel": "ช่องทาง",
+      "notePlaceholder": "บันทึกผลการติดตาม...",
+      "saveFollow": "บันทึกการติดตาม",
+      "saved": "บันทึกการติดตามแล้ว",
+      "saveFailed": "บันทึกการติดตามไม่สำเร็จ",
+      "docKinds": {
+        "INVOICE": "ใบแจ้งหนี้",
+        "SALES_ORDER": "คำสั่งขาย",
+        "QUOTATION": "ใบเสนอราคา"
+      }
     },
     "favouritesTab": {
       "title": "สินค้าที่ซื้อบ่อย",

@@ -499,6 +499,8 @@ export interface BillData {
   paymentMethod?: string
   paymentTerms?: string
   dueDate?: string
+  /** วันครบกำหนดชำระเพิ่มเติมสำหรับ QT/SO ที่แยกจากวันหมดอายุ/วันส่งของ */
+  paymentDueDate?: string
 
   // บัญชีธนาคาร (สำหรับรับเงิน)
   bankName?: string

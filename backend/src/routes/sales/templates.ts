@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
-import { generateId, formatDocumentNumber } from '../../utils/id'
+import { generateId, formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
 import { vatRateError } from '../../utils/vatSettings'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
@@ -180,11 +180,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
 router.post('/from-template', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { templateId, customerId, expiryDate, notes } = req.body
+    const { templateId, customerId, expiryDate, dueDate, notes } = req.body
     
     if (!templateId || !customerId) {
       return res.status(400).json({ success: false, message: 'Template and customer are required' })
     }
+
+    const parsedDueDate = parseDueDate(dueDate)
 
     const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
     if (!cust) {
@@ -240,10 +242,10 @@ router.post('/from-template', async (req: Request, res: Response) => {
       // ออกเลขในทรานแซกชันเดียวกับการ insert — เหตุผลเดียวกับ quotations.ts/salesOrders.ts
       quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
       db.prepare(`
-        INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
+        INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date, due_date,
           subtotal, discount_amount, tax_rate, tax_amount, total_amount, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
-      `).run(id, tenantId, quotationNumber, customerId, now, expiry,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+      `).run(id, tenantId, quotationNumber, customerId, now, expiry, parsedDueDate ?? null,
         subtotal, 0, taxRate, taxAmount, totalAmount, notes || template.header_text, now, now)
 
       const insertItem = db.prepare(`
@@ -266,6 +268,9 @@ router.post('/from-template', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: { ...quotation, items: quotationItems } })
   } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
     console.error('Create quotation from template error:', error)
     res.status(500).json({ success: false, message: 'Failed to create quotation from template' })
   }

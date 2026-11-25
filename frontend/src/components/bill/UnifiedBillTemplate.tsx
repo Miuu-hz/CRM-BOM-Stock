@@ -384,8 +384,14 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   <div className="meta-row"><span className="k">วันที่ออก</span><span className="v">{formatThaiDate(data.docDate)}</span></div>
                   {config.fields.showDueDate && data.dueDate && (
                     <div className="meta-row">
-                      <span className="k">{config.type === 'QUOTATION' ? 'ยืนราคาถึง' : isWO ? 'กำหนดเสร็จ' : 'ครบกำหนดชำระ'}</span>
+                      <span className="k">{config.type === 'QUOTATION' ? 'ยืนราคาถึง' : isWO ? 'กำหนดเสร็จ' : config.type === 'SALE' ? 'กำหนดส่ง' : 'ครบกำหนดชำระ'}</span>
                       <span className="v">{formatThaiDate(data.dueDate)}</span>
+                    </div>
+                  )}
+                  {data.paymentDueDate && (
+                    <div className="meta-row">
+                      <span className="k">ครบกำหนดชำระ</span>
+                      <span className="v">{formatThaiDate(data.paymentDueDate)}</span>
                     </div>
                   )}
                   {config.fields.showRefNumber && data.refNumber && (

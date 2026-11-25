@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
-import { generateId, formatDocumentNumber } from '../../utils/id'
+import { generateId, formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
+import { requireRole } from '../../middleware/auth.middleware'
 import { gateSalesCancel, pendingCancelBody, assertInvoiceCancellable, cancelInvoiceNow, SalesCancelError } from '../../services/salesCancel.service'
 import { recordAutoAction } from '../../services/approvalGate.service'
 import { getOrCreateReceiptToken, buildReceiptUrl, buildReceiptQr } from '../../utils/receiptToken'
@@ -217,6 +218,36 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
     console.error('Update invoice status error:', error)
     res.status(500).json({ success: false, message: 'Failed to update status' })
+  }
+})
+
+// PUT update invoice payment due date (ไม่แตะบัญชี)
+router.put('/:id/due-date', requireRole('ADMIN', 'MANAGER', 'POWERUSER', 'MASTER', 'OWNER'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const parsedDueDate = parseDueDate(req.body?.dueDate)
+
+    const existing = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' })
+    }
+    if (existing.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'ใบแจ้งหนี้ถูกยกเลิกแล้ว แก้ไขวันครบกำหนดชำระไม่ได้' })
+    }
+
+    const nextDueDate = parsedDueDate !== undefined ? parsedDueDate : (existing.due_date ?? null)
+    const now = new Date().toISOString()
+    db.prepare('UPDATE invoices SET due_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+      .run(nextDueDate, now, req.params.id, tenantId)
+
+    const updated = db.prepare('SELECT * FROM invoices WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
+    console.error('Update invoice due date error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update due date' })
   }
 })
 

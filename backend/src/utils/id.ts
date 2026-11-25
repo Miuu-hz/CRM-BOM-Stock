@@ -138,3 +138,25 @@ export function thaiDateStr(v?: string | Date | null): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
+
+export class DueDateError extends Error {
+  status = 400
+  constructor(message = 'วันครบกำหนดชำระไม่ถูกต้อง') {
+    super(message)
+  }
+}
+
+/** ตรวจวันครบกำหนดชำระ: undefined -> undefined (คงเดิม), null/'' -> null (ล้างค่า), YYYY-MM-DD จริง -> ค่าเดิม, อื่นๆ -> 400 */
+export function parseDueDate(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined
+  if (v === null || v === '') return null
+  if (typeof v !== 'string') throw new DueDateError()
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
+  if (!m) throw new DueDateError()
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3])
+  const dt = new Date(Date.UTC(y, mo - 1, d))
+  if (y < 1000 || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
+    throw new DueDateError()
+  }
+  return v
+}

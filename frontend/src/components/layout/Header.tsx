@@ -27,6 +27,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import searchService from '../../services/search'
+import api from '../../services/api'
+import { canManageCollections, type CollectionItem, type CollectionsResponse } from '../../services/sales.service'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -63,10 +65,46 @@ function Header({ onMenuClick }: HeaderProps) {
   const [activeIndex, setActiveIndex] = useState(-1)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [collections, setCollections] = useState<CollectionItem[]>([])
+  const [collectionBadge, setCollectionBadge] = useState(0)
+  const [collectionsLoading, setCollectionsLoading] = useState(false)
   const [sourceDocModal, setSourceDocModal] = useState<{ kind: string; refId: string; title: string } | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
+  const canSeeCollections = canManageCollections(user?.role)
+
+  const fetchCollections = useCallback(async () => {
+    if (!canSeeCollections) return
+    setCollectionsLoading(true)
+    try {
+      const res = await api.get('/sales/collections')
+      const payload = (res.data?.data ?? res.data ?? {}) as Partial<CollectionsResponse>
+      const items = Array.isArray(payload.items) ? payload.items : []
+      const countOf = (b: unknown) =>
+        typeof b === 'number' ? b : (b && typeof (b as any).count === 'number' ? (b as any).count : 0)
+      setCollections(items)
+      setCollectionBadge(countOf(payload.summary?.overdue) + countOf(payload.summary?.today))
+    } catch {
+      // โหลดไม่สำเร็จให้แสดงสถานะว่างแบบเงียบ
+      setCollections([])
+      setCollectionBadge(0)
+    } finally {
+      setCollectionsLoading(false)
+    }
+  }, [canSeeCollections])
+
+  // โหลดรายการติดตามบิลตอนเปิดหน้าและรีเฟรชไม่ถี่กว่า 5 นาที
+  useEffect(() => {
+    if (!canSeeCollections) {
+      setCollections([])
+      setCollectionBadge(0)
+      return
+    }
+    fetchCollections()
+    const timer = setInterval(fetchCollections, 5 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [canSeeCollections, fetchCollections])
 
   // Debounce search
   useEffect(() => {
@@ -122,6 +160,7 @@ function Header({ onMenuClick }: HeaderProps) {
       // Escape to close results
       if (event.key === 'Escape') {
         setShowResults(false)
+        setShowNotifications(false)
         inputRef.current?.blur()
       }
     }
@@ -315,32 +354,105 @@ function Header({ onMenuClick }: HeaderProps) {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setShowNotifications(v => !v)}
+              onClick={() => {
+                const next = !showNotifications
+                setShowNotifications(next)
+                if (next && canSeeCollections) fetchCollections()
+              }}
               className="relative p-2.5 rounded-full hover:bg-[var(--surface-2)] transition-colors group min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
               aria-label={t('header.notifications')}
               aria-expanded={showNotifications}
             >
               <Bell className="w-5 h-5 text-[var(--fg-3)] group-hover:text-[var(--primary)] transition-colors" />
+              {canSeeCollections && collectionBadge > 0 && (
+                <span
+                  data-testid="bell-badge"
+                  className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center leading-none"
+                >
+                  {collectionBadge > 99 ? '99+' : collectionBadge}
+                </span>
+              )}
             </motion.button>
             <AnimatePresence>
-              {showNotifications && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-full mt-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-3 z-50 overflow-hidden"
-                >
-                  <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
-                    <span className="text-sm font-semibold text-[var(--fg-1)]">{t('header.notifications')}</span>
-                    <span className="text-xs text-[var(--fg-4)]">{t('header.allNotifications')}</span>
-                  </div>
-                  <div className="py-10 flex flex-col items-center justify-center gap-2">
-                    <Bell className="w-8 h-8 text-[var(--fg-4)]" />
-                    <p className="text-sm text-[var(--fg-3)]">{t('header.noNotifications')}</p>
-                  </div>
-                </motion.div>
-              )}
+              {showNotifications && (() => {
+                const dueItems = canSeeCollections
+                  ? collections.filter(it => it.days_left !== null && it.days_left <= 3)
+                    .sort((a, b) => Math.abs(a.days_left as number) - Math.abs(b.days_left as number)).slice(0, 20)
+                  : []
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-3 z-50 overflow-hidden"
+                  >
+                    <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+                      <span className="text-sm font-semibold text-[var(--fg-1)]">
+                        {canSeeCollections ? t('header.collectionsTitle') : t('header.notifications')}
+                      </span>
+                      <span className="text-xs text-[var(--fg-4)]">
+                        {canSeeCollections ? t('header.collectionsCount', { count: dueItems.length }) : t('header.allNotifications')}
+                      </span>
+                    </div>
+                    {!canSeeCollections ? (
+                      <div className="py-10 flex flex-col items-center justify-center gap-2">
+                        <Bell className="w-8 h-8 text-[var(--fg-4)]" />
+                        <p className="text-sm text-[var(--fg-3)]">{t('header.noNotifications')}</p>
+                      </div>
+                    ) : collectionsLoading && dueItems.length === 0 ? (
+                      <div className="py-10 flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="w-6 h-6 text-[var(--primary)] animate-spin" />
+                      </div>
+                    ) : dueItems.length === 0 ? (
+                      <div className="py-10 flex flex-col items-center justify-center gap-2">
+                        <Bell className="w-8 h-8 text-[var(--fg-4)]" />
+                        <p className="text-sm text-[var(--fg-3)]">{t('header.collectionsEmpty')}</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-[65vh] overflow-y-auto divide-y divide-[var(--border)]/60">
+                        {dueItems.map((item) => {
+                          const d = item.days_left as number
+                          const daysText = d < 0
+                            ? t('header.collectionsOverdue', { days: Math.abs(d) })
+                            : d === 0
+                              ? t('header.collectionsDueToday')
+                              : t('header.collectionsDueSoon', { days: d })
+                          const daysTone = d < 0
+                            ? 'text-danger bg-[var(--danger-soft)]'
+                            : d === 0
+                              ? 'text-danger bg-[var(--danger-soft)]'
+                              : 'text-warning bg-[var(--warning-soft)]'
+                          return (
+                            <button
+                              key={`${item.kind}-${item.id}`}
+                              type="button"
+                              onClick={() => {
+                                setShowNotifications(false)
+                                navigate(`/crm?customer=${encodeURIComponent(item.customer_id)}&tab=collections`)
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-[var(--surface-2)] transition-colors flex items-start justify-between gap-3 cursor-pointer"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="font-mono text-xs font-semibold text-[var(--primary)] truncate">{item.number}</p>
+                                <p className="text-sm text-[var(--fg-1)] truncate">{item.customer_name}</p>
+                              </div>
+                              <div className="text-right shrink-0 space-y-1">
+                                <p className="text-sm font-semibold text-[var(--fg-1)] tabular-nums">
+                                  ฿{Number(item.amount || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}
+                                </p>
+                                <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-full ${daysTone}`}>
+                                  {daysText}
+                                </span>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </motion.div>
+                )
+              })()}
             </AnimatePresence>
           </div>
 

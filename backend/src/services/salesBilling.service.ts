@@ -1,5 +1,5 @@
 import db from '../db/sqlite'
-import { generateId, formatDocumentNumber, thaiDateStr } from '../utils/id'
+import { generateId, formatDocumentNumber, thaiDateStr, parseDueDate, DueDateError } from '../utils/id'
 import { closedPeriodLabel } from '../routes/journal.routes'
 import { createSalesJournal, STOCK_DEDUCTED_STATUSES } from '../routes/sales/shared'
 import { rememberContactVatMode } from './accounting.service'
@@ -35,7 +35,8 @@ export class SalesBillingError extends Error {
       | 'CUSTOMER_REQUIRED'
       | 'CUSTOMER_NOT_FOUND'
       | 'PERIOD_CLOSED'
-  | 'SELLER_TAX_ID_REQUIRED',
+      | 'SELLER_TAX_ID_REQUIRED'
+      | 'INVALID_DUE_DATE',
     message: string
   ) {
     super(message)
@@ -69,6 +70,14 @@ export function findActiveInvoiceForPosBill(tenantId: string, posBillId: string)
 export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayload) {
   const { salesOrderId, dueDate, notes, currencyCode, exchangeRate, foreignAmount } = payload
   if (!salesOrderId) throw new SalesBillingError('SO_NOT_FOUND', 'Sales order is required')
+
+  let parsedDueDate: string | null | undefined
+  try {
+    parsedDueDate = parseDueDate(dueDate)
+  } catch (err) {
+    if (err instanceof DueDateError) throw new SalesBillingError('INVALID_DUE_DATE', err.message)
+    throw err
+  }
 
   // กันออกใบซ้ำ — ต้องเช็คก่อนสิ่งอื่นทั้งหมด ไม่ใช่แค่กันที่ frontend
   const existing = findActiveInvoiceForSO(tenantId, salesOrderId)
@@ -114,6 +123,7 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
   const id = generateId()
   let invoiceNumber = ''
   const now = new Date().toISOString()
+  const finalDueDate = parsedDueDate !== undefined ? parsedDueDate : (salesOrder.due_date ?? null)
 
   const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ?').all(salesOrderId) as any[]
 
@@ -125,7 +135,7 @@ export function createInvoiceFromSO(tenantId: string, payload: CreateInvoicePayl
         subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, balance_amount, status, payment_status, notes, created_at, updated_at,
         currency_code, exchange_rate, foreign_amount)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?, ?, ?, ?)
-    `).run(id, tenantId, invoiceNumber, salesOrderId, salesOrder.customer_id, now, dueDate || null,
+    `).run(id, tenantId, invoiceNumber, salesOrderId, salesOrder.customer_id, now, finalDueDate,
       salesOrder.subtotal, salesOrder.discount_amount,
       salesOrder.extra_charge_amount || 0, salesOrder.extra_charge_label || null,
       salesOrder.tax_rate, salesOrder.tax_amount,

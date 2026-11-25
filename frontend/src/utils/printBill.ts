@@ -188,6 +188,7 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     docDate: pick(d, spec.date) || (type === 'pos' ? new Date().toISOString() : ''),
     refNumber: pick(d, spec.ref) || undefined,
     dueDate: pick(d, spec.due) || undefined,
+    paymentDueDate: (type === 'qt' || type === 'so') ? (pick(d, ['due_date']) || undefined) : undefined,
     seller: sellerOf(d),
     buyer: type === 'wo' ? { name: String(d.assigned_to || '-') } : partyOf(d, spec.party),
     ...(type === 'wo' && {

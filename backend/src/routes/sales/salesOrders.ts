@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
-import { generateId, formatDocumentNumber } from '../../utils/id'
+import { generateId, formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
+import { requireRole } from '../../middleware/auth.middleware'
 import { convertQuantityBidirectional, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
 import { isServiceItem, serviceSql } from '../../services/stockItem.service'
 import { deductStockForSO, createDeliveryOrderForSO, soStockAlreadyDeducted, findNonSellableLine, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
@@ -89,11 +90,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { quotationId, customerId, deliveryDate, notes, items, taxRate, discountAmount } = req.body
+    const { quotationId, customerId, deliveryDate, dueDate, notes, items, taxRate, discountAmount } = req.body
     
     if (!customerId) {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
+
+    // ตรวจวันครบกำหนดชำระก่อนออกเลขเอกสาร
+    const parsedDueDate = parseDueDate(dueDate)
 
     const cust = db.prepare('SELECT id FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId)
     if (!cust) {
@@ -115,9 +119,10 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'จำนวนต้องมากกว่า 0 และราคา/ส่วนลดต้องไม่ติดลบ (ส่วนลด % ไม่เกิน 100)' })
     }
 
+    let sourceQuotation: { id: string; vat_inclusive: number | null; due_date: string | null } | undefined
     if (quotationId) {
-      const qt = db.prepare('SELECT id FROM quotations WHERE id = ? AND tenant_id = ?').get(quotationId, tenantId)
-      if (!qt) {
+      sourceQuotation = db.prepare('SELECT id, vat_inclusive, due_date FROM quotations WHERE id = ? AND tenant_id = ?').get(quotationId, tenantId) as any
+      if (!sourceQuotation) {
         return res.status(400).json({ success: false, message: 'ใบเสนอราคาไม่ถูกต้องหรือไม่ได้อยู่ในกิจการนี้' })
       }
       const dupSo = db.prepare("SELECT so_number FROM sales_orders WHERE quotation_id = ? AND tenant_id = ? AND status != 'CANCELLED' LIMIT 1")
@@ -160,12 +165,10 @@ router.post('/', async (req: Request, res: Response) => {
     }
     const discount = discountAmount || 0
     const tax = taxRate || 0
-    // แปลงมาจากใบเสนอราคา → สืบทอดโหมด VAT ของใบนั้น ไม่ใช่กลับไปใช้ค่าตั้งต้นกิจการ
-    const inheritedInclusive = quotationId
-      ? ((db.prepare('SELECT vat_inclusive FROM quotations WHERE id = ? AND tenant_id = ?')
-          .get(quotationId, tenantId) as any)?.vat_inclusive ?? undefined)
-      : undefined
+    // แปลงมาจากใบเสนอราคา → สืบทอดโหมด VAT และวันครบกำหนดชำระของใบนั้น
+    const inheritedInclusive = sourceQuotation?.vat_inclusive ?? undefined
     const inclusive = resolveVatInclusive(tenantId, req.body.vatInclusive ?? inheritedInclusive)
+    const finalDueDate = parsedDueDate !== undefined ? parsedDueDate : (sourceQuotation?.due_date ?? null)
     const extraCharge = Math.max(0, Number(req.body.extraChargeAmount) || 0)
     const extraLabel = extraCharge > 0 ? (req.body.extraChargeLabel || 'ค่าขนส่ง') : null
     const calc = calcVat(subtotal, { rate: tax, discountAmount: discount, inclusive: !!inclusive, extraCharge })
@@ -179,10 +182,10 @@ router.post('/', async (req: Request, res: Response) => {
       // ตัวนับต้องย้อนกลับไปด้วย ไม่ใช่เสียเลขไปเปล่าๆ
       soNumber = formatDocumentNumber('SO', tenantId, 'SALES_ORDER', new Date().getFullYear(), 5)
       db.prepare(`
-        INSERT INTO sales_orders (id, tenant_id, so_number, quotation_id, customer_id, order_date, delivery_date,
+        INSERT INTO sales_orders (id, tenant_id, so_number, quotation_id, customer_id, order_date, delivery_date, due_date,
           subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, status, payment_status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?)
-      `).run(id, tenantId, soNumber, quotationId || null, customerId, now, deliveryDate || null,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 'UNPAID', ?, ?, ?)
+      `).run(id, tenantId, soNumber, quotationId || null, customerId, now, deliveryDate || null, finalDueDate,
         subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive, notes || '', now, now)
 
       if (items && items.length > 0) {
@@ -216,6 +219,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: { ...salesOrder, items: salesOrderItems } })
   } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
     console.error('Create sales order error:', error)
     res.status(500).json({ success: false, message: 'Failed to create sales order' })
   }
@@ -225,8 +231,10 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { customerId, deliveryDate, notes, items, taxRate, discountAmount } = req.body
+    const { customerId, deliveryDate, dueDate, notes, items, taxRate, discountAmount } = req.body
     const now = new Date().toISOString()
+
+    const parsedDueDate = parseDueDate(dueDate)
 
     const existing = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) return res.status(404).json({ success: false, message: 'Sales order not found' })
@@ -290,15 +298,17 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })
     }
 
+    const nextDueDate = parsedDueDate !== undefined ? parsedDueDate : (existing.due_date ?? null)
+
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE sales_orders
-        SET customer_id = COALESCE(?, customer_id), delivery_date = ?,
+        SET customer_id = COALESCE(?, customer_id), delivery_date = ?, due_date = ?,
             subtotal = ?, discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?,
             tax_rate = ?, tax_amount = ?, total_amount = ?, vat_inclusive = ?,
             notes = COALESCE(?, notes), updated_at = ?
         WHERE id = ? AND tenant_id = ?
-      `).run(customerId || null, deliveryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, notes ?? null, now, req.params.id, tenantId)
+      `).run(customerId || null, deliveryDate || null, nextDueDate, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, notes ?? null, now, req.params.id, tenantId)
 
       if (items) {
         db.prepare('DELETE FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
@@ -323,6 +333,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     const salesOrderItems = db.prepare('SELECT * FROM sales_order_items WHERE sales_order_id = ? AND tenant_id = ?').all(req.params.id, tenantId)
     res.json({ success: true, data: { ...salesOrder, items: salesOrderItems } })
   } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
     console.error('Update sales order error:', error)
     res.status(500).json({ success: false, message: 'Failed to update sales order' })
   }
@@ -594,6 +607,45 @@ router.post('/:id/delivery-order', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Create delivery order for SO error:', error)
     res.status(500).json({ success: false, message: 'Failed to create delivery order' })
+  }
+})
+
+// PUT update sales order payment due date (ไม่แตะบัญชี · อัปเดตใบแจ้งหนี้ค้างรับที่ยังไม่ยกเลิกด้วย)
+router.put('/:id/due-date', requireRole('ADMIN', 'MANAGER', 'POWERUSER', 'MASTER', 'OWNER'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const parsedDueDate = parseDueDate(req.body?.dueDate)
+
+    const existing = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Sales order not found' })
+    }
+    if (existing.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'คำสั่งขายถูกยกเลิกแล้ว แก้ไขวันครบกำหนดชำระไม่ได้' })
+    }
+
+    const nextDueDate = parsedDueDate !== undefined ? parsedDueDate : (existing.due_date ?? null)
+    const now = new Date().toISOString()
+
+    db.transaction(() => {
+      db.prepare('UPDATE sales_orders SET due_date = ?, updated_at = ? WHERE id = ? AND tenant_id = ?')
+        .run(nextDueDate, now, req.params.id, tenantId)
+      if (parsedDueDate !== undefined) {
+        db.prepare(`
+          UPDATE invoices SET due_date = ?, updated_at = ?
+          WHERE sales_order_id = ? AND tenant_id = ? AND status != 'CANCELLED' AND balance_amount > 0
+        `).run(nextDueDate, now, req.params.id, tenantId)
+      }
+    })()
+
+    const updated = db.prepare('SELECT * FROM sales_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
+    console.error('Update sales order due date error:', error)
+    res.status(500).json({ success: false, message: 'Failed to update due date' })
   }
 })
 

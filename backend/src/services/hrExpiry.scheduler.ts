@@ -131,6 +131,11 @@ export function startHrExpiryScheduler() {
     } catch (err: any) {
       console.error('[HrExpiry] exec digest failed:', err.message)
     }
+    try {
+      await lineBotService.sendCollectionDigests(thaiDateStr())
+    } catch (err: any) {
+      console.error('[HrExpiry] collection digest failed:', err.message)
+    }
   }, { timezone: 'Asia/Bangkok' })
   console.log('[HrExpiry] ⏰ Scheduler started — runs at 09:00 Asia/Bangkok daily')
 }

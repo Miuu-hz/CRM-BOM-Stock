@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import db from '../../db/sqlite'
 import { isVatRegistered, rememberContactVatMode } from '../../services/accounting.service'
-import { generateId, formatDocumentNumber } from '../../utils/id'
+import { generateId, formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
 import { findNonSellableLine, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
@@ -64,11 +64,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { customerId, expiryDate, notes, items, taxRate, discountAmount, templateId } = req.body
+    const { customerId, expiryDate, dueDate, notes, items, taxRate, discountAmount, templateId } = req.body
     
     if (!customerId) {
       return res.status(400).json({ success: false, message: 'Customer is required' })
     }
+
+    // ตรวจวันครบกำหนดชำระก่อนออกเลขเอกสาร
+    const parsedDueDate = parseDueDate(dueDate)
 
     const customer = db.prepare('SELECT id, campaign FROM customers WHERE id = ? AND tenant_id = ?').get(customerId, tenantId) as any
     if (!customer) {
@@ -143,10 +146,10 @@ router.post('/', async (req: Request, res: Response) => {
       // (กติกาเดียวกับ salesOrders.ts/templates.ts — เดิมจุดนี้ออกเลขไว้ก่อนเข้า transaction)
       quotationNumber = formatDocumentNumber('QT', tenantId, 'QUOTATION', new Date().getFullYear(), 5)
       db.prepare(`
-        INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date,
+        INSERT INTO quotations (id, tenant_id, quotation_number, customer_id, quotation_date, expiry_date, due_date,
           subtotal, discount_amount, extra_charge_amount, extra_charge_label, tax_rate, tax_amount, total_amount, vat_inclusive, campaign, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
-      `).run(id, tenantId, quotationNumber, customerId, now, expiryDate || null,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+      `).run(id, tenantId, quotationNumber, customerId, now, expiryDate || null, parsedDueDate ?? null,
         subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive, campaign, notes || '', now, now)
 
       if (items && items.length > 0) {
@@ -173,6 +176,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: { ...quotation, items: quotationItems } })
   } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
     console.error('Create quotation error:', error)
     res.status(500).json({ success: false, message: 'Failed to create quotation' })
   }
@@ -182,10 +188,12 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId
-    const { customerId, expiryDate, notes, items, taxRate, discountAmount } = req.body
+    const { customerId, expiryDate, dueDate, notes, items, taxRate, discountAmount } = req.body
     // เหมือน notes ด้านบน: ไม่ส่งมา (undefined) = ไม่แก้, ส่ง '' มาจริง ๆ = เคลียร์ค่า (better-sqlite3 รับ undefined ไม่ได้ ต้องเป็น null)
     const campaign = req.body.campaign ?? null
     const now = new Date().toISOString()
+
+    const parsedDueDate = parseDueDate(dueDate)
 
     const existing = db.prepare('SELECT * FROM quotations WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId) as any
     if (!existing) return res.status(404).json({ success: false, message: 'Quotation not found' })
@@ -249,16 +257,18 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })
     }
 
+    const nextDueDate = parsedDueDate !== undefined ? parsedDueDate : (existing.due_date ?? null)
+
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE quotations
-        SET customer_id = COALESCE(?, customer_id), expiry_date = ?,
+        SET customer_id = COALESCE(?, customer_id), expiry_date = ?, due_date = ?,
             subtotal = ?, discount_amount = ?, extra_charge_amount = ?, extra_charge_label = ?,
             tax_rate = ?, tax_amount = ?, total_amount = ?, vat_inclusive = ?,
             campaign = COALESCE(?, campaign),
             notes = COALESCE(?, notes), updated_at = ?
         WHERE id = ? AND tenant_id = ?
-      `).run(customerId || null, expiryDate || null, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, campaign, notes ?? null, now, req.params.id, tenantId)
+      `).run(customerId || null, expiryDate || null, nextDueDate, subtotal, discount, extraCharge, extraLabel, tax, taxAmount, totalAmount, inclusive ? 1 : 0, campaign, notes ?? null, now, req.params.id, tenantId)
 
       if (items) {
         db.prepare('DELETE FROM quotation_items WHERE quotation_id = ? AND tenant_id = ?').run(req.params.id, tenantId)
@@ -283,6 +293,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     const quotationItems = db.prepare('SELECT * FROM quotation_items WHERE quotation_id = ? AND tenant_id = ?').all(req.params.id, tenantId)
     res.json({ success: true, data: { ...quotation, items: quotationItems } })
   } catch (error) {
+    if (error instanceof DueDateError) {
+      return res.status(400).json({ success: false, code: 'INVALID_DUE_DATE', message: error.message })
+    }
     console.error('Update quotation error:', error)
     res.status(500).json({ success: false, message: 'Failed to update quotation' })
   }

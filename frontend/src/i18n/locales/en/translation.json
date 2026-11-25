@@ -232,6 +232,12 @@
     "notifications": "Notifications",
     "allNotifications": "All",
     "noNotifications": "No notifications yet",
+    "collectionsTitle": "Bill Follow-ups",
+    "collectionsCount": "{{count}} items",
+    "collectionsOverdue": "Overdue {{days}}d",
+    "collectionsDueToday": "Due today",
+    "collectionsDueSoon": "In {{days}}d",
+    "collectionsEmpty": "No follow-ups due soon",
     "cashier": "Point of Sale",
     "darkTheme": "Switch to dark theme",
     "lightTheme": "Switch to light theme",
@@ -1518,7 +1524,9 @@
       "invoiceCancelFailed": "Failed to cancel invoice",
       "receiptVoided": "Receipt reversed",
       "receiptVoidFailed": "Failed to reverse receipt",
-      "loadProductsFailed": "Failed to load products"
+      "loadProductsFailed": "Failed to load products",
+      "dueDateUpdated": "Payment due date updated",
+      "dueDateUpdateFailed": "Failed to update payment due date"
     },
     "error": {
       "loadQuotations": "Failed to load quotations",
@@ -1609,6 +1617,8 @@
       "orderDate": "Order date",
       "deliveryDate": "Delivery date",
       "dueDate": "Due date",
+      "dueDatePayment": "Payment due",
+      "editDueDate": "Edit payment due date",
       "status": "Status",
       "payment": "Payment",
       "deliveryStatus": "Delivery status",
@@ -2067,6 +2077,7 @@
         "recommendations": "Recommendations",
         "proposals": "Quotations",
         "activities": "Activities",
+        "collections": "Collections",
         "loyalty": "Loyalty"
       },
       "contactInfo": "Contact Info",
@@ -2149,7 +2160,27 @@
       "noRecordsType": "No {{type}} records",
       "viewAll": "View all",
       "noRecords": "No activity records yet",
-      "startRecording": "Click \"Add Record\" to start recording customer activities"
+      "startRecording": "Click \"Add Record\" to start recording customer activities",
+      "docRef": "Document",
+      "nextFollow": "Next follow-up"
+    },
+    "collectionsTab": {
+      "title": "Bill Follow-ups",
+      "empty": "No open bills to follow up",
+      "dueDate": "Payment due",
+      "nextFollowDate": "Next follow-up",
+      "noDueDate": "No due date",
+      "lastFollow": "Last follow-up",
+      "channel": "Channel",
+      "notePlaceholder": "Follow-up note...",
+      "saveFollow": "Save follow-up",
+      "saved": "Follow-up saved",
+      "saveFailed": "Failed to save follow-up",
+      "docKinds": {
+        "INVOICE": "Invoice",
+        "SALES_ORDER": "Sales Order",
+        "QUOTATION": "Quotation"
+      }
     },
     "favouritesTab": {
       "title": "Frequently Bought",

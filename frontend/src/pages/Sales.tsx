@@ -5,7 +5,7 @@ import {FileText, ShoppingCart, Receipt, Plus, Search, CheckCircle, Clock, Alert
 import { useAuth } from '../contexts/AuthContext'
 import api from '../services/api'
 import posService, { shiftErrorCode, openBillNumbers, expectedShiftCash } from '../services/pos.service'
-import salesService, { type Customer, type Product } from '../services/sales.service'
+import salesService, { canManageCollections, type Customer, type Product } from '../services/sales.service'
 import { printBill } from '../utils/printBill'
 import { getCachedCompanySettings } from '../services/companySettings.service'
 import bankAccountsService, { getCachedDefaultBankAccount } from '../services/bankAccounts.service'
@@ -79,6 +79,7 @@ interface Quotation {
   customer_code: string
   quotation_date: string
   expiry_date: string
+  due_date?: string | null
   total_amount: number
   status: string
   item_count: number
@@ -92,6 +93,7 @@ interface SalesOrder {
   quotation_number?: string
   order_date: string
   delivery_date: string
+  due_date?: string | null
   total_amount: number
   status: string
   payment_status: string
@@ -108,7 +110,7 @@ interface Invoice {
   customer_address?: string
   so_number: string
   invoice_date: string
-  due_date: string
+  due_date?: string | null
   total_amount: number
   tax_amount?: number
   balance_amount: number
@@ -256,6 +258,85 @@ const TAB_STATUSES: Record<string, string[]> = {
   orders: ['DRAFT', 'CONFIRMED', 'PROCESSING', 'READY', 'PARTIAL', 'DELIVERED', 'COMPLETED', 'CANCELLED'],
   'delivery-orders': ['DRAFT', 'READY', 'SHIPPED', 'DELIVERED', 'CANCELLED'],
   invoices: ['ISSUED', 'PARTIAL', 'PAID', 'OVERDUE', 'CANCELLED'],
+}
+
+/** แก้ไขวันครบกำหนดชำระแบบอินไลน์ในโมดัลรายละเอียด SO / INV */
+function DueDateEditor({
+  dueDate, canEdit, disabled, isOverdue, onSave,
+}: {
+  dueDate?: string | null
+  canEdit: boolean
+  disabled?: boolean
+  isOverdue?: boolean
+  onSave: (val: string | null) => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(() => (dueDate ? String(dueDate).split('T')[0] : ''))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(dueDate ? String(dueDate).split('T')[0] : '')
+  }, [dueDate, editing])
+
+  if (!editing) {
+    return (
+      <span className="inline-flex items-center gap-1.5 flex-wrap">
+        <span className={isOverdue ? 'text-danger font-medium' : undefined}>
+          {dueDate ? new Date(dueDate).toLocaleDateString('th-TH') : '-'}
+        </span>
+        {canEdit && !disabled && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            aria-label={t('sales.common.editDueDate')}
+            title={t('sales.common.editDueDate')}
+            className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--fg-3)] hover:text-[var(--primary)] transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </span>
+    )
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave(draft || null)
+      setEditing(false)
+    } catch { /* onSave แจ้ง toast แล้ว */ } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <input
+        type="date"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        aria-label={t('sales.common.dueDatePayment')}
+        className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1 text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+      />
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving}
+        className="px-2.5 py-1 rounded-lg bg-phopy-indigo text-white text-xs font-medium hover:bg-phopy-indigo/80 disabled:opacity-50"
+      >
+        {saving ? '...' : t('sales.common.save')}
+      </button>
+      <button
+        type="button"
+        onClick={() => { setEditing(false); setDraft(dueDate ? String(dueDate).split('T')[0] : '') }}
+        disabled={saving}
+        className="px-2 py-1 rounded-lg border border-[var(--border)] text-xs text-[var(--fg-3)] hover:text-[var(--fg-1)]"
+      >
+        {t('sales.common.cancel')}
+      </button>
+    </span>
+  )
 }
 
 /** วันนี้ตามเวลาเครื่อง (YYYY-MM-DD) — เทียบวันหมดอายุ/วันส่งแบบรายวัน ไม่ใช่รายมิลลิวินาที */
@@ -1183,7 +1264,7 @@ const Sales = () => {
 
   // Formatters
   const formatCurrency = (amount: number) => `฿${(amount || 0).toLocaleString('th-TH')}`
-  const formatDate     = (dateStr: string) => {
+  const formatDate     = (dateStr?: string | null) => {
     if (!dateStr) return '-'
     return new Date(dateStr).toLocaleDateString('th-TH')
   }
@@ -1549,11 +1630,12 @@ const Sales = () => {
             items.map((q, i) => {
               const so = qtSO(q)
               const expired = q.expiry_date && q.expiry_date.slice(0, 10) < todayStr()
+              const dueOverdue = !!(q.due_date && q.due_date.slice(0, 10) < todayStr() && ['DRAFT', 'SENT'].includes(q.status) && !so)
               const open = () => handleViewDetail(q, t('sales.docType.quotation'))
               return docRow(q.id, i, open, {
                 number: docNo(q.quotation_number),
                 party: partyCell(q.customer_name, q.customer_code),
-                date: <>{formatDate(q.quotation_date)}{q.expiry_date && <p className={`text-[10px] ${expired ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.expiryDate')} {formatDate(q.expiry_date)}</p>}</>,
+                date: <>{formatDate(q.quotation_date)}{q.expiry_date && <p className={`text-[10px] ${expired ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.expiryDate')} {formatDate(q.expiry_date)}</p>}{q.due_date && <p className={`text-[10px] ${dueOverdue ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.dueDatePayment')} {formatDate(q.due_date)}</p>}</>,
                 progress: <StagePips view={deadView(qtStages, q.status) ?? { stages: qtStages, idx: q.status === 'DRAFT' ? 0 : q.status === 'SENT' ? 1 : so ? 3 : 2 }} />,
                 total: formatCurrency(q.total_amount),
                 next: <NextStepCell step={qtNext(q, so)} />,
@@ -1567,7 +1649,9 @@ const Sales = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((q, i) => {
+              const so = qtSO(q)
               const isExpired = q.expiry_date && q.expiry_date.slice(0, 10) < todayStr()
+              const isDueOverdue = !!(q.due_date && q.due_date.slice(0, 10) < todayStr() && ['DRAFT', 'SENT'].includes(q.status) && !so)
               const next = qtNextStatus[q.status]
               return (
                 <motion.div key={q.id}
@@ -1586,6 +1670,7 @@ const Sales = () => {
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(q.quotation_date)}</span></span>
                     <span>{t('sales.common.expiryDate')} <span className={isExpired ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(q.expiry_date)}</span></span>
+                    {q.due_date && <span className="col-span-2">{t('sales.common.dueDatePayment')} <span className={isDueOverdue ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(q.due_date)}</span></span>}
                     <span>{t('sales.common.itemCount', { count: q.item_count })}</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(q.total_amount)}</span>
                   </div>
@@ -1683,6 +1768,7 @@ const Sales = () => {
             items.map((order, i) => {
               const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
               const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+              const isDueOverdue = !!(order.due_date && order.due_date.slice(0, 10) < todayStr() && order.status !== 'CANCELLED' && order.payment_status !== 'PAID')
               const orderDOs = doBySoNumber.get(order.so_number) || []
               const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
               const doShipped = orderDOs.filter(d => d.status === 'SHIPPED').length
@@ -1698,7 +1784,7 @@ const Sales = () => {
                   {invCount > 0 && refChip(`INV ×${invCount}`, 'text-[var(--primary)] bg-phopy-indigo/10')}
                 </> : null),
                 party: partyCell(order.customer_name, order.customer_code),
-                date: <>{formatDate(order.order_date)}{order.delivery_date && <p className={`text-[10px] ${isLate ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.deliveryDate')} {formatDate(order.delivery_date)}</p>}</>,
+                date: <>{formatDate(order.order_date)}{order.delivery_date && <p className={`text-[10px] ${isLate ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.deliveryDate')} {formatDate(order.delivery_date)}</p>}{order.due_date && <p className={`text-[10px] ${isDueOverdue ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.dueDatePayment')} {formatDate(order.due_date)}</p>}</>,
                 progress: <>
                   <StagePips view={deadView(soStages, order.status) ?? { stages: soStages, idx: stepIdx < 0 ? (order.status === 'PARTIAL' ? 3 : 0) : stepIdx }} />
                   {(order.pending_qty ?? 0) > 0 && <p className="text-[10px] text-warning">{t('sales.statusBadge.pendingDelivery', { count: order.pending_qty })}</p>}
@@ -1720,6 +1806,7 @@ const Sales = () => {
               const step = SO_DELIVERY_STEPS.find(s => s.status === order.status)
               const stepIdx = SO_DELIVERY_STEPS.findIndex(s => s.status === order.status)
               const isLate = order.delivery_date && order.delivery_date.slice(0, 10) < todayStr() && order.status !== 'DELIVERED' && order.status !== 'COMPLETED'
+              const isDueOverdue = !!(order.due_date && order.due_date.slice(0, 10) < todayStr() && order.status !== 'CANCELLED' && order.payment_status !== 'PAID')
               const next = soNextStatus[order.status]
               const orderDOs = doBySoNumber.get(order.so_number) || []
               const hasDO = orderDOs.some(d => d.status !== 'CANCELLED')
@@ -1768,6 +1855,7 @@ const Sales = () => {
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.orderDate')} <span className="text-[var(--fg-2)]">{formatDate(order.order_date)}</span></span>
                     <span>{t('sales.common.deliveryDate')} <span className={isLate ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.delivery_date)}{isLate ? <AlertTriangle className="w-3 h-3 inline" /> : ''}</span></span>
+                    {order.due_date && <span className="col-span-2">{t('sales.common.dueDatePayment')} <span className={isDueOverdue ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(order.due_date)}</span></span>}
                     <span>{t('sales.common.itemCount', { count: order.item_count })}</span>
                     <span className="text-right font-semibold text-[var(--fg-1)]">{formatCurrency(order.total_amount)}</span>
                   </div>
@@ -1843,6 +1931,7 @@ const Sales = () => {
             items.map((inv, i) => {
               const cancelled = inv.status === 'CANCELLED'
               const isOverdue = inv.payment_status === 'OVERDUE'
+              const isDuePast = !cancelled && inv.payment_status !== 'PAID' && (isOverdue || !!(inv.due_date && inv.due_date.slice(0, 10) < todayStr()))
               const isUnpaid = (inv.payment_status === 'UNPAID' || inv.payment_status === 'PARTIAL' || isOverdue) && !cancelled
               const qtNo = inv.so_number ? soByNumber.get(inv.so_number)?.quotation_number : undefined
               const open = () => handleViewDetail(inv, t('sales.docType.invoice'))
@@ -1852,7 +1941,7 @@ const Sales = () => {
                   {qtNo && refChip(qtNo)}
                 </> : null),
                 party: partyCell(inv.customer_name, inv.customer_code),
-                date: <>{formatDate(inv.invoice_date)}{inv.due_date && <p className={`text-[10px] ${isOverdue ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.dueDate')} {formatDate(inv.due_date)}</p>}</>,
+                date: <>{formatDate(inv.invoice_date)}{inv.due_date && <p className={`text-[10px] ${isDuePast ? 'text-danger' : 'text-[var(--fg-4)]'}`}>{t('sales.common.dueDate')} {formatDate(inv.due_date)}</p>}</>,
                 progress: <StagePips view={cancelled ? { stages: invStages, idx: 0, dead: statusText('CANCELLED') }
                   : { stages: invStages, idx: inv.payment_status === 'PAID' ? 2 : inv.payment_status === 'PARTIAL' ? 1 : 0 }} />,
                 total: <>{formatCurrency(inv.total_amount)}{!cancelled && inv.balance_amount > 0 && <p className="text-[10px] text-danger">{t('sales.common.balance')} {formatCurrency(inv.balance_amount)}</p>}</>,
@@ -1866,13 +1955,14 @@ const Sales = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {items.map((inv, i) => {
               const isOverdue = inv.payment_status === 'OVERDUE'
+              const isDuePast = inv.status !== 'CANCELLED' && inv.payment_status !== 'PAID' && (isOverdue || !!(inv.due_date && inv.due_date.slice(0, 10) < todayStr()))
               const isUnpaid  = (inv.payment_status === 'UNPAID' || inv.payment_status === 'PARTIAL' || isOverdue) && inv.status !== 'CANCELLED'
               return (
                 <motion.div key={inv.id}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
                   role="button" tabIndex={0} onClick={() => handleViewDetail(inv, t('sales.docType.invoice'))}
                   onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleViewDetail(inv, t('sales.docType.invoice')) } }}
-                  className={`bg-[var(--surface)] border rounded-xl p-4 hover:brightness-105 transition-all cursor-pointer ${isOverdue ? 'border-danger/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
+                  className={`bg-[var(--surface)] border rounded-xl p-4 hover:brightness-105 transition-all cursor-pointer ${isDuePast ? 'border-danger/40' : 'border-[var(--border)] hover:border-phopy-indigo/50'}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="font-mono text-sm font-semibold text-warning">{inv.invoice_number}</p>
@@ -1896,7 +1986,7 @@ const Sales = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--fg-3)] mb-3">
                     <span>{t('sales.common.date')} <span className="text-[var(--fg-2)]">{formatDate(inv.invoice_date)}</span></span>
-                    <span>{t('sales.common.dueDate')} <span className={isOverdue ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(inv.due_date)}</span></span>
+                    <span>{t('sales.common.dueDate')} <span className={isDuePast ? 'text-danger font-medium' : 'text-[var(--fg-2)]'}>{formatDate(inv.due_date || '')}</span></span>
                     <span>{t('sales.common.total')} <span className="text-[var(--fg-1)] font-medium">{formatCurrency(inv.total_amount)}</span></span>
                     <span className="text-right">
                       {t('sales.common.balance')} <span className={inv.status !== 'CANCELLED' && inv.balance_amount > 0 ? 'text-danger font-semibold' : 'text-success font-semibold'}>
@@ -2468,7 +2558,7 @@ const Sales = () => {
         <SODetailModal
           salesOrder={detailSO}
           onClose={() => setDetailSO(null)}
-          onRefresh={() => fetchSalesOrders()}
+          onRefresh={() => { fetchSalesOrders(); fetchInvoices(true) }}
           onCreateInvoice={() => { setDetailSO(null); fetchInvoices(); setActiveTab('invoices') }}
           companyName={tenant?.name}
           hasDeliveryOrder={deliveryOrders.some(d => d.so_number === detailSO.so_number && d.status !== 'CANCELLED')}
@@ -3063,6 +3153,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
   const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [expiryDate, setExpiryDate] = useState(editData?.expiry_date?.split('T')[0] || '')
+  const [dueDate, setDueDate] = useState(editData?.due_date?.split('T')[0] || '')
   const registered = vatRegisteredCo()
   const [vatMode, setVatMode] = useState<VatMode>(() => isEdit ? vatModeOf(editData?.tax_rate, editData?.vat_inclusive === 1) : 'EXCLUSIVE')
   const [vatModeTouched, setVatModeTouched] = useState(isEdit)
@@ -3125,6 +3216,7 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
       const payload = {
         customerId: customer.id,
         expiryDate: expiryDate || undefined,
+        dueDate: dueDate || null,
         taxRate: rate,
         vatInclusive: inclusive,
         extraChargeAmount: extraCharge.amount,
@@ -3196,6 +3288,11 @@ function CreateQuotationModal({ onClose, onSaved, editData }: {
             <div>
               <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.expiryDate')}</label>
               <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)}
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
+            </div>
+            <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.dueDatePayment')}</label>
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
@@ -3279,9 +3376,11 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
     }
   }
 
-  const formatDate = (s?: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
+  const formatDate = (s?: string | null) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
   const expiry = detail?.expiry_date || quotation.expiry_date
   const isExpired = !!(expiry && expiry.slice(0, 10) < todayStr())
+  const qtDue = (detail ?? quotation).due_date
+  const isDueOverdue = !!(qtDue && qtDue.slice(0, 10) < todayStr() && ['DRAFT', 'SENT'].includes(quotation.status) && !alreadyConverted)
 
   const isDead = ['CANCELLED', 'EXPIRED', 'REJECTED'].includes(quotation.status)
   const deadLabel = quotation.status === 'CANCELLED' ? t('sales.status.cancelled')
@@ -3417,6 +3516,11 @@ function QuotationDetailModal({ quotation, onClose, onRefresh, onConvert, compan
                   tone: isExpired ? 'text-danger font-medium' : undefined,
                 },
                 {
+                  label: t('sales.common.dueDatePayment'),
+                  value: formatDate(qtDue),
+                  tone: isDueOverdue ? 'text-danger font-medium' : undefined,
+                },
+                {
                   label: t('sales.detail.vatMode'),
                   value: detail
                     ? `${VAT_MODE_LABEL[vatModeOf(detail?.tax_rate, detail?.vat_inclusive === 1)]}${detail.tax_rate ? ` (${detail.tax_rate}%)` : ''}`
@@ -3489,6 +3593,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
   const isEdit = !!editData
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [deliveryDate, setDeliveryDate] = useState(editData?.delivery_date?.split('T')[0] || '')
+  const [dueDate, setDueDate] = useState(editData?.due_date?.split('T')[0] || sourceQuotation?.due_date?.split('T')[0] || '')
   const registered = vatRegisteredCo()
   const [vatMode, setVatMode] = useState<VatMode>(() => isEdit ? vatModeOf(editData?.tax_rate, editData?.vat_inclusive === 1) : 'EXCLUSIVE')
   const [vatModeTouched, setVatModeTouched] = useState(isEdit || !!sourceQuotation)
@@ -3539,6 +3644,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
             setVatMode(vatModeOf(qt.tax_rate, qt.vat_inclusive === 1))
             setDiscountAmount(qt.discount_amount || 0)
             setExtraCharge({ label: qt.extra_charge_label || '', amount: qt.extra_charge_amount || 0 })
+            if (qt.due_date) setDueDate(String(qt.due_date).split('T')[0])
             if (qt.notes) setNotes(qt.notes)
             if (qt.customer_id) salesService.getCustomer(qt.customer_id).then(c => { if (c) setCustomer(c) }).catch(() => {})
             if (qt.items?.length) {
@@ -3578,6 +3684,7 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
         customerId: customer.id,
         quotationId: sourceQuotation?.id,
         deliveryDate: deliveryDate || undefined,
+        dueDate: dueDate || null,
         taxRate: rate,
         vatInclusive: inclusive,
         extraChargeAmount: extraCharge.amount,
@@ -3650,6 +3757,11 @@ function CreateSOModal({ sourceQuotation, onClose, onSaved, editData }: {
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
             </div>
             <div>
+              <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.dueDatePayment')}</label>
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo" />
+            </div>
+            <div className="col-span-2">
               <label className="block text-sm text-[var(--fg-3)] mb-1.5">{t('sales.common.notes')}</label>
               <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('sales.common.notesPlaceholder')}
                 className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--fg-1)] placeholder-gray-600 focus:outline-none focus:border-phopy-indigo" />
@@ -3731,6 +3843,7 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   // Cancel reverses stock + journal for CONFIRMED+ orders — gate behind ADMIN/MANAGER/MASTER
   // same as other irreversible accounting actions elsewhere in the app.
   const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
+  const canEditDue = canManageCollections(user?.role)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -3741,6 +3854,18 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
   useEffect(() => {
     salesService.getSalesOrder(salesOrder.id).then(r => setDetail(r.data)).catch(() => toast.error(t('sales.error.loadOrders'))).finally(() => setLoading(false))
   }, [salesOrder.id, salesOrder.status])
+
+  const handleSaveSODueDate = async (nextDue: string | null) => {
+    try {
+      await salesService.updateSODueDate(salesOrder.id, nextDue)
+      setDetail((prev: any) => prev ? { ...prev, due_date: nextDue } : prev)
+      toast.success(t('sales.toast.dueDateUpdated'))
+      onRefresh()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.dueDateUpdateFailed'))
+      throw err
+    }
+  }
 
   const handlePrint = () => {
     if (!detail) return
@@ -3946,6 +4071,18 @@ function SODetailModal({ salesOrder, onClose, onRefresh, onCreateInvoice, compan
                 fields={[
                   { label: t('sales.common.orderDateLabel'), value: fmtD(detail?.order_date || salesOrder.order_date) },
                   { label: t('sales.common.deliveryDate'), value: fmtD(detail?.delivery_date || salesOrder.delivery_date) },
+                  {
+                    label: t('sales.common.dueDatePayment'),
+                    value: (
+                      <DueDateEditor
+                        dueDate={(detail ?? salesOrder).due_date}
+                        canEdit={canEditDue}
+                        disabled={salesOrder.status === 'CANCELLED'}
+                        isOverdue={!!(((detail ?? salesOrder).due_date) && String((detail ?? salesOrder).due_date).slice(0, 10) < todayStr() && salesOrder.status !== 'CANCELLED' && salesOrder.payment_status !== 'PAID')}
+                        onSave={handleSaveSODueDate}
+                      />
+                    ),
+                  },
                   { label: t('sales.detail.reference'), value: (salesOrder.quotation_number || detail?.quotation_number) ? <span className="font-mono">{salesOrder.quotation_number || detail?.quotation_number}</span> : undefined },
                   { label: t('sales.common.customerCode'), value: salesOrder.customer_code || detail?.customer_code || undefined },
                   { label: t('sales.detail.taxId'), value: detail?.customer_tax_id || undefined },
@@ -4024,6 +4161,7 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   // Cancel invoice / void receipt reverses journal + stock — gate behind ADMIN/MANAGER/MASTER
   // same as other irreversible accounting actions elsewhere in the app.
   const canCancelDoc = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'MASTER'
+  const canEditDue = canManageCollections(user?.role)
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showPayment, setShowPayment] = useState(false)
@@ -4141,6 +4279,20 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
   const fmt = (n: number) => `฿${(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`
   const fmtD = (s?: string) => s ? new Date(s).toLocaleDateString('th-TH') : '-'
   const isUnpaid = (payStatus === 'UNPAID' || payStatus === 'OVERDUE' || payStatus === 'PARTIAL') && !isCancelled
+  const invDue = (detail ?? invoice).due_date
+  const isDueOverdue = !isCancelled && payStatus !== 'PAID' && (payStatus === 'OVERDUE' || !!(invDue && String(invDue).slice(0, 10) < todayStr()))
+
+  const handleSaveInvDueDate = async (nextDue: string | null) => {
+    try {
+      await salesService.updateInvoiceDueDate(invoice.id, nextDue)
+      setDetail((prev: any) => prev ? { ...prev, due_date: nextDue } : prev)
+      toast.success(t('sales.toast.dueDateUpdated'))
+      onRefresh()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('sales.toast.dueDateUpdateFailed'))
+      throw err
+    }
+  }
 
   const customerCode = detail?.customer_code ?? invoice.customer_code
   const partyLabel = customerCode ? `${invoice.customer_name} (${customerCode})` : invoice.customer_name
@@ -4247,7 +4399,18 @@ function InvoiceDetailModal({ invoice, onClose, onRefresh, companyName }: {
               <FieldGrid
                 fields={[
                   { label: t('sales.invoiceDetail.issuedDate'), value: fmtD(detail?.invoice_date ?? invoice.invoice_date) },
-                  { label: t('sales.common.dueDate'), value: fmtD(detail?.due_date ?? invoice.due_date), tone: payStatus === 'OVERDUE' ? 'text-danger font-medium' : undefined },
+                  {
+                    label: t('sales.common.dueDate'),
+                    value: (
+                      <DueDateEditor
+                        dueDate={invDue}
+                        canEdit={canEditDue}
+                        disabled={isCancelled}
+                        isOverdue={isDueOverdue}
+                        onSave={handleSaveInvDueDate}
+                      />
+                    ),
+                  },
                   { label: t('sales.detail.reference'), value: detail?.so_number || invoice.so_number },
                   { label: t('sales.detail.vatMode'), value: VAT_MODE_LABEL[vatMode] },
                   { label: t('sales.detail.taxId'), value: detail?.customer_tax_id || invoice.customer_tax_id },

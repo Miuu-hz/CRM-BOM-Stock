@@ -71,6 +71,7 @@ export interface QuotationItem {
 export interface CreateQuotationPayload {
   customerId: string
   expiryDate?: string
+  dueDate?: string | null
   taxRate?: number
   vatInclusive?: boolean
   extraChargeAmount?: number
@@ -97,6 +98,7 @@ export interface CreateSOPayload {
   customerId: string
   quotationId?: string
   deliveryDate?: string
+  dueDate?: string | null
   taxRate?: number
   vatInclusive?: boolean
   extraChargeAmount?: number
@@ -105,6 +107,48 @@ export interface CreateSOPayload {
   notes?: string
   items: SOItem[]
 }
+
+export type CollectionKind = 'INVOICE' | 'SALES_ORDER' | 'QUOTATION'
+export type FollowChannel = 'CALL' | 'EMAIL' | 'MEETING' | 'NOTE'
+
+export interface CollectionItem {
+  kind: CollectionKind
+  id: string
+  number: string
+  customer_id: string
+  customer_name: string
+  customer_phone?: string | null
+  due_date: string | null
+  next_follow_date: string | null
+  follow_date: string | null
+  days_left: number | null
+  amount: number
+  last_follow: {
+    note: string
+    type: FollowChannel | string
+    created_at: string
+    created_by?: string | null
+  } | null
+}
+
+export interface CollectionsSummaryBucket {
+  count: number
+  amount?: number
+}
+
+export interface CollectionsResponse {
+  items: CollectionItem[]
+  summary: {
+    overdue: CollectionsSummaryBucket
+    today: CollectionsSummaryBucket | number
+    soon: CollectionsSummaryBucket | number
+  }
+}
+
+/** สิทธิ์ดูติดตามบิลและแก้ไขวันครบกำหนดชำระ — ตรงกับ backend */
+export const COLLECTION_ROLES = new Set(['ADMIN', 'MANAGER', 'POWERUSER', 'MASTER', 'OWNER'])
+export const canManageCollections = (role?: string | null): boolean =>
+  !!role && COLLECTION_ROLES.has(role.toUpperCase())
 
 export interface ProductionPlanItem {
   soItemId: string
@@ -241,6 +285,11 @@ const salesService = {
     return data
   },
 
+  updateSODueDate: async (id: string, dueDate: string | null) => {
+    const { data } = await api.put(`/sales/sales-orders/${id}/due-date`, { dueDate })
+    return data
+  },
+
   getProductionPlan: async (id: string): Promise<ProductionPlan> => {
     const { data } = await api.get(`/sales/sales-orders/${id}/production-plan`)
     return data.data
@@ -260,6 +309,26 @@ const salesService = {
   createInvoice: async (salesOrderId: string, dueDate?: string, notes?: string) => {
     const { data } = await api.post('/sales/invoices', { salesOrderId, dueDate, notes })
     return data
+  },
+
+  updateInvoiceDueDate: async (id: string, dueDate: string | null) => {
+    const { data } = await api.put(`/sales/invoices/${id}/due-date`, { dueDate })
+    return data
+  },
+
+  getCollections: async (customerId?: string): Promise<CollectionsResponse> => {
+    const { data } = await api.get('/sales/collections', {
+      params: customerId ? { customerId } : undefined,
+    })
+    const payload = data?.data ?? data ?? {}
+    return {
+      items: Array.isArray(payload.items) ? payload.items : [],
+      summary: {
+        overdue: payload.summary?.overdue ?? { count: 0, amount: 0 },
+        today: payload.summary?.today ?? { count: 0, amount: 0 },
+        soon: payload.summary?.soon ?? { count: 0, amount: 0 },
+      },
+    }
   },
 
   recordPayment: async (invoiceId: string, payload: {

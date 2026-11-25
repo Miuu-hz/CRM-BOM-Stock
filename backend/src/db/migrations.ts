@@ -3838,6 +3838,16 @@ export function runMonthCloseMigrations(db: any): void {
     `)
     console.log('✅ Migration: work_order_lots ready')
   } catch (e) { console.error('⚠️ work_order_lots migration error:', e) }
+
+  // วันครบกำหนดชำระบน QT/SO และติดตามบิลใน activity_logs
+  ;[
+    'ALTER TABLE quotations ADD COLUMN due_date TEXT',
+    'ALTER TABLE sales_orders ADD COLUMN due_date TEXT',
+    'ALTER TABLE activity_logs ADD COLUMN doc_type TEXT',
+    'ALTER TABLE activity_logs ADD COLUMN doc_id TEXT',
+    'ALTER TABLE activity_logs ADD COLUMN next_follow_date TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_activity_doc ON activity_logs(tenant_id, doc_type, doc_id)',
+  ].forEach(sql => { try { db.exec(sql) } catch { /* คอลัมน์มีอยู่แล้ว */ } })
 }
 
 /** ข้อความจาก trigger ห้ามลงบัญชีหัว — routes ใช้จับเป็น 400 (ห้ามมี ' เพราะฝังใน SQL literal) */

@@ -25,6 +25,7 @@ import backordersRouter from './backorders.routes'
 import posRouter from './pos.routes'
 import summaryRouter from './summary.routes'
 import badgeCountsRouter from './badgeCounts.routes'
+import collectionsRouter from './collections.routes'
 
 const router = Router()
 
@@ -40,6 +41,7 @@ router.use('/receipts', receiptsRouter)
 router.use('/quotation-templates', templatesRouter)
 router.use('/', posRouter)
 router.use('/summary', summaryRouter)
+router.use('/collections', collectionsRouter)
 router.use('/', badgeCountsRouter)
 
 export default router

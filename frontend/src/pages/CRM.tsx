@@ -1,12 +1,16 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, Search, Plus, Phone, Mail, MapPin, Building2, X, ShoppingCart, Heart, Lightbulb, FileText, Clock,
   AlertTriangle, MessageSquare, UserCheck, Truck, Upload, ChevronLeft, ChevronRight, CheckCircle2, XCircle,
   Trash2, TrendingUp, CreditCard, AlertCircle, Pencil, LayoutList, LayoutGrid, Star, Gift, ArrowLeftRight,
-  History, RefreshCw, Crown, Target, User,
+  History, RefreshCw, Crown, Target, User, Calendar,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import api from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
+import salesService, { canManageCollections, type CollectionItem, type FollowChannel } from '../services/sales.service'
 import SupplierTab from '../components/crm/SupplierTab'
 import ImportModal from '../components/common/ImportModal'
 import customerRecommendationsApi from '../services/customerRecommendations'
@@ -48,11 +52,22 @@ interface Customer {
 
 interface ActivityLog {
   id: string
-  customerId: string
+  customerId?: string
+  customer_id?: string
   type: 'CALL' | 'EMAIL' | 'MEETING' | 'NOTE'
   note: string
-  createdAt: string
+  createdAt?: string
+  created_at?: string
   createdBy?: string
+  created_by?: string | null
+  docType?: string | null
+  doc_type?: string | null
+  docId?: string | null
+  doc_id?: string | null
+  docNumber?: string | null
+  doc_number?: string | null
+  nextFollowDate?: string | null
+  next_follow_date?: string | null
 }
 
 interface CrmSummary {
@@ -136,6 +151,10 @@ interface OrderPage {
 
 function CRM() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const canCollections = canManageCollections(user?.role)
+  const location = useLocation()
+  const navigate = useNavigate()
   const [mainTab, setMainTab] = useState<'customers' | 'suppliers'>('customers')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState<string>('all')
@@ -146,7 +165,7 @@ function CRM() {
   const [insights, setInsights] = useState<CustomerInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'loyalty'
+    'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'loyalty'
   >('overview')
   const [showModal, setShowModal] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -164,6 +183,19 @@ function CRM() {
   const [orderLimit, setOrderLimit] = useState(25)
   const [orderPageLoading, setOrderPageLoading] = useState(false)
 
+  // เปิดลูกค้าและแท็บติดตามบิลจาก query ?customer=<id>&tab=collections เพียงครั้งเดียว
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const customerId = params.get('customer')
+    if (!customerId) return
+    const tabParam = params.get('tab')
+    setMainTab('customers')
+    setSelectedCustomerId(customerId)
+    setActiveTab(tabParam === 'collections' && canCollections ? 'collections' : 'overview')
+    setShowModal(true)
+    navigate(location.pathname, { replace: true })
+  }, [location.search, location.pathname, canCollections, navigate])
+
   // เปิดจากผลค้นหาบนหัว: ลูกค้า/ออเดอร์ → modal ลูกค้า, ผู้ขาย → แท็บผู้ขายแล้วเปิดรายละเอียด
   const [openSupplier, setOpenSupplier] = useState<{ id: string } | null>(null)
   useOpenFromSearch((type, id) => {
@@ -173,6 +205,14 @@ function CRM() {
     setActiveTab(type === 'order' ? 'orders' : 'overview')
     setShowModal(true)
   })
+
+  const refreshActivities = useCallback(async (customerId = selectedCustomerId) => {
+    if (!customerId) return
+    try {
+      const activitiesRes = await api.get(`/activities/customer/${customerId}`)
+      setActivities(activitiesRes.data.data || [])
+    } catch { /* ignore */ }
+  }, [selectedCustomerId])
 
   // Add new activity
   const handleAddActivity = async (type: string, note: string) => {
@@ -185,10 +225,7 @@ function CRM() {
       note 
     })
     // Refresh activities after adding
-    if (selectedCustomerId) {
-      const activitiesRes = await api.get(`/activities/customer/${selectedCustomerId}`)
-      setActivities(activitiesRes.data.data || [])
-    }
+    await refreshActivities(selectedCustomerId)
     return res.data.data
   }
 
@@ -663,6 +700,7 @@ function CRM() {
           setActiveTab={setActiveTab}
           onClose={() => setShowModal(false)}
           onAddActivity={handleAddActivity}
+          onRefreshActivities={() => refreshActivities(selectedCustomer.id)}
           onEdit={() => {
             setEditingCustomer(selectedCustomer)
             setShowModal(false)
@@ -911,6 +949,7 @@ function CustomerDetailModal({
   setActiveTab,
   onClose,
   onAddActivity,
+  onRefreshActivities,
   orderPage,
   orderPageNum,
   orderLimit,
@@ -925,10 +964,11 @@ function CustomerDetailModal({
   insights: CustomerInsights | null
   insightsLoading: boolean
   activities: ActivityLog[]
-  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'loyalty'
-  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'loyalty') => void
+  activeTab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'loyalty'
+  setActiveTab: (tab: 'overview' | 'orders' | 'favourites' | 'recommendations' | 'proposals' | 'activities' | 'collections' | 'loyalty') => void
   onClose: () => void
   onAddActivity: (type: string, note: string) => Promise<void>
+  onRefreshActivities: () => Promise<void>
   orderPage: OrderPage | null
   orderPageNum: number
   orderLimit: number
@@ -940,7 +980,39 @@ function CustomerDetailModal({
   onCustomerUpdate?: (updated: Customer) => void
 }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const canCollections = canManageCollections(user?.role)
   useModalClose(onClose)
+  const [collections, setCollections] = useState<CollectionItem[]>([])
+  const [collectionsLoading, setCollectionsLoading] = useState(false)
+
+  const fetchCustomerCollections = useCallback(async () => {
+    if (!canCollections || !customer.id) {
+      setCollections([])
+      return
+    }
+    setCollectionsLoading(true)
+    try {
+      const res = await salesService.getCollections(customer.id)
+      setCollections(res.items)
+    } catch {
+      setCollections([])
+    } finally {
+      setCollectionsLoading(false)
+    }
+  }, [canCollections, customer.id])
+
+  useEffect(() => {
+    fetchCustomerCollections()
+  }, [fetchCustomerCollections])
+
+  const docNumberMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of collections) {
+      map.set(`${c.kind}:${c.id}`, c.number)
+    }
+    return map
+  }, [collections])
   // State for loyalty points sync
   const [loyaltyPoints, setLoyaltyPoints] = useState(customer.loyalty_points ?? 0)
   useEffect(() => {
@@ -1045,6 +1117,7 @@ function CustomerDetailModal({
     { id: 'recommendations',  label: 'แนะนำสินค้า',   icon: Lightbulb },
     { id: 'proposals',        label: 'ใบเสนอราคา',    icon: FileText },
     { id: 'activities',       label: 'ติดตาม',        icon: Clock },
+    ...(canCollections ? [{ id: 'collections', label: t('crm.detail.tabs.collections', { defaultValue: 'ตามบิล' }), icon: CreditCard }] : []),
     { id: 'loyalty',          label: 'แต้มสะสม',      icon: Star },
   ] as const
 
@@ -1063,10 +1136,10 @@ function CustomerDetailModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--surface-2)] border border-phopy-indigo/40 rounded-2xl shadow-2xl shadow-phopy-indigo/10 w-full max-w-5xl max-h-[95vh] flex overflow-hidden"
+        className="bg-[var(--surface-2)] border border-phopy-indigo/40 rounded-2xl shadow-2xl shadow-phopy-indigo/10 w-full max-w-5xl max-h-[95vh] flex flex-col md:flex-row overflow-hidden"
       >
         {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 bg-[var(--surface-2)] border-r border-[var(--border)] flex flex-col overflow-y-auto modal-scroll">
+        <div className="w-full md:w-64 max-h-[38vh] md:max-h-none flex-shrink-0 bg-[var(--surface-2)] border-b md:border-b-0 md:border-r border-[var(--border)] flex flex-col overflow-y-auto modal-scroll">
           {/* Avatar + Name */}
           <div className="relative p-5 text-center bg-gradient-to-b from-phopy-indigo/10 to-transparent border-b border-[var(--border)]/50">
             <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors">
@@ -1575,6 +1648,18 @@ function CustomerDetailModal({
             <ActivityLogTab
               activities={activities}
               onAddActivity={onAddActivity}
+              docNumberMap={docNumberMap}
+            />
+          )}
+
+          {canCollections && activeTab === 'collections' && (
+            <CollectionsFollowUpTab
+              customerId={customer.id}
+              items={collections}
+              loading={collectionsLoading}
+              onRefresh={async () => {
+                await Promise.all([fetchCustomerCollections(), onRefreshActivities()])
+              }}
             />
           )}
 
@@ -1593,10 +1678,12 @@ function CustomerDetailModal({
 // Activity Log Tab Component
 function ActivityLogTab({
   activities,
-  onAddActivity
+  onAddActivity,
+  docNumberMap,
 }: {
   activities: ActivityLog[];
   onAddActivity: (type: string, note: string) => Promise<void>;
+  docNumberMap?: Map<string, string>;
 }) {
   const { t } = useTranslation()
   const [showAddForm, setShowAddForm] = useState(false)
@@ -1758,6 +1845,15 @@ function ActivityLogTab({
           filtered.map((activity, idx) => {
             const cfg = typeConfig[activity.type as keyof typeof typeConfig] ?? typeConfig.NOTE
             const Icon = cfg.icon
+            const createdAt = activity.createdAt ?? activity.created_at
+            const createdBy = activity.createdBy ?? activity.created_by
+            const docType = activity.docType ?? activity.doc_type
+            const docId = activity.docId ?? activity.doc_id
+            const docNumber = activity.docNumber ?? activity.doc_number ?? (docType && docId ? docNumberMap?.get(`${docType}:${docId}`) : undefined)
+            const nextFollowDate = activity.nextFollowDate ?? activity.next_follow_date
+            const docKindLabel = docType
+              ? t(`crm.collectionsTab.docKinds.${docType}`, { defaultValue: docType })
+              : ''
             return (
               <div key={activity.id} className="flex gap-3 group">
                 {/* Timeline line + dot */}
@@ -1769,20 +1865,31 @@ function ActivityLogTab({
                 </div>
                 {/* Card */}
                 <div className={`flex-1 bg-[var(--surface)] rounded-lg p-3 mb-2 border-l-2 ${cfg.border} transition-all group-hover:bg-[var(--surface-2)]`}>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
                         <Icon className="w-3 h-3" />
-                        {cfg.label}
+                        {t(cfg.label)}
                       </span>
-                      {activity.createdBy && (
-                        <span className="text-xs text-[var(--fg-4)]">โดย {activity.createdBy}</span>
+                      {createdBy && (
+                        <span className="text-xs text-[var(--fg-4)]">โดย {createdBy}</span>
+                      )}
+                      {(docNumber || docType) && (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-phopy-indigo/10 text-[var(--primary)] font-mono">
+                          {docNumber ? `${docKindLabel ? `${docKindLabel} ` : ''}${docNumber}` : docKindLabel}
+                        </span>
+                      )}
+                      {nextFollowDate && (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-[var(--warning-soft)] text-warning">
+                          <Calendar className="w-3 h-3" />
+                          {t('crm.activityTab.nextFollow')}: {new Date(nextFollowDate).toLocaleDateString('th-TH')}
+                        </span>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                      <span className="text-xs text-[var(--fg-3)]">{timeAgo(activity.createdAt)}</span>
+                      <span className="text-xs text-[var(--fg-3)]">{timeAgo(createdAt)}</span>
                       <span className="text-[10px] text-[var(--fg-4)]">
-                        {new Date(activity.createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                        {createdAt ? new Date(createdAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-'}
                       </span>
                     </div>
                   </div>
@@ -1808,6 +1915,193 @@ function ActivityLogTab({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const FOLLOW_CHANNELS: FollowChannel[] = ['CALL', 'EMAIL', 'MEETING', 'NOTE']
+
+/** แท็บติดตามบิลในหน้าข้อมูลลูกค้า — แสดงเอกสารที่ต้องตามพร้อมฟอร์มบันทึกผลการติดตาม */
+export function CollectionsFollowUpTab({
+  customerId,
+  items,
+  loading,
+  onRefresh,
+}: {
+  customerId: string
+  items: CollectionItem[]
+  loading: boolean
+  onRefresh: () => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [forms, setForms] = useState<Record<string, { channel: FollowChannel; note: string; nextFollowDate: string }>>({})
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+
+  const getForm = (key: string) => forms[key] ?? { channel: 'CALL' as FollowChannel, note: '', nextFollowDate: '' }
+  const setFormField = (key: string, patch: Partial<{ channel: FollowChannel; note: string; nextFollowDate: string }>) => {
+    setForms(prev => ({ ...prev, [key]: { ...getForm(key), ...patch } }))
+  }
+
+  const formatD = (s?: string | null) => (s ? new Date(s).toLocaleDateString('th-TH') : '-')
+  const channelLabel = (ch: string) =>
+    t(`crm.activityTab.types.${ch.toLowerCase()}`, { defaultValue: ch })
+
+  const handleSubmit = async (e: React.FormEvent, item: CollectionItem) => {
+    e.preventDefault()
+    const key = `${item.kind}:${item.id}`
+    const form = getForm(key)
+    if (!form.note.trim()) return
+    setSavingKey(key)
+    try {
+      await api.post('/activities', {
+        customerId,
+        type: form.channel,
+        note: form.note.trim(),
+        docType: item.kind,
+        docId: item.id,
+        nextFollowDate: form.nextFollowDate || null,
+      })
+      setForms(prev => ({ ...prev, [key]: { channel: form.channel, note: '', nextFollowDate: '' } }))
+      toast.success(t('crm.collectionsTab.saved'))
+      await onRefresh()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('crm.collectionsTab.saveFailed'))
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-base sm:text-lg font-semibold text-[var(--fg-1)] flex items-center gap-2">
+        <CreditCard className="w-5 h-5 text-[var(--primary)]" />
+        {t('crm.collectionsTab.title')}
+        {items.length > 0 && (
+          <span className="text-xs bg-[var(--primary-soft)] text-[var(--primary)] px-2 py-0.5 rounded-full">
+            {items.length}
+          </span>
+        )}
+      </h3>
+
+      {loading && items.length === 0 ? (
+        <p className="text-center text-[var(--fg-3)] py-8">{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12">
+          <CreditCard className="w-10 h-10 text-[var(--fg-4)] mx-auto mb-3 opacity-50" />
+          <p className="text-[var(--fg-4)]">{t('crm.collectionsTab.empty')}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const key = `${item.kind}:${item.id}`
+            const form = getForm(key)
+            const isSaving = savingKey === key
+            const d = item.days_left
+            const daysText = d === null
+              ? t('crm.collectionsTab.noDueDate')
+              : d < 0
+                ? t('header.collectionsOverdue', { days: Math.abs(d) })
+                : d === 0
+                  ? t('header.collectionsDueToday')
+                  : t('header.collectionsDueSoon', { days: d })
+            const daysTone = d === null
+              ? 'bg-[var(--surface-2)] text-[var(--fg-4)]'
+              : d <= 0
+                ? 'bg-[var(--danger-soft)] text-danger'
+                : d <= 3
+                  ? 'bg-[var(--warning-soft)] text-warning'
+                  : 'bg-[var(--surface-2)] text-[var(--fg-3)]'
+
+            return (
+              <div key={key} className="phopy-card p-3 sm:p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-phopy-indigo/10 text-[var(--primary)] font-medium">
+                        {t(`crm.collectionsTab.docKinds.${item.kind}`, { defaultValue: item.kind })}
+                      </span>
+                      <span className="font-mono text-sm font-semibold text-[var(--fg-1)]">{item.number}</span>
+                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${daysTone}`}>
+                        {daysText}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--fg-3)]">
+                      <span>{t('crm.collectionsTab.dueDate')}: {formatD(item.due_date)}</span>
+                      {item.next_follow_date && (
+                        <span>{t('crm.collectionsTab.nextFollowDate')}: {formatD(item.next_follow_date)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="sm:text-right shrink-0">
+                    <p className="text-base font-bold text-[var(--fg-1)] tabular-nums">
+                      ฿{Number(item.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                {item.last_follow && (
+                  <div className="rounded-lg bg-[var(--surface-2)] border border-[var(--border)] px-3 py-2 text-xs space-y-1">
+                    <div className="flex items-center justify-between gap-2 flex-wrap text-[var(--fg-4)]">
+                      <span>
+                        {t('crm.collectionsTab.lastFollow')}: <strong className="text-[var(--fg-2)]">{channelLabel(item.last_follow.type)}</strong>
+                        {item.last_follow.created_by ? ` · ${item.last_follow.created_by}` : ''}
+                      </span>
+                      <span>{formatD(item.last_follow.created_at)}</span>
+                    </div>
+                    <p className="text-[var(--fg-2)] whitespace-pre-wrap">{item.last_follow.note}</p>
+                  </div>
+                )}
+
+                <form onSubmit={(e) => handleSubmit(e, item)} className="pt-2 border-t border-[var(--border)]/60 space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-[var(--fg-4)] mb-1">{t('crm.collectionsTab.channel')}</label>
+                      <select
+                        value={form.channel}
+                        onChange={(e) => setFormField(key, { channel: e.target.value as FollowChannel })}
+                        aria-label={`${t('crm.collectionsTab.channel')} ${item.number}`}
+                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+                      >
+                        {FOLLOW_CHANNELS.map(ch => (
+                          <option key={ch} value={ch}>{channelLabel(ch)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-[var(--fg-4)] mb-1">{t('crm.collectionsTab.nextFollowDate')}</label>
+                      <input
+                        type="date"
+                        value={form.nextFollowDate}
+                        onChange={(e) => setFormField(key, { nextFollowDate: e.target.value })}
+                        aria-label={`${t('crm.collectionsTab.nextFollowDate')} ${item.number}`}
+                        className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={form.note}
+                      onChange={(e) => setFormField(key, { note: e.target.value })}
+                      placeholder={t('crm.collectionsTab.notePlaceholder')}
+                      aria-label={`${t('crm.collectionsTab.notePlaceholder')} ${item.number}`}
+                      className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-[var(--fg-1)] focus:outline-none focus:border-phopy-indigo"
+                      required
+                    />
+                    <button
+                      type="submit"
+                      disabled={!form.note.trim() || isSaving}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-phopy-indigo text-white hover:bg-phopy-indigo/80 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {isSaving ? t('common.saving') : t('crm.collectionsTab.saveFollow')}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
