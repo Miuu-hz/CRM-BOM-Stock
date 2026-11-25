@@ -324,6 +324,7 @@ export function applySchema(db: any): void {
       tenant_id TEXT,
       wo_number TEXT NOT NULL,
       bom_id TEXT,
+      product_id TEXT,             -- stock_items.id ของสินค้าที่ผลิต (ใช้เมื่อไม่มี BOM)
       product_name TEXT,
       quantity INTEGER DEFAULT 0,
       completed_qty INTEGER DEFAULT 0,

@@ -3,12 +3,14 @@ import db from '../../db/sqlite'
 import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
-import { roundQty, isPositiveQty } from '../../utils/qty'
-import { formatDocumentNumber } from '../../utils/id'
+import { roundQty } from '../../utils/qty'
 import {
   restockCancelledWorkOrderMaterials, workOrderStatusError,
   woMaterialsIssued, WO_PRIVILEGED_ROLES, resolveWorkOrderCompletion, settleWorkOrderCost,
 } from '../../services/stockMovement.service'
+import {
+  createWorkOrder, bomMaterials, assertMaterialsLinked, workOrderProductId, WorkOrderTransitionError,
+} from '../../services/workOrderTransition.service'
 import { ok } from './shared'
 
 export function registerProductionTools(server: IMcpServer, tenantId: string, userId: string, callerRole: string): void {
@@ -30,82 +32,28 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
     },
     async (args) => {
       const { bom_id, product_name, quantity, unit, priority, due_date, notes } = args
-      // zod .positive() กัน schema ที่เข้าทาง MCP SDK จริงอยู่แล้ว เช็คซ้ำตรงนี้ไว้เผื่อ
-      // เรียกตรงจากที่อื่น (เช่นเทสต์) ที่ไม่ผ่านการ validate schema
-      if (!isPositiveQty(quantity)) {
-        return ok({ success: false, message: 'จำนวนที่ต้องการผลิตต้องเป็นตัวเลขมากกว่า 0' })
+      let wo: any
+      try {
+        wo = createWorkOrder(tenantId, {
+          bomId: bom_id, productName: product_name, quantity, unit, priority, dueDate: due_date, notes,
+          materials: bom_id ? bomMaterials(tenantId, bom_id, quantity, unit) : [],
+        }, { notify: false })
+      } catch (err: any) {
+        if (err instanceof WorkOrderTransitionError) return ok({ success: false, message: err.message })
+        throw err
       }
-
-      const id = randomUUID().replace(/-/g, '').substring(0, 25)
-      const woNumber = formatDocumentNumber('WO', tenantId, 'WORK_ORDER', undefined, 5)
-      const now = new Date().toISOString()
-
-      let materials: any[] = []
-      let estimatedCost = 0
-      // ถ้าไม่ระบุ unit ใช้หน่วยของสินค้าสำเร็จรูปจาก BOM — ให้พฤติกรรมตรงกับ workOrder.routes.ts
-      let woUnit: string | null = unit || null
-
-      if (bom_id) {
-        const bom = db.prepare('SELECT * FROM boms WHERE id = ? AND tenant_id = ?').get(bom_id, tenantId) as any
-        if (!bom) {
-          return ok({ success: false, message: `ไม่พบ BOM: ${bom_id}` })
-        }
-        if (!woUnit && bom.product_id) {
-          const bomProduct = db.prepare('SELECT base_unit, unit FROM stock_items WHERE id = ?').get(bom.product_id) as any
-          woUnit = bomProduct?.base_unit || bomProduct?.unit || null
-        }
-        const bomItems = db.prepare(`
-          SELECT bi.*, m.name as material_name, m.unit as material_unit, m.unit_cost
-          FROM bom_items bi
-          LEFT JOIN stock_items m ON bi.material_id = m.id
-          WHERE bi.bom_id = ? AND bi.item_type = 'MATERIAL'
-        `).all(bom_id) as any[]
-
-        for (const bi of bomItems) {
-          const requiredQty = bi.quantity * quantity
-          materials.push({
-            materialId: bi.material_id,
-            materialName: bi.material_name,
-            requiredQty: requiredQty,
-            unit: bi.unit || bi.material_unit || 'pcs',
-            unitCost: bi.unit_cost || 0,
-          })
-          estimatedCost += requiredQty * (bi.unit_cost || 0)
-        }
-      }
-
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO work_orders (id, tenant_id, wo_number, bom_id, product_name, quantity, status, priority, unit,
-            due_date, notes, estimated_cost, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, tenantId, woNumber, bom_id || null, product_name, quantity,
-          priority || 'NORMAL', woUnit, due_date || null, notes || '', estimatedCost, now, now)
-
-        if (materials.length > 0) {
-          const insertMaterial = db.prepare(`
-            INSERT INTO work_order_materials (id, tenant_id, work_order_id, material_id, material_name, required_qty, unit, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
-          `)
-          for (const m of materials) {
-            insertMaterial.run(
-              randomUUID().replace(/-/g, '').substring(0, 25),
-              tenantId, id, m.materialId, m.materialName, m.requiredQty, m.unit
-            )
-          }
-        }
-      })()
+      const woNumber = wo.wo_number
 
       return ok({
         success: true,
         woNumber,
-        woId: id,
+        woId: wo.id,
         status: 'DRAFT',
         productName: product_name,
         quantity,
-        materialCount: materials.length,
-        estimatedCost,
-        message: `สร้างใบสั่งผลิต ${woNumber} สำเร็จ (${materials.length} รายการวัตถุดิบ)`,
+        materialCount: wo.materials.length,
+        estimatedCost: wo.estimated_cost,
+        message: `สร้างใบสั่งผลิต ${woNumber} สำเร็จ (${wo.materials.length} รายการวัตถุดิบ)`,
       })
     }
   )
@@ -156,6 +104,9 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
       } else if (status === 'IN_PROGRESS' && wo.status !== 'IN_PROGRESS') {
         // ทั้งก้อนต้อง atomic: เดิมถ้าวัตถุดิบตัวที่ 3 พัง ตัวที่ 1-2 ถูกตัดสต็อกไปแล้วและค้างอยู่
         const issueMaterials = db.transaction(() => {
+        assertMaterialsLinked(tenantId, materials)
+        const negSetting = db.prepare('SELECT allow_negative_stock FROM company_settings WHERE tenant_id = ?').get(tenantId) as any
+        const allowNegativeStock = negSetting?.allow_negative_stock === 1
         for (const m of materials) {
           if (m.material_id) {
             const stock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(m.material_id, tenantId) as any
@@ -193,7 +144,7 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
               }
             }
 
-            if (stock.quantity < needed) {
+            if (stock.quantity < needed && !allowNegativeStock) {
               throw new Error(`สต็อกไม่พอสำหรับ ${m.material_name}: ต้องการ ${needed} ${stock.unit} มี ${stock.quantity}`)
             }
 
@@ -237,27 +188,23 @@ export function registerProductionTools(server: IMcpServer, tenantId: string, us
         let movementUnit: string | null = null
         let movementQuantity: number | null = null
 
-        if (wo.bom_id) {
-          const bom = db.prepare('SELECT product_id FROM boms WHERE id = ?').get(wo.bom_id) as any
-          if (bom?.product_id) {
-            finishedStock = db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(bom.product_id, tenantId) as any
-            if (finishedStock) {
-              const stockUnit = finishedStock.base_unit || finishedStock.unit
-              const woUnit = wo.unit || stockUnit
-              // เดิมบวก wo.quantity เข้าสต็อกตรงๆ ไม่แปลงหน่วยเลย (เคส "ตัดผ้าเป็นเมตร
-              // คนละ SKU จากม้วนผ้า" ผลิตได้คนละหน่วยกับที่กรอกใน WO)
-              if (stockUnit && woUnit && normalizeUnit(woUnit) !== normalizeUnit(stockUnit)) {
-                const converted = convertQuantityBidirectional(addQty, woUnit, stockUnit, tenantId, finishedStock.id)
-                if (!converted) {
-                  return ok({ success: false, message: `ไม่พบการแปลงหน่วย ${woUnit} → ${stockUnit} สำหรับสินค้าสำเร็จรูป "${finishedStock.name}" กรุณาตั้งค่า Unit Conversion ก่อนปิดใบสั่งงาน` })
-                }
-                movementUnit = woUnit
-                movementQuantity = addQty
-                addQty = converted.converted
-              }
-              addQty = roundQty(addQty)
+        const productId = workOrderProductId(tenantId, wo)
+        finishedStock = productId ? db.prepare('SELECT * FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, tenantId) as any : null
+        if (finishedStock) {
+          const stockUnit = finishedStock.base_unit || finishedStock.unit
+          const woUnit = wo.unit || stockUnit
+          // เดิมบวก wo.quantity เข้าสต็อกตรงๆ ไม่แปลงหน่วยเลย (เคส "ตัดผ้าเป็นเมตร
+          // คนละ SKU จากม้วนผ้า" ผลิตได้คนละหน่วยกับที่กรอกใน WO)
+          if (stockUnit && woUnit && normalizeUnit(woUnit) !== normalizeUnit(stockUnit)) {
+            const converted = convertQuantityBidirectional(addQty, woUnit, stockUnit, tenantId, finishedStock.id)
+            if (!converted) {
+              return ok({ success: false, message: `ไม่พบการแปลงหน่วย ${woUnit} → ${stockUnit} สำหรับสินค้าสำเร็จรูป "${finishedStock.name}" กรุณาตั้งค่า Unit Conversion ก่อนปิดใบสั่งงาน` })
             }
+            movementUnit = woUnit
+            movementQuantity = addQty
+            addQty = converted.converted
           }
+          addQty = roundQty(addQty)
         }
 
         db.transaction(() => {

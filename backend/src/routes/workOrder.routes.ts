@@ -1,13 +1,51 @@
 import { Router, Request, Response } from 'express'
 import { authenticate } from '../middleware/auth.middleware'
 import db from '../db/sqlite'
-import { normalizeUnit } from '../services/unitConversion.service'
-import { createWorkOrder, transitionWorkOrder, WorkOrderTransitionError } from '../services/workOrderTransition.service'
+import {
+  createWorkOrder, transitionWorkOrder, updateWorkOrder, deleteWorkOrder, checkMaterialStock, bomMaterials,
+  workOrderProductId, WorkOrderTransitionError,
+} from '../services/workOrderTransition.service'
 
 const router = Router()
 
 // ทุก Route ต้องมี Authentication
 router.use(authenticate)
+
+function sendError(res: Response, error: any, message: string) {
+  if (error instanceof WorkOrderTransitionError) {
+    return res.status(error.status).json({ success: false, message: error.message })
+  }
+  console.error(message, error)
+  res.status(500).json({ success: false, message })
+}
+
+/** เทแนนต์ของใบสั่งงาน — MASTER ข้ามร้านได้ คนอื่นได้แค่ร้านตัวเอง */
+function tenantOf(req: Request): string {
+  if (req.user?.role !== 'MASTER') return req.user!.tenantId
+  const row = db.prepare('SELECT tenant_id FROM work_orders WHERE id = ?').get(req.params.id) as any
+  return row?.tenant_id || req.user!.tenantId
+}
+
+// วัตถุดิบตาม BOM สำหรับจำนวนผลิต + สถานะสต็อก
+router.get('/bom-materials/:bomId', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId
+    const lines = bomMaterials(tenantId, req.params.bomId, Number(req.query.quantity), req.query.unit ? String(req.query.unit) : null)
+    res.json({ success: true, data: lines })
+  } catch (error) {
+    sendError(res, error, 'Failed to load BOM materials')
+  }
+})
+
+// เทียบวัตถุดิบกับสต็อก (แปลงหน่วย + รวมแพ็คที่ยังไม่แกะ)
+router.post('/check-materials', (req: Request, res: Response) => {
+  try {
+    const lines = Array.isArray(req.body?.materials) ? req.body.materials.slice(0, 500) : []
+    res.json({ success: true, data: checkMaterialStock(req.user!.tenantId, lines) })
+  } catch (error) {
+    sendError(res, error, 'Failed to check materials')
+  }
+})
 
 // GET all work orders
 router.get('/', async (req: Request, res: Response) => {
@@ -127,10 +165,19 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     const effectiveTenantId = wo.tenant_id
-    const materials = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id)
+    const rows = db.prepare('SELECT * FROM work_order_materials WHERE work_order_id = ?').all(req.params.id) as any[]
+    // เบิกไปแล้วไม่ต้องเทียบสต็อก — ของออกจากคลังไปแล้ว เทียบซ้ำจะขึ้น "ขาด" ผิด ๆ
+    const pending = rows.filter(m => m.status === 'PENDING')
+    const checks = checkMaterialStock(effectiveTenantId, pending.map(m => ({ materialId: m.material_id, requiredQty: m.required_qty, unit: m.unit })))
+    const byId = new Map(pending.map((m, i) => [m.id, checks[i]]))
+    const materials = rows.map(m => ({ ...m, ...byId.get(m.id) }))
+    const productId = workOrderProductId(effectiveTenantId, wo)
+    const product = productId
+      ? db.prepare('SELECT sku, name FROM stock_items WHERE id = ? AND tenant_id = ?').get(productId, effectiveTenantId) as any
+      : null
     const inspections = db.prepare('SELECT * FROM qc_inspections WHERE work_order_id = ? AND tenant_id = ? ORDER BY created_at DESC').all(req.params.id, effectiveTenantId)
 
-    res.json({ success: true, data: { ...wo, materials, inspections } })
+    res.json({ success: true, data: { ...wo, finished_sku: product?.sku || null, finished_name: product?.name || null, materials, inspections } })
   } catch (error) {
     console.error('Get work order error:', error)
     res.status(500).json({ success: false, message: 'Failed to fetch work order' })
@@ -148,11 +195,7 @@ router.post('/', async (req: Request, res: Response) => {
     const data = createWorkOrder(tenantId, req.body)
     res.status(201).json({ success: true, data })
   } catch (error: any) {
-    if (error instanceof WorkOrderTransitionError) {
-      return res.status(error.status).json({ success: false, message: error.message })
-    }
-    console.error('Create work order error:', error)
-    res.status(500).json({ success: false, message: 'Failed to create work order' })
+    sendError(res, error, 'Failed to create work order')
   }
 })
 
@@ -176,80 +219,30 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: updated })
   } catch (error: any) {
-    if (error instanceof WorkOrderTransitionError) {
-      return res.status(error.status).json({ success: false, message: error.message })
-    }
-    console.error('Update WO status error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update status' })
+    sendError(res, error, 'Failed to update status')
   }
 })
 
-// PUT update work order
-router.put('/:id', async (req: Request, res: Response) => {
+// PUT update work order (เฉพาะที่ยังไม่เริ่มผลิต)
+router.put('/:id', (req: Request, res: Response) => {
   try {
-    const isMaster = req.user?.role === 'MASTER'
-    let tenantId = req.user!.tenantId
-    const { productName, quantity, priority, dueDate, assignedTo, notes, unit } = req.body
-    const now = new Date().toISOString()
-
-    // Check if work order exists and belongs to tenant
-    const existing = (isMaster
-      ? db.prepare('SELECT id, tenant_id FROM work_orders WHERE id = ?').get(req.params.id)
-      : db.prepare('SELECT id, tenant_id FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)) as any
-
-    if (!existing) {
-      return res.status(404).json({ success: false, message: 'Work order not found' })
-    }
-    if (isMaster && existing.tenant_id) {
-      tenantId = existing.tenant_id
-    }
-
-    // หน่วยของ WO เดิมรับเฉพาะตอนสร้าง กรอกผิดแล้วแก้ไม่ได้เลย ต้องลบทิ้งสร้างใหม่
-    // ทั้งที่หน่วยเป็นตัวกำหนดว่าตอนปิดงานจะบวกสต็อกเท่าไหร่ — จำกัดไว้ที่ DRAFT/PLANNED
-    // ตาม WHERE เดิม จึงแก้หลังเบิกวัตถุดิบไปแล้วไม่ได้
-    const normalizedUnit = unit === undefined || unit === null || unit === '' ? null : normalizeUnit(String(unit))
-
-    db.prepare(`
-      UPDATE work_orders SET product_name = COALESCE(?, product_name), quantity = COALESCE(?, quantity),
-      priority = COALESCE(?, priority), due_date = ?, assigned_to = COALESCE(?, assigned_to),
-      notes = COALESCE(?, notes), unit = COALESCE(?, unit), updated_at = ?
-      WHERE id = ? AND tenant_id = ? AND status IN ('DRAFT', 'PLANNED')
-    `).run(productName, quantity, priority, dueDate || null, assignedTo, notes, normalizedUnit, now, req.params.id, tenantId)
-
-    const updatedWo = db.prepare('SELECT * FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)
-    res.json({ success: true, data: updatedWo })
+    res.json({ success: true, data: updateWorkOrder(tenantOf(req), req.params.id, req.body || {}) })
   } catch (error) {
-    console.error('Update work order error:', error)
-    res.status(500).json({ success: false, message: 'Failed to update work order' })
+    sendError(res, error, 'Failed to update work order')
   }
 })
 
-// DELETE work order (only DRAFT)
-router.delete('/:id', async (req: Request, res: Response) => {
+// DELETE work order (เฉพาะที่ยังไม่เริ่มผลิต)
+router.delete('/:id', (req: Request, res: Response) => {
   try {
-    const isMaster = req.user?.role === 'MASTER'
-    let tenantId = req.user!.tenantId
-
-    const wo = (isMaster
-      ? db.prepare('SELECT status, tenant_id FROM work_orders WHERE id = ?').get(req.params.id)
-      : db.prepare('SELECT status, tenant_id FROM work_orders WHERE id = ? AND tenant_id = ?').get(req.params.id, tenantId)) as any
-
-    if (!wo) {
-      return res.status(404).json({ success: false, message: 'Work order not found' })
-    }
-    if (wo.status !== 'DRAFT') {
-      return res.status(400).json({ success: false, message: 'Can only delete draft work orders' })
-    }
-    if (isMaster && wo.tenant_id) {
-      tenantId = wo.tenant_id
-    }
-
-    db.prepare('DELETE FROM work_order_materials WHERE work_order_id = ?').run(req.params.id)
-    db.prepare('DELETE FROM work_orders WHERE id = ? AND tenant_id = ?').run(req.params.id, tenantId)
+    deleteWorkOrder(tenantOf(req), req.params.id, {
+      email: req.user?.email || 'system',
+      role: req.user?.role || '',
+      isMaster: req.user?.role === 'MASTER',
+    })
     res.json({ success: true, message: 'Work order deleted' })
   } catch (error) {
-    console.error('Delete work order error:', error)
-    res.status(500).json({ success: false, message: 'Failed to delete work order' })
+    sendError(res, error, 'Failed to delete work order')
   }
 })
 

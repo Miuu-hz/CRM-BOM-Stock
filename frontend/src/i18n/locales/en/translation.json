@@ -296,7 +296,14 @@
     "actions": {
       "plan": "Plan",
       "startProduction": "Start Production",
-      "markComplete": "Mark Complete"
+      "markComplete": "Mark Complete",
+      "menu": "More actions",
+      "view": "View details",
+      "printA4": "Print A4",
+      "printA5": "Print A5",
+      "edit": "Edit",
+      "delete": "Delete",
+      "cancel": "Cancel work order"
     },
     "create": {
       "title": "Create Work Order",
@@ -334,7 +341,18 @@
       "semiFinished": "Semi-finished",
       "prReason": "Raw material shortage for producing: {{name}} quantity {{quantity}} units",
       "prCreated": "Purchase Request created successfully — {{count}} items",
-      "prFailed": "Unable to create PR"
+      "prFailed": "Unable to create PR",
+      "editTitle": "Edit work order",
+      "saveButton": "Save",
+      "selectMaterial": "Select material from stock...",
+      "notLinked": "\"{{name}}\" is not linked to a stock item",
+      "selectProduct": "Select product from stock...",
+      "productNotLinked": "Not linked to a stock item — finished goods will not be added to stock",
+      "qtyChanged": "Quantity changed but materials were not recalculated",
+      "recalc": "Recalculate from BOM",
+      "bomLoadFailed": "Failed to load BOM materials",
+      "mismatch": "Cannot convert unit",
+      "stockLoadFailed": "Failed to load stock items"
     },
     "detail": {
       "productionProgress": "Production Progress",
@@ -361,7 +379,12 @@
       "qcFail": "{{count}} Failed",
       "qcPending": "{{count}} Pending",
       "qcQty": "Passed {{passed}} / Rejected {{rejected}} (Inspected {{inspected}})",
-      "qcNone": "No QC inspections for this work order yet"
+      "qcNone": "No QC inspections for this work order yet",
+      "matIssued": "Issued",
+      "matPending": "Pending",
+      "matNotLinked": "Not linked",
+      "inStock": "In stock {{qty}} {{unit}}",
+      "short": "Short {{qty}} {{unit}}"
     },
     "subcontract": {
       "title": "Subcontracting",
@@ -423,8 +446,10 @@
     "error": {
       "updateStatus": "Failed to update status",
       "delete": "Failed to delete",
-      "create": "Failed to create work order"
-    }
+      "create": "Failed to create work order",
+      "loadDetail": "Failed to open work order"
+    },
+    "confirmCancel": "Cancel this work order? Any issued materials will be returned to stock."
   },
   "qc": {
     "title": "Quality Control",

@@ -440,6 +440,8 @@ export interface BillItem {
   stockUnit?: string
   stockStatus?: 'ok' | 'short' | 'mismatch' | 'unknown'
   issuedQty?: number
+  /** จำนวนที่ขาด ในหน่วยสต็อก (คนละหน่วยกับ quantity ได้) */
+  stockShort?: number
 }
 
 export interface BillParty {
@@ -506,6 +508,7 @@ export interface BillData {
   woProductName?: string
   woQty?: number
   woCompletedQty?: number
+  woUnit?: string
   priority?: 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW'
   assignedTo?: string
 

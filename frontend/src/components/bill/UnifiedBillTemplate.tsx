@@ -197,8 +197,13 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
     const themeColor = settings?.brandColor || config.themeColor
     const showBank = config.fields.showBankInfo && settings?.showBankInfo !== false
     const showQr = config.fields.showQRCode && settings?.showPaymentQr !== false
-    const signatureSlots = settings?.signatureSlots?.length ? settings.signatureSlots : config.defaultSignatureSlots
-    const footerNote = settings?.footerNote
+    // ช่องเซ็น/หมายเหตุท้ายบิลที่ตั้งไว้เป็นของเอกสารซื้อขาย ใบสั่งผลิตเป็นเอกสารภายใน ใช้ช่องเซ็นฝ่ายผลิตของตัวเอง
+    const isWO = config.type === 'WORK_ORDER'
+    const signatureSlots = !isWO && settings?.signatureSlots?.length ? settings.signatureSlots : config.defaultSignatureSlots
+    const footerNote = isWO ? undefined : settings?.footerNote
+    const woUnit = data.woUnit ? unitLabel(data.woUnit) : 'หน่วย'
+    const woPct = isWO && data.woQty ? Math.round(((data.woCompletedQty ?? 0) / data.woQty) * 100) : 0
+    const num = (v?: number) => (v ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 4 })
 
     const paperStyle: React.CSSProperties = {
       '--theme-color': themeColor,
@@ -350,7 +355,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
               {/* Head grid — ผู้ขาย | ลูกค้า/คู่ค้า | ข้อมูลเอกสาร */}
               <section className="bill-head-grid">
                 <div className="bill-party-col">
-                  {data.seller.name && <div className="party-row"><span className="k">ผู้ขาย :</span><span className="nm">{data.seller.name}</span></div>}
+                  {data.seller.name && <div className="party-row"><span className="k">{isWO ? 'ผู้ผลิต' : 'ผู้ขาย'} :</span><span className="nm">{data.seller.name}</span></div>}
                   {data.seller.address && <div className="party-row"><span className="k">ที่อยู่ :</span><span>{data.seller.address}</span></div>}
                   {data.seller.taxId && (
                     <div className="party-row"><span className="k">เลขภาษี :</span><span>{data.seller.taxId}{data.seller.branch && ` (${data.seller.branch})`}</span></div>
@@ -377,7 +382,7 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                   <div className="meta-row"><span className="k">วันที่ออก</span><span className="v">{formatThaiDate(data.docDate)}</span></div>
                   {config.fields.showDueDate && data.dueDate && (
                     <div className="meta-row">
-                      <span className="k">{config.type === 'QUOTATION' ? 'ยืนราคาถึง' : 'ครบกำหนดชำระ'}</span>
+                      <span className="k">{config.type === 'QUOTATION' ? 'ยืนราคาถึง' : isWO ? 'กำหนดเสร็จ' : 'ครบกำหนดชำระ'}</span>
                       <span className="v">{formatThaiDate(data.dueDate)}</span>
                     </div>
                   )}
@@ -400,18 +405,18 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                     <div className="wo-summary-card highlight">
                       <p className="wo-summary-label">สินค้าที่ผลิต</p>
                       <p className="wo-summary-value" style={{ fontSize: '14px', color: themeColor }}>
-                        {data.woProductName || data.buyer.name}
+                        {data.woProductName || '-'}
                       </p>
                     </div>
                     <div className="wo-summary-card highlight">
                       <p className="wo-summary-label">จำนวนสั่งผลิต</p>
-                      <p className="wo-summary-value" style={{ color: themeColor }}>{data.woQty ?? '-'}</p>
-                      <p className="wo-summary-unit">หน่วย</p>
+                      <p className="wo-summary-value" style={{ color: themeColor }}>{num(data.woQty)}</p>
+                      <p className="wo-summary-unit">{woUnit}</p>
                     </div>
                     <div className="wo-summary-card">
                       <p className="wo-summary-label">ผลิตแล้ว</p>
-                      <p className="wo-summary-value text-success">{data.woCompletedQty ?? 0}</p>
-                      <p className="wo-summary-unit">หน่วย</p>
+                      <p className="wo-summary-value text-success">{num(data.woCompletedQty)}</p>
+                      <p className="wo-summary-unit">{woUnit}</p>
                     </div>
                     <div className="wo-summary-card">
                       <p className="wo-summary-label">ระดับความสำคัญ</p>
@@ -434,14 +439,13 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                     <div className="wo-progress-container">
                       <div className="wo-progress-label">
                         <span>ความคืบหน้าการผลิต</span>
-                        <span>{data.woCompletedQty ?? 0} / {data.woQty} หน่วย
-                          ({Math.round(((data.woCompletedQty ?? 0) / (data.woQty ?? 1)) * 100)}%)
+                        <span>{num(data.woCompletedQty)} / {num(data.woQty)} {woUnit} ({woPct}%)
                         </span>
                       </div>
                       <div className="wo-progress-bar">
                         <div
                           className="wo-progress-fill"
-                          style={{ width: `${Math.round(((data.woCompletedQty ?? 0) / (data.woQty ?? 1)) * 100)}%` }}
+                          style={{ width: `${Math.min(100, woPct)}%` }}
                           data-complete={(data.woCompletedQty ?? 0) >= (data.woQty ?? 1) ? 'true' : 'false'}
                         />
                       </div>
@@ -471,28 +475,28 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                               {item.description && <span className="item-desc">{item.description}</span>}
                             </td>
                             <td className="wo-col-req" style={{ textAlign: 'right', fontWeight: 600 }}>
-                              {item.quantity}
+                              {num(item.quantity)}
                             </td>
                             <td className="wo-col-unit">{unitLabel(item.unit)}</td>
                             <td className="wo-col-stock">
                               {item.stockStatus === 'ok' && (
-                                <span className="wo-stock-ok flex items-center gap-1"><Check className="w-3.5 h-3.5" /> {item.stockQty} {item.stockUnit}</span>
+                                <span className="wo-stock-ok"><Check size={12} /> {num(item.stockQty)} {unitLabel(item.stockUnit || '')}</span>
                               )}
                               {item.stockStatus === 'short' && (
-                                <span className="wo-stock-short flex items-center gap-1">
-                                  <AlertTriangle className="w-3.5 h-3.5" /> {item.stockQty} {item.stockUnit}<br/>
-                                  <small>ขาด {((item.quantity) - (item.stockQty ?? 0)).toFixed(2)}</small>
+                                <span className="wo-stock-short">
+                                  <AlertTriangle size={12} /> {num(item.stockQty)} {unitLabel(item.stockUnit || '')}<br/>
+                                  <small>ขาด {num(item.stockShort ?? item.quantity - (item.stockQty ?? 0))}</small>
                                 </span>
                               )}
                               {item.stockStatus === 'mismatch' && (
-                                <span className="wo-stock-mismatch">{item.stockQty} {item.stockUnit}</span>
+                                <span className="wo-stock-mismatch">{num(item.stockQty)} {unitLabel(item.stockUnit || '')}</span>
                               )}
                               {(!item.stockStatus || item.stockStatus === 'unknown') && (
                                 <span className="wo-stock-unknown">-</span>
                               )}
                             </td>
                             <td className="wo-col-issued" style={{ textAlign: 'center' }}>
-                              {item.issuedQty ?? 0}
+                              {num(item.issuedQty)}
                             </td>
                             <td className="wo-col-check">
                               <span className="wo-check-box" />
@@ -502,6 +506,12 @@ const UnifiedBillTemplate = forwardRef<HTMLDivElement, UnifiedBillTemplateProps>
                       </tbody>
                     </table>
                   </section>
+                  {data.notes && (
+                    <section className="wo-instructions">
+                      <div className="wo-instructions-label">หมายเหตุ / คำสั่งผลิต</div>
+                      <div className="wo-instructions-text">{data.notes}</div>
+                    </section>
+                  )}
                 </>
               ) : (
                 <>

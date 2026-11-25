@@ -701,7 +701,8 @@ router.get('/explode/:id', async (req: Request, res: Response) => {
       visited.add(currentBomId)
 
       const items = db.prepare(`
-        SELECT bi.*, m.name as material_name, m.sku as material_code, m.unit
+        SELECT bi.*, m.name as material_name, m.sku as material_code,
+          COALESCE(NULLIF(bi.unit, ''), m.unit) as unit
         FROM bom_items bi
         LEFT JOIN stock_items m ON bi.material_id = m.id
         WHERE bi.bom_id = ? AND bi.tenant_id = ?

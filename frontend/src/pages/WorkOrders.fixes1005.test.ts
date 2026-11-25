@@ -21,8 +21,9 @@ describe('WorkOrders.tsx — CreateWOModal ผูก stock map ด้วย item
     expect(body).not.toMatch(/item\.material_id\s*\|\|\s*item\.materialId/)
   })
 
-  it('ใช้ item.id เป็นตัวผูกกับ stock map', () => {
-    expect(body).toMatch(/const mid = item\.id/)
+  it('ใช้ item.id เป็นตัวผูกกับคลัง และวัตถุดิบเลือกจากคลังเท่านั้น (ไม่มีช่องพิมพ์ชื่อเอง)', () => {
+    expect(body).toMatch(/stockItems\.map\(item => \[item\.id, item\]\)/)
+    expect(body).not.toMatch(/<input value=\{mat\.materialName\}/)
   })
 })
 

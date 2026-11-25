@@ -432,12 +432,12 @@ export const BILL_CSS = `
 
 .wo-progress-container { margin-bottom: 18px; }
 .wo-progress-label { display: flex; justify-content: space-between; font-size: 11px; color: #666666; margin-bottom: 5px; }
-.wo-progress-bar { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+.wo-progress-bar { height: 10px; background: var(--surface-2, #e5e7eb); border-radius: 5px; overflow: hidden; }
 .wo-progress-fill { height: 100%; border-radius: 5px; background: var(--theme-color, #3949E5); }
-.wo-progress-fill[data-complete="true"] { background: var(--success); }
+.wo-progress-fill[data-complete="true"] { background: var(--success, #16a34a); }
 
 .wo-materials-section { margin-bottom: 20px; }
-.wo-materials-section > h3 {
+.wo-materials-section h3 {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
   color: var(--theme-color, #3949E5); margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1.5px solid #eeeeee;
 }
@@ -566,6 +566,47 @@ export const BILL_CSS = `
 .bill-a5 .bill-head-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
 .bill-a5 .bill-meta-col  { grid-column: 1 / -1; }
 .bill-a5 .bill-items-table { font-size: 10.5px; }
+.wo-summary-card p { margin: 0 0 4px; }
+.unified-bill-paper:has(.wo-materials-table) .signature-box p,
+.unified-bill-paper:has(.wo-materials-table) .bill-footer-info p { margin: 0; }
+.bill-a4 .wo-summary-grid { margin-bottom: 12px; }
+.bill-a5 .wo-summary-grid { gap: 5px; margin-bottom: 8px; }
+.bill-a5 .wo-summary-card { padding: 6px 4px; border-width: 1px; }
+.bill-a5 .wo-summary-label { font-size: 8.5px; margin-bottom: 3px; }
+.bill-a5 .wo-summary-value { font-size: 12px !important; line-height: 1.25; margin-bottom: 0; }
+.bill-a5 .wo-summary-unit { font-size: 9.5px; margin-top: 1px; }
+.bill-a5 .wo-progress-container { display: none; }
+.bill-a5 .wo-materials-section h3 { font-size: 12px; margin-bottom: 4px; padding-bottom: 3px; }
+.bill-a5 .bill-footer-info p { margin: 0; }
+/* ใบสั่งผลิต A5 — บีบหัว/ลายเซ็นให้วัตถุดิบมีที่ ไม่ล้นหน้า */
+.bill-a5:has(.wo-materials-table) .bill-header { margin-bottom: 6px; padding-bottom: 4px; }
+.bill-a5:has(.wo-materials-table) .bill-logo-img { width: 38px; height: 38px; }
+.bill-a5:has(.wo-materials-table) .bill-title-th { font-size: 18px; margin-top: 0; line-height: 1.2; }
+.bill-a5:has(.wo-materials-table) .bill-title-en { display: none; }
+.bill-a5:has(.wo-materials-table) .bill-draft-label { font-size: 9px; }
+.bill-a5:has(.wo-materials-table) .bill-status-badge { margin-top: 0; padding: 0; font-size: 9.5px; }
+.bill-a5:has(.wo-materials-table) .bill-page-badge { margin-top: 0; font-size: 9.5px; }
+.bill-a5:has(.wo-materials-table) .bill-head-grid { grid-template-columns: 1.6fr 1fr; gap: 6px 10px; margin-bottom: 8px; }
+.bill-a5:has(.wo-materials-table) .bill-party-col { font-size: 9.5px; line-height: 1.35; }
+.bill-a5:has(.wo-materials-table) .bill-party-col .party-row { grid-template-columns: auto 1fr; margin-bottom: 1px; }
+.bill-a5:has(.wo-materials-table) .bill-meta-col { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 5px 8px; font-size: 9.5px; border-radius: 6px; }
+.bill-a5:has(.wo-materials-table) .bill-meta-col .meta-row { gap: 5px; margin: 0; }
+.bill-a5:has(.wo-materials-table) .bill-footer { margin-top: 6px; padding-top: 4px; font-size: 10px; }
+.bill-a5:has(.wo-materials-table) .signature-line { height: 24px; margin-bottom: 3px; }
+.bill-a5:has(.wo-materials-table) .signature-box p { margin: 0; font-size: 9px; }
+.bill-a5:has(.wo-materials-table) .bill-signatures { gap: 8px; margin-top: 4px; }
+.bill-a5:has(.wo-materials-table) .wo-instructions { padding: 6px 8px; margin-bottom: 6px; }
+.bill-a5:has(.wo-materials-table) .wo-instructions-text { font-size: 10px; line-height: 1.4; }
+.bill-a5 .wo-materials-table { font-size: 10px; table-layout: fixed; }
+.bill-a5 .wo-materials-table th,
+.bill-a5 .wo-materials-table td { padding: 5px 4px; overflow-wrap: anywhere; }
+.bill-a5 .wo-col-no { width: 22px; }
+.bill-a5 .wo-col-name { min-width: 0; }
+.bill-a5 .wo-col-req { width: 54px; }
+.bill-a5 .wo-col-unit { width: 44px; }
+.bill-a5 .wo-col-stock { width: 72px; }
+.bill-a5 .wo-col-issued { width: 46px; }
+.bill-a5 .wo-col-check { width: 40px; }
 .bill-a5 .bill-items-table th,
 .bill-a5 .bill-items-table td { padding: 5px 6px; }
 .bill-a5 .bill-summary-section,

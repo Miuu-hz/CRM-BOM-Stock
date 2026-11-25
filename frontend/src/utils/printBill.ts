@@ -53,7 +53,7 @@ const DOCS: Record<PrintDocType, DocSpec> = {
   payment: { bill: 'PAYMENT',          number: ['payment_number'],   date: ['payment_date'],   ref: ['pi_number', 'supplier_invoice_number'], party: 'supplier' },
   return:  { bill: 'PURCHASE_RETURN',  number: ['return_number', 'rt_number', 'pr_number', 'po_number'], date: ['return_date'], ref: ['po_number', 'pr_number'], party: 'supplier' },
   pos:     { bill: 'RECEIPT',          number: ['bill_number'],      date: ['closed_at', 'created_at'], party: 'customer' },
-  wo:      { bill: 'WORK_ORDER',       number: ['wo_number'],        date: ['start_date', 'created_at'], due: ['due_date'], party: 'none' },
+  wo:      { bill: 'WORK_ORDER',       number: ['wo_number'],        date: ['created_at'], ref: ['so_number'], due: ['due_date'], party: 'none' },
 }
 
 const pick = (d: any, keys?: string[]): string => {
@@ -145,9 +145,27 @@ function partyOf(d: any, side: DocSpec['party']): BillParty {
   }
 }
 
+/** ใบสั่งผลิต: รายการ = วัตถุดิบที่ต้องใช้ ไม่มีราคา (สถานะสต็อกมาจาก GET /work-orders/:id) */
+function toWoItems(raw: any[]): BillItem[] {
+  return (raw || []).map((m: any, i: number) => ({
+    id: String(m.id ?? i),
+    no: i + 1,
+    name: String(m.material_name || '-'),
+    description: m.sku || undefined,
+    quantity: n(m.required_qty),
+    unit: String(m.unit || ''),
+    price: 0, discount: 0, vat: 0, total: 0,
+    issuedQty: n(m.issued_qty),
+    stockQty: m.stockQty,
+    stockUnit: m.stockUnit,
+    stockStatus: m.stockStatus,
+    stockShort: m.shortQty,
+  }))
+}
+
 export function toBillData(type: PrintDocType, d: any): BillData {
   const spec = DOCS[type]
-  const items = toItems(d.items)
+  const items = type === 'wo' ? toWoItems(d.materials) : toItems(d.items)
   // ค่าบริการ/ค่าขนส่งไม่มีแถวของตัวเองในเทมเพลต ถ้าไม่ดันเข้ามาเป็นรายการ
   // ใบจะพิมพ์ออกมา subtotal + VAT − ส่วนลด ไม่เท่า total (ใบกำกับที่ออกจาก ERP ใส่เป็นรายการอยู่แล้ว)
   const serviceAmt = n(d.service_charge_amount)
@@ -171,7 +189,14 @@ export function toBillData(type: PrintDocType, d: any): BillData {
     refNumber: pick(d, spec.ref) || undefined,
     dueDate: pick(d, spec.due) || undefined,
     seller: sellerOf(d),
-    buyer: partyOf(d, spec.party),
+    buyer: type === 'wo' ? { name: String(d.assigned_to || '-') } : partyOf(d, spec.party),
+    ...(type === 'wo' && {
+      woProductName: [d.product_name, d.finished_sku && `(${d.finished_sku})`].filter(Boolean).join(' ') || undefined,
+      woQty: n(d.quantity),
+      woCompletedQty: n(d.completed_qty),
+      woUnit: String(d.unit || ''),
+      priority: d.priority,
+    }),
     items,
     subtotal,
     discountTotal: n(d.discount_amount ?? d._discountAmount),
@@ -294,18 +319,25 @@ async function chainRefs(type: PrintDocType, d: any) {
 /**
  * สั่งพิมพ์เอกสาร — ลายเซ็นเดียวกับ printSalesDoc()/printDocument() เดิม
  * ไม่ต้อง await ก็ได้ (ผู้เรียกเป็น onClick) แต่ await ได้ถ้าอยากรอ
+ * input เป็น Promise ได้ — เปิดหน้าต่างก่อนแล้วค่อยรอโหลด (กัน pop-up ถูกบล็อก) โหลดพลาดปิดหน้าต่างแล้ว throw ให้ผู้เรียก
  */
-export async function printBill(type: PrintDocType, data: any, format: PrintFormat = 'a4') {
+export async function printBill(type: PrintDocType, input: any, format: PrintFormat = 'a4') {
   const spec = DOCS[type]
   if (!spec) return
-
-  const billType = resolveBillType(type, data)
 
   // เปิดหน้าต่างก่อน await ใด ๆ — ถ้ารอโหลดก่อนเปิด เบราว์เซอร์ถือว่าไม่ได้มาจากการคลิกแล้วบล็อก pop-up
   const w = window.open('', '_blank', format === 'thermal' ? 'width=340,height=700' : 'width=900,height=1200')
   if (!w) { alert('กรุณาอนุญาต pop-up เพื่อพิมพ์เอกสาร'); return }
   w.document.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>พิมพ์เอกสาร</title></head><body style="font-family:sans-serif;color:#888;padding:24px">กำลังเตรียมเอกสาร…</body></html>')
 
+  let data: any
+  try {
+    data = await input
+  } catch (e) {
+    w.close()
+    throw e
+  }
+  const billType = resolveBillType(type, data)
   const [, refs] = await Promise.all([loadSettings(), chainRefs(type, data)])
   const s: any = settingsCache || {}
   const size = SIZE[format] || 'A4'

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
@@ -14,7 +14,9 @@ import {
   PackageCheck,
   Pause,
   Play,
+  Pencil,
   Plus,
+  Printer,
   Search,
   ShoppingCart,
   Trash2,
@@ -25,13 +27,15 @@ import {
   Banknote,
   Landmark,
 } from 'lucide-react'
-import workOrderService, { WorkOrder, WOStats } from '../services/workOrder'
+import workOrderService, { WorkOrder, WOStats, MaterialDraft, MaterialCheck } from '../services/workOrder'
 import { useOpenFromSearch } from '../hooks/useOpenFromSearch'
 import subcontractService, { Subcontract } from '../services/subcontract'
 import api from '../services/api'
 import { useModalClose } from '../hooks/useModalClose'
 import { SearchableDropdown } from '../components/common/SearchableDropdown'
 import { UnitPicker } from '../components/common/UnitPicker'
+import { RowMenu } from '../components/common/DocRow'
+import { printBill } from '../utils/printBill'
 import { unitLabel } from '../hooks/useUnits'
 import { normalizeUnit } from '../utils/unitNormalize'
 
@@ -61,6 +65,9 @@ function getPriorityConfig(t: (key: string) => string, priority: string) {
   return { ...base, label: t(`workOrders.priority.${priority.toLowerCase()}`) }
 }
 
+/** ยังไม่เริ่มผลิต = แก้ไข/ลบได้ (backend เช็คซ้ำ รวมถึงสิทธิ์) */
+const isEditable = (status: string) => status === 'DRAFT' || status === 'PLANNED'
+
 function WorkOrders() {
   const { t } = useTranslation()
   const [orders, setOrders] = useState<WorkOrder[]>([])
@@ -70,11 +77,11 @@ function WorkOrders() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState<WorkOrder | null>(null)
+  const [editing, setEditing] = useState<WorkOrder | null>(null)
 
   useEffect(() => { loadData() }, [])
 
   const loadData = async () => {
-    setLoading(true)
     try {
       const [ordersData, statsData] = await Promise.all([
         workOrderService.getAll(),
@@ -90,11 +97,12 @@ function WorkOrders() {
   }
 
   const handleStatusChange = async (id: string, status: string) => {
+    if (status === 'CANCELLED' && !confirm(t('workOrders.confirmCancel'))) return
     try {
       await workOrderService.updateStatus(id, status)
       loadData()
     } catch (err: any) {
-      alert(err.response?.data?.message || t('workOrders.error.updateStatus'))
+      toast.error(err.response?.data?.message || t('workOrders.error.updateStatus'))
     }
   }
 
@@ -102,9 +110,10 @@ function WorkOrders() {
     if (!confirm(t('workOrders.confirmDelete'))) return
     try {
       await workOrderService.delete(id)
+      setShowDetailModal(null)
       loadData()
     } catch (err: any) {
-      alert(err.response?.data?.message || t('workOrders.error.delete'))
+      toast.error(err.response?.data?.message || t('workOrders.error.delete'))
     }
   }
 
@@ -112,9 +121,26 @@ function WorkOrders() {
     try {
       const detail = await workOrderService.getById(wo.id)
       setShowDetailModal(detail)
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
     }
+  }
+
+  const handleEdit = async (id: string) => {
+    try {
+      const detail = await workOrderService.getById(id)
+      setShowDetailModal(null)
+      setEditing(detail)
+      setShowCreateModal(true)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || t('workOrders.error.loadDetail'))
+    }
+  }
+
+  // ส่ง Promise เข้าไปเลย — printBill เปิดหน้าต่างก่อนรอ ไม่งั้น pop-up โดนบล็อก
+  const handlePrint = (id: string, format: 'a4' | 'a5') => {
+    printBill('wo', workOrderService.getById(id), format)
+      .catch((err: any) => toast.error(err.response?.data?.message || t('workOrders.error.loadDetail')))
   }
   useOpenFromSearch((_type, id) => { handleViewDetail({ id } as WorkOrder) })
 
@@ -205,9 +231,11 @@ function WorkOrders() {
                   const isOverdue = wo.due_date && new Date(wo.due_date) < new Date() && wo.status !== 'COMPLETED' && wo.status !== 'CANCELLED'
 
                   return (
-                    <motion.tr key={wo.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
+                    <motion.tr key={wo.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}
+                      onClick={() => handleViewDetail(wo)} className="cursor-pointer hover:bg-[var(--bg)]">
                       <td>
-                        <span className="text-[var(--primary)] font-mono font-semibold">{wo.wo_number}</span>
+                        <button type="button" onClick={e => { e.stopPropagation(); handleViewDetail(wo) }}
+                          className="text-[var(--primary)] font-mono font-semibold hover:underline whitespace-nowrap text-left">{wo.wo_number}</button>
                         {wo.so_number && (
                           <div className="mt-0.5">
                             <span className="inline-block text-[10px] text-[var(--fg-4)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded font-mono">
@@ -255,11 +283,11 @@ function WorkOrders() {
                         </div>
                       </td>
                       <td><span className="text-[var(--fg-3)] text-sm">{wo.assigned_to || '-'}</span></td>
-                      <td>
+                      <td onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
-                          <button onClick={() => handleViewDetail(wo)}
+                          <button onClick={() => handlePrint(wo.id, 'a4')} title={t('workOrders.actions.printA4')} aria-label={t('workOrders.actions.printA4')}
                             className="p-2 text-[var(--fg-3)] hover:text-[var(--primary)] hover:bg-phopy-indigo/10 rounded-lg">
-                            <Eye className="w-4 h-4" />
+                            <Printer className="w-4 h-4" />
                           </button>
                           {wo.status === 'DRAFT' && (
                             <button onClick={() => handleStatusChange(wo.id, 'PLANNED')}
@@ -279,12 +307,18 @@ function WorkOrders() {
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
-                          {wo.status === 'DRAFT' && (
-                            <button onClick={() => handleDelete(wo.id)}
-                              className="p-2 text-[var(--fg-3)] hover:text-danger hover:bg-[var(--danger-soft)] rounded-lg">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
+                          <RowMenu label={t('workOrders.actions.menu')} items={[
+                            { label: t('workOrders.actions.view'), onClick: () => handleViewDetail(wo) },
+                            { label: t('workOrders.actions.printA4'), onClick: () => handlePrint(wo.id, 'a4') },
+                            { label: t('workOrders.actions.printA5'), onClick: () => handlePrint(wo.id, 'a5') },
+                            ...(isEditable(wo.status) ? [
+                              { label: t('workOrders.actions.edit'), onClick: () => handleEdit(wo.id) },
+                              { label: t('workOrders.actions.delete'), onClick: () => handleDelete(wo.id), danger: true },
+                            ] : []),
+                            ...(!['COMPLETED', 'CANCELLED'].includes(wo.status) ? [
+                              { label: t('workOrders.actions.cancel'), onClick: () => handleStatusChange(wo.id, 'CANCELLED'), danger: true },
+                            ] : []),
+                          ]} />
                         </div>
                       </td>
                     </motion.tr>
@@ -297,12 +331,12 @@ function WorkOrders() {
       </div>
 
       {/* Create Modal */}
-      <CreateWOModal open={showCreateModal}
-        onClose={() => setShowCreateModal(false)} onSave={loadData} />
+      <CreateWOModal open={showCreateModal} editing={editing}
+        onClose={() => { setShowCreateModal(false); setEditing(null) }} onSave={loadData} />
 
       {/* Detail Modal */}
       <WODetailModal wo={showDetailModal} onClose={() => setShowDetailModal(null)}
-        onStatusChange={handleStatusChange} />
+        onStatusChange={handleStatusChange} onPrint={handlePrint} onEdit={handleEdit} onDelete={handleDelete} />
     </motion.div>
   )
 }
@@ -317,34 +351,65 @@ function StatCard({ labelKey, value, color }: { labelKey: string; value: string;
   )
 }
 
-function CreateWOModal({ open, onClose, onSave }: {
-  open: boolean; onClose: () => void; onSave: () => void
+function CreateWOModal({ open, editing, onClose, onSave }: {
+  open: boolean; editing: WorkOrder | null; onClose: () => void; onSave: () => void
 }) {
   const { t } = useTranslation()
   useModalClose(onClose)
+  const [productId, setProductId] = useState('')
   const [productName, setProductName] = useState('')
   const [quantity, setQuantity] = useState(1)
-  // หน่วยของจำนวนผลิต (R2-UI) — default ตามหน่วยของสินค้าจาก BOM ที่เลือก, ผู้ใช้แก้เองได้
+  // หน่วยของจำนวนผลิต — default ตามหน่วยของสินค้าที่เลือก ผู้ใช้แก้เองได้
   const [unit, setUnit] = useState('')
   const [unitTouched, setUnitTouched] = useState(false)
   const [priority, setPriority] = useState('NORMAL')
   const [dueDate, setDueDate] = useState('')
   const [assignedTo, setAssignedTo] = useState('')
   const [notes, setNotes] = useState('')
-  const [materials, setMaterials] = useState<{ materialId?: string; materialName: string; requiredQty: number; unit: string }[]>([])
+  const [materials, setMaterials] = useState<MaterialDraft[]>([])
+  // ผู้ใช้แก้รายการวัตถุดิบเองแล้ว → เปลี่ยนจำนวนผลิตจะไม่โหลด BOM ทับให้เอง แต่ขึ้นปุ่มให้กด
+  const [materialsTouched, setMaterialsTouched] = useState(false)
+  const [materialsFor, setMaterialsFor] = useState('')
   const [saving, setSaving] = useState(false)
   const [boms, setBoms] = useState<any[]>([])
+  const [stockItems, setStockItems] = useState<any[]>([])
   const [selectedBomId, setSelectedBomId] = useState('')
   const [bomLoading, setBomLoading] = useState(false)
   const [manualMode, setManualMode] = useState(false)
-  const [stockMap, setStockMap] = useState<Record<string, { qty: number; unit: string }>>({})
+  const [checks, setChecks] = useState<MaterialCheck[]>([])
   const [stockChecking, setStockChecking] = useState(false)
   const [creatingPR, setCreatingPR] = useState(false)
+  // ตอบกลับช้ากว่าคำขอใหม่ต้องทิ้ง — พิมพ์จำนวน 1→10→100 เร็ว ๆ คำตอบของ 10 เคยมาทับของ 100 ได้
+  const bomReq = useRef(0)
 
   useEffect(() => {
     if (!open) return
     api.get('/bom').then(res => setBoms(res.data?.data || [])).catch(() => {})
+    api.get('/stock').then(res => setStockItems(res.data?.data || [])).catch(() => toast.error(t('workOrders.create.stockLoadFailed')))
   }, [open])
+
+  useEffect(() => {
+    bomReq.current++
+    setBomLoading(false)
+    const e = open ? editing : null
+    setProductId(e?.bom_id ? '' : e?.product_id || '')
+    setProductName(e?.product_name || '')
+    setQuantity(e?.quantity ?? 1)
+    setUnit(e?.unit ? normalizeUnit(e.unit) : '')
+    setUnitTouched(!!e?.unit)
+    setPriority(e?.priority || 'NORMAL')
+    setDueDate(e?.due_date?.slice(0, 10) || '')
+    setAssignedTo(e?.assigned_to || '')
+    setNotes(e?.notes || '')
+    setMaterials((e?.materials || []).map(m => ({
+      materialId: m.material_id || '', materialName: m.material_name || '', requiredQty: m.required_qty, unit: normalizeUnit(m.unit || ''),
+    })))
+    setMaterialsTouched(!!e)
+    setMaterialsFor(e ? `${e.quantity}|${e.unit ? normalizeUnit(e.unit) : ''}` : '')
+    setSelectedBomId(e?.bom_id || '')
+    setManualMode(!!e && !e.bom_id)
+    setChecks([]); setCreatingPR(false); setSaving(false)
+  }, [open, editing])
 
   // ตัวเลือก BOM สำหรับ SearchableDropdown (STEP 1)
   const bomOptions = useMemo(() => boms.map((bom: any) => ({
@@ -353,146 +418,158 @@ function CreateWOModal({ open, onClose, onSave }: {
     searchText: `${bom.product_name} ${bom.product_code}`,
   })), [boms])
 
-  // รายชื่อสินค้าที่มีอยู่จริง (จาก BOM ทั้งหมด — ไม่มี endpoint /products แยกต่างหาก) ใช้เป็น autocomplete
-  // ให้ช่องชื่อสินค้า (STEP 2) โดยยังคงพิมพ์ชื่อใหม่ที่ไม่อยู่ใน list ได้เสมอ
-  const productNameOptions = useMemo(() => {
-    const seen = new Set<string>()
-    const opts: string[] = []
-    for (const b of boms) {
-      if (b.product_name && !seen.has(b.product_name)) {
-        seen.add(b.product_name)
-        opts.push(b.product_name)
-      }
+  // วัตถุดิบเลือกจากคลังเท่านั้น — ผูกด้วย stock_items.id
+  const stockById = useMemo(() => new Map<string, any>(stockItems.map(item => [item.id, item])), [stockItems])
+  const category = (item: any) => String(item.category || '').trim().toUpperCase()
+  const toOption = (item: any) => ({
+    id: item.id as string,
+    label: `${item.name}${item.sku ? ` (${item.sku})` : ''} · ${Number(item.quantity || 0).toLocaleString()} ${unitLabel(item.unit || '')}`,
+    searchText: `${item.name} ${item.sku || ''}`,
+  })
+  const materialOptions = useMemo(() => stockItems.filter(item => category(item) !== 'SERVICE').map(toOption), [stockItems])
+  const productOptions = useMemo(() => stockItems.filter(item => ['FINISHED', 'WIP'].includes(category(item))).map(toOption), [stockItems])
+
+  const selectedUnitBase = (() => {
+    if (selectedBomId) {
+      const bom = boms.find((b: any) => b.id === selectedBomId) as any
+      return bom?.product_base_unit || bom?.product_unit || ''
     }
-    return opts
-  }, [boms])
+    const product = stockById.get(productId)
+    return product?.base_unit || product?.unit || ''
+  })()
 
   useEffect(() => {
-    if (!open) {
-      setProductName(''); setQuantity(1); setPriority('NORMAL')
-      setDueDate(''); setAssignedTo(''); setNotes('')
-      setMaterials([]); setSelectedBomId(''); setManualMode(false)
-      setStockMap({}); setCreatingPR(false)
-      setUnit(''); setUnitTouched(false)
-    }
-  }, [open])
+    if (!unitTouched && selectedUnitBase) setUnit(normalizeUnit(selectedUnitBase))
+  }, [selectedUnitBase, unitTouched])
 
-  // default หน่วยตามหน่วยของสินค้าที่ผูกกับ BOM ที่เลือก (ยังไม่แก้เอง) — backend ยังไม่ส่ง
-  // หน่วยของสินค้ามากับ /bom ตอนนี้ จึงรองรับไว้แบบ optional chaining รอ field จาก backend
+  // เทียบสต็อกที่ backend (แปลงหน่วย + รวมแพ็คที่ยังไม่แกะ)
   useEffect(() => {
-    if (unitTouched) return
-    const bom = boms.find((b: any) => b.id === selectedBomId) as any
-    const bomUnit = bom?.product_unit || bom?.base_unit || bom?.unit
-    if (bomUnit) setUnit(normalizeUnit(bomUnit))
-  }, [selectedBomId, unitTouched, boms])
-
-  const loadStockForMaterials = async (mats: { materialId?: string; unit: string }[]) => {
-    const ids = mats.filter(m => m.materialId).map(m => m.materialId!)
-    if (ids.length === 0) { setStockMap({}); return }
+    if (!open || materials.length === 0) { setChecks([]); setStockChecking(false); return }
+    let stale = false
     setStockChecking(true)
-    try {
-      const res = await api.get('/stock')
-      const items: any[] = res.data?.data || []
-      const map: Record<string, { qty: number; unit: string }> = {}
-      for (const item of items) {
-        // /stock คืน stock_items.* ตรงๆ (si.*) — primary key คือ id เสมอ ไม่มีคอลัมน์
-        // material_id/materialId เลย ของเดิมหา mid ไม่เจอตลอด stockMap จึงว่างเปล่าเสมอ
-        // (เลขสต็อก + ปุ่ม Auto-PR ไม่ทำงาน)
-        const mid = item.id
-        if (mid && ids.includes(mid)) {
-          map[mid] = { qty: Number(item.quantity ?? item.qty ?? 0), unit: item.unit || 'pcs' }
-        }
-      }
-      setStockMap(map)
-    } catch { setStockMap({}) }
-    finally { setStockChecking(false) }
-  }
+    const timer = setTimeout(() => {
+      workOrderService.checkMaterials(materials)
+        .then(r => { if (!stale) setChecks(r) })
+        .catch(() => { if (!stale) setChecks([]) })
+        .finally(() => { if (!stale) setStockChecking(false) })
+    }, 350)
+    return () => { stale = true; clearTimeout(timer) }
+  }, [open, materials])
 
-  const loadBomMaterials = async (bomId: string, qty: number, fetchStock = false) => {
+  const loadBomMaterials = async (bomId: string, qty: number, u: string) => {
+    const req = ++bomReq.current
     setBomLoading(true)
     try {
-      const res = await api.get(`/bom/explode/${bomId}?multiplier=${qty}`)
-      const data = res.data?.data
-      if (data?.materials?.length > 0) {
-        const mats = data.materials.map((m: any) => ({
-          materialId: m.materialId,
-          materialName: m.materialName || m.materialCode || '',
-          requiredQty: Number(m.quantity.toFixed(4)),
-          unit: m.unit || 'pcs',
-        }))
-        setMaterials(mats)
-        if (fetchStock) await loadStockForMaterials(mats)
+      const mats = await workOrderService.bomMaterials(bomId, qty, u)
+      if (req !== bomReq.current) return
+      setMaterials(mats)
+      setMaterialsTouched(false)
+      setMaterialsFor(`${qty}|${u}`)
+    } catch (err: any) {
+      if (req === bomReq.current) {
+        setMaterials([])
+        setMaterialsFor('')
+        toast.error(err.response?.data?.message || t('workOrders.create.bomLoadFailed'))
       }
-    } catch {}
-    finally { setBomLoading(false) }
+    } finally {
+      if (req === bomReq.current) setBomLoading(false)
+    }
   }
 
-  const handleBomSelect = async (bom: any) => {
+  const handleBomSelect = (bom: any) => {
+    const u = normalizeUnit(bom.product_base_unit || bom.product_unit || '')
     setSelectedBomId(bom.id)
+    setProductId('')
     setProductName(bom.product_name || '')
     setManualMode(false)
-    setStockMap({})
-    await loadBomMaterials(bom.id, quantity, true)
+    setUnit(u)
+    setUnitTouched(false)
+    if (quantity > 0) loadBomMaterials(bom.id, quantity, u)
   }
 
-  const handleQuantityChange = async (newQty: number) => {
+  const handleProductSelect = (id: string) => {
+    setProductId(id)
+    const product = stockById.get(id)
+    if (!product) return
+    setProductName(product.name || '')
+    setUnit(normalizeUnit(product.base_unit || product.unit || ''))
+    setUnitTouched(false)
+  }
+
+  const handleQuantityChange = (newQty: number) => {
     setQuantity(newQty)
-    if (selectedBomId && newQty > 0) await loadBomMaterials(selectedBomId, newQty, false)
+    if (selectedBomId && !materialsTouched && newQty > 0) loadBomMaterials(selectedBomId, newQty, unit)
   }
 
-  const getStockStatus = (mat: { materialId?: string; requiredQty: number; unit: string }) => {
-    if (!mat.materialId) return null
-    const stock = stockMap[mat.materialId]
-    if (!stock) return { type: 'unknown' as const }
-    const sameUnit = stock.unit.toLowerCase() === mat.unit.toLowerCase()
-    if (sameUnit) {
-      const shortage = mat.requiredQty - stock.qty
-      return shortage > 0
-        ? { type: 'short' as const, shortage: Number(shortage.toFixed(4)), unit: mat.unit, stockQty: stock.qty }
-        : { type: 'ok' as const, stockQty: stock.qty, unit: mat.unit }
-    }
-    return { type: 'mismatch' as const, stockQty: stock.qty, stockUnit: stock.unit }
+  const handleUnitChange = (u: string) => {
+    setUnit(u)
+    setUnitTouched(true)
+    if (selectedBomId && !materialsTouched && quantity > 0) loadBomMaterials(selectedBomId, quantity, u)
   }
 
-  const shortages = materials.filter(m => getStockStatus(m)?.type === 'short')
+  const editMaterials = (next: MaterialDraft[]) => { setMaterials(next); setMaterialsTouched(true) }
+  const patchMaterial = (idx: number, patch: Partial<MaterialDraft>) =>
+    editMaterials(materials.map((m, i) => (i === idx ? { ...m, ...patch } : m)))
+  const handleMaterialSelect = (idx: number, id: string) => {
+    const item = stockById.get(id)
+    patchMaterial(idx, item
+      ? { materialId: id, materialName: item.name, unit: normalizeUnit(item.unit || '') }
+      : { materialId: '', materialName: '' })
+  }
+
+  const needsRecalc = !!selectedBomId && materialsTouched && materialsFor !== `${quantity}|${unit}` && quantity > 0
+  const checksFresh = checks.length === materials.length
+  const shortages = checksFresh
+    ? materials.map((m, i) => ({ m, c: checks[i] })).filter(x => x.c.stockStatus === 'short')
+    : []
+  const allSufficient = checksFresh && materials.length > 0 && checks.every(c => c.stockStatus === 'ok')
 
   const handleCreateAutoPR = async () => {
     if (shortages.length === 0) return
     setCreatingPR(true)
     try {
-      const items = shortages.map(m => {
-        const s = getStockStatus(m)
-        const qty = s?.type === 'short' ? s.shortage : m.requiredQty
-        return { material_id: m.materialId, material_name: m.materialName, quantity: qty, unit: m.unit }
-      })
+      // วัตถุดิบเดียวกันหลายบรรทัดรวมเป็นรายการเดียว · จำนวนเป็นหน่วยสต็อก
+      const merged = new Map<string, { material_id: string; material_name: string; quantity: number; unit: string }>()
+      for (const { m, c } of shortages) {
+        const row = merged.get(m.materialId)
+        if (row) row.quantity = Number((row.quantity + c.shortQty).toFixed(6))
+        else merged.set(m.materialId, { material_id: m.materialId, material_name: m.materialName, quantity: c.shortQty, unit: c.stockUnit })
+      }
+      const items = [...merged.values()]
       await api.post('/purchase-requests', {
         reason: t('workOrders.create.prReason', { name: productName, quantity }),
         items,
       })
-      alert(t('workOrders.create.prCreated', { count: items.length }))
+      toast.success(t('workOrders.create.prCreated', { count: items.length }))
     } catch (err: any) {
-      alert(err.response?.data?.message || t('workOrders.create.prFailed'))
+      toast.error(err.response?.data?.message || t('workOrders.create.prFailed'))
     } finally { setCreatingPR(false) }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!productName.trim()) return
+    const unlinked = materials.find(m => !m.materialId)
+    if (unlinked) {
+      toast.error(t('workOrders.create.notLinked', { name: unlinked.materialName || '-' }))
+      return
+    }
     setSaving(true)
     try {
-      const validMaterials = materials.filter(m => m.materialName.trim())
-      await workOrderService.create({
-        bomId: selectedBomId || undefined,
-        productName, quantity, priority,
-        // ไม่ส่งเลยถ้ายังไม่ได้เลือก/ยังไม่ default ได้ — backend จะ fallback เป็นหน่วยของสินค้าจาก BOM เอง
+      const payload = {
+        bomId: selectedBomId || null,
+        productId: selectedBomId ? null : productId || null,
+        productName: productName.trim(), quantity, priority,
+        // ไม่ส่งเลยถ้ายังไม่ได้เลือก/ยังไม่ default ได้ — backend จะ fallback เป็นหน่วยของสินค้าเอง
         unit: unit || undefined,
-        dueDate: dueDate || undefined,
-        assignedTo, notes,
-        materials: validMaterials.length > 0 ? validMaterials : undefined,
-      })
+        dueDate: dueDate || null,
+        assignedTo, notes, materials,
+      }
+      if (editing) await workOrderService.update(editing.id, payload)
+      else await workOrderService.create(payload)
       onSave(); onClose()
     } catch (err: any) {
-      alert(err.response?.data?.message || t('workOrders.error.create'))
+      toast.error(err.response?.data?.message || t('workOrders.error.create'))
     } finally { setSaving(false) }
   }
 
@@ -516,7 +593,7 @@ function CreateWOModal({ open, onClose, onSave }: {
             {/* Header */}
             <div className="p-5 border-b border-[var(--border)] flex justify-between items-center shrink-0">
               <div>
-                <h2 className="text-lg font-bold text-[var(--fg-1)]">{t('workOrders.create.title')}</h2>
+                <h2 className="text-lg font-bold text-[var(--fg-1)]">{editing ? `${t('workOrders.create.editTitle')} ${editing.wo_number}` : t('workOrders.create.title')}</h2>
                 <p className="text-xs text-[var(--fg-4)] mt-0.5">{t('workOrders.create.subtitle')}</p>
               </div>
               <button onClick={onClose} className="p-2 hover:bg-[var(--bg)] rounded-lg text-[var(--fg-3)]"><X className="w-5 h-5" /></button>
@@ -532,7 +609,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                       <span className="w-4 h-4 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-xs flex items-center justify-center font-bold">1</span>
                       {t('workOrders.create.step1')}
                     </p>
-                    <button type="button" onClick={() => { setManualMode(true); setSelectedBomId(''); setProductName(''); setMaterials([]) }}
+                    <button type="button" onClick={() => { bomReq.current++; setBomLoading(false); setManualMode(true); setSelectedBomId('') }}
                       className={`text-xs px-2 py-1 rounded border transition-all ${manualMode ? 'border-phopy-indigo/50 text-[var(--primary)] bg-phopy-indigo/10' : 'border-[var(--border)] text-[var(--fg-4)] hover:text-[var(--fg-2)]'}`}>
                       {t('workOrders.create.manualEntry')}
                     </button>
@@ -568,9 +645,21 @@ function CreateWOModal({ open, onClose, onSave }: {
                       )}
                     </div>
                   ) : (
-                    <div className="p-3 bg-[var(--surface-2)] rounded-lg border border-[var(--border)]/30 text-sm text-[var(--fg-3)]">
-                      {t('workOrders.create.manualModeHint')}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <SearchableDropdown className="flex-1 min-w-0" value={productId} onChange={handleProductSelect}
+                          options={productOptions} placeholder={t('workOrders.create.selectProduct')} />
+                        <button type="button" onClick={() => { setManualMode(false); setProductId('') }}
+                          className="text-xs px-2 py-1 rounded border border-[var(--border)] text-[var(--fg-4)] hover:text-[var(--fg-2)] shrink-0">
+                          {t('workOrders.create.step1')}
+                        </button>
+                      </div>
                     </div>
+                  )}
+                  {!selectedBomId && !productId && productName.trim() && (
+                    <p className="flex items-center gap-1.5 text-xs text-warning mt-2">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {t('workOrders.create.productNotLinked')}
+                    </p>
                   )}
                 </div>
 
@@ -584,34 +673,32 @@ function CreateWOModal({ open, onClose, onSave }: {
                   <div className="space-y-3">
                     {/* Product + Qty + Unit */}
                     <div className="grid grid-cols-4 gap-3">
-                      <div className="col-span-2">
+                      <div className="col-span-4">
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.productLabel')}</label>
                         <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)}
                           className="phopy-input w-full" placeholder={t('workOrders.create.productPlaceholder')} required
-                          readOnly={!!selectedBomId && !manualMode}
-                          list="wo-product-name-options" autoComplete="off"
+                          readOnly={!!selectedBomId || !!productId} autoComplete="off"
                         />
-                        {/* Autocomplete จากชื่อสินค้าที่มี BOM อยู่แล้ว — ยังพิมพ์ชื่อใหม่ที่ไม่อยู่ใน list ได้เสมอ (native <datalist>, ไม่บังคับเลือก) */}
-                        <datalist id="wo-product-name-options">
-                          {productNameOptions.map((name) => <option key={name} value={name} />)}
-                        </datalist>
                       </div>
-                      <div>
+                      <div className="col-span-2">
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.quantityLabel')}</label>
                         <div className="flex items-center gap-1">
                           <button type="button" onClick={() => handleQuantityChange(Math.max(1, quantity - 1))}
                             className="w-8 h-9 flex items-center justify-center bg-[var(--surface-2)] border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] shrink-0">−</button>
                           <input type="number" value={quantity} onChange={(e) => handleQuantityChange(Number(e.target.value))}
-                            className="phopy-input w-full text-center" min="1" required />
+                            className="phopy-input w-full text-center" min="0.001" step="any" required />
                           <button type="button" onClick={() => handleQuantityChange(quantity + 1)}
                             className="w-8 h-9 flex items-center justify-center bg-[var(--surface-2)] border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)] shrink-0">+</button>
                         </div>
                       </div>
-                      <div>
+                      <div className="col-span-2">
                         <label className="text-xs text-[var(--fg-4)] mb-1 block">{t('workOrders.create.unitLabel')}</label>
                         <UnitPicker
                           value={unit}
-                          onChange={(u) => { setUnit(u); setUnitTouched(true) }}
+                          onChange={handleUnitChange}
+                          materialId={productId || boms.find((b: any) => b.id === selectedBomId)?.product_id}
+                          baseUnit={selectedUnitBase || undefined}
+                          hideUnreachableHint
                           placeholder={t('workOrders.create.unitPlaceholder')}
                         />
                       </div>
@@ -625,7 +712,7 @@ function CreateWOModal({ open, onClose, onSave }: {
                           <button key={opt.value} type="button" onClick={() => setPriority(opt.value)}
                             className={`flex-1 py-1.5 text-xs font-medium rounded-lg border transition-all ${
                               priority === opt.value
-                                ? `${opt.color} bg-current/10`.replace('text-', 'bg-').replace('/10 bg-current/10', '/15 ') + opt.color
+                                ? 'bg-[var(--surface-2)] font-bold'
                                 : 'border-[var(--border)]/30 text-[var(--fg-4)] hover:text-[var(--fg-2)]'
                             } ${priority === opt.value ? opt.color + ' border-current/40' : ''}`}>
                             {getPriorityConfig(t, opt.value).label}
@@ -658,14 +745,22 @@ function CreateWOModal({ open, onClose, onSave }: {
                       {(bomLoading || stockChecking) && <Loader2 className="w-3 h-3 animate-spin text-[var(--primary)]" />}
                     </p>
                     <button type="button"
-                      onClick={() => setMaterials([...materials, { materialName: '', requiredQty: 1, unit: 'pcs' }])}
+                      onClick={() => editMaterials([...materials, { materialId: '', materialName: '', requiredQty: 1, unit: '' }])}
                       className="text-xs text-[var(--primary)] hover:text-[var(--primary)]/80 flex items-center gap-1">
                       <Plus className="w-3 h-3" /> {t('common.add')}
                     </button>
                   </div>
 
                   {/* Stock summary banner */}
-                  {materials.length > 0 && Object.keys(stockMap).length > 0 && !stockChecking && (
+                  {needsRecalc && (
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs mb-2 border bg-[var(--warning-soft)] border-warning/30 text-warning">
+                      <span className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {t('workOrders.create.qtyChanged')}</span>
+                      <button type="button" onClick={() => loadBomMaterials(selectedBomId, quantity, unit)} className="underline font-semibold shrink-0">
+                        {t('workOrders.create.recalc')}
+                      </button>
+                    </div>
+                  )}
+                  {(shortages.length > 0 || allSufficient) && !stockChecking && (
                     <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs mb-2 border ${
                       shortages.length > 0
                         ? 'bg-[var(--danger-soft)] border-danger/20 text-danger'
@@ -688,35 +783,38 @@ function CreateWOModal({ open, onClose, onSave }: {
                   ) : (
                     <div className="space-y-1.5">
                       {materials.map((mat, idx) => {
-                        const ss = getStockStatus(mat)
+                        const c = checksFresh ? checks[idx] : undefined
+                        const item = stockById.get(mat.materialId)
+                        const short = c?.stockStatus === 'short'
                         return (
-                          <div key={idx} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-                            ss?.type === 'short' ? 'border-danger/20 bg-[var(--danger-soft)]'
+                          <div key={idx} className={`flex flex-wrap sm:flex-nowrap items-center gap-2 px-3 py-2 rounded-lg border ${
+                            short ? 'border-danger/20 bg-[var(--danger-soft)]'
                             : mat.materialId ? 'border-phopy-indigo/15 bg-phopy-indigo/5'
-                            : 'border-[var(--border)]/20 bg-[var(--surface-2)]'
+                            : 'border-warning/40 bg-[var(--warning-soft)]'
                           }`}>
-                            {mat.materialId && <CheckCircle className={`w-3.5 h-3.5 shrink-0 ${ss?.type === 'short' ? 'text-danger' : 'text-[var(--primary)]'}`} />}
-                            <input value={mat.materialName} onChange={(e) => {
-                              const u = [...materials]; u[idx].materialName = e.target.value; setMaterials(u)
-                            }} className="flex-1 bg-transparent text-sm text-[var(--fg-2)] outline-none placeholder-gray-600 min-w-0"
-                              placeholder={t('workOrders.create.materialPlaceholder')} />
-                            <input type="number" value={mat.requiredQty} onChange={(e) => {
-                              const u = [...materials]; u[idx].requiredQty = Number(e.target.value); setMaterials(u)
-                            }} className="w-20 bg-transparent text-sm text-success text-right outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
-                              min="0.001" step="any" />
-                            <input value={mat.unit} onChange={(e) => {
-                              const u = [...materials]; u[idx].unit = e.target.value; setMaterials(u)
-                            }} className="w-12 bg-transparent text-xs text-[var(--fg-4)] outline-none border-b border-[var(--border)]/30 focus:border-phopy-indigo"
-                              placeholder={t('workOrders.create.unitPlaceholder')} />
-                            {/* Stock status badge */}
-                            {mat.materialId && (() => {
-                              if (stockChecking) return <Loader2 key="spin" className="w-3 h-3 animate-spin text-[var(--fg-4)] shrink-0" />
-                              if (!ss || ss.type === 'unknown') return <span key="unk" className="text-xs text-[var(--fg-4)] shrink-0 w-16 text-right">?</span>
-                              if (ss.type === 'ok') return <span key="ok" className="text-xs text-success shrink-0 w-16 text-right font-medium"><Check className="w-3 h-3 inline" /> {ss.stockQty} {unitLabel(ss.unit)}</span>
-                              if (ss.type === 'short') return <span key="sh" className="text-xs text-danger shrink-0 w-16 text-right font-semibold">-{ss.shortage} {unitLabel(ss.unit)}</span>
-                              return <span key="mm" className="text-xs text-warning shrink-0 w-16 text-right">{ss.stockQty} {ss.stockUnit}</span>
-                            })()}
-                            <button type="button" onClick={() => setMaterials(materials.filter((_, i) => i !== idx))}
+                            <div className="w-full sm:flex-1 min-w-0">
+                              <SearchableDropdown value={mat.materialId} onChange={(id) => handleMaterialSelect(idx, id)}
+                                options={materialOptions}
+                                placeholder={mat.materialName || t('workOrders.create.selectMaterial')} />
+                              {!mat.materialId && mat.materialName && (
+                                <p className="text-xs text-warning mt-1">{t('workOrders.create.notLinked', { name: mat.materialName })}</p>
+                              )}
+                            </div>
+                            <input type="number" value={mat.requiredQty} onChange={(e) => patchMaterial(idx, { requiredQty: Number(e.target.value) })}
+                              className="phopy-input w-24 text-sm text-right" min="0.000001" step="any" required />
+                            <div className="w-28 shrink-0">
+                              <UnitPicker size="sm" value={mat.unit} onChange={(u) => patchMaterial(idx, { unit: u })}
+                                materialId={mat.materialId || null} baseUnit={item?.unit || undefined} hideUnreachableHint
+                                placeholder={t('workOrders.create.unitPlaceholder')} />
+                            </div>
+                            <div className="w-24 shrink-0 text-right text-xs">
+                              {stockChecking ? <Loader2 className="w-3 h-3 animate-spin text-[var(--fg-4)] inline" />
+                                : !c || c.stockStatus === 'unknown' ? <span className="text-[var(--fg-4)]">-</span>
+                                : c.stockStatus === 'ok' ? <span className="text-success font-medium"><Check className="w-3 h-3 inline" /> {c.stockQty.toLocaleString()} {unitLabel(c.stockUnit)}</span>
+                                : short ? <span className="text-danger font-semibold">{t('workOrders.detail.short', { qty: c.shortQty.toLocaleString(), unit: unitLabel(c.stockUnit) })}</span>
+                                : <span className="text-warning">{t('workOrders.create.mismatch')}</span>}
+                            </div>
+                            <button type="button" onClick={() => editMaterials(materials.filter((_, i) => i !== idx))} aria-label={t('workOrders.actions.delete')}
                               className="text-[var(--fg-4)] hover:text-danger shrink-0">
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -764,10 +862,10 @@ function CreateWOModal({ open, onClose, onSave }: {
                     <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-3)] hover:text-[var(--fg-2)]">
                       {t('common.cancel')}
                     </button>
-                    <button type="submit" disabled={saving || bomLoading || !productName.trim()}
+                    <button type="submit" disabled={saving || bomLoading || !productName.trim() || !(quantity > 0)}
                       className="phopy-btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      {t('workOrders.create.createButton')}
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : editing ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                      {editing ? t('workOrders.create.saveButton') : t('workOrders.create.createButton')}
                     </button>
                   </div>
                 </div>
@@ -780,8 +878,9 @@ function CreateWOModal({ open, onClose, onSave }: {
   )
 }
 
-function WODetailModal({ wo, onClose, onStatusChange }: {
+function WODetailModal({ wo, onClose, onStatusChange, onPrint, onEdit, onDelete }: {
   wo: WorkOrder | null; onClose: () => void; onStatusChange: (id: string, status: string) => void
+  onPrint: (id: string, format: 'a4' | 'a5') => void; onEdit: (id: string) => void; onDelete: (id: string) => void
 }) {
   const { t } = useTranslation()
   useModalClose(onClose)
@@ -848,6 +947,26 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
           </div>
 
           <div className="p-6 space-y-4">
+            {/* พิมพ์ / แก้ไข / ลบ */}
+            <div className="flex flex-wrap gap-2">
+              {(['a4', 'a5'] as const).map(f => (
+                <button key={f} type="button" onClick={() => onPrint(wo.id, f)}
+                  className="px-3 py-2 text-sm border border-[var(--border)] rounded-lg text-[var(--fg-2)] hover:bg-[var(--bg)] flex items-center gap-2">
+                  <Printer className="w-4 h-4" /> {t(f === 'a4' ? 'workOrders.actions.printA4' : 'workOrders.actions.printA5')}
+                </button>
+              ))}
+              {isEditable(wo.status) && (<>
+                <button type="button" onClick={() => onEdit(wo.id)}
+                  className="px-3 py-2 text-sm border border-phopy-indigo/30 rounded-lg text-[var(--primary)] hover:bg-phopy-indigo/10 flex items-center gap-2">
+                  <Pencil className="w-4 h-4" /> {t('workOrders.actions.edit')}
+                </button>
+                <button type="button" onClick={() => onDelete(wo.id)}
+                  className="px-3 py-2 text-sm border border-danger/30 rounded-lg text-danger hover:bg-[var(--danger-soft)] flex items-center gap-2">
+                  <Trash2 className="w-4 h-4" /> {t('workOrders.actions.delete')}
+                </button>
+              </>)}
+            </div>
+
             {/* Status Flow */}
             <div className="flex items-center gap-2 text-sm overflow-x-auto py-2">
               {['DRAFT', 'PLANNED', 'IN_PROGRESS', 'COMPLETED'].map((s, i) => {
@@ -910,15 +1029,24 @@ function WODetailModal({ wo, onClose, onStatusChange }: {
                       <div>
                         <p className="text-[var(--fg-2)]">{mat.material_name || t('workOrders.detail.materialFallback')}</p>
                         <p className="text-[var(--fg-4)] text-xs">
-                          {t('workOrders.detail.issued', { issued: mat.issued_qty, required: mat.required_qty, unit: mat.unit })}
+                          {t('workOrders.detail.issued', { issued: mat.issued_qty, required: mat.required_qty, unit: unitLabel(mat.unit || '') })}{mat.sku ? ` · ${mat.sku}` : ''}
                         </p>
+                        {mat.stockStatus === 'short' ? (
+                          <p className="text-danger text-xs">{t('workOrders.detail.short', { qty: mat.shortQty?.toLocaleString(), unit: unitLabel(mat.stockUnit || '') })}</p>
+                        ) : mat.stockStatus === 'ok' ? (
+                          <p className="text-success text-xs">{t('workOrders.detail.inStock', { qty: mat.stockQty?.toLocaleString(), unit: unitLabel(mat.stockUnit || '') })}</p>
+                        ) : mat.stockStatus === 'mismatch' ? (
+                          <p className="text-warning text-xs">{t('workOrders.create.mismatch')}</p>
+                        ) : mat.stockStatus === 'unknown' ? (
+                          <p className="text-warning text-xs">{t('workOrders.detail.matNotLinked')}</p>
+                        ) : null}
                       </div>
                       <span className={`px-2 py-1 rounded text-xs ${
                         mat.status === 'ISSUED' ? 'bg-[var(--success-soft)] text-success' :
                         mat.status === 'PENDING' ? 'bg-[var(--warning-soft)] text-warning' :
                         'bg-[var(--surface-sunken)] text-[var(--fg-3)]'
                       }`}>
-                        {mat.status}
+                        {mat.status === 'ISSUED' ? t('workOrders.detail.matIssued') : mat.status === 'PENDING' ? t('workOrders.detail.matPending') : mat.status}
                       </span>
                     </div>
                   ))}

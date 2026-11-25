@@ -4,6 +4,8 @@ export interface WorkOrder {
   id: string
   wo_number: string
   bom_id: string | null
+  /** สินค้าในคลังที่ผลิต (ใช้เมื่อไม่มี BOM) */
+  product_id?: string | null
   product_name: string
   quantity: number
   /** หน่วยของ quantity/completed_qty (R2-UI) — ไม่มีค่า = ใช้หน่วยของสินค้า (WO เก่าก่อน field นี้จะไม่มีค่านี้) */
@@ -29,12 +31,34 @@ export interface WorkOrder {
 
 export interface WorkOrderMaterial {
   id: string
-  material_id: string
+  material_id: string | null
   material_name: string
   required_qty: number
   issued_qty: number
   unit: string
   status: string
+  // สถานะสต็อกจาก GET /:id (เฉพาะบรรทัดที่ยังไม่เบิก)
+  stockStatus?: MaterialCheck['stockStatus']
+  stockQty?: number
+  stockUnit?: string
+  shortQty?: number
+  sku?: string
+}
+
+export interface MaterialCheck {
+  stockStatus: 'ok' | 'short' | 'mismatch' | 'unknown'
+  stockQty: number
+  stockUnit: string
+  needQty: number | null
+  shortQty: number
+  sku: string
+}
+
+export interface MaterialDraft {
+  materialId: string
+  materialName: string
+  requiredQty: number
+  unit: string
 }
 
 export interface QCInspectionSummary {
@@ -70,6 +94,16 @@ const workOrderService = {
   async getStats(): Promise<WOStats> {
     const res = await api.get('/work-orders/stats')
     return res.data?.data
+  },
+
+  async bomMaterials(bomId: string, quantity: number, unit?: string): Promise<MaterialDraft[]> {
+    const res = await api.get(`/work-orders/bom-materials/${bomId}`, { params: { quantity, unit: unit || undefined } })
+    return res.data?.data || []
+  },
+
+  async checkMaterials(materials: MaterialDraft[]): Promise<MaterialCheck[]> {
+    const res = await api.post('/work-orders/check-materials', { materials })
+    return res.data?.data || []
   },
 
   async create(data: any): Promise<WorkOrder> {

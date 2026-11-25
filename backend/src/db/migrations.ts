@@ -3719,6 +3719,15 @@ export function runMonthCloseMigrations(db: any): void {
     }
   } catch (e) { console.error('⚠️ online_return_events.journal_entry_id migration error:', e) }
 
+  // ── work_orders.product_id — ใบสั่งงานที่ไม่มี BOM ต้องรู้ว่าของที่ผลิตเข้าสต็อกตัวไหน ──
+  try {
+    const woCols = db.prepare(`PRAGMA table_info(work_orders)`).all() as any[]
+    if (!woCols.some((c: any) => c.name === 'product_id')) {
+      db.exec(`ALTER TABLE work_orders ADD COLUMN product_id TEXT`)
+      console.log('✅ Migration: added product_id to work_orders')
+    }
+  } catch (e) { console.error('⚠️ work_orders product_id migration error:', e) }
+
   // ── HR Car Trips (LINE Staff Car Trips & Company Vehicles) ──
   try {
     db.exec(`
