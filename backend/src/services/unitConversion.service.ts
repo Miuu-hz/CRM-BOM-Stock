@@ -1,7 +1,7 @@
 import db from '../db/sqlite'
 import { randomUUID } from 'crypto'
 import { roundQty } from '../utils/qty'
-import { findAliasTarget } from './stockItem.service'
+import { findAliasTarget, isServiceItem } from './stockItem.service'
 
 export interface UnitConversion {
   id: string
@@ -1106,15 +1106,16 @@ export function findBrokenUnitPairs(tenantId: string): BrokenUnitPair[] {
   const itemIds = Array.from(new Set(Array.from(groups.values()).map((g) => g.stock_item_id)))
   const placeholders = itemIds.map(() => '?').join(',')
   const items = db.prepare(`
-    SELECT id, name, sku, base_unit, unit FROM stock_items
+    SELECT id, name, sku, base_unit, unit, category FROM stock_items
     WHERE tenant_id = ? AND status != 'INACTIVE' AND id IN (${placeholders})
-  `).all(tenantId, ...itemIds) as Array<{ id: string; name: string; sku: string; base_unit: string | null; unit: string }>
+  `).all(tenantId, ...itemIds) as Array<{ id: string; name: string; sku: string; base_unit: string | null; unit: string; category: string | null }>
   const itemMap = new Map(items.map((i) => [i.id, i]))
 
   const out: BrokenUnitPair[] = []
   for (const g of groups.values()) {
     const item = itemMap.get(g.stock_item_id)
     if (!item) continue // ไม่มีในเทแนนต์นี้ หรือปิดใช้แล้ว
+    if (isServiceItem(item)) continue // บริการไม่ตัดสต็อก หน่วยบนบรรทัดไม่มีผลกับยอดใดๆ
     const baseUnit = normalizeUnit(item.base_unit || item.unit)
     if (!baseUnit || g.unit === baseUnit) continue // ใช้หน่วยฐานอยู่แล้ว ไม่ broken
     const chain = findConversionChain(g.unit, baseUnit, tenantId, g.stock_item_id)

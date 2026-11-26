@@ -3,6 +3,7 @@ import db from '../../db/sqlite'
 import { generateId } from '../../utils/id'
 import { deductStockForSO, restoreStockForSO } from './shared'
 import { SERVICE_CATEGORY, isServiceItem } from '../../services/stockItem.service'
+import { findBrokenUnitPairs } from '../../services/unitConversion.service'
 
 // เทสต์ยิงใส่ dev.db ตัวจริง — ใช้ tenant ทิ้งแล้วลบทุกครั้ง
 const tenants: string[] = []
@@ -45,6 +46,16 @@ afterEach(() => {
 })
 
 describe('รายการบริการ (ค่าขนส่ง/ค่าแพ็ค) ต้องไม่ถูกตัดสต็อก', () => {
+  it('บิลเก่าที่ลงค่าขนส่งเป็น "ชิ้น" ไม่ต้องขึ้นในรายการหน่วยแปลงไม่ได้ (บริการไม่แตะสต็อก)', () => {
+    const t = setupTenant()
+    const soId = addSalesOrder(t)
+    addSOLine(t, soId, addItem(t, SERVICE_CATEGORY, 'rob'), 'pcs')
+    const goodsId = addItem(t, 'RAW', 'rob')
+    addSOLine(t, soId, goodsId, 'pcs')
+    const broken = findBrokenUnitPairs(t)
+    expect(broken.map((b) => b.stock_item_id), 'เหลือแค่สินค้าจริง').toEqual([goodsId])
+  })
+
   it('ยืนยันบิลที่มีค่าขนส่งผ่านได้ ทั้งที่สต็อก 0 และห้ามติดลบ', () => {
     const t = setupTenant()
     const soId = addSalesOrder(t)

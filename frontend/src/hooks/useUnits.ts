@@ -45,6 +45,8 @@ export const UNIT_LABELS: Record<string, string> = {
   // เพิ่มใหม่ — พบใน stock_items จริง
   tank: 'ถัง', slice: 'สไลซ์', unit: 'หน่วย',
   m2: 'ตารางเมตร', cm2: 'ตารางเซนติเมตร', in2: 'ตารางนิ้ว',
+  // ลักษณนามไทย — backend ใช้รหัสทับศัพท์ (unitConversion.service.ts) ต้อง sync ด้วยมือ
+  bai: 'ใบ', phuen: 'ผืน', rob: 'รอบ', pip: 'ปิ๊บ',
 }
 
 /** หมวดของแต่ละหน่วย ใช้จัดกลุ่มใน UnitPicker */
@@ -54,7 +56,7 @@ export const UNIT_CATEGORY: Record<string, UnitCategory> = {
   bottle: 'count', bag: 'count', sachet: 'count', can: 'count', tube: 'count',
   tablet: 'count', glass: 'count', plate: 'count', tray: 'count', piece: 'count',
   egg: 'count', item: 'count', scoop: 'count', tank: 'count', slice: 'count',
-  unit: 'count',
+  unit: 'count', bai: 'count', phuen: 'count', rob: 'count', pip: 'count',
   kg: 'weight', g: 'weight', mg: 'weight', hg: 'weight', lb: 'weight', oz: 'weight',
   l: 'volume', ltr: 'volume', ml: 'volume', gallon: 'volume', tsp: 'volume', tbsp: 'volume',
   m: 'length', cm: 'length', mm: 'length', km: 'length', inch: 'length',
@@ -111,6 +113,10 @@ export const UNIT_ALIASES: Record<string, string[]> = {
   in2: ['ตารางนิ้ว', 'ตร.นิ้ว'],
   lb: ['ปอนด์'],
   oz: ['ออนซ์'],
+  bai: ['ใบ'],
+  phuen: ['ผืน'],
+  rob: ['รอบ', 'job', 'trip'],
+  pip: ['ปิ๊บ', 'ปี๊บ'],
 }
 
 /**
@@ -131,7 +137,7 @@ export const UNIT_LABELS_EN: Record<string, string> = {
   glass: 'glass', tsp: 'teaspoon', tbsp: 'tablespoon',
   plate: 'plate', tray: 'tray', piece: 'unit', egg: 'egg',
   item: 'item', scoop: 'scoop', tank: 'tank', slice: 'slice',
-  unit: 'unit',
+  unit: 'unit', bai: 'pc', phuen: 'sheet', rob: 'job', pip: 'tin',
 }
 
 const isEnglish = (): boolean => String(i18n.language || 'th').toLowerCase().startsWith('en')

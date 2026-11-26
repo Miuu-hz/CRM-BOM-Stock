@@ -21,6 +21,7 @@ export const UNIT_NAME_MAP: Record<string, string> = {
   'กุรอส': 'gross',
   // เพิ่มใหม่ — พบใน stock_items จริง
   'ถัง': 'tank', 'สไลซ์': 'slice', 'หน่วย': 'unit',
+  'ใบ': 'bai', 'ผืน': 'phuen', 'รอบ': 'rob', 'ปิ๊บ': 'pip',
 }
 
 /**
