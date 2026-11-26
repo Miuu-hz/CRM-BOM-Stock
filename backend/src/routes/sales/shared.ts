@@ -1,7 +1,7 @@
 import db from '../../db/sqlite'
 import { generateId, formatDocumentNumber } from '../../utils/id'
 import { isValidImageFile, sanitizeFilename } from '../../utils/upload'
-import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit } from '../../services/unitConversion.service'
+import { convertQuantityBidirectional, autoUnpackIfNeeded, normalizeUnit, getUnitDisplayName } from '../../services/unitConversion.service'
 import { roundQty } from '../../utils/qty'
 import { ACC, ACC_META, resolveBankAccountGL } from '../../config/accountCodes'
 import path from 'path'
@@ -48,6 +48,32 @@ export function findNonSellableLine(
   }
   return null
 }
+
+/**
+ * บรรทัดที่ลงหน่วยซึ่งแปลงกลับหน่วยฐานของสินค้าไม่ได้ (เช่น Polyester ฐาน กก. แต่ลง "ชิ้น")
+ * เคยหลุดเข้าไปเงียบๆ ทั้ง REST และ MCP แล้วไปพังตอนยืนยัน/ตัดสต็อก — กันตั้งแต่สร้าง/แก้เอกสาร
+ * ไม่ส่งหน่วย = ใช้หน่วยของสินค้าเอง ผ่าน · บริการไม่แตะสต็อก หน่วยไม่มีผล ผ่าน
+ */
+export function findUnconvertibleLine(
+  tenantId: string,
+  lines: Array<{ stockItemId?: string | null; unit?: string | null; name?: string | null }>
+): { name: string; unit: string; baseUnit: string } | null {
+  for (const l of lines) {
+    if (!l.stockItemId || !l.unit || !String(l.unit).trim()) continue
+    const item = db.prepare('SELECT name, category, base_unit, unit FROM stock_items WHERE id = ? AND tenant_id = ?').get(l.stockItemId, tenantId) as any
+    if (!item || isServiceItem(item)) continue
+    const unit = normalizeUnit(l.unit)
+    const baseUnit = normalizeUnit(item.base_unit || item.unit)
+    if (!baseUnit || unit === baseUnit) continue
+    if (!convertQuantityBidirectional(1, unit, baseUnit, tenantId, l.stockItemId, l.name ?? undefined)) {
+      return { name: item.name, unit, baseUnit }
+    }
+  }
+  return null
+}
+
+export const unconvertibleUnitMessage = (b: { name: string; unit: string; baseUnit: string }): string =>
+  `"${b.name}" นับเป็น ${getUnitDisplayName(b.baseUnit)} — ลงเป็น ${getUnitDisplayName(b.unit)} ไม่ได้เพราะไม่มีกฎแปลงหน่วย ให้เปลี่ยนหน่วยเป็น ${getUnitDisplayName(b.baseUnit)} หรือเพิ่มกฎแปลงหน่วยก่อน`
 
 /** productId ของบรรทัดที่ไม่ใช่ stock_items ของ tenant นี้ (รวมของบริษัทอื่น/id มั่ว) — null = ผ่าน · ไม่ส่ง productId = บรรทัด free text ผ่านเหมือนเดิม */
 export function findUnknownProductId(tenantId: string, ids: Array<string | null | undefined>): string | null {

@@ -4,7 +4,7 @@ import { IMcpServer } from '../sdk-compat'
 import { randomUUID } from 'crypto'
 import { normalizeUnit, convertQuantityBidirectional } from '../../services/unitConversion.service'
 import { ok, matchStockItem as matchStock, bindingRow, StockMatch } from './shared'
-import { findNonSellableLine, notSellableMessage } from '../../routes/sales/shared'
+import { findNonSellableLine, notSellableMessage, findUnconvertibleLine, unconvertibleUnitMessage } from '../../routes/sales/shared'
 import { formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
 import { calcDocTotals } from '../../utils/vat'
 import { tenantVatInclusive } from '../../utils/vatSettings'
@@ -27,7 +27,7 @@ function defaultLineUnit(tenantId: string, stockItemId: string | null): string {
 const itemSchema = z.object({
   description: z.string().describe('ชื่อสินค้า/เมนู'),
   quantity: z.number().positive(),
-  unit: z.string().optional().describe('หน่วย เช่น pcs, kg, box — ถ้าไม่ระบุใช้หน่วยของ stock item ที่ match ได้'),
+  unit: z.string().optional().describe('หน่วยที่ขาย — ไม่แน่ใจให้เว้นไว้ ระบบใช้หน่วยของสินค้าเอง · อย่าเติม pcs เป็นค่าตั้งต้น หน่วยที่แปลงเป็นหน่วยฐานของสินค้าไม่ได้จะถูกปฏิเสธ'),
   unitPrice: z.number().min(0).optional().describe('ราคาขายต่อหน่วย (บาท) — ถ้าไม่ระบุและบรรทัดนี้ผูกกับสินค้าในสต็อกได้ จะคิดให้จาก stock_items.unit_price (ต่อหน่วยฐาน) คูณตัวแปลงหน่วย; บรรทัดที่ไม่ผูกสินค้า (free text) ต้องระบุเองและต้อง > 0'),
   discountPercent: z.number().min(0).max(100).optional().describe('ส่วนลด % ต่อรายการ'),
 })
@@ -118,6 +118,11 @@ export function registerSalesTools(server: IMcpServer, tenantId: string): void {
       const badLine = findNonSellableLine(tenantId, matches.map((m: StockMatch) => m.exact?.id ?? null))
       if (badLine) {
         return ok({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
+      }
+      // AI ชอบเติม unit: 'pcs' เป็นค่าตั้งต้น — ถ้าแปลงไม่ได้ให้ปฏิเสธพร้อมบอกหน่วยที่ถูก (เคย QT-121 Polyester 100 "ชิ้น" ที่จริงคือ กก.)
+      const badUnit = findUnconvertibleLine(tenantId, items.map((i: SalesItem, idx: number) => ({ stockItemId: matches[idx].exact?.id ?? null, unit: i.unit || matches[idx].aliasUnit, name: i.description })))
+      if (badUnit) {
+        return ok({ success: false, code: 'UNIT_NOT_CONVERTIBLE', message: unconvertibleUnitMessage(badUnit) + ` (ส่ง unit: "${badUnit.baseUnit}" หรือไม่ต้องส่ง unit)` })
       }
 
       // unitPrice ไม่ระบุมา (AI ไม่รู้ราคา) → ถ้าบรรทัดผูกกับ stock item ได้ ตั้งราคาให้จาก

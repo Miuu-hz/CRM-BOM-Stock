@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import db from '../../db/sqlite'
 import { generateId } from '../../utils/id'
-import { deductStockForSO, restoreStockForSO } from './shared'
+import { deductStockForSO, restoreStockForSO, findUnconvertibleLine } from './shared'
 import { SERVICE_CATEGORY, isServiceItem } from '../../services/stockItem.service'
 import { findBrokenUnitPairs } from '../../services/unitConversion.service'
 
@@ -93,5 +93,20 @@ describe('รายการบริการ (ค่าขนส่ง/ค่�
     expect(isServiceItem({ category: 'FINISHED' })).toBe(false)
     expect(isServiceItem({ category: null })).toBe(false)
     expect(isServiceItem(null)).toBe(false)
+  })
+})
+
+describe('ด่านหน่วยแปลงไม่ได้ตอนสร้าง/แก้ใบขาย', () => {
+  it('Polyester ฐาน กก. ลงเป็น "ชิ้น" ต้องโดนจับ · ไม่ส่งหน่วย/หน่วยตรง/บริการ ผ่าน', () => {
+    const t = setupTenant()
+    const poly = addItem(t, 'wip', 'kg')
+    const svc = addItem(t, SERVICE_CATEGORY, 'rob')
+    expect(findUnconvertibleLine(t, [{ stockItemId: poly, unit: 'pcs' }])).toMatchObject({ unit: 'pcs', baseUnit: 'kg' })
+    expect(findUnconvertibleLine(t, [{ stockItemId: poly, unit: 'ชิ้น' }]), 'ชื่อไทยก็ต้องจับ').not.toBeNull()
+    expect(findUnconvertibleLine(t, [{ stockItemId: poly, unit: 'kg' }])).toBeNull()
+    expect(findUnconvertibleLine(t, [{ stockItemId: poly, unit: 'g' }]), 'มาตราสากล กรัม→กก. แปลงได้').toBeNull()
+    expect(findUnconvertibleLine(t, [{ stockItemId: poly, unit: '' }])).toBeNull()
+    expect(findUnconvertibleLine(t, [{ stockItemId: svc, unit: 'pcs' }])).toBeNull()
+    expect(findUnconvertibleLine(t, [{ stockItemId: null, unit: 'pcs' }])).toBeNull()
   })
 })

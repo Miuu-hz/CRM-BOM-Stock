@@ -4,7 +4,7 @@ import { isVatRegistered, rememberContactVatMode } from '../../services/accounti
 import { generateId, formatDocumentNumber, parseDueDate, DueDateError } from '../../utils/id'
 import { calcVat } from '../../utils/vat'
 import { resolveVatInclusive, vatRateError } from '../../utils/vatSettings'
-import { findNonSellableLine, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
+import { findNonSellableLine, findUnconvertibleLine, unconvertibleUnitMessage, findUnknownProductId, UNKNOWN_PRODUCT_MESSAGE, notSellableMessage } from './shared'
 
 const router = Router()
 
@@ -116,6 +116,10 @@ router.post('/', async (req: Request, res: Response) => {
     const badLine = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLine) {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLine.name, badLine.category) })
+    }
+    const badUnit = findUnconvertibleLine(tenantId, (items || []).map((i: any) => ({ stockItemId: i.productId, unit: i.unit, name: i.productName })))
+    if (badUnit) {
+      return res.status(400).json({ success: false, code: 'UNIT_NOT_CONVERTIBLE', message: unconvertibleUnitMessage(badUnit) })
     }
 
     const id = `qt_${tenantId.slice(0, 8)}_${generateId()}`
@@ -255,6 +259,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     const badLineUpd = findNonSellableLine(tenantId, (items || []).map((i: any) => i.productId))
     if (badLineUpd) {
       return res.status(400).json({ success: false, code: 'ITEM_NOT_SELLABLE', message: notSellableMessage(badLineUpd.name, badLineUpd.category) })
+    }
+    const badUpdUnit = findUnconvertibleLine(tenantId, (items || []).map((i: any) => ({ stockItemId: i.productId, unit: i.unit, name: i.productName })))
+    if (badUpdUnit) {
+      return res.status(400).json({ success: false, code: 'UNIT_NOT_CONVERTIBLE', message: unconvertibleUnitMessage(badUpdUnit) })
     }
 
     const nextDueDate = parsedDueDate !== undefined ? parsedDueDate : (existing.due_date ?? null)
