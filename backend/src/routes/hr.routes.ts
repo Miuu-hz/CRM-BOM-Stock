@@ -30,6 +30,7 @@ function sanitizeEmployee(row: any, canWrite = true) {
   if (!row) return row
   const out = { ...row }
   out.has_checkin_pin = 'checkin_pin_hash' in row ? Boolean(row.checkin_pin_hash) : Boolean(row.has_checkin_pin)
+  if ('line_linked' in row) out.line_linked = Boolean(row.line_linked)
   delete out.checkin_pin_hash
   if (!canWrite) {
     for (const f of SENSITIVE_FIELDS) delete out[f]
@@ -300,7 +301,15 @@ router.get('/employees', requirePermission('hr', 'read'), (req: Request, res: Re
     const { status, org_unit_id, q } = req.query
 
     let sql = `
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name,
+        EXISTS (
+          SELECT 1
+          FROM line_user_mappings lum
+          JOIN users u ON u.id = lum.user_id AND u.tenant_id = lum.tenant_id
+          WHERE lum.tenant_id = e.tenant_id
+            AND lum.user_id = e.user_id
+            AND u.status = 'active'
+        ) AS line_linked
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
       LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id
@@ -337,7 +346,15 @@ router.get('/employees/:id', requirePermission('hr', 'read'), (req: Request, res
     const tenantId = req.user!.tenantId
     const canWrite = userCan(req.user!, 'hr', 'write')
     const row = db.prepare(`
-      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name
+      SELECT e.*, ou.name as org_unit_name, ou.business_unit as business_unit, sh.name as shift_name,
+        EXISTS (
+          SELECT 1
+          FROM line_user_mappings lum
+          JOIN users u ON u.id = lum.user_id AND u.tenant_id = lum.tenant_id
+          WHERE lum.tenant_id = e.tenant_id
+            AND lum.user_id = e.user_id
+            AND u.status = 'active'
+        ) AS line_linked
       FROM employees e
       LEFT JOIN org_units ou ON e.org_unit_id = ou.id AND ou.tenant_id = e.tenant_id
       LEFT JOIN shifts sh ON e.shift_id = sh.id AND sh.tenant_id = e.tenant_id

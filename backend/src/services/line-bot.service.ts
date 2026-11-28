@@ -100,6 +100,87 @@ import { buildExecDigest } from './execDigest.service'
 import { getItemHistory } from './stockCostBasis.service'
 import { normName, aliasEnabled } from './stockItem.service'
 import { collectionItems, summarizeCollections } from './collections.service'
+import {
+    getSelfEmployee,
+    getTripConsentStatus,
+    acceptTripConsent,
+    getActiveVehicles,
+    getOpenCarTrip,
+    startCarTrip,
+    addCarTripStop,
+    endCarTrip,
+    getMyRecentTrips,
+} from './hr/carTrip.service'
+import {
+    TRIP_CONSENT_VERSION,
+    TRIP_CONSENT_NOTICE_TEXT,
+    TRIP_MAX_STOPS,
+    validateOdometer,
+} from './hr/carTripFlags'
+
+const CAR_TRIP_STATE_TTL_MS = 15 * 60 * 1000
+const TRIP_ENTRY_COMMANDS = new Set([
+    'เริ่ม/จบทริป',
+    'เริ่มทริป',
+    'จบทริป',
+    'ใช้งานรถยนต์',
+    'แวะจุด',
+    'ประวัติทริป',
+])
+const CAR_TRIP_ESCAPE_COMMANDS = new Set<string>([
+    ...TRIP_ENTRY_COMMANDS,
+    ...Object.values(MENUS).flatMap(m =>
+        m.buttons
+            .map(([, action]) => action)
+            .filter((a: any) => a?.type === 'message' && typeof a.text === 'string')
+            .map((a: any) => a.text as string)
+    ),
+])
+
+type CarTripStep =
+    | 'CONSENT'
+    | 'PICK_CAR'
+    | 'PRIVATE_PLATE'
+    | 'START_ODO'
+    | 'PURPOSE'
+    | 'START_LOC'
+    | 'STOP_LOC'
+    | 'END_ODO'
+    | 'END_LOC'
+
+interface CarTripDraft {
+    flow: 'start' | 'stop' | 'end'
+    employeeId: string
+    carType?: 'COMPANY' | 'PRIVATE'
+    vehicleId?: string
+    plateNo?: string
+    vehicleLabel?: string | null
+    startOdometer?: number
+    purpose?: string | null
+    tripId?: string
+    endOdometer?: number
+}
+
+const QR_CANCEL = {
+    type: 'action',
+    action: { type: 'postback', label: '❌ ยกเลิก', data: 'action=trip_cancel', displayText: 'ยกเลิก' },
+}
+const QR_LOCATION = {
+    type: 'action',
+    action: { type: 'location', label: '📍 ส่งตำแหน่ง' },
+}
+const QR_CONSENT = {
+    type: 'action',
+    action: { type: 'postback', label: '✅ ยินยอม', data: 'action=trip_consent', displayText: 'ยินยอม' },
+}
+const QR_PRIVATE = {
+    type: 'action',
+    action: { type: 'postback', label: '🚙 รถส่วนตัว', data: 'action=trip_car&type=PRIVATE', displayText: 'รถส่วนตัว' },
+}
+const QR_SKIP_PURPOSE = {
+    type: 'action',
+    action: { type: 'postback', label: '⏭️ ข้าม', data: 'action=trip_skip_purpose', displayText: 'ข้าม' },
+}
 
 const ROLE_LABEL: Record<string, string> = { MASTER: 'เจ้าของ (Master)', OWNER: 'เจ้าของ', ADMIN: 'ผู้ดูแลระบบ', MANAGER: 'ผู้จัดการ', USER: 'พนักงาน', GUEST: 'ยังไม่ผูกบัญชี' }
 // ponytail: OA กลางคือแถว active แรกใน line_channels (ตอนนี้มีแถวเดียว Phopy-ERP @060cskax) — ถ้าวันหนึ่งมีหลาย OA ต้องมีคอลัมน์บอกว่าอันไหนกลาง
@@ -373,6 +454,7 @@ class LineBotService {
 
     /** ออกจากบัญชีทดสอบ/โหมด demo กลับเป็น Master ลอยบนบริษัทที่ดูอยู่ */
     private async resetMasterToFloat(lineUserId: string, ml: any, replyToken: string, client: any) {
+        this.clearCarTripState(lineUserId)
         const view = ml.view_tenant_id || ''
         getDb().prepare('UPDATE line_master_links SET as_member = 0, demo_role = NULL WHERE line_user_id = ?').run(lineUserId)
         const back = this.linkedUser(view, lineUserId)
@@ -828,15 +910,14 @@ class LineBotService {
     }
 
     /** ลิงก์ใช้ครั้งเดียวเข้าหน้า "ของฉัน" (แลกเป็น token scope hr_self ที่ POST /api/auth/line-login) */
-    public createLoginLink(tenantId: string, userId: string, target?: 'trips' | 'trips_stop' | 'trips_history'): string {
+    public createLoginLink(tenantId: string, userId: string): string {
         const db = getDb()
         const token = crypto.randomBytes(32).toString('hex')
         const now = new Date()
         db.prepare('DELETE FROM line_login_tokens WHERE expires_at < ?').run(now.toISOString())
         db.prepare('INSERT INTO line_login_tokens (token_hash, tenant_id, user_id, expires_at) VALUES (?, ?, ?, ?)')
             .run(crypto.createHash('sha256').update(token).digest('hex'), tenantId, userId, new Date(now.getTime() + 5 * 60 * 1000).toISOString())
-        const base = `${process.env.APP_URL ?? 'https://erp.phopy.net'}/line-login?t=${token}`
-        return target ? `${base}&to=${target}` : base
+        return `${process.env.APP_URL ?? 'https://erp.phopy.net'}/line-login?t=${token}`
     }
 
     /** รหัส 6 หลักไม่ผูกกับร้าน (OA กลาง) — ร้านมาจากเจ้าของรหัสเอง */
@@ -1130,6 +1211,7 @@ class LineBotService {
         if (compMatch) {
             const picked = await this.pickCompany(compMatch[1] ?? '', '/บริษัท', replyToken, client, { showIds: src === 'user' })
             if (!picked) return true
+            this.clearCarTripState(userId)
             getDb().prepare('UPDATE line_master_links SET view_tenant_id = ?, as_member = 0 WHERE line_user_id = ?').run(picked.tenant_id, userId)
             await client.replyMessage(replyToken, { type: 'text', text: `ตอนนี้ดู: ${picked.name || picked.tenant_id} (Master)` })
             const view = this.linkedUser(picked.tenant_id, userId)
@@ -2236,7 +2318,7 @@ class LineBotService {
 
         // ── unfollow: user blocked/removed the bot (no reply token) ──────────
         if (event.type === 'unfollow') {
-            const db = getDb()
+            this.clearCarTripState(event.source.userId)
             // บล็อก OA กลาง = เลิกรับจากทุกร้าน
             getDb().prepare('DELETE FROM line_user_mappings WHERE line_user_id = ?').run(event.source.userId)
             getDb().prepare('DELETE FROM line_master_links WHERE line_user_id = ?').run(event.source.userId)
@@ -2262,6 +2344,12 @@ class LineBotService {
         if (event.type === 'leave') {
             const groupId = event.source.groupId ?? event.source.roomId
             if (groupId) getDb().prepare('UPDATE line_group_mappings SET is_active = 0, pos_daily = 0 WHERE group_id = ?').run(groupId)
+            return
+        }
+
+        // ── location message (in-chat car trips) ─────────────────────────────
+        if (event.type === 'message' && event.message.type === 'location') {
+            await this.handleCarTripLocation(tenantId, src, event, client)
             return
         }
 
@@ -2402,6 +2490,24 @@ class LineBotService {
                 }
             }
 
+            // ── Active in-chat car trip state (must run BEFORE bareOtp/isLinkAttempt so 6-digit odometers work) ──
+            if (src === 'user' && me) {
+                const tripState = this.getCarTripState(tenantId, event.source.userId)
+                if (tripState && !tripState.expired) {
+                    if (text === 'ยกเลิก') {
+                        this.clearCarTripState(event.source.userId)
+                        await client.replyMessage(event.replyToken, { type: 'text', text: '❌ ยกเลิกการทำรายการแล้วครับ' })
+                        return
+                    }
+                    if (text.startsWith('/') || CAR_TRIP_ESCAPE_COMMANDS.has(text)) {
+                        this.clearCarTripState(event.source.userId)
+                    } else {
+                        await this.handleCarTripTextStep(tenantId, event.source.userId, me, tripState.step, tripState.draft, text, event.replyToken, client)
+                        return
+                    }
+                }
+            }
+
             // BOM and PR drafting via chat removed (use Web ERP instead)
 
             // ── Account linking (personal chat only) ─────────────────────────
@@ -2463,18 +2569,9 @@ class LineBotService {
                 return
             }
 
-            // ── self-service & รถยนต์: เปิดหน้า "ของฉัน" ด้วยลิงก์ใช้ครั้งเดียว — เฉพาะแชทส่วนตัว (ลิงก์ในกลุ่ม = ใครกดก็เข้าได้) ──
+            // ── self-service: เปิดหน้า "ของฉัน" ด้วยลิงก์ใช้ครั้งเดียว — เฉพาะแชทส่วนตัว (ลิงก์ในกลุ่ม = ใครกดก็เข้าได้) ──
             const selfCmd = ['ของฉัน', 'เช็คอิน', 'ขอลา', 'ขอเบิก', 'สลิป', 'ตารางกะ', 'แลกกะ']
-            const tripTargets: Record<string, { target: 'trips' | 'trips_stop' | 'trips_history'; label: string; desc: string }> = {
-                'เริ่ม/จบทริป': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
-                'เริ่มทริป': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
-                'จบทริป': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
-                'ใช้งานรถยนต์': { target: 'trips', label: 'เปิดหน้าบันทึกทริป', desc: 'ใช้งานรถยนต์' },
-                'แวะจุด': { target: 'trips_stop', label: 'บันทึกจุดแวะ', desc: 'แวะจุดระหว่างทริป' },
-                'ประวัติทริป': { target: 'trips_history', label: 'ดูประวัติทริป', desc: 'ประวัติการใช้งานรถยนต์' },
-            }
-            const tripCfg = tripTargets[text]
-            if (me && (selfCmd.includes(text) || tripCfg)) {
+            if (me && selfCmd.includes(text)) {
                 if (src !== 'user') {
                     await client.replyMessage(event.replyToken, { type: 'text', text: `🔒 "${text}" ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ` })
                     return
@@ -2488,10 +2585,16 @@ class LineBotService {
                     type: 'template', altText: `${text} · ${companyName(tenantId)}`,
                     template: {
                         type: 'buttons', title: (companyName(tenantId) || 'Phopy ERP').slice(0, 40),
-                        text: `${tripCfg ? tripCfg.desc : 'เช็คอิน ขอลา ขอเบิก สลิป ตารางกะ แลกกะ'}\nลิงก์ใช้ได้ครั้งเดียว ภายใน 5 นาที`,
-                        actions: [{ type: 'uri', label: tripCfg ? tripCfg.label : 'เปิดหน้าของฉัน', uri: this.createLoginLink(tenantId, me.user_id, tripCfg?.target) }],
+                        text: 'เช็คอิน ขอลา ขอเบิก สลิป ตารางกะ แลกกะ\nลิงก์ใช้ได้ครั้งเดียว ภายใน 5 นาที',
+                        actions: [{ type: 'uri', label: 'เปิดหน้าของฉัน', uri: this.createLoginLink(tenantId, me.user_id) }],
                     },
                 })
+                return
+            }
+
+            // ── ใช้งานรถยนต์ในแชท LINE (เริ่ม/จบทริป, แวะจุด, ประวัติทริป) ──
+            if (me && TRIP_ENTRY_COMMANDS.has(text)) {
+                await this.handleCarTripEntryCommand(tenantId, src, me, event, text, client)
                 return
             }
 
@@ -2626,12 +2729,22 @@ class LineBotService {
         if (event.type === 'postback' && event.postback.data) {
             const params = new URLSearchParams(event.postback.data)
             const action = params.get('action')
-            if (action === 'richmenu_switch') return
+            if (action === 'richmenu_switch') {
+                if (params.get('to') === 'staff' && event.source?.userId) {
+                    this.clearCarTripState(event.source.userId)
+                }
+                return
+            }
+            if (action && action.startsWith('trip_')) {
+                await this.handleCarTripPostback(tenantId, src, event, action, params, client)
+                return
+            }
             const id     = params.get('id')
             const db     = getDb()
 
             // เปลี่ยนบริษัท: id มาจากปุ่มซึ่งปลอมได้ → ต้องมี mapping ของ LINE นี้กับร้านนั้นจริง
             if (action === 'switch_tenant' && id && event.source?.type === 'user') {
+                this.clearCarTripState(event.source.userId)
                 // Master ลอย: สลับไปบริษัทใดก็ได้ที่มีจริง ไม่ต้องมี mapping
                 if (this.floatingLink(event.source.userId)) {
                     if (!db.prepare('SELECT 1 FROM company_settings WHERE tenant_id = ?').get(id)) return
@@ -2666,6 +2779,7 @@ class LineBotService {
             // โหมด demo: เปลี่ยนได้เฉพาะ Master จริง (เช็คจาก line_master_links / users.role ไม่ใช่จากปุ่ม)
             if (action === 'demo_role' && event.source?.type === 'user') {
                 const lineUserId = event.source.userId, role = params.get('role') ?? ''
+                this.clearCarTripState(lineUserId)
                 const ml = this.masterLink(lineUserId)
                 if (!ml) {
                     const me = this.linkedUser(tenantId, lineUserId)
@@ -2772,6 +2886,662 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
                 })
                 return
             }
+        }
+    }
+
+    // ── In-chat car trip state & handlers (type = 'car_trip' in line_pending_tasks) ──
+    private clearCarTripState(lineUserId: string): void {
+        if (!lineUserId) return
+        getDb().prepare("DELETE FROM line_pending_tasks WHERE line_user_id = ? AND type = 'car_trip'").run(lineUserId)
+    }
+
+    private getCarTripState(
+        tenantId: string,
+        lineUserId: string,
+    ): { expired: true } | { expired: false; step: CarTripStep; draft: CarTripDraft } | null {
+        const db = getDb()
+        const row = db.prepare(
+            "SELECT id, title, description, expires_at FROM line_pending_tasks WHERE tenant_id = ? AND line_user_id = ? AND type = 'car_trip' ORDER BY created_at DESC LIMIT 1"
+        ).get(tenantId, lineUserId) as { id: string; title: string; description: string; expires_at: string } | undefined
+        if (!row) return null
+
+        const expMs = parseUtcMs(row.expires_at)
+        if (!Number.isFinite(expMs) || Date.now() > expMs) {
+            this.clearCarTripState(lineUserId)
+            return { expired: true }
+        }
+        try {
+            const draft = JSON.parse(row.description) as CarTripDraft
+            if (!draft || typeof draft !== 'object' || !draft.employeeId) {
+                this.clearCarTripState(lineUserId)
+                return null
+            }
+            return { expired: false, step: row.title as CarTripStep, draft }
+        } catch {
+            this.clearCarTripState(lineUserId)
+            return null
+        }
+    }
+
+    private setCarTripState(tenantId: string, lineUserId: string, step: CarTripStep, draft: CarTripDraft): void {
+        const db = getDb()
+        const id = `ct_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+        const expiresAt = new Date(Date.now() + CAR_TRIP_STATE_TTL_MS).toISOString()
+        db.transaction(() => {
+            db.prepare("DELETE FROM line_pending_tasks WHERE line_user_id = ? AND type = 'car_trip'").run(lineUserId)
+            db.prepare(`
+                INSERT INTO line_pending_tasks (id, tenant_id, line_user_id, type, title, description, stock_context, expires_at)
+                VALUES (?, ?, ?, 'car_trip', ?, ?, NULL, ?)
+            `).run(id, tenantId, lineUserId, step, JSON.stringify(draft), expiresAt)
+        })()
+    }
+
+    private formatPlateDisplay(plateNo?: string, vehicleLabel?: string | null): string {
+        if (!plateNo) return '-'
+        return vehicleLabel ? `${plateNo} (${vehicleLabel})` : plateNo
+    }
+
+    private buildPickCarPrompt(tenantId: string) {
+        const vehicles = getActiveVehicles(tenantId)
+        const carButtons = vehicles.slice(0, 11).map(v => ({
+            type: 'action',
+            action: {
+                type: 'postback',
+                label: `${v.plate_no}${v.label ? ` ${v.label}` : ''}`.slice(0, 20),
+                data: `action=trip_car&type=COMPANY&vid=${encodeURIComponent(v.id)}`,
+                displayText: v.plate_no,
+            },
+        }))
+        const quickReply = { items: [...carButtons, QR_PRIVATE, QR_CANCEL] }
+        const text = vehicles.length > 0
+            ? `🚗 เริ่มทริปใหม่\nกรุณาเลือกรถที่ใช้งานครับ${vehicles.length > 11 ? '\n(หรือพิมพ์ทะเบียนรถบริษัทที่ต้องการ)' : ''}`
+            : '🚗 เริ่มทริปใหม่\nยังไม่มีรถบริษัทในระบบ กด "รถส่วนตัว" เพื่อระบุทะเบียนรถครับ'
+        return { vehicles, text, quickReply }
+    }
+
+    private async promptPickCar(tenantId: string, lineUserId: string, employeeId: string, replyToken: string, client: any) {
+        this.setCarTripState(tenantId, lineUserId, 'PICK_CAR', { flow: 'start', employeeId })
+        const { text, quickReply } = this.buildPickCarPrompt(tenantId)
+        await client.replyMessage(replyToken, { type: 'text', text, quickReply })
+    }
+
+    private async promptStartOdometer(tenantId: string, lineUserId: string, draft: CarTripDraft, replyToken: string, client: any) {
+        this.setCarTripState(tenantId, lineUserId, 'START_ODO', draft)
+        const plateDisplay = this.formatPlateDisplay(draft.plateNo, draft.vehicleLabel)
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: `🔢 รถ: ${plateDisplay}\nกรุณาพิมพ์เลขไมล์เริ่มต้น (กม.) เป็นตัวเลขครับ (เช่น 45120)`,
+            quickReply: { items: [QR_CANCEL] },
+        })
+    }
+
+    private async promptStartLocation(tenantId: string, lineUserId: string, draft: CarTripDraft, replyToken: string, client: any) {
+        this.setCarTripState(tenantId, lineUserId, 'START_LOC', draft)
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '📍 กรุณากดปุ่ม "ส่งตำแหน่ง" ด้านล่าง เพื่อบันทึกพิกัดจุดเริ่มต้นและเริ่มทริปครับ',
+            quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+        })
+    }
+
+    private async handleCarTripEntryCommand(
+        tenantId: string,
+        src: 'user' | 'group' | 'room',
+        me: any,
+        event: any,
+        text: string,
+        client: any,
+    ) {
+        const replyToken = event.replyToken
+        if (src !== 'user') {
+            await client.replyMessage(replyToken, { type: 'text', text: `🔒 "${text}" ใช้ได้ในแชทส่วนตัวกับบอทเท่านั้นครับ` })
+            return
+        }
+        const lineUserId = event.source.userId as string
+        const emp = getSelfEmployee(tenantId, me.user_id)
+        if (!emp) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: 'บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน\nให้ฝ่ายบุคคลผูกบัญชีผู้ใช้ในหน้าพนักงานก่อนครับ',
+            })
+            return
+        }
+
+        this.clearCarTripState(lineUserId)
+
+        if (text === 'ประวัติทริป') {
+            const trips = getMyRecentTrips(tenantId, emp.id, 5)
+            if (trips.length === 0) {
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: '📋 ยังไม่มีประวัติการใช้รถครับ',
+                    quickReply: { items: [{ type: 'action', action: { type: 'message', label: '🚗 เริ่มทริป', text: 'เริ่ม/จบทริป' } }] },
+                })
+                return
+            }
+            await client.replyMessage(replyToken, flexTemplates.tripHistoryCard(trips))
+            return
+        }
+
+        const openTrip = getOpenCarTrip(tenantId, emp.id)
+
+        if (text === 'แวะจุด') {
+            if (!openTrip) {
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: 'ℹ️ คุณยังไม่มีทริปที่เปิดอยู่ครับ กรุณากด "เริ่ม/จบทริป" เพื่อเริ่มเดินทางก่อน',
+                    quickReply: { items: [{ type: 'action', action: { type: 'message', label: '🚗 เริ่มทริป', text: 'เริ่ม/จบทริป' } }] },
+                })
+                return
+            }
+            if (openTrip.stops.length >= TRIP_MAX_STOPS) {
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: '⚠️ แวะจุดได้สูงสุด 10 จุดต่อทริปครับ (บันทึกครบ 10/10 จุดแล้ว)',
+                    quickReply: { items: [{ type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } }] },
+                })
+                return
+            }
+            this.setCarTripState(tenantId, lineUserId, 'STOP_LOC', {
+                flow: 'stop',
+                employeeId: emp.id,
+                tripId: openTrip.id,
+                plateNo: openTrip.plate_no,
+            })
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `📍 บันทึกจุดแวะ (${openTrip.stops.length + 1}/10)\nรถ: ${openTrip.plate_no}\nกรุณากดปุ่ม "ส่งตำแหน่ง" ด้านล่าง เพื่อปักพิกัดจุดแวะครับ`,
+                quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+            })
+            return
+        }
+
+        // Flow 1: เริ่ม/จบทริป | เริ่มทริป | จบทริป | ใช้งานรถยนต์
+        if (text === 'เริ่มทริป' && openTrip) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `⚠️ คุณมีทริปที่เปิดอยู่แล้ว (${openTrip.plate_no}) กรุณาจบทริปเดิมก่อนครับ`,
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'message', label: '📍 แวะจุด', text: 'แวะจุด' } },
+                        { type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'จบทริป' } },
+                    ],
+                },
+            })
+            return
+        }
+        if (text === 'จบทริป' && !openTrip) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: 'ℹ️ คุณยังไม่มีทริปที่เปิดอยู่ครับ กด "เริ่ม/จบทริป" เพื่อเริ่มเดินทาง',
+                quickReply: { items: [{ type: 'action', action: { type: 'message', label: '🚗 เริ่มทริป', text: 'เริ่ม/จบทริป' } }] },
+            })
+            return
+        }
+
+        if (!openTrip) {
+            const consent = getTripConsentStatus(tenantId, emp.id)
+            if (!consent.accepted) {
+                this.setCarTripState(tenantId, lineUserId, 'CONSENT', { flow: 'start', employeeId: emp.id })
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: `🔒 ความยินยอมการใช้ตำแหน่ง (PDPA)\n\n${TRIP_CONSENT_NOTICE_TEXT}\n\nกรุณากดยืนยันเพื่อดำเนินการต่อครับ`,
+                    quickReply: { items: [QR_CONSENT, QR_CANCEL] },
+                })
+                return
+            }
+            await this.promptPickCar(tenantId, lineUserId, emp.id, replyToken, client)
+            return
+        }
+
+        // Branch 1B: Open trip exists -> End Trip
+        const plateDisplay = this.formatPlateDisplay(openTrip.plate_no, openTrip.vehicle_label)
+        this.setCarTripState(tenantId, lineUserId, 'END_ODO', {
+            flow: 'end',
+            employeeId: emp.id,
+            tripId: openTrip.id,
+            plateNo: openTrip.plate_no,
+            vehicleLabel: openTrip.vehicle_label,
+            startOdometer: openTrip.start_odometer,
+        })
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: `🏁 จบทริป\nรถ: ${plateDisplay}\nไมล์เริ่มต้น: ${openTrip.start_odometer.toLocaleString('th-TH')} กม. (แวะ ${openTrip.stops.length}/10 จุด)\n\nกรุณาพิมพ์เลขไมล์สิ้นสุด (กม.) เป็นตัวเลขครับ`,
+            quickReply: { items: [QR_CANCEL] },
+        })
+    }
+
+    private async handleCarTripTextStep(
+        tenantId: string,
+        lineUserId: string,
+        me: any,
+        step: CarTripStep,
+        draft: CarTripDraft,
+        text: string,
+        replyToken: string,
+        client: any,
+    ) {
+        const emp = getSelfEmployee(tenantId, me.user_id)
+        if (!emp || emp.id !== draft.employeeId) {
+            this.clearCarTripState(lineUserId)
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: 'บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน\nให้ฝ่ายบุคคลผูกบัญชีผู้ใช้ในหน้าพนักงานก่อนครับ',
+            })
+            return
+        }
+
+        switch (step) {
+            case 'CONSENT': {
+                if (text === 'ยินยอม') {
+                    acceptTripConsent(tenantId, emp.id, me.user_id, TRIP_CONSENT_VERSION)
+                    await this.promptPickCar(tenantId, lineUserId, emp.id, replyToken, client)
+                    return
+                }
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: 'กรุณากด "✅ ยินยอม" เพื่อดำเนินการต่อ หรือกด "❌ ยกเลิก" ครับ',
+                    quickReply: { items: [QR_CONSENT, QR_CANCEL] },
+                })
+                return
+            }
+
+            case 'PICK_CAR': {
+                if (text === 'รถส่วนตัว') {
+                    this.setCarTripState(tenantId, lineUserId, 'PRIVATE_PLATE', { ...draft, carType: 'PRIVATE' })
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: '🚙 กรุณาพิมพ์ทะเบียนรถส่วนตัวครับ (เช่น กข 1234)',
+                        quickReply: { items: [QR_CANCEL] },
+                    })
+                    return
+                }
+                const { vehicles, quickReply } = this.buildPickCarPrompt(tenantId)
+                const matched = vehicles.find(v => v.plate_no.trim() === text.trim())
+                if (matched) {
+                    await this.promptStartOdometer(
+                        tenantId,
+                        lineUserId,
+                        { ...draft, carType: 'COMPANY', vehicleId: matched.id, plateNo: matched.plate_no, vehicleLabel: matched.label },
+                        replyToken,
+                        client,
+                    )
+                    return
+                }
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: 'กรุณาเลือกรถจากปุ่มด้านล่าง หรือกด "❌ ยกเลิก" ครับ',
+                    quickReply,
+                })
+                return
+            }
+
+            case 'PRIVATE_PLATE': {
+                const plate = text.trim()
+                if (!plate || plate.length > 30) {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: '⚠️ กรุณาระบุทะเบียนรถ (1-30 ตัวอักษร) ครับ',
+                        quickReply: { items: [QR_CANCEL] },
+                    })
+                    return
+                }
+                await this.promptStartOdometer(
+                    tenantId,
+                    lineUserId,
+                    { ...draft, carType: 'PRIVATE', plateNo: plate, vehicleLabel: null },
+                    replyToken,
+                    client,
+                )
+                return
+            }
+
+            case 'START_ODO': {
+                const odo = validateOdometer(text.replace(/[,\s]/g, ''))
+                if (!odo.ok) {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: '⚠️ เลขไมล์ต้องเป็นตัวเลขตั้งแต่ 0 ถึง 9,999,999 กรุณาพิมพ์ใหม่อีกครั้งครับ',
+                        quickReply: { items: [QR_CANCEL] },
+                    })
+                    return
+                }
+                this.setCarTripState(tenantId, lineUserId, 'PURPOSE', { ...draft, startOdometer: odo.value })
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: `📝 เลขไมล์เริ่มต้น: ${odo.value.toLocaleString('th-TH')} กม.\nกรุณาพิมพ์วัตถุประสงค์การเดินทาง หรือกด "ข้าม" ครับ`,
+                    quickReply: { items: [QR_SKIP_PURPOSE, QR_CANCEL] },
+                })
+                return
+            }
+
+            case 'PURPOSE': {
+                if (text === 'ข้าม' || text === '-') {
+                    await this.promptStartLocation(tenantId, lineUserId, { ...draft, purpose: null }, replyToken, client)
+                    return
+                }
+                if (text.length > 500) {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: '⚠️ วัตถุประสงค์ต้องไม่เกิน 500 ตัวอักษร กรุณาพิมพ์ใหม่หรือกด "ข้าม" ครับ',
+                        quickReply: { items: [QR_SKIP_PURPOSE, QR_CANCEL] },
+                    })
+                    return
+                }
+                await this.promptStartLocation(tenantId, lineUserId, { ...draft, purpose: text }, replyToken, client)
+                return
+            }
+
+            case 'END_ODO': {
+                const odo = validateOdometer(text.replace(/[,\s]/g, ''))
+                if (!odo.ok) {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: '⚠️ เลขไมล์ต้องเป็นตัวเลขตั้งแต่ 0 ถึง 9,999,999 กรุณาพิมพ์ใหม่อีกครั้งครับ',
+                        quickReply: { items: [QR_CANCEL] },
+                    })
+                    return
+                }
+                const startOdo = draft.startOdometer ?? 0
+                if (odo.value < startOdo) {
+                    await client.replyMessage(replyToken, {
+                        type: 'text',
+                        text: `⚠️ เลขไมล์สิ้นสุดต้องมากกว่าหรือเท่ากับเลขไมล์เริ่มต้น (${startOdo.toLocaleString('th-TH')} กม.) กรุณาพิมพ์ใหม่อีกครั้งครับ`,
+                        quickReply: { items: [QR_CANCEL] },
+                    })
+                    return
+                }
+                const dist = (odo.value - startOdo).toLocaleString('th-TH', { maximumFractionDigits: 1 })
+                this.setCarTripState(tenantId, lineUserId, 'END_LOC', { ...draft, endOdometer: odo.value })
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: `📍 เลขไมล์สิ้นสุด: ${odo.value.toLocaleString('th-TH')} กม. (ระยะทาง ${dist} กม.)\nกรุณากดปุ่ม "ส่งตำแหน่ง" ด้านล่าง เพื่อบันทึกจบทริปครับ`,
+                    quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+                })
+                return
+            }
+
+            case 'START_LOC':
+            case 'STOP_LOC': {
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: '📍 กรุณากดปุ่ม "ส่งตำแหน่ง" ด้านล่างเพื่อส่งพิกัด GPS ครับ',
+                    quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+                })
+                return
+            }
+
+            case 'END_LOC': {
+                await client.replyMessage(replyToken, {
+                    type: 'text',
+                    text: '📍 กรุณากดปุ่ม "ส่งตำแหน่ง" ด้านล่างเพื่อส่งพิกัด GPS จบทริปครับ',
+                    quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+                })
+                return
+            }
+        }
+    }
+
+    private async handleCarTripLocation(
+        tenantId: string,
+        src: 'user' | 'group' | 'room',
+        event: any,
+        client: any,
+    ) {
+        if (src !== 'user') return
+        const lineUserId = event.source?.userId as string | undefined
+        if (!lineUserId) return
+
+        const linked = this.linkedUser(tenantId, lineUserId)
+        const me = linked?.demo && linked.role === 'GUEST' ? null : linked
+        if (!me || !tenantId) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: '🔒 LINE นี้ยังไม่ได้เชื่อมกับบัญชีในระบบ ERP\n\nเข้าเว็บ erp.phopy.net > ตั้งค่า > LINE กด "สร้างรหัสเชื่อม" แล้วส่งรหัส 6 หลักมาที่แชทนี้\n\nตัวอย่าง: 123456',
+            })
+            return
+        }
+
+        const emp = getSelfEmployee(tenantId, me.user_id)
+        if (!emp) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: 'บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน\nให้ฝ่ายบุคคลผูกบัญชีผู้ใช้ในหน้าพนักงานก่อนครับ',
+            })
+            return
+        }
+
+        const state = this.getCarTripState(tenantId, lineUserId)
+        if (state?.expired) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: '⏰ รายการบันทึกทริปหมดเวลาแล้ว กรุณากดเริ่มใหม่อีกครั้งครับ',
+            })
+            return
+        }
+        if (!state || state.draft.employeeId !== emp.id) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: 'ℹ️ หากต้องการบันทึกพิกัดการใช้รถ กรุณากด "เริ่ม/จบทริป" หรือ "แวะจุด" จากเมนูก่อนครับ',
+                quickReply: {
+                    items: [
+                        { type: 'action', action: { type: 'message', label: '🚗 เริ่มทริป', text: 'เริ่ม/จบทริป' } },
+                        { type: 'action', action: { type: 'message', label: '📍 แวะจุด', text: 'แวะจุด' } },
+                    ],
+                },
+            })
+            return
+        }
+
+        if (state.step !== 'START_LOC' && state.step !== 'STOP_LOC' && state.step !== 'END_LOC') {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: '⚠️ ตอนนี้ระบบรอข้อมูลขั้นตอนก่อนหน้าอยู่ครับ กรุณาทำตามคำแนะนำ หรือกด "❌ ยกเลิก"',
+                quickReply: { items: [QR_CANCEL] },
+            })
+            return
+        }
+
+        const lat = event.message.latitude
+        const lng = event.message.longitude
+
+        if (state.step === 'START_LOC') {
+            const res = startCarTrip({
+                tenantId,
+                employeeId: emp.id,
+                carType: state.draft.carType,
+                vehicleId: state.draft.vehicleId,
+                plateNo: state.draft.plateNo,
+                vehicleLabel: state.draft.vehicleLabel,
+                startOdometer: state.draft.startOdometer,
+                purpose: state.draft.purpose,
+                lat,
+                lng,
+                accuracyM: null,
+            })
+            if (!res.ok) {
+                if (res.status === 400) {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: `⚠️ ${res.message}`,
+                        quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+                    })
+                } else {
+                    this.clearCarTripState(lineUserId)
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ ${res.message}` })
+                }
+                return
+            }
+            this.clearCarTripState(lineUserId)
+            const card = flexTemplates.tripStartedCard(res.data) as any
+            card.quickReply = {
+                items: [
+                    { type: 'action', action: { type: 'message', label: '📍 แวะจุด', text: 'แวะจุด' } },
+                    { type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } },
+                ],
+            }
+            await client.replyMessage(event.replyToken, card)
+            return
+        }
+
+        if (state.step === 'STOP_LOC') {
+            const note = event.message.title ? String(event.message.title).trim().slice(0, 200) : null
+            const res = addCarTripStop({
+                tenantId,
+                employeeId: emp.id,
+                tripId: state.draft.tripId ?? '',
+                lat,
+                lng,
+                accuracyM: null,
+                note,
+            })
+            if (!res.ok) {
+                if (res.status === 400) {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: `⚠️ ${res.message}`,
+                        quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+                    })
+                } else {
+                    this.clearCarTripState(lineUserId)
+                    await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ ${res.message}` })
+                }
+                return
+            }
+            this.clearCarTripState(lineUserId)
+            const items: any[] = []
+            if (res.data.stops.length < TRIP_MAX_STOPS) {
+                items.push({ type: 'action', action: { type: 'message', label: '📍 แวะจุดเพิ่ม', text: 'แวะจุด' } })
+            }
+            items.push({ type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } })
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: `✅ บันทึกจุดแวะที่ ${res.data.stops.length}/${TRIP_MAX_STOPS} เรียบร้อยแล้วครับ\nรถ: ${res.data.plate_no}`,
+                quickReply: { items },
+            })
+            return
+        }
+
+        // END_LOC
+        const res = await endCarTrip({
+            tenantId,
+            employeeId: emp.id,
+            tripId: state.draft.tripId ?? '',
+            endOdometer: state.draft.endOdometer,
+            lat,
+            lng,
+            accuracyM: null,
+        })
+        if (!res.ok) {
+            if (res.status === 400) {
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: `⚠️ ${res.message}`,
+                    quickReply: { items: [QR_LOCATION, QR_CANCEL] },
+                })
+            } else {
+                this.clearCarTripState(lineUserId)
+                await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ ${res.message}` })
+            }
+            return
+        }
+        this.clearCarTripState(lineUserId)
+        await client.replyMessage(event.replyToken, flexTemplates.tripSummaryCard(res.data))
+    }
+
+    private async handleCarTripPostback(
+        tenantId: string,
+        src: 'user' | 'group' | 'room',
+        event: any,
+        action: string,
+        params: URLSearchParams,
+        client: any,
+    ) {
+        if (src !== 'user') return
+        const lineUserId = event.source?.userId as string | undefined
+        if (!lineUserId) return
+
+        const linked = this.linkedUser(tenantId, lineUserId)
+        const me = linked?.demo && linked.role === 'GUEST' ? null : linked
+        if (!me || !tenantId) return
+
+        const emp = getSelfEmployee(tenantId, me.user_id)
+        if (!emp) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: 'บัญชีนี้ยังไม่ได้ผูกกับทะเบียนพนักงาน\nให้ฝ่ายบุคคลผูกบัญชีผู้ใช้ในหน้าพนักงานก่อนครับ',
+            })
+            return
+        }
+
+        const state = this.getCarTripState(tenantId, lineUserId)
+        if (state?.expired) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: '⏰ รายการบันทึกทริปหมดเวลาแล้ว กรุณากดเริ่มใหม่อีกครั้งครับ',
+            })
+            return
+        }
+
+        if (action === 'trip_cancel') {
+            this.clearCarTripState(lineUserId)
+            await client.replyMessage(event.replyToken, { type: 'text', text: '❌ ยกเลิกการทำรายการแล้วครับ' })
+            return
+        }
+
+        if (!state || state.draft.employeeId !== emp.id) {
+            await client.replyMessage(event.replyToken, {
+                type: 'text',
+                text: '⏰ รายการบันทึกทริปหมดเวลาแล้ว กรุณากดเริ่มใหม่อีกครั้งครับ',
+            })
+            return
+        }
+
+        if (action === 'trip_consent') {
+            if (state.step !== 'CONSENT') return
+            acceptTripConsent(tenantId, emp.id, me.user_id, TRIP_CONSENT_VERSION)
+            await this.promptPickCar(tenantId, lineUserId, emp.id, event.replyToken, client)
+            return
+        }
+
+        if (action === 'trip_car') {
+            if (state.step !== 'PICK_CAR') return
+            const carType = params.get('type')
+            if (carType === 'PRIVATE') {
+                this.setCarTripState(tenantId, lineUserId, 'PRIVATE_PLATE', { ...state.draft, carType: 'PRIVATE' })
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: '🚙 กรุณาพิมพ์ทะเบียนรถส่วนตัวครับ (เช่น กข 1234)',
+                    quickReply: { items: [QR_CANCEL] },
+                })
+                return
+            }
+            if (carType === 'COMPANY') {
+                const vid = params.get('vid') ?? ''
+                const { vehicles, quickReply } = this.buildPickCarPrompt(tenantId)
+                const v = vehicles.find(row => row.id === vid)
+                if (!v) {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: '⚠️ ไม่พบรถบริษัทที่เลือก หรือรถถูกปิดใช้งานแล้ว กรุณาเลือกใหม่ครับ',
+                        quickReply,
+                    })
+                    return
+                }
+                await this.promptStartOdometer(
+                    tenantId,
+                    lineUserId,
+                    { ...state.draft, carType: 'COMPANY', vehicleId: v.id, plateNo: v.plate_no, vehicleLabel: v.label },
+                    event.replyToken,
+                    client,
+                )
+            }
+            return
+        }
+
+        if (action === 'trip_skip_purpose') {
+            if (state.step !== 'PURPOSE') return
+            await this.promptStartLocation(tenantId, lineUserId, { ...state.draft, purpose: null }, event.replyToken, client)
         }
     }
 }

@@ -113,11 +113,15 @@ beforeEach(() => {
   ])
 })
 
-describe('CarTrips (/hr/trips)', () => {
-  it('renders trips, flags, Google Maps links, and passes filter params to API', async () => {
-    render(<CarTrips />)
+describe('CarTrips (/hr/trips & /hr/vehicles)', () => {
+  it('mode="trips" renders trips, flags, Google Maps links, without internal tab bar, and passes filter params to API', async () => {
+    render(<CarTrips mode="trips" />)
 
     expect(await screen.findByText('สมชาย ใจดี')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'ประวัติการใช้รถ' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'บันทึกการเดินทาง' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'รถบริษัท' })).toBeNull()
+
     expect(screen.getByText('ระยะไมล์ต่างจากแผนที่ >20%')).toBeTruthy()
     expect(screen.getByText('ความแม่นยำ GPS ต่ำ (>150 ม.)')).toBeTruthy()
     expect(screen.getByText('คำนวณแผนที่ไม่สำเร็จ')).toBeTruthy()
@@ -150,7 +154,7 @@ describe('CarTrips (/hr/trips)', () => {
       route_error: null,
     })
 
-    render(<CarTrips />)
+    render(<CarTrips mode="trips" />)
 
     const retryBtn = await screen.findByRole('button', { name: 'คำนวณใหม่' })
     const row = retryBtn.closest('tr')!
@@ -164,7 +168,7 @@ describe('CarTrips (/hr/trips)', () => {
     expect(within(row).getByText('คำนวณแล้ว')).toBeTruthy()
   })
 
-  it('creates and updates company vehicles in รถบริษัท tab', async () => {
+  it('mode="vehicles" renders company vehicles table and add/edit modal without calling getTrips', async () => {
     mockTripService.createVehicle.mockResolvedValue({
       ...sampleVehicles[0],
       id: 'veh-2',
@@ -177,9 +181,12 @@ describe('CarTrips (/hr/trips)', () => {
       is_active: false,
     })
 
-    render(<CarTrips />)
+    render(<CarTrips mode="vehicles" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'รถบริษัท' }))
+    expect(await screen.findByRole('heading', { name: 'รถของบริษัท' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'บันทึกการเดินทาง' })).toBeNull()
+    expect(mockTripService.getTrips).not.toHaveBeenCalled()
+    expect(mockHrService.getEmployees).not.toHaveBeenCalled()
 
     expect(await screen.findByText('กก 1234')).toBeTruthy()
     expect(screen.getByText('45,120')).toBeTruthy()

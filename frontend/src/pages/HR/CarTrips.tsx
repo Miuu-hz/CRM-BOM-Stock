@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Filter,
   X,
-  Navigation,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import hrTripService, {
@@ -20,8 +19,6 @@ import hrTripService, {
   TRIP_FLAG_LABELS,
 } from '../../services/hrTrip.service'
 import hrService, { Employee } from '../../services/hr.service'
-
-type TabKey = 'trips' | 'vehicles'
 
 const fmtDateTime = (iso?: string | null): string => {
   if (!iso) return '-'
@@ -52,7 +49,7 @@ const STATUS_BADGE: Record<TripStatus, string> = {
   INCOMPLETE: 'bg-[var(--warning-soft)] text-[var(--warning-strong)]',
 }
 
-export default function CarTrips() {
+export default function CarTrips({ mode = 'trips' }: { mode?: 'trips' | 'vehicles' }) {
   const fromFilterId = useId()
   const toFilterId = useId()
   const empFilterId = useId()
@@ -61,8 +58,6 @@ export default function CarTrips() {
   const plateInputId = useId()
   const labelInputId = useId()
   const notesInputId = useId()
-
-  const [activeTab, setActiveTab] = useState<TabKey>('trips')
 
   // Trips state
   const [trips, setTrips] = useState<ManagerCarTrip[]>([])
@@ -133,13 +128,17 @@ export default function CarTrips() {
   }, [])
 
   useEffect(() => {
-    loadTrips()
-  }, [loadTrips])
+    if (mode === 'trips') {
+      loadTrips()
+    }
+  }, [mode, loadTrips])
 
   useEffect(() => {
     loadVehicles()
-    loadEmployees()
-  }, [loadVehicles, loadEmployees])
+    if (mode === 'trips') {
+      loadEmployees()
+    }
+  }, [mode, loadVehicles, loadEmployees])
 
   const summary = useMemo(() => {
     const total = trips.length
@@ -237,35 +236,19 @@ export default function CarTrips() {
             <Car className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-[var(--fg-1)]">ใช้งานรถยนต์</h1>
+            <h1 className="text-2xl font-bold text-[var(--fg-1)]">
+              {mode === 'vehicles' ? 'รถของบริษัท' : 'ประวัติการใช้รถ'}
+            </h1>
             <p className="text-sm text-[var(--fg-3)]">
-              ตรวจสอบบันทึกการเดินทาง เลขไมล์ ระยะทางแผนที่ และจัดการรถบริษัท
+              {mode === 'vehicles'
+                ? 'จัดการทะเบียนรถบริษัทและสถานะการใช้งาน'
+                : 'ตรวจสอบบันทึกการเดินทาง เลขไมล์ ระยะทางแผนที่ และความผิดปกติ'}
             </p>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab('trips')}
-          className={`phopy-tab ${activeTab === 'trips' ? 'active' : ''}`}
-        >
-          <Navigation className="w-4 h-4" />
-          <span>บันทึกการเดินทาง</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('vehicles')}
-          className={`phopy-tab ${activeTab === 'vehicles' ? 'active' : ''}`}
-        >
-          <Car className="w-4 h-4" />
-          <span>รถบริษัท</span>
-        </button>
-      </div>
-
-      {activeTab === 'trips' && (
+      {mode === 'trips' && (
         <div className="space-y-4">
           {/* Filters */}
           <div className="phopy-card p-4 space-y-3">
@@ -568,7 +551,7 @@ export default function CarTrips() {
         </div>
       )}
 
-      {activeTab === 'vehicles' && (
+      {mode === 'vehicles' && (
         <div className="space-y-4">
           <div className="flex justify-end">
             <button

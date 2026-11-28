@@ -49,8 +49,8 @@ describe('LineLogin', () => {
     )
   }
 
-  it('redirects to /hr/me/trips when to=trips', async () => {
-    setSearch('?t=abc123&to=trips')
+  it('redirects to /hr/me when ?t=... is exchanged and clears old session keys', async () => {
+    setSearch('?t=abc123')
     mockSuccessFetch()
     localStorage.setItem('crm_refresh_token', 'old-refresh')
     localStorage.setItem('crm_original_tenant', 'old-tenant')
@@ -58,55 +58,26 @@ describe('LineLogin', () => {
     render(<LineLogin />)
 
     await waitFor(() => {
-      expect(replaceSpy).toHaveBeenCalledWith('/hr/me/trips')
+      expect(replaceSpy).toHaveBeenCalledWith('/hr/me')
     })
     expect(localStorage.getItem('crm_refresh_token')).toBeNull()
     expect(localStorage.getItem('crm_original_tenant')).toBeNull()
     expect(localStorage.getItem('crm_token')).toBe('jwt-hr-self')
   })
 
-  it('redirects to /hr/me/trips?action=stop when to=trips_stop', async () => {
-    setSearch('?t=abc123&to=trips_stop')
-    mockSuccessFetch()
+  it('always redirects to /hr/me even when to=trips or to=https://evil.com is present', async () => {
+    for (const search of ['?t=abc123&to=trips', '?t=abc123&to=trips_stop', '?t=abc123&to=https://evil.com']) {
+      replaceSpy.mockClear()
+      setSearch(search)
+      mockSuccessFetch()
 
-    render(<LineLogin />)
+      const { unmount } = render(<LineLogin />)
 
-    await waitFor(() => {
-      expect(replaceSpy).toHaveBeenCalledWith('/hr/me/trips?action=stop')
-    })
-  })
-
-  it('redirects to /hr/me/trips?tab=history when to=trips_history', async () => {
-    setSearch('?t=abc123&to=trips_history')
-    mockSuccessFetch()
-
-    render(<LineLogin />)
-
-    await waitFor(() => {
-      expect(replaceSpy).toHaveBeenCalledWith('/hr/me/trips?tab=history')
-    })
-  })
-
-  it('blocks open-redirect attempts (to=https://evil.com) and falls back to /hr/me', async () => {
-    setSearch('?t=abc123&to=https://evil.com')
-    mockSuccessFetch()
-
-    render(<LineLogin />)
-
-    await waitFor(() => {
-      expect(replaceSpy).toHaveBeenCalledWith('/hr/me')
-    })
-  })
-
-  it('falls back to /hr/me when to is omitted or a prototype property', async () => {
-    setSearch('?t=abc123&to=constructor')
-    mockSuccessFetch()
-
-    render(<LineLogin />)
-
-    await waitFor(() => {
-      expect(replaceSpy).toHaveBeenCalledWith('/hr/me')
-    })
+      await waitFor(() => {
+        expect(replaceSpy).toHaveBeenCalledWith('/hr/me')
+      })
+      unmount()
+    }
   })
 
   it('shows error message when token exchange fails', async () => {

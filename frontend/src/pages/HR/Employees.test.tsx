@@ -366,4 +366,86 @@ describe('หน้าทะเบียนพนักงาน (Employees)', (
 
     confirmSpy.mockRestore()
   })
+
+  it('พนักงานที่ผูก LINE แล้ว (line_linked: true): ปุ่ม title="ผูก LINE แล้ว" สีเขียว และกดแล้วถาม confirm ก่อนสร้างรหัสใหม่', async () => {
+    const employee: Employee = {
+      id: 'e11',
+      tenant_id: 't1',
+      code: 'EMP-011',
+      first_name: 'สุชาติ',
+      last_name: 'พร้อมรบ',
+      employment_type: 'MONTHLY',
+      start_date: '2026-01-01',
+      status: 'ACTIVE',
+      sso_enrolled: 1,
+      line_linked: true,
+    }
+    mockHr.getEmployees.mockResolvedValue([employee])
+    const confirmSpy = vi.spyOn(window, 'confirm')
+    mockHr.inviteEmployeeToLine.mockResolvedValue({
+      code: 'REISSUE-777',
+      expires_in_minutes: 10,
+      created_line_only_account: false,
+    })
+
+    render(<Employees />)
+
+    const btn = await screen.findByTitle('ผูก LINE แล้ว')
+    expect(btn.className).toContain('text-[var(--success)]')
+    expect(btn.className).toContain('bg-[var(--success-soft)]')
+
+    // ยกเลิก confirm → ไม่เรียก inviteEmployeeToLine
+    confirmSpy.mockReturnValueOnce(false)
+    fireEvent.click(btn)
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'พนักงานคนนี้ผูก LINE แล้ว ต้องการสร้างรหัสเชิญใหม่หรือไม่? (เช่น เปลี่ยนเครื่องโทรศัพท์)'
+    )
+    expect(mockHr.inviteEmployeeToLine).not.toHaveBeenCalled()
+
+    // ยืนยัน confirm → เรียก inviteEmployeeToLine และแสดงรหัส
+    confirmSpy.mockReturnValueOnce(true)
+    fireEvent.click(btn)
+    await waitFor(() => {
+      expect(mockHr.inviteEmployeeToLine).toHaveBeenCalledWith('e11')
+    })
+    expect(await screen.findByText('REISSUE-777')).toBeTruthy()
+
+    confirmSpy.mockRestore()
+  })
+
+  it('พนักงานที่ยังไม่ผูก LINE (line_linked: false): ปุ่ม title="เชิญเข้า LINE" และเรียก inviteEmployeeToLine โดยไม่ถาม confirm', async () => {
+    const employee: Employee = {
+      id: 'e12',
+      tenant_id: 't1',
+      code: 'EMP-012',
+      first_name: 'นิภา',
+      last_name: 'ใจใส',
+      employment_type: 'MONTHLY',
+      start_date: '2026-01-01',
+      status: 'ACTIVE',
+      sso_enrolled: 1,
+      line_linked: false,
+    }
+    mockHr.getEmployees.mockResolvedValue([employee])
+    const confirmSpy = vi.spyOn(window, 'confirm')
+    mockHr.inviteEmployeeToLine.mockResolvedValue({
+      code: 'NEW-999',
+      expires_in_minutes: 10,
+      created_line_only_account: false,
+    })
+
+    render(<Employees />)
+
+    const btn = await screen.findByTitle('เชิญเข้า LINE')
+    expect(btn.className).not.toContain('text-[var(--success)]')
+    fireEvent.click(btn)
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(mockHr.inviteEmployeeToLine).toHaveBeenCalledWith('e12')
+    })
+    expect(await screen.findByText('NEW-999')).toBeTruthy()
+
+    confirmSpy.mockRestore()
+  })
 })

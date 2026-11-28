@@ -16,6 +16,7 @@ app.use('/api/hr', hrRouter)
 const tenants: string[] = []
 afterEach(() => {
   for (const t of tenants.splice(0)) {
+    db.prepare('DELETE FROM line_user_mappings WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM employees WHERE tenant_id = ?').run(t)
     db.prepare('UPDATE org_units SET parent_id = NULL WHERE tenant_id = ?').run(t)
     db.prepare('DELETE FROM org_units WHERE tenant_id = ?').run(t)
@@ -282,5 +283,88 @@ describe('HR routes (/api/hr)', () => {
     expect(detailHR.status).toBe(200)
     expect(detailHR.body.data.base_wage).toBe(35000)
     expect(detailHR.body.data.bank_account).toBe('999-9-99999-9')
+  })
+
+  it('exposes line_linked flag on GET /employees and GET /employees/:id with active-user and tenant isolation', async () => {
+    const adminA = newAdmin()
+    const adminB = newAdmin()
+    const authA = { Authorization: `Bearer ${adminA.token}` }
+
+    const activeLinkedUser = createTestUser({ role: 'USER', tenantId: adminA.tenantId })
+    const unlinkedUser = createTestUser({ role: 'USER', tenantId: adminA.tenantId })
+    const inactiveUser = createTestUser({ role: 'USER', tenantId: adminA.tenantId })
+    db.prepare(`UPDATE users SET status = 'inactive' WHERE id = ?`).run(inactiveUser.userId)
+
+    const userInB = createTestUser({ role: 'USER', tenantId: adminB.tenantId })
+
+    const empNoUser = (await request(app).post('/api/hr/employees').set(authA).send({
+      first_name: 'ไม่มีผู้ใช้',
+      employment_type: 'MONTHLY',
+      base_wage: 15000,
+      start_date: '2026-01-01',
+    })).body.data
+
+    const empUnlinked = (await request(app).post('/api/hr/employees').set(authA).send({
+      first_name: 'ยังไม่ผูกไลน์',
+      employment_type: 'MONTHLY',
+      base_wage: 15000,
+      start_date: '2026-01-01',
+      user_id: unlinkedUser.userId,
+    })).body.data
+
+    const empActiveLinked = (await request(app).post('/api/hr/employees').set(authA).send({
+      first_name: 'ผูกแล้ว',
+      employment_type: 'MONTHLY',
+      base_wage: 15000,
+      start_date: '2026-01-01',
+      user_id: activeLinkedUser.userId,
+    })).body.data
+
+    const empInactiveUser = (await request(app).post('/api/hr/employees').set(authA).send({
+      first_name: 'ปิดบัญชี',
+      employment_type: 'MONTHLY',
+      base_wage: 15000,
+      start_date: '2026-01-01',
+      user_id: inactiveUser.userId,
+    })).body.data
+
+    db.prepare(
+      `INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+       VALUES (?, ?, ?, ?, 'USER')`
+    ).run(generateId(), adminA.tenantId, activeLinkedUser.userId, 'U_ACT_' + generateId())
+
+    db.prepare(
+      `INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+       VALUES (?, ?, ?, ?, 'USER')`
+    ).run(generateId(), adminA.tenantId, inactiveUser.userId, 'U_INACT_' + generateId())
+
+    // Cross-tenant mapping in Tenant B for unlinkedUser's user_id must NOT mark Tenant A employee as linked
+    db.prepare(
+      `INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+       VALUES (?, ?, ?, ?, 'USER')`
+    ).run(generateId(), adminB.tenantId, unlinkedUser.userId, 'U_CROSS_' + generateId())
+    db.prepare(
+      `INSERT INTO line_user_mappings (id, tenant_id, user_id, line_user_id, role)
+       VALUES (?, ?, ?, ?, 'USER')`
+    ).run(generateId(), adminB.tenantId, userInB.userId, 'U_B_' + generateId())
+
+    const listRes = await request(app).get('/api/hr/employees').set(authA)
+    expect(listRes.status).toBe(200)
+    const byId = new Map((listRes.body.data as any[]).map(e => [e.id, e]))
+    expect(byId.get(empNoUser.id).line_linked).toBe(false)
+    expect(byId.get(empUnlinked.id).line_linked).toBe(false)
+    expect(byId.get(empActiveLinked.id).line_linked).toBe(true)
+    expect(byId.get(empInactiveUser.id).line_linked).toBe(false)
+
+    for (const [id, expected] of [
+      [empNoUser.id, false],
+      [empUnlinked.id, false],
+      [empActiveLinked.id, true],
+      [empInactiveUser.id, false],
+    ] as const) {
+      const detail = await request(app).get(`/api/hr/employees/${id}`).set(authA)
+      expect(detail.status).toBe(200)
+      expect(detail.body.data.line_linked).toBe(expected)
+    }
   })
 })

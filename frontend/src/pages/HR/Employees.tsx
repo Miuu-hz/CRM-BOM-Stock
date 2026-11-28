@@ -117,6 +117,13 @@ export default function Employees() {
   }
 
   const handleLineInvite = async (emp: Employee, newAccount = false) => {
+    if (
+      emp.line_linked &&
+      !newAccount &&
+      !window.confirm('พนักงานคนนี้ผูก LINE แล้ว ต้องการสร้างรหัสเชิญใหม่หรือไม่? (เช่น เปลี่ยนเครื่องโทรศัพท์)')
+    ) {
+      return
+    }
     try {
       const res = await (newAccount ? hrService.inviteEmployeeToLine(emp.id, true) : hrService.inviteEmployeeToLine(emp.id))
       setLineInvite(res)
@@ -434,8 +441,12 @@ export default function Employees() {
                         {emp.status === 'ACTIVE' && (
                           <button
                             onClick={() => handleLineInvite(emp)}
-                            title="เชิญเข้า LINE"
-                            className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--fg-2)]"
+                            title={emp.line_linked ? 'ผูก LINE แล้ว' : 'เชิญเข้า LINE'}
+                            className={`p-1.5 rounded-lg ${
+                              emp.line_linked
+                                ? 'bg-[var(--success-soft)] text-[var(--success)] hover:bg-[var(--success-soft)]/80'
+                                : 'hover:bg-[var(--surface-2)] text-[var(--fg-2)]'
+                            }`}
                           >
                             <MessageCircle className="w-4 h-4" />
                           </button>

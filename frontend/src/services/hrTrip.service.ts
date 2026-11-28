@@ -16,19 +16,6 @@ export interface HrVehicle {
   updated_at: string
 }
 
-export interface MyVehicleOption {
-  id: string
-  plate_no: string
-  label: string | null
-}
-
-export interface TripConsentStatus {
-  accepted: boolean
-  version: string
-  accepted_at: string | null
-  notice_text: string
-}
-
 export interface CarTripStop {
   id: string
   seq: number
@@ -80,38 +67,6 @@ export interface ManagerCarTrip extends CarTripBase {
   route_fetched_at: string | null
 }
 
-export interface MyTripsStatus {
-  consent: TripConsentStatus
-  open_trip: CarTripBase | null
-  vehicles: MyVehicleOption[]
-  max_stops: number
-}
-
-export interface StartTripInput {
-  car_type: CarType
-  vehicle_id?: string | null
-  plate_no?: string
-  start_odometer: number
-  purpose?: string
-  lat: number
-  lng: number
-  accuracy_m?: number | null
-}
-
-export interface AddStopInput {
-  lat: number
-  lng: number
-  accuracy_m?: number | null
-  note?: string
-}
-
-export interface EndTripInput {
-  end_odometer: number
-  lat: number
-  lng: number
-  accuracy_m?: number | null
-}
-
 export interface ManagerTripsFilter {
   from?: string
   to?: string
@@ -136,9 +91,6 @@ export interface UpdateVehicleInput {
   notes?: string | null
 }
 
-export const TRIP_PDPA_NOTICE_TEXT =
-  'ระบบจะบันทึกพิกัดตำแหน่ง (GPS) เฉพาะตอนที่คุณกดเริ่มทริป แวะจุด และจบทริปเท่านั้น ไม่มีการติดตามตำแหน่งพื้นหลัง พิกัดและเลขไมล์ใช้เพื่อคำนวณระยะทางและตรวจสอบการใช้งานรถยนต์ของบริษัท โดยพิกัดเส้นทางอาจถูกส่งไปคำนวณระยะทางถนนผ่าน Google Routes API โดยไม่ส่งชื่อหรือข้อมูลส่วนตัวของคุณ'
-
 export const TRIP_STATUS_LABELS: Record<TripStatus, string> = {
   OPEN: 'กำลังเดินทาง',
   COMPLETED: 'จบแล้ว',
@@ -162,41 +114,6 @@ export const TRIP_FLAG_LABELS: Record<TripFlagCode, string> = {
 }
 
 export const hrTripService = {
-  async getMyStatus(): Promise<MyTripsStatus> {
-    const res = await api.get('/hr/me/trips/status')
-    return res.data.data
-  },
-
-  async getMyVehicles(): Promise<MyVehicleOption[]> {
-    const res = await api.get('/hr/me/vehicles')
-    return res.data.data || []
-  },
-
-  async acceptConsent(version = '1.0'): Promise<TripConsentStatus> {
-    const res = await api.post('/hr/me/trips/consent', { consent: true, version })
-    return res.data.data
-  },
-
-  async startTrip(data: StartTripInput): Promise<CarTripBase> {
-    const res = await api.post('/hr/me/trips/start', data)
-    return res.data.data
-  },
-
-  async addStop(tripId: string, data: AddStopInput): Promise<CarTripBase> {
-    const res = await api.post(`/hr/me/trips/${tripId}/stops`, data)
-    return res.data.data
-  },
-
-  async endTrip(tripId: string, data: EndTripInput): Promise<CarTripBase> {
-    const res = await api.post(`/hr/me/trips/${tripId}/end`, data)
-    return res.data.data
-  },
-
-  async getMyTrips(params?: { from?: string; to?: string }): Promise<CarTripBase[]> {
-    const res = await api.get('/hr/me/trips', { params })
-    return res.data.data || []
-  },
-
   async getTrips(params?: ManagerTripsFilter): Promise<ManagerCarTrip[]> {
     const res = await api.get('/hr/trips', { params })
     return res.data.data || []

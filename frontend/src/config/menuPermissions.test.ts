@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canViewMenu, isCashierOnly, isMenuLocked, MENU_REQUIRED_FEATURES } from './menuPermissions'
+import { canViewMenu, isCashierOnly, isMenuLocked, MENU_PERMISSIONS, MENU_REQUIRED_FEATURES } from './menuPermissions'
 
 // แคชเชียร์ (แผนก POS แผนกเดียว) เห็นแค่หน้าร้าน — ต้องตรงกับ backend cashierScope
 describe('menuPermissions — แคชเชียร์', () => {
@@ -88,9 +88,14 @@ describe('menuPermissions — isMenuLocked (Phase 3)', () => {
     expect(isMenuLocked('/hr', [])).toBe(true)
     expect(isMenuLocked('/hr/employees', [])).toBe(true)
     expect(isMenuLocked('/hr/org', [])).toBe(true)
+    expect(isMenuLocked('/hr/vehicles', [])).toBe(true)
     expect(isMenuLocked('/hr', ['hr'])).toBe(false)
     expect(isMenuLocked('/hr/employees', ['hr'])).toBe(false)
     expect(isMenuLocked('/hr/org', ['hr'])).toBe(false)
+    expect(isMenuLocked('/hr/vehicles', ['hr'])).toBe(false)
+    expect(MENU_REQUIRED_FEATURES['/hr/vehicles']).toBe('hr')
+    expect(MENU_PERMISSIONS['/hr/me/trips']).toBeUndefined()
+    expect(MENU_REQUIRED_FEATURES['/hr/me/trips']).toBeUndefined()
   })
 })
 describe('GM แผนก CEO', () => {

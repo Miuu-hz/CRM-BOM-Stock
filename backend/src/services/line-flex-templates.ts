@@ -1,3 +1,6 @@
+import type { CarTripBase, ManagerCarTrip } from './hr/carTrip.service'
+import type { TripFlagCode } from './hr/carTripFlags'
+
 // ─── Phopy card kit (โทนเดียวกับ shiftCloseCard: คราม/มะม่วง/ทราย) ─────────────
 const APP_URL = process.env.APP_URL ?? 'https://erp.phopy.net'
 const P = {
@@ -8,6 +11,35 @@ const P = {
 const baht = (n: number) => `฿${(Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}`
 const thDate = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00+07:00` : iso)
     .toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' })
+const thTime = (iso: string) => new Date(iso)
+    .toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })
+const fmtTripDuration = (sec: number | null) => {
+    if (sec == null || !Number.isFinite(sec)) return '-'
+    const mins = Math.max(0, Math.round(sec / 60))
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    if (h > 0 && m > 0) return `${h} ชม. ${m} น.`
+    if (h > 0) return `${h} ชม.`
+    return `${m} น.`
+}
+const TRIP_FLAG_WARN: Record<TripFlagCode, string> = {
+    ODOMETER_MISMATCH: '⚠️ ระยะไมล์ต่างจากแผนที่ >20%',
+    DURATION_EXCESSIVE: '⚠️ ใช้เวลานานกว่าแผนที่มาก',
+    ODOMETER_ROLLBACK: '⚠️ ไมล์เริ่มต่ำกว่าไมล์จบครั้งก่อน',
+    POOR_GPS: '⚠️ ความแม่นยำ GPS ต่ำ (>150 ม.)',
+}
+const TRIP_ROUTE_LABEL: Record<string, string> = {
+    UNAVAILABLE: 'ไม่พร้อมใช้งาน',
+    FAILED: 'คำนวณไม่สำเร็จ',
+    PENDING: 'กำลังคำนวณ',
+    SKIPPED: 'ข้ามการคำนวณ',
+    NONE: 'ไม่มีข้อมูล',
+}
+const TRIP_STATUS_LABEL: Record<string, string> = {
+    OPEN: 'กำลังเดินทาง',
+    COMPLETED: 'จบแล้ว',
+    INCOMPLETE: 'ไม่สมบูรณ์',
+}
 // LINE ปฏิเสธ text ว่าง — กันไว้ที่เดียว
 const txt = (text: any, o: Record<string, any> = {}) => ({ type: 'text', text: String(text ?? '') || '-', ...o })
 const pill = (label: string, action: any, primary: boolean) => ({
@@ -1442,5 +1474,70 @@ const deliveryRows = (s.deliveryDiscounts || []).map(d => ({
             ],
         })
     },
+
+    // ─── ทริปการใช้รถ (เริ่มทริป / สรุปจบทริป / ประวัติ 5 ทริปล่าสุด) ─────────
+    tripStartedCard: (trip: CarTripBase) => {
+        const plateDisplay = trip.vehicle_label ? `${trip.plate_no} (${trip.vehicle_label})` : trip.plate_no
+        const carTypeLabel = trip.car_type === 'COMPANY' ? 'รถบริษัท' : 'รถส่วนตัว'
+        return card({
+            alt: `🚗 เริ่มทริปแล้ว · ${trip.plate_no}`,
+            kicker: 'ใช้งานรถยนต์',
+            title: '🚗 เริ่มทริปแล้ว',
+            sub: 'ออกเดินทางได้เลยครับ',
+            body: [
+                kv('รถ', plateDisplay),
+                kv('ประเภท', carTypeLabel),
+                kv('ไมล์เริ่มต้น', `${Number(trip.start_odometer).toLocaleString('th-TH')} กม.`),
+                ...(trip.purpose ? [kv('วัตถุประสงค์', trip.purpose)] : []),
+                kv('เวลาเริ่ม', `${thTime(trip.started_at)} น.`),
+            ],
+        })
+    },
+
+    tripSummaryCard: (trip: ManagerCarTrip) => {
+        const plateDisplay = trip.vehicle_label ? `${trip.plate_no} (${trip.vehicle_label})` : trip.plate_no
+        const mapLabel = trip.route_status === 'OK' && trip.map_distance_km != null
+            ? `${Number(trip.map_distance_km).toLocaleString('th-TH', { maximumFractionDigits: 1 })} กม.`
+            : (TRIP_ROUTE_LABEL[trip.route_status] ?? 'ไม่มีข้อมูล')
+        const flagLines = (trip.flags ?? []).map(f => TRIP_FLAG_WARN[f]).filter(Boolean)
+        return card({
+            alt: `🏁 จบทริปแล้ว · ${trip.plate_no}`,
+            kicker: 'ใช้งานรถยนต์',
+            title: '🏁 จบทริปแล้ว',
+            tone: P.success,
+            body: [
+                kv('รถ', plateDisplay),
+                kv('เลขไมล์', `${Number(trip.start_odometer).toLocaleString('th-TH')} → ${Number(trip.end_odometer ?? 0).toLocaleString('th-TH')}`),
+                kv('ระยะทางตามไมล์', `${Number(trip.odometer_km ?? 0).toLocaleString('th-TH', { maximumFractionDigits: 1 })} กม.`),
+                kv('ระยะทางแผนที่', mapLabel, trip.route_status === 'OK' ? P.ink900 : P.ink500),
+                kv('ระยะเวลา', fmtTripDuration(trip.duration_sec)),
+                kv('จุดแวะ', `${trip.stops.length} จุด`),
+                ...(flagLines.length > 0 ? [
+                    { type: 'separator', margin: 'md', color: P.sand200 },
+                    ...flagLines.map(line => txt(line, { size: 'xs', color: P.danger, margin: 'sm', wrap: true })),
+                ] : []),
+            ],
+        })
+    },
+
+    tripHistoryCard: (trips: CarTripBase[]) => card({
+        alt: `📋 ประวัติการใช้รถ (${trips.length} รายการ)`,
+        kicker: 'ใช้งานรถยนต์',
+        title: '📋 ประวัติการใช้รถ',
+        sub: '5 ทริปล่าสุด',
+        body: trips.map(t => {
+            const statusText = TRIP_STATUS_LABEL[t.status] ?? t.status
+            const right = t.status === 'COMPLETED' && t.odometer_km != null
+                ? `${Number(t.odometer_km).toLocaleString('th-TH', { maximumFractionDigits: 1 })} กม.`
+                : ''
+            const rightColor = t.status === 'COMPLETED' ? P.success : t.status === 'INCOMPLETE' ? P.danger : P.mango600
+            return listRow(
+                `${thDate(t.started_at)} ${thTime(t.started_at)} · ${t.plate_no}`,
+                statusText,
+                right,
+                rightColor,
+            )
+        }),
+    }),
 
 };

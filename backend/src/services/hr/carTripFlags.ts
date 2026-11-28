@@ -122,7 +122,7 @@ export function computeTripFlags(input: {
 
   if (
     input.accuracies.some(
-      (a) => a === null || !Number.isFinite(a) || a > POOR_GPS_ACCURACY_M
+      (a) => a !== null && Number.isFinite(a) && a > POOR_GPS_ACCURACY_M
     )
   ) {
     flags.push('POOR_GPS')

@@ -5,6 +5,7 @@ import {
   BarChart3,
   BookOpen,
   Calculator,
+  Car,
   ClipboardCheck,
   Clock,
   Factory,
@@ -115,7 +116,7 @@ const menuItems: MenuItem[] = [
     isParent: true,
     subMenu: [
       { path: '/hr/me', tKey: 'sidebar.myHr', icon: UserCircle },
-      ...[Users, Clock, Wallet, ClipboardCheck].map((icon, i) => ({
+      ...[Users, Clock, Wallet, ClipboardCheck, Car].map((icon, i) => ({
         path: HR_GROUPS[i].tabs[0].path, tKey: HR_GROUPS[i].tKey, icon, group: HR_GROUPS[i].tabs.map(tab => tab.path),
       })),
     ],

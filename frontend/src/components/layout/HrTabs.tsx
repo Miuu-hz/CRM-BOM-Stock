@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { canViewMenu } from '../../config/menuPermissions'
 
-// HR 15 หน้ารวมเป็น 4 กลุ่ม (+ "ของฉัน") — เมนูข้างโชว์กลุ่ม แต่ละหน้าในกลุ่มเป็นแท็บด้านบน แบบหน้าบัญชี
+// HR 16 หน้ารวมเป็น 5 กลุ่ม (+ "ของฉัน") — เมนูข้างโชว์กลุ่ม แต่ละหน้าในกลุ่มเป็นแท็บด้านบน แบบหน้าบัญชี
 // ลิงก์เดิมทุกหน้ายังใช้ได้ (แท็บคือ route เดิม)
 export const HR_GROUPS: { tKey: string; tabs: { path: string; tKey: string }[] }[] = [
   { tKey: 'sidebar.hrPeople', tabs: [
@@ -13,7 +13,7 @@ export const HR_GROUPS: { tKey: string; tabs: { path: string; tKey: string }[] }
   ] },
   { tKey: 'sidebar.hrTime', tabs: [
     { path: '/hr/attendance', tKey: 'sidebar.attendance' }, { path: '/hr/roster', tKey: 'sidebar.roster' },
-    { path: '/hr/leave', tKey: 'sidebar.leave' }, { path: '/hr/trips', tKey: 'sidebar.hrTrips' },
+    { path: '/hr/leave', tKey: 'sidebar.leave' },
   ] },
   { tKey: 'sidebar.payroll', tabs: [
     { path: '/hr/payroll', tKey: 'sidebar.payrollRuns' }, { path: '/hr/advances', tKey: 'sidebar.advances' },
@@ -22,6 +22,9 @@ export const HR_GROUPS: { tKey: string; tabs: { path: string; tKey: string }[] }
   { tKey: 'sidebar.lifecycle', tabs: [
     { path: '/hr/recruit', tKey: 'sidebar.recruit' }, { path: '/hr/lifecycle', tKey: 'sidebar.onOffboard' },
     { path: '/hr/training', tKey: 'sidebar.training' },
+  ] },
+  { tKey: 'sidebar.hrCar', tabs: [
+    { path: '/hr/trips', tKey: 'sidebar.hrTrips' }, { path: '/hr/vehicles', tKey: 'sidebar.hrVehicles' },
   ] },
 ]
 

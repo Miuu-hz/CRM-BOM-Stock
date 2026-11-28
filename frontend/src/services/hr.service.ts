@@ -47,6 +47,7 @@ export interface Employee {
   shift_id?: string | null
   shift_name?: string | null
   has_checkin_pin?: boolean
+  line_linked?: boolean
   notes?: string | null
   created_at?: string
   updated_at?: string
