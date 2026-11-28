@@ -14,14 +14,17 @@ app.use('/api/auth', authRoutes)
 
 const tenants: string[] = []
 const origTasksUrl = process.env.MY_TASKS_URL
-const origRoutesKey = process.env.GOOGLE_ROUTES_API_KEY
+const origOsrmUrl = process.env.OSRM_URL
+const origRouteTimeoutMs = process.env.ROUTE_TIMEOUT_MS
 
 afterEach(() => {
     vi.restoreAllMocks()
     if (origTasksUrl === undefined) delete process.env.MY_TASKS_URL
     else process.env.MY_TASKS_URL = origTasksUrl
-    if (origRoutesKey === undefined) delete process.env.GOOGLE_ROUTES_API_KEY
-    else process.env.GOOGLE_ROUTES_API_KEY = origRoutesKey
+    if (origOsrmUrl === undefined) delete process.env.OSRM_URL
+    else process.env.OSRM_URL = origOsrmUrl
+    if (origRouteTimeoutMs === undefined) delete process.env.ROUTE_TIMEOUT_MS
+    else process.env.ROUTE_TIMEOUT_MS = origRouteTimeoutMs
 
     for (const t of tenants.splice(0)) {
         for (const tb of [
@@ -99,15 +102,14 @@ function insertVehicle(tenantId: string, plateNo: string, label: string | null =
 }
 
 describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ One-time Link', () => {
-    it('happy path start (6-digit odometer not hijacked by bareOtp) -> stop -> end with mocked Google Routes & zero secret/coord leaks', async () => {
-        const secretKey = 'SECRET_GOOGLE_ROUTES_KEY_LBT'
-        process.env.GOOGLE_ROUTES_API_KEY = secretKey
+    it('happy path start (6-digit odometer not hijacked by bareOtp) -> stop -> end with mocked OSRM & zero coord leaks', async () => {
+        process.env.OSRM_URL = 'https://osrm.test'
         const logSpy = vi.spyOn(console, 'log')
         const errSpy = vi.spyOn(console, 'error')
         const warnSpy = vi.spyOn(console, 'warn')
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(
             new Response(
-                JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+                JSON.stringify({ code: 'Ok', routes: [{ distance: 10000, duration: 600 }] }),
                 { status: 200, headers: { 'Content-Type': 'application/json' } }
             )
         )
@@ -119,6 +121,7 @@ describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ 
         await say('เริ่ม/จบทริป')
         expect(replies.at(-1).type).toBe('text')
         expect(replies.at(-1).text).toContain('ความยินยอมการใช้ตำแหน่ง (PDPA)')
+        expect(replies.at(-1).text).toContain('OpenStreetMap (OSRM)')
         expect(replies.at(-1).quickReply.items.map((i: any) => i.action.data)).toEqual([
             'action=trip_consent',
             'action=trip_cancel',
@@ -192,7 +195,7 @@ describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ 
         const eventLogs = (db.prepare('SELECT summary, error FROM line_event_logs WHERE tenant_id = ?').all(tenantId) as any[])
             .map(r => `${r.summary ?? ''} ${r.error ?? ''}`).join(' ')
         const consoleBlob = [...logSpy.mock.calls, ...errSpy.mock.calls, ...warnSpy.mock.calls].flat().map(String).join(' ')
-        for (const leak of ['13.756311', '100.501822', '13.781111', '13.812345', secretKey]) {
+        for (const leak of ['13.756311', '100.501822', '13.781111', '13.812345']) {
             expect(replyBlob).not.toContain(leak)
             expect(eventLogs).not.toContain(leak)
             expect(consoleBlob).not.toContain(leak)
@@ -200,7 +203,7 @@ describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ 
     })
 
     it('PDPA consent once + skip purpose via trip_skip_purpose + private car validation', async () => {
-        delete process.env.GOOGLE_ROUTES_API_KEY
+        process.env.OSRM_URL = 'off'
         const { tenantId, employeeId, replies, say, sendLoc, postback } = setupStaff()
 
         // First trip: accept consent, pick PRIVATE, test invalid & valid plate, skip purpose
@@ -236,7 +239,7 @@ describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ 
     })
 
     it('validates odometer in START_ODO and END_ODO (non-numeric, negative, >9999999, end < start) while preserving state', async () => {
-        delete process.env.GOOGLE_ROUTES_API_KEY
+        process.env.OSRM_URL = 'off'
         const { replies, say, sendLoc, postback } = setupStaff()
         await say('เริ่ม/จบทริป')
         await postback('action=trip_consent')
@@ -267,7 +270,7 @@ describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ 
     })
 
     it('rejects second start while open, stops without open trip, and 11th stop', async () => {
-        delete process.env.GOOGLE_ROUTES_API_KEY
+        process.env.OSRM_URL = 'off'
         const { tenantId, employeeId, replies, say, sendLoc, postback } = setupStaff()
 
         // No open trip -> แวะจุด and จบทริป refused

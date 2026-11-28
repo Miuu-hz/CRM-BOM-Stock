@@ -1,6 +1,9 @@
 import dotenv from 'dotenv'
 import path from 'path'
 
+// Keep tests offline by default so they never hit the live public OSRM server.
+if (!process.env.OSRM_URL) process.env.OSRM_URL = 'off'
+
 // Same loading convention as src/index.ts: read backend/.env regardless of cwd.
 dotenv.config({ path: path.resolve(__dirname, '.env') })
 

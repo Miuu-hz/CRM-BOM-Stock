@@ -22,11 +22,16 @@ import {
 } from '../services/hr/carTrip.service'
 import {
   TRIP_CONSENT_VERSION,
+  TRIP_CONSENT_NOTICE_TEXT,
   TRIP_MAX_OPEN_MS,
   validateCoords,
   validateOdometer,
   computeTripFlags,
 } from '../services/hr/carTripFlags'
+import {
+  buildOsrmRouteUrl,
+  computeRoadRoute,
+} from '../services/hr/roadRoute.service'
 import { createTestUser } from '../test/testAuth'
 
 function buildApp() {
@@ -38,15 +43,15 @@ function buildApp() {
 }
 
 const tenants: string[] = []
-const origApiKey = process.env.GOOGLE_ROUTES_API_KEY
-const origTimeoutMs = process.env.GOOGLE_ROUTES_TIMEOUT_MS
+const origOsrmUrl = process.env.OSRM_URL
+const origTimeoutMs = process.env.ROUTE_TIMEOUT_MS
 
 afterEach(() => {
   vi.restoreAllMocks()
-  if (origApiKey === undefined) delete process.env.GOOGLE_ROUTES_API_KEY
-  else process.env.GOOGLE_ROUTES_API_KEY = origApiKey
-  if (origTimeoutMs === undefined) delete process.env.GOOGLE_ROUTES_TIMEOUT_MS
-  else process.env.GOOGLE_ROUTES_TIMEOUT_MS = origTimeoutMs
+  if (origOsrmUrl === undefined) delete process.env.OSRM_URL
+  else process.env.OSRM_URL = origOsrmUrl
+  if (origTimeoutMs === undefined) delete process.env.ROUTE_TIMEOUT_MS
+  else process.env.ROUTE_TIMEOUT_MS = origTimeoutMs
 
   for (const t of tenants.splice(0)) {
     db.prepare('DELETE FROM hr_car_trip_stops WHERE tenant_id = ?').run(t)
@@ -322,6 +327,139 @@ describe('carTripFlags unit checks', () => {
   })
 })
 
+describe('roadRoute.service unit checks', () => {
+  it('buildOsrmRouteUrl builds lng,lat order with ordered stops and normalizes trailing slashes', () => {
+    const url = buildOsrmRouteUrl(
+      'https://osrm.test/',
+      { lat: 13.71, lng: 100.51 },
+      { lat: 13.79, lng: 100.59 },
+      [
+        { lat: 13.72, lng: 100.52 },
+        { lat: 13.73, lng: 100.53 },
+      ]
+    )
+    expect(url).toBe(
+      'https://osrm.test/route/v1/driving/100.51,13.71;100.52,13.72;100.53,13.73;100.59,13.79?overview=false'
+    )
+  })
+
+  it('computeRoadRoute sends GET with User-Agent phopy-erp-trips and parses OK response', async () => {
+    process.env.OSRM_URL = 'https://osrm.test'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: 'Ok', routes: [{ distance: 25400, duration: 1500.4 }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+
+    const res = await computeRoadRoute(
+      { lat: 13.71, lng: 100.51 },
+      { lat: 13.79, lng: 100.59 },
+      []
+    )
+    expect(res).toEqual({
+      status: 'OK',
+      distanceMeters: 25400,
+      distanceKm: 25.4,
+      durationSec: 1500,
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [reqUrl, reqInit] = fetchSpy.mock.calls[0]
+    expect(reqUrl).toBe(
+      'https://osrm.test/route/v1/driving/100.51,13.71;100.59,13.79?overview=false'
+    )
+    expect(reqInit?.method).toBe('GET')
+    expect((reqInit?.headers as Record<string, string>)['User-Agent']).toBe(
+      'phopy-erp-trips'
+    )
+  })
+
+  it('computeRoadRoute returns ROUTING_DISABLED with 0 fetch calls when OSRM_URL=off or OFF', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    for (const offVal of ['off', 'OFF']) {
+      process.env.OSRM_URL = offVal
+      const res = await computeRoadRoute(
+        { lat: 13.71, lng: 100.51 },
+        { lat: 13.79, lng: 100.59 },
+        []
+      )
+      expect(res).toEqual({ status: 'UNAVAILABLE', errorCode: 'ROUTING_DISABLED' })
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(0)
+  })
+
+  it('computeRoadRoute maps NoRoute, HTTP_429/500, TIMEOUT, INVALID_JSON, empty routes, and NETWORK_ERROR without leaking coords/messages', async () => {
+    process.env.OSRM_URL = 'https://osrm.test'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    // NoRoute with coords in message -> message/coords not leaked
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          code: 'NoRoute',
+          message: 'Impossible route between 13.7,100.5',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+    const noRouteRes = await computeRoadRoute(
+      { lat: 13.7, lng: 100.5 },
+      { lat: 13.8, lng: 100.6 },
+      []
+    )
+    expect(noRouteRes).toEqual({ status: 'FAILED', errorCode: 'NoRoute' })
+    expect(JSON.stringify(noRouteRes)).not.toContain('Impossible')
+    expect(JSON.stringify(noRouteRes)).not.toContain('13.7')
+
+    // HTTP 429 & HTTP 500
+    fetchSpy.mockResolvedValueOnce(new Response('too many', { status: 429 }))
+    expect(
+      await computeRoadRoute({ lat: 13.7, lng: 100.5 }, { lat: 13.8, lng: 100.6 }, [])
+    ).toEqual({ status: 'FAILED', errorCode: 'HTTP_429' })
+
+    fetchSpy.mockResolvedValueOnce(new Response('err', { status: 500 }))
+    expect(
+      await computeRoadRoute({ lat: 13.7, lng: 100.5 }, { lat: 13.8, lng: 100.6 }, [])
+    ).toEqual({ status: 'FAILED', errorCode: 'HTTP_500' })
+
+    // Invalid JSON
+    fetchSpy.mockResolvedValueOnce(new Response('not-json{', { status: 200 }))
+    expect(
+      await computeRoadRoute({ lat: 13.7, lng: 100.5 }, { lat: 13.8, lng: 100.6 }, [])
+    ).toEqual({ status: 'FAILED', errorCode: 'INVALID_JSON' })
+
+    // Empty routes
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'Ok', routes: [] }), { status: 200 })
+    )
+    expect(
+      await computeRoadRoute({ lat: 13.7, lng: 100.5 }, { lat: 13.8, lng: 100.6 }, [])
+    ).toEqual({ status: 'FAILED', errorCode: 'NO_ROUTE' })
+
+    // Network error
+    fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+    expect(
+      await computeRoadRoute({ lat: 13.7, lng: 100.5 }, { lat: 13.8, lng: 100.6 }, [])
+    ).toEqual({ status: 'FAILED', errorCode: 'NETWORK_ERROR' })
+
+    // Timeout
+    process.env.ROUTE_TIMEOUT_MS = '30'
+    fetchSpy.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const err = new Error('Aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+    )
+    expect(
+      await computeRoadRoute({ lat: 13.7, lng: 100.5 }, { lat: 13.8, lng: 100.6 }, [])
+    ).toEqual({ status: 'FAILED', errorCode: 'TIMEOUT' })
+  })
+})
+
 describe('carTrip.service & HR Manager Trips REST API', () => {
   const app = buildApp()
 
@@ -388,22 +526,47 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
       expect(endWithout.code).toBe('CONSENT_REQUIRED')
     }
 
+    expect(TRIP_CONSENT_VERSION).toBe('1.1')
+    expect(TRIP_CONSENT_NOTICE_TEXT).toContain('OpenStreetMap (OSRM)')
+
+    // Employee who only accepted old v1.0 must re-accept v1.1
+    db.prepare(
+      `INSERT INTO hr_trip_consents (id, tenant_id, employee_id, user_id, consent_version, accepted_at)
+       VALUES (?, ?, ?, ?, '1.0', ?)`
+    ).run(generateId(), admin.tenantId, empId, empUser.userId, new Date().toISOString())
+    expect(getTripConsentStatus(admin.tenantId, empId).accepted).toBe(false)
+    const startOldConsent = startCarTrip({
+      tenantId: admin.tenantId,
+      employeeId: empId,
+      carType: 'PRIVATE',
+      plateNo: 'กข 1234',
+      startOdometer: 1000,
+      lat: 13.7563,
+      lng: 100.5018,
+      accuracyM: null,
+    })
+    expect(startOldConsent.ok).toBe(false)
+    if (!startOldConsent.ok) {
+      expect(startOldConsent.status).toBe(403)
+      expect(startOldConsent.code).toBe('CONSENT_REQUIRED')
+    }
+
     const okConsent = acceptTripConsent(admin.tenantId, empId, empUser.userId, TRIP_CONSENT_VERSION)
     expect(okConsent.ok).toBe(true)
     if (okConsent.ok) {
       expect(okConsent.data.accepted).toBe(true)
-      expect(okConsent.data.version).toBe('1.0')
+      expect(okConsent.data.version).toBe(TRIP_CONSENT_VERSION)
     }
 
     const consentRow = db
       .prepare(
-        'SELECT employee_id, user_id, consent_version, accepted_at FROM hr_trip_consents WHERE tenant_id = ? AND employee_id = ?'
+        'SELECT employee_id, user_id, consent_version, accepted_at FROM hr_trip_consents WHERE tenant_id = ? AND employee_id = ? AND consent_version = ?'
       )
-      .get(admin.tenantId, empId) as any
+      .get(admin.tenantId, empId, TRIP_CONSENT_VERSION) as any
     expect(consentRow).toMatchObject({
       employee_id: empId,
       user_id: empUser.userId,
-      consent_version: '1.0',
+      consent_version: TRIP_CONSENT_VERSION,
     })
     expect(consentRow.accepted_at).toBeTruthy()
     expect(getTripConsentStatus(admin.tenantId, empId).accepted).toBe(true)
@@ -471,11 +634,11 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     }).toThrow(/UNIQUE/)
   })
 
-  it('replay end calls Google Routes at most once', async () => {
-    process.env.GOOGLE_ROUTES_API_KEY = 'secret-test-key'
+  it('replay end calls OSRM at most once', async () => {
+    process.env.OSRM_URL = 'https://osrm.test'
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
-        JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+        JSON.stringify({ code: 'Ok', routes: [{ distance: 10000, duration: 600 }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
     )
@@ -527,7 +690,7 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
   })
 
   it('tenant isolation & employee isolation & removed /me/trips* /me/vehicles return 404', async () => {
-    delete process.env.GOOGLE_ROUTES_API_KEY
+    process.env.OSRM_URL = 'off'
     const adminA = newAdmin()
     const adminB = newAdmin()
 
@@ -849,8 +1012,8 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     expect(row2.status).toBe('OPEN')
   })
 
-  it('Google Routes: no API key skips fetch; HTTP 500/empty never logs secrets/coords; retry succeeds', async () => {
-    delete process.env.GOOGLE_ROUTES_API_KEY
+  it('OSRM: OSRM_URL=off skips fetch; HTTP 500 never logs coords; retry succeeds', async () => {
+    process.env.OSRM_URL = 'off'
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
     const admin = newAdmin()
@@ -863,7 +1026,7 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     })
     acceptTripConsent(admin.tenantId, empId, empUser.userId)
 
-    // Trip 1 without API key
+    // Trip 1 with OSRM_URL=off
     const s1 = startCarTrip({
       tenantId: admin.tenantId,
       employeeId: empId,
@@ -887,20 +1050,21 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     if (e1.ok) {
       expect(e1.data.status).toBe('COMPLETED')
       expect(e1.data.route_status).toBe('UNAVAILABLE')
+      expect(e1.data.route_error).toBe('ROUTING_DISABLED')
       expect(e1.data.map_distance_km).toBeNull()
       expect(e1.data.odometer_km).toBe(15)
     }
     expect(fetchSpy).toHaveBeenCalledTimes(0)
 
-    const retryNoKey = await request(app)
+    const retryDisabled = await request(app)
       .post(`/api/hr/trips/${trip1Id}/retry-route`)
       .set('Authorization', `Bearer ${admin.token}`)
-    expect(retryNoKey.status).toBe(503)
+    expect(retryDisabled.status).toBe(503)
+    expect(retryDisabled.body.message).toBe('ระบบคำนวณระยะทางถูกปิดอยู่ (OSRM_URL=off)')
     expect(fetchSpy).toHaveBeenCalledTimes(0)
 
-    // Trip 2 with API key but HTTP 500 + check zero secret/coord logging
-    const secretKey = 'SUPER_SECRET_ROUTES_KEY_XYZ'
-    process.env.GOOGLE_ROUTES_API_KEY = secretKey
+    // Trip 2 with OSRM_URL set but HTTP 500 + check zero coord logging
+    process.env.OSRM_URL = 'https://osrm.test'
     const logSpy = vi.spyOn(console, 'log')
     const errSpy = vi.spyOn(console, 'error')
     const warnSpy = vi.spyOn(console, 'warn')
@@ -946,7 +1110,6 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
       .flat()
       .map(String)
       .join(' ')
-    expect(allLogs).not.toContain(secretKey)
     expect(allLogs).not.toContain('13.712345')
     expect(allLogs).not.toContain('100.543219')
     expect(allLogs).not.toContain('13.865432')
@@ -954,7 +1117,7 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     // Manager retries trip2 with mocked 200 -> updates route_status='OK' & recomputes flags
     fetchSpy.mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+        JSON.stringify({ code: 'Ok', routes: [{ distance: 10000, duration: 600 }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
     )
@@ -974,9 +1137,9 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     expect(retryAgain.status).toBe(409)
   })
 
-  it('Google Routes: timeout aborts cleanly & valid call sends X-Goog-FieldMask + ordered intermediates', async () => {
-    process.env.GOOGLE_ROUTES_API_KEY = 'valid-key-123'
-    process.env.GOOGLE_ROUTES_TIMEOUT_MS = '30'
+  it('OSRM: timeout aborts cleanly & valid call sends GET with User-Agent + ordered lng,lat stops', async () => {
+    process.env.OSRM_URL = 'https://osrm.test'
+    process.env.ROUTE_TIMEOUT_MS = '30'
 
     const admin = newAdmin()
     const empUser = createUserWithPerms({ tenantId: admin.tenantId })
@@ -1025,10 +1188,10 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
       .get(trip1Id) as any
     expect(errRow.route_error).toBe('TIMEOUT')
 
-    process.env.GOOGLE_ROUTES_TIMEOUT_MS = '5000'
+    process.env.ROUTE_TIMEOUT_MS = '5000'
     fetchSpy.mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ routes: [{ distanceMeters: 25400, duration: '1500s' }] }),
+        JSON.stringify({ code: 'Ok', routes: [{ distance: 25400, duration: 1500 }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
     )
@@ -1065,23 +1228,18 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
     }
 
     const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1]
-    expect(lastCall[0]).toBe('https://routes.googleapis.com/directions/v2:computeRoutes')
+    expect(lastCall[0]).toBe(
+      'https://osrm.test/route/v1/driving/100.51,13.71;100.52,13.72;100.53,13.73;100.59,13.79?overview=false'
+    )
     const reqInit = lastCall[1] as RequestInit
-    expect((reqInit.headers as Record<string, string>)['X-Goog-FieldMask']).toBe(
-      'routes.distanceMeters,routes.duration'
+    expect(reqInit.method).toBe('GET')
+    expect((reqInit.headers as Record<string, string>)['User-Agent']).toBe(
+      'phopy-erp-trips'
     )
-    expect((reqInit.headers as Record<string, string>)['X-Goog-Api-Key']).toBe(
-      'valid-key-123'
-    )
-    const sentBody = JSON.parse(reqInit.body as string)
-    expect(sentBody.intermediates).toEqual([
-      { location: { latLng: { latitude: 13.72, longitude: 100.52 } } },
-      { location: { latLng: { latitude: 13.73, longitude: 100.53 } } },
-    ])
   })
 
   it('rejects invalid coords/odometer, end < start, and enforces 10-stop limit', async () => {
-    delete process.env.GOOGLE_ROUTES_API_KEY
+    process.env.OSRM_URL = 'off'
     const admin = newAdmin()
     const empUser = createUserWithPerms({ tenantId: admin.tenantId })
     const empId = insertEmployee({
@@ -1158,11 +1316,11 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
   })
 
   it('vehicles CRUD + manager trip flags (ODOMETER_ROLLBACK, POOR_GPS, ODOMETER_MISMATCH)', async () => {
-    process.env.GOOGLE_ROUTES_API_KEY = 'key-for-flags'
+    process.env.OSRM_URL = 'https://osrm.test'
     vi.spyOn(globalThis, 'fetch').mockImplementation(
       async () =>
         new Response(
-          JSON.stringify({ routes: [{ distanceMeters: 10000, duration: '600s' }] }),
+          JSON.stringify({ code: 'Ok', routes: [{ distance: 10000, duration: 600 }] }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         )
     )
@@ -1283,7 +1441,7 @@ describe('carTrip.service & HR Manager Trips REST API', () => {
   })
 
   it('hr_self token minted via POST /api/auth/line-login is blocked from manager routes and deleted /me/trips*', async () => {
-    delete process.env.GOOGLE_ROUTES_API_KEY
+    process.env.OSRM_URL = 'off'
     const admin = newAdmin()
     const empUser = createUserWithPerms({
       tenantId: admin.tenantId,

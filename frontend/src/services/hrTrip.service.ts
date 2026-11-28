@@ -101,7 +101,7 @@ export const ROUTE_STATUS_LABELS: Record<RouteStatus, string> = {
   NONE: '-',
   OK: 'คำนวณแล้ว',
   PENDING: 'รอคำนวณ',
-  UNAVAILABLE: 'ยังไม่ตั้งค่าแผนที่',
+  UNAVAILABLE: 'ระบบคำนวณระยะทางปิดอยู่',
   FAILED: 'คำนวณแผนที่ไม่สำเร็จ',
   SKIPPED: 'ไม่คำนวณ (ไม่สมบูรณ์)',
 }

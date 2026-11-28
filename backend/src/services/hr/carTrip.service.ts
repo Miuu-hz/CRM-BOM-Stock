@@ -11,7 +11,7 @@ import {
   validateOdometer,
   computeTripFlags,
 } from './carTripFlags'
-import { computeRoadRoute } from './googleRoutes.service'
+import { computeRoadRoute, isRoadRoutingEnabled } from './roadRoute.service'
 
 export type CarType = 'COMPANY' | 'PRIVATE'
 export type TripStatus = 'OPEN' | 'COMPLETED' | 'INCOMPLETE'
@@ -841,7 +841,7 @@ export async function endCarTrip(input: {
   // Standalone before transaction so expired-trip closure persists even on 409.
   closeExpiredTrips({ tenantId, employeeId })
 
-  const hasKey = Boolean((process.env.GOOGLE_ROUTES_API_KEY || '').trim())
+  const routingEnabled = isRoadRoutingEnabled()
 
   const tx: EndTripTx = db.transaction((): EndTripTx => {
     const trip = fetchTripRow(tenantId, tripId, employeeId)
@@ -877,8 +877,8 @@ export async function endCarTrip(input: {
       ? Math.max(0, Math.round((endMs - startMs) / 1000))
       : 0
 
-    const routeStatus = hasKey ? 'PENDING' : 'UNAVAILABLE'
-    const routeError = hasKey ? null : 'NO_API_KEY'
+    const routeStatus = routingEnabled ? 'PENDING' : 'UNAVAILABLE'
+    const routeError = routingEnabled ? null : 'ROUTING_DISABLED'
     const accuracies: (number | null)[] = [
       trip.start_accuracy_m !== null && trip.start_accuracy_m !== undefined
         ? Number(trip.start_accuracy_m)
@@ -962,7 +962,7 @@ export async function endCarTrip(input: {
     return tx
   }
 
-  if (hasKey) {
+  if (routingEnabled) {
     const routeRes = await computeRoadRoute(
       { lat: Number(tx.savedTrip.start_lat), lng: Number(tx.savedTrip.start_lng) },
       { lat: coords.lat, lng: coords.lng },
@@ -1068,12 +1068,11 @@ export async function retryTripRoute(
     }
   }
 
-  const hasKey = Boolean((process.env.GOOGLE_ROUTES_API_KEY || '').trim())
-  if (!hasKey) {
+  if (!isRoadRoutingEnabled()) {
     return {
       ok: false,
       status: 503,
-      message: 'ยังไม่ได้ตั้งค่า Google Routes API Key',
+      message: 'ระบบคำนวณระยะทางถูกปิดอยู่ (OSRM_URL=off)',
     }
   }
 
