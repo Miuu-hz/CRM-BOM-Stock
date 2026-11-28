@@ -52,7 +52,8 @@ describe('ริชเมนู LINE', () => {
         expect(sc.size).toEqual({ width: 2500, height: 843 })
         expect(sc.areas.map(a => a.bounds.width)).toEqual(Array(4).fill(625))
         expect(sc.chatBarText).toBe('ใช้งานรถยนต์')
-        expect(sc.areas.map(a => a.action.label)).toEqual(['เริ่ม/จบทริป', 'แวะจุด', 'ประวัติทริป', 'กลับเมนูหลัก'])
+        expect(sc.areas.map(a => a.action.label)).toEqual(['เริ่ม/จบทริป', 'แวะจุด/ส่งตำแหน่ง', 'ประวัติทริป', 'กลับเมนูหลัก'])
+        expect(sc.areas[1].action).toEqual({ type: 'uri', uri: 'https://line.me/R/nv/location/', label: 'แวะจุด/ส่งตำแหน่ง' })
         expect(sc.areas[3].action).toMatchObject({ type: 'richmenuswitch', richMenuAliasId: RICH_MENU_ALIASES.staff })
 
         const st = buildRichMenu('staff')

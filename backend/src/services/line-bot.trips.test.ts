@@ -477,4 +477,153 @@ describe('LINE Bot — In-Chat Car Trips, งานของฉัน และ 
             expect(helpStr).toContain(cmd)
         }
     })
+
+    it('one-tap stop via location message: quick reply, stateless/expired location + open trip, 10-stop cap, no open trip, typed แวะจุด', async () => {
+        process.env.OSRM_URL = 'off'
+        const { tenantId, employeeId, lineUserId, replies, pushMessage, say, sendLoc, postback } = setupStaff()
+
+        // No open trip + stateless location -> guidance text
+        await sendLoc(13.74, 100.49)
+        expect(replies.at(-1).text).toBe('ℹ️ หากต้องการบันทึกพิกัดการใช้รถ กรุณากด "เริ่ม/จบทริป" หรือ "แวะจุด" จากเมนูก่อนครับ')
+
+        // Start a trip -> tripStartedCard quickReply item 0 is location picker '📍 แวะจุด'
+        await say('เริ่ม/จบทริป')
+        await postback('action=trip_consent')
+        await postback('action=trip_car&type=PRIVATE')
+        await say('กข 7777')
+        await say('1000')
+        await say('ข้าม')
+        await sendLoc(13.75, 100.5)
+        const startedCard = replies.at(-1)
+        expect(startedCard.type).toBe('flex')
+        expect(startedCard.quickReply.items[0]).toEqual({
+            type: 'action',
+            action: { type: 'location', label: '📍 แวะจุด' },
+        })
+        const trip = db.prepare('SELECT id FROM hr_car_trips WHERE tenant_id = ? AND employee_id = ?').get(tenantId, employeeId) as { id: string }
+
+        // 1) Stateless location (no car_trip state) -> saves stop 1/10 with QR_STOP_LOCATION
+        expect(db.prepare("SELECT COUNT(*) c FROM line_pending_tasks WHERE line_user_id = ? AND type = 'car_trip'").get(lineUserId)).toEqual({ c: 0 })
+        await sendLoc(13.751, 100.501, { title: 'ลูกค้า A' })
+        expect(replies.at(-1).text).toContain('✅ บันทึกจุดแวะที่ 1/10 เรียบร้อยแล้วครับ')
+        expect(replies.at(-1).quickReply.items[0]).toEqual({
+            type: 'action',
+            action: { type: 'location', label: '📍 แวะจุด' },
+        })
+        const stop1 = db.prepare('SELECT accuracy_m, note FROM hr_car_trip_stops WHERE trip_id = ? AND seq = 1').get(trip.id) as any
+        expect(stop1.accuracy_m).toBeNull()
+        expect(stop1.note).toBe('ลูกค้า A')
+
+        // 2) Expired car_trip state + open trip -> still saves stop 2/10 immediately
+        await say('แวะจุด')
+        db.prepare("UPDATE line_pending_tasks SET expires_at = ? WHERE tenant_id = ? AND line_user_id = ? AND type = 'car_trip'")
+            .run(new Date(Date.now() - 1000).toISOString(), tenantId, lineUserId)
+        await sendLoc(13.752, 100.502, { title: 'ลูกค้า B' })
+        expect(replies.at(-1).text).toContain('✅ บันทึกจุดแวะที่ 2/10 เรียบร้อยแล้วครับ')
+        expect(replies.at(-1).quickReply.items[0]).toEqual({
+            type: 'action',
+            action: { type: 'location', label: '📍 แวะจุด' },
+        })
+
+        // 3) Typed 'แวะจุด' preserved -> enters STOP_LOC and accepts subsequent location (stop 3/10)
+        await say('แวะจุด')
+        expect(replies.at(-1).text).toContain('บันทึกจุดแวะ (3/10)')
+        await sendLoc(13.753, 100.503, { title: 'ลูกค้า C' })
+        expect(replies.at(-1).text).toContain('✅ บันทึกจุดแวะที่ 3/10 เรียบร้อยแล้วครับ')
+
+        // 4) Stops 4..10 via stateless location; at 10/10, QR_STOP_LOCATION is omitted
+        for (let i = 4; i <= 10; i++) {
+            await sendLoc(13.75 + i * 0.001, 100.5 + i * 0.001)
+            expect(replies.at(-1).text).toContain(`✅ บันทึกจุดแวะที่ ${i}/10 เรียบร้อยแล้วครับ`)
+            if (i < 10) {
+                expect(replies.at(-1).quickReply.items.some((x: any) => x.action.type === 'location')).toBe(true)
+            } else {
+                expect(replies.at(-1).quickReply.items.some((x: any) => x.action.type === 'location')).toBe(false)
+            }
+        }
+
+        // 5) 11th stateless location -> rejected, no 11th row inserted
+        await sendLoc(13.765, 100.515)
+        expect(replies.at(-1).text).toBe('⚠️ แวะจุดได้สูงสุด 10 จุดต่อทริปครับ (บันทึกครบ 10/10 จุดแล้ว)')
+        expect(db.prepare('SELECT COUNT(*) c FROM hr_car_trip_stops WHERE trip_id = ?').get(trip.id)).toEqual({ c: 10 })
+        expect(pushMessage).not.toHaveBeenCalled()
+    })
+
+    it('PICK_CAR: own recent private plates (max 3, recency order, isolated), postback skips PRIVATE_PLATE, and 13-item cap', async () => {
+        process.env.OSRM_URL = 'off'
+        // b first: each setupStaff re-mocks the LINE client, so the last one (a) receives the replies
+        const b = setupStaff()
+        const a = setupStaff({ tenantId: b.tenantId })
+
+        const now = Date.now()
+        const iso = (offsetMin: number) => new Date(now + offsetMin * 60_000).toISOString()
+        const seedTrip = (empId: string, carType: 'PRIVATE' | 'COMPANY', plateNo: string, startedAt: string) => {
+            db.prepare(`
+                INSERT INTO hr_car_trips (
+                  id, tenant_id, employee_id, car_type, plate_no, status, started_at,
+                  start_odometer, start_lat, start_lng, ended_at, end_odometer, end_lat, end_lng,
+                  odometer_km, duration_sec, route_status, flags_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'COMPLETED', ?, 100, 13.75, 100.5, ?, 110, 13.76, 100.51, 10, 600, 'NONE', '[]', ?, ?)
+            `).run(generateId(), a.tenantId, empId, carType, plateNo, startedAt, startedAt, startedAt, startedAt)
+        }
+
+        // Seed 4 distinct private plates for A (oldest P-1, then P-2, P-3, P-4, plus duplicate P-2 at newest)
+        seedTrip(a.employeeId!, 'PRIVATE', 'กข 1001', iso(-50)) // oldest -> excluded
+        seedTrip(a.employeeId!, 'PRIVATE', 'กข 1002', iso(-40)) // reused newest below
+        seedTrip(a.employeeId!, 'PRIVATE', 'กข 1003', iso(-30))
+        seedTrip(a.employeeId!, 'PRIVATE', 'กข 1004', iso(-20))
+        seedTrip(a.employeeId!, 'PRIVATE', 'กข 1002', iso(-10)) // newest -> order: 1002, 1004, 1003
+        // Company trip for A (must not appear in own private plates)
+        seedTrip(a.employeeId!, 'COMPANY', 'บจ 9999', iso(-5))
+        // Private trip for B in same tenant (must not leak to A)
+        seedTrip(b.employeeId!, 'PRIVATE', 'ขข 8888', iso(-1))
+
+        await a.say('เริ่ม/จบทริป')
+        await a.postback('action=trip_consent')
+        const pick1 = a.replies.at(-1)
+        const items1 = pick1.quickReply.items
+        expect(items1.map((i: any) => i.action.data)).toEqual([
+            `action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1002')}`,
+            `action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1004')}`,
+            `action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1003')}`,
+            'action=trip_car&type=PRIVATE',
+            'action=trip_cancel',
+        ])
+        expect(items1[3].action.label).toBe('🚙 รถส่วนตัวคันใหม่')
+        expect(items1[4].action.label).toBe('❌ ยกเลิก')
+        const blob1 = JSON.stringify(pick1)
+        expect(blob1).not.toContain('กข 1001')
+        expect(blob1).not.toContain('ขข 8888')
+        expect(blob1).not.toContain('บจ 9999')
+
+        // Invalid empty / >30-char plate postback rejected
+        await a.postback('action=trip_car&type=PRIVATE&plate=')
+        expect(a.replies.at(-1).text).toContain('1-30 ตัวอักษร')
+        await a.postback(`action=trip_car&type=PRIVATE&plate=${encodeURIComponent('ก'.repeat(31))}`)
+        expect(a.replies.at(-1).text).toContain('1-30 ตัวอักษร')
+
+        // Picking own plate skips PRIVATE_PLATE and goes straight to START_ODO
+        await a.postback(`action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1002')}`)
+        expect(a.replies.at(-1).text).toContain('กรุณาพิมพ์เลขไมล์เริ่มต้น')
+        expect(a.replies.at(-1).text).toContain('กข 1002')
+
+        // Cancel and test 13-item Quick Reply cap with 12 active company cars + 3 own plates
+        await a.postback('action=trip_cancel')
+        for (let i = 1; i <= 12; i++) {
+            insertVehicle(a.tenantId, `บจ ${String(i).padStart(2, '0')}00`, `รถ ${i}`)
+        }
+        await a.say('เริ่ม/จบทริป')
+        const pickCap = a.replies.at(-1)
+        expect(pickCap.text).toContain('(หรือพิมพ์ทะเบียนรถบริษัทที่ต้องการ)')
+        const capItems = pickCap.quickReply.items
+        expect(capItems).toHaveLength(13)
+        expect(capItems.slice(0, 8).every((i: any) => i.action.data.includes('type=COMPANY'))).toBe(true)
+        expect(capItems.slice(8, 11).map((i: any) => i.action.data)).toEqual([
+            `action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1002')}`,
+            `action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1004')}`,
+            `action=trip_car&type=PRIVATE&plate=${encodeURIComponent('กข 1003')}`,
+        ])
+        expect(capItems[11].action.label).toBe('🚙 รถส่วนตัวคันใหม่')
+        expect(capItems[12].action.label).toBe('❌ ยกเลิก')
+    })
 })

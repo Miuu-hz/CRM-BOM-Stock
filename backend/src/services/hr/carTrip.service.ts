@@ -450,6 +450,27 @@ export function getActiveVehicles(tenantId: string): ActiveVehicleOption[] {
     .all(tenantId) as ActiveVehicleOption[]
 }
 
+export function getRecentPrivatePlates(
+  tenantId: string,
+  employeeId: string,
+  limit = 3
+): string[] {
+  const rows = db
+    .prepare(
+      `SELECT plate_no
+       FROM hr_car_trips
+       WHERE tenant_id = ? AND employee_id = ? AND car_type = 'PRIVATE' AND TRIM(plate_no) <> ''
+       GROUP BY plate_no
+       ORDER BY MAX(started_at) DESC, MAX(created_at) DESC
+       LIMIT ?`
+    )
+    .all(tenantId, employeeId, limit) as Array<{ plate_no: string }>
+
+  return Array.from(
+    new Set(rows.map((r) => String(r.plate_no).trim()).filter(Boolean))
+  )
+}
+
 export function getOpenCarTrip(
   tenantId: string,
   employeeId: string

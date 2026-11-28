@@ -61,7 +61,7 @@ export const MENUS: Record<RichMenuKey, Menu> = {
         ['งานของฉัน', msg('งานของฉัน')], ['ใช้งานรถยนต์', richMenuSwitch(RICH_MENU_ALIASES.staff_car, 'staff_car')], MINE, ACCOUNT,
     ] },
     staff_car: { chatBarText: 'ใช้งานรถยนต์', label: 'ใช้งานรถยนต์', cols: 4, buttons: [
-        ['เริ่ม/จบทริป', msg('เริ่ม/จบทริป')], ['แวะจุด', msg('แวะจุด')], ['ประวัติทริป', msg('ประวัติทริป')], ['กลับเมนูหลัก', richMenuSwitch(RICH_MENU_ALIASES.staff, 'staff')],
+        ['เริ่ม/จบทริป', msg('เริ่ม/จบทริป')], ['แวะจุด/ส่งตำแหน่ง', uri('https://line.me/R/nv/location/')], ['ประวัติทริป', msg('ประวัติทริป')], ['กลับเมนูหลัก', richMenuSwitch(RICH_MENU_ALIASES.staff, 'staff')],
     ] },
     guest: { chatBarText: 'เริ่มใช้งาน', label: 'ยังไม่ผูกบัญชี', cols: 3, buttons: [
         ['เชื่อมบัญชี', msg('วิธีเชื่อมบัญชี')], ['วิธีใช้', msg('ช่วยเหลือ')], ['เปิดเว็บ', uri(APP_URL)],

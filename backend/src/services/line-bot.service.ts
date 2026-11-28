@@ -105,6 +105,7 @@ import {
     getTripConsentStatus,
     acceptTripConsent,
     getActiveVehicles,
+    getRecentPrivatePlates,
     getOpenCarTrip,
     startCarTrip,
     addCarTripStop,
@@ -169,13 +170,17 @@ const QR_LOCATION = {
     type: 'action',
     action: { type: 'location', label: '📍 ส่งตำแหน่ง' },
 }
+const QR_STOP_LOCATION = {
+    type: 'action',
+    action: { type: 'location', label: '📍 แวะจุด' },
+}
 const QR_CONSENT = {
     type: 'action',
     action: { type: 'postback', label: '✅ ยินยอม', data: 'action=trip_consent', displayText: 'ยินยอม' },
 }
 const QR_PRIVATE = {
     type: 'action',
-    action: { type: 'postback', label: '🚙 รถส่วนตัว', data: 'action=trip_car&type=PRIVATE', displayText: 'รถส่วนตัว' },
+    action: { type: 'postback', label: '🚙 รถส่วนตัวคันใหม่', data: 'action=trip_car&type=PRIVATE', displayText: 'รถส่วนตัวคันใหม่' },
 }
 const QR_SKIP_PURPOSE = {
     type: 'action',
@@ -2941,9 +2946,24 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
         return vehicleLabel ? `${plateNo} (${vehicleLabel})` : plateNo
     }
 
-    private buildPickCarPrompt(tenantId: string) {
+    private buildPickCarPrompt(tenantId: string, employeeId: string) {
         const vehicles = getActiveVehicles(tenantId)
-        const carButtons = vehicles.slice(0, 11).map(v => ({
+        const ownPlates = getRecentPrivatePlates(tenantId, employeeId, 3)
+        const ownPlateButtons = ownPlates.flatMap(plate => {
+            const data = `action=trip_car&type=PRIVATE&plate=${encodeURIComponent(plate)}`
+            if (data.length > 300) return []
+            return [{
+                type: 'action',
+                action: {
+                    type: 'postback',
+                    label: `🚙 ${plate}`.slice(0, 20),
+                    data,
+                    displayText: plate,
+                },
+            }]
+        })
+        const maxCompany = Math.max(0, 13 - (ownPlateButtons.length + 2))
+        const carButtons = vehicles.slice(0, maxCompany).map(v => ({
             type: 'action',
             action: {
                 type: 'postback',
@@ -2952,16 +2972,16 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
                 displayText: v.plate_no,
             },
         }))
-        const quickReply = { items: [...carButtons, QR_PRIVATE, QR_CANCEL] }
-        const text = vehicles.length > 0
-            ? `🚗 เริ่มทริปใหม่\nกรุณาเลือกรถที่ใช้งานครับ${vehicles.length > 11 ? '\n(หรือพิมพ์ทะเบียนรถบริษัทที่ต้องการ)' : ''}`
-            : '🚗 เริ่มทริปใหม่\nยังไม่มีรถบริษัทในระบบ กด "รถส่วนตัว" เพื่อระบุทะเบียนรถครับ'
+        const quickReply = { items: [...carButtons, ...ownPlateButtons, QR_PRIVATE, QR_CANCEL] }
+        const text = vehicles.length > 0 || ownPlateButtons.length > 0
+            ? `🚗 เริ่มทริปใหม่\nกรุณาเลือกรถที่ใช้งานครับ${vehicles.length > maxCompany ? '\n(หรือพิมพ์ทะเบียนรถบริษัทที่ต้องการ)' : ''}`
+            : '🚗 เริ่มทริปใหม่\nยังไม่มีรถบริษัทในระบบ กด "รถส่วนตัวคันใหม่" เพื่อระบุทะเบียนรถครับ'
         return { vehicles, text, quickReply }
     }
 
     private async promptPickCar(tenantId: string, lineUserId: string, employeeId: string, replyToken: string, client: any) {
         this.setCarTripState(tenantId, lineUserId, 'PICK_CAR', { flow: 'start', employeeId })
-        const { text, quickReply } = this.buildPickCarPrompt(tenantId)
+        const { text, quickReply } = this.buildPickCarPrompt(tenantId, employeeId)
         await client.replyMessage(replyToken, { type: 'text', text, quickReply })
     }
 
@@ -3063,7 +3083,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
                 text: `⚠️ คุณมีทริปที่เปิดอยู่แล้ว (${openTrip.plate_no}) กรุณาจบทริปเดิมก่อนครับ`,
                 quickReply: {
                     items: [
-                        { type: 'action', action: { type: 'message', label: '📍 แวะจุด', text: 'แวะจุด' } },
+                        QR_STOP_LOCATION,
                         { type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'จบทริป' } },
                     ],
                 },
@@ -3147,7 +3167,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
             }
 
             case 'PICK_CAR': {
-                if (text === 'รถส่วนตัว') {
+                if (text === 'รถส่วนตัว' || text === 'รถส่วนตัวคันใหม่') {
                     this.setCarTripState(tenantId, lineUserId, 'PRIVATE_PLATE', { ...draft, carType: 'PRIVATE' })
                     await client.replyMessage(replyToken, {
                         type: 'text',
@@ -3156,7 +3176,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
                     })
                     return
                 }
-                const { vehicles, quickReply } = this.buildPickCarPrompt(tenantId)
+                const { vehicles, quickReply } = this.buildPickCarPrompt(tenantId, emp.id)
                 const matched = vehicles.find(v => v.plate_no.trim() === text.trim())
                 if (matched) {
                     await this.promptStartOdometer(
@@ -3282,6 +3302,53 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
         }
     }
 
+    private async saveTripStopFromLocation(
+        tenantId: string,
+        lineUserId: string,
+        employeeId: string,
+        tripId: string,
+        event: any,
+        client: any,
+        clearStateOnDone: boolean,
+    ) {
+        const lat = event.message.latitude
+        const lng = event.message.longitude
+        const note = event.message.title ? String(event.message.title).trim().slice(0, 200) : null
+        const res = addCarTripStop({
+            tenantId,
+            employeeId,
+            tripId,
+            lat,
+            lng,
+            accuracyM: null,
+            note,
+        })
+        if (!res.ok) {
+            if (res.status === 400) {
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: `⚠️ ${res.message}`,
+                    ...(clearStateOnDone ? { quickReply: { items: [QR_LOCATION, QR_CANCEL] } } : {}),
+                })
+            } else {
+                if (clearStateOnDone) this.clearCarTripState(lineUserId)
+                await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ ${res.message}` })
+            }
+            return
+        }
+        if (clearStateOnDone) this.clearCarTripState(lineUserId)
+        const items: any[] = []
+        if (res.data.stops.length < TRIP_MAX_STOPS) {
+            items.push(QR_STOP_LOCATION)
+        }
+        items.push({ type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } })
+        await client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: `✅ บันทึกจุดแวะที่ ${res.data.stops.length}/${TRIP_MAX_STOPS} เรียบร้อยแล้วครับ\nรถ: ${res.data.plate_no}`,
+            quickReply: { items },
+        })
+    }
+
     private async handleCarTripLocation(
         tenantId: string,
         src: 'user' | 'group' | 'room',
@@ -3312,14 +3379,27 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
         }
 
         const state = this.getCarTripState(tenantId, lineUserId)
-        if (state?.expired) {
-            await client.replyMessage(event.replyToken, {
-                type: 'text',
-                text: '⏰ รายการบันทึกทริปหมดเวลาแล้ว กรุณากดเริ่มใหม่อีกครั้งครับ',
-            })
-            return
-        }
-        if (!state || state.draft.employeeId !== emp.id) {
+        if (!state || state.expired || state.draft.employeeId !== emp.id) {
+            const openTrip = getOpenCarTrip(tenantId, emp.id)
+            if (openTrip) {
+                if (openTrip.stops.length >= TRIP_MAX_STOPS) {
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: '⚠️ แวะจุดได้สูงสุด 10 จุดต่อทริปครับ (บันทึกครบ 10/10 จุดแล้ว)',
+                        quickReply: { items: [{ type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } }] },
+                    })
+                    return
+                }
+                await this.saveTripStopFromLocation(tenantId, lineUserId, emp.id, openTrip.id, event, client, false)
+                return
+            }
+            if (state?.expired) {
+                await client.replyMessage(event.replyToken, {
+                    type: 'text',
+                    text: '⏰ รายการบันทึกทริปหมดเวลาแล้ว กรุณากดเริ่มใหม่อีกครั้งครับ',
+                })
+                return
+            }
             await client.replyMessage(event.replyToken, {
                 type: 'text',
                 text: 'ℹ️ หากต้องการบันทึกพิกัดการใช้รถ กรุณากด "เริ่ม/จบทริป" หรือ "แวะจุด" จากเมนูก่อนครับ',
@@ -3376,7 +3456,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
             const card = flexTemplates.tripStartedCard(res.data) as any
             card.quickReply = {
                 items: [
-                    { type: 'action', action: { type: 'message', label: '📍 แวะจุด', text: 'แวะจุด' } },
+                    QR_STOP_LOCATION,
                     { type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } },
                 ],
             }
@@ -3385,40 +3465,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
         }
 
         if (state.step === 'STOP_LOC') {
-            const note = event.message.title ? String(event.message.title).trim().slice(0, 200) : null
-            const res = addCarTripStop({
-                tenantId,
-                employeeId: emp.id,
-                tripId: state.draft.tripId ?? '',
-                lat,
-                lng,
-                accuracyM: null,
-                note,
-            })
-            if (!res.ok) {
-                if (res.status === 400) {
-                    await client.replyMessage(event.replyToken, {
-                        type: 'text',
-                        text: `⚠️ ${res.message}`,
-                        quickReply: { items: [QR_LOCATION, QR_CANCEL] },
-                    })
-                } else {
-                    this.clearCarTripState(lineUserId)
-                    await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ ${res.message}` })
-                }
-                return
-            }
-            this.clearCarTripState(lineUserId)
-            const items: any[] = []
-            if (res.data.stops.length < TRIP_MAX_STOPS) {
-                items.push({ type: 'action', action: { type: 'message', label: '📍 แวะจุดเพิ่ม', text: 'แวะจุด' } })
-            }
-            items.push({ type: 'action', action: { type: 'message', label: '🏁 จบทริป', text: 'เริ่ม/จบทริป' } })
-            await client.replyMessage(event.replyToken, {
-                type: 'text',
-                text: `✅ บันทึกจุดแวะที่ ${res.data.stops.length}/${TRIP_MAX_STOPS} เรียบร้อยแล้วครับ\nรถ: ${res.data.plate_no}`,
-                quickReply: { items },
-            })
+            await this.saveTripStopFromLocation(tenantId, lineUserId, emp.id, state.draft.tripId ?? '', event, client, true)
             return
         }
 
@@ -3508,6 +3555,26 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
             if (state.step !== 'PICK_CAR') return
             const carType = params.get('type')
             if (carType === 'PRIVATE') {
+                if (params.has('plate')) {
+                    const plate = (params.get('plate') ?? '').trim()
+                    if (!plate || plate.length > 30) {
+                        const { quickReply } = this.buildPickCarPrompt(tenantId, emp.id)
+                        await client.replyMessage(event.replyToken, {
+                            type: 'text',
+                            text: '⚠️ กรุณาระบุทะเบียนรถ (1-30 ตัวอักษร) ครับ',
+                            quickReply,
+                        })
+                        return
+                    }
+                    await this.promptStartOdometer(
+                        tenantId,
+                        lineUserId,
+                        { ...state.draft, carType: 'PRIVATE', plateNo: plate, vehicleLabel: null },
+                        event.replyToken,
+                        client,
+                    )
+                    return
+                }
                 this.setCarTripState(tenantId, lineUserId, 'PRIVATE_PLATE', { ...state.draft, carType: 'PRIVATE' })
                 await client.replyMessage(event.replyToken, {
                     type: 'text',
@@ -3518,7 +3585,7 @@ ${process.env.APP_URL ?? 'https://erp.phopy.net'}/work-orders`,
             }
             if (carType === 'COMPANY') {
                 const vid = params.get('vid') ?? ''
-                const { vehicles, quickReply } = this.buildPickCarPrompt(tenantId)
+                const { vehicles, quickReply } = this.buildPickCarPrompt(tenantId, emp.id)
                 const v = vehicles.find(row => row.id === vid)
                 if (!v) {
                     await client.replyMessage(event.replyToken, {
